@@ -71,7 +71,7 @@ export const LatestWorkflowsCard = ({ workflow }: { workflow: Workflow }) => {
         />
 
         {/* Content */}
-        <Box>
+        <Box minWidth={0}>
           <Box display="flex" alignItems="center" gap={1} mb={0.5}>
             <Typography variant="subtitle2" fontWeight="bold" noWrap>
               {workflow.name}
