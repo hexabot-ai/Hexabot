@@ -35,6 +35,44 @@ export type CompileValueOptions = {
 /** Basic object guard that rejects arrays and null. */
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+const resolveNestedExpressions = async (
+  value: unknown,
+  scope: EvaluationScope,
+  seen: WeakSet<object> = new WeakSet(),
+): Promise<unknown> => {
+  if (typeof value === 'string' && value.startsWith('=')) {
+    return evaluateValue(compileValue(value), scope);
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) {
+      return value;
+    }
+    seen.add(value);
+
+    return Promise.all(
+      value.map((entry) => resolveNestedExpressions(entry, scope, seen)),
+    );
+  }
+
+  if (isPlainObject(value)) {
+    if (seen.has(value)) {
+      return value;
+    }
+    seen.add(value);
+
+    const entries = await Promise.all(
+      Object.entries(value).map(async ([key, entry]) => [
+        key,
+        await resolveNestedExpressions(entry, scope, seen),
+      ]),
+    );
+
+    return Object.fromEntries(entries);
+  }
+
+  return value;
+};
 const registerJsonataFunctions = (
   expression: Expression,
   registry?: JsonataFunctionRegistry,
@@ -118,11 +156,16 @@ export const evaluateMapping = async (
     return {};
   }
 
-  const result: Record<string, unknown> = {};
-
-  for (const [key, compiled] of Object.entries(mapping)) {
-    result[key] = await evaluateValue(compiled, scope);
-  }
+  const entries = await Promise.all(
+    Object.entries(mapping).map(async ([key, compiled]) => [
+      key,
+      await resolveNestedExpressions(
+        await evaluateValue(compiled, scope),
+        scope,
+      ),
+    ]),
+  );
+  const result: Record<string, unknown> = Object.fromEntries(entries);
 
   return result;
 };
