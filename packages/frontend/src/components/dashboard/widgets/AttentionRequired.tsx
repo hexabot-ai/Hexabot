@@ -45,12 +45,13 @@ export const AttentionRequired = () => {
   const handleViewRun = (run: WorkflowRunFull) => {
     const workflowId = resolveEntityId(run.workflow);
     const initiatorId = resolveEntityId(run.triggeredBy);
+    const runId = resolveEntityId(run.id);
 
     if (!workflowId || !initiatorId) {
       return;
     }
 
-    router.push(`/workflow/${workflowId}/runs/${initiatorId}`);
+    router.push(`/workflow/${workflowId}/runs/${initiatorId}/${runId}`);
   };
 
   return (
