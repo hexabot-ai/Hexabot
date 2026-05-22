@@ -98,7 +98,7 @@ export const routes: RouteObjectItem[] = [
     },
   },
   {
-    path: "/workflow/:workflowId/runs/:initiatorId",
+    path: "/workflow/:workflowId/runs/:initiatorId/:runId?",
     Component: WorkflowRunDebuggerPage,
     handle: {
       requiredPermissions: [[EntityType.WORKFLOW_RUN, Action.READ]],

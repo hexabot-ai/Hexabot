@@ -19,18 +19,19 @@ import { WorkflowRunDebugger } from "./components/WorkflowRunDebugger";
 
 export const WorkflowRunDebuggerPage = () => {
   const { t } = useTranslate();
-  const { workflowId, initiatorId: initiatorId } = useParams<{
+  const params = useParams<{
     workflowId?: string;
     initiatorId?: string;
+    runId?: string;
   }>();
   const { data: workflow } = useGet(
-    workflowId || "",
+    params.workflowId || "",
     {
       entity: EntityType.WORKFLOW,
       format: Format.FULL,
     },
     {
-      enabled: Boolean(workflowId),
+      enabled: Boolean(params.workflowId),
     },
   );
 
@@ -47,7 +48,7 @@ export const WorkflowRunDebuggerPage = () => {
         minHeight="calc(100dvh - 182px)"
         maxHeight="calc(100dvh - 182px)"
       >
-        <WorkflowRunDebugger initiatorId={initiatorId} workflow={workflow} />
+        <WorkflowRunDebugger {...params} />
       </Box>
     </WorkflowActionsProvider>
   );
