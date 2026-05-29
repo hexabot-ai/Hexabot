@@ -10,6 +10,7 @@ import { ActionRadioWidget } from "./ActionRadioWidget";
 import { ActionRangeWidget } from "./ActionRangeWidget";
 import { ActionSelectWidget } from "./ActionSelectWidget";
 import { AutoCompleteWidget } from "./AutoCompleteWidget";
+import { EmailWidget } from "./EmailWidget";
 import { JsonataTextWidget } from "./JsonataTextWidget";
 import { PasswordWidget } from "./PasswordWidget";
 import { TextWidget } from "./TextWidget";
@@ -22,6 +23,7 @@ export const FORM_WIDGETS_BASE = {
   RangeWidget: ActionRangeWidget,
   AutoCompleteWidget,
   TextWidget,
+  EmailWidget,
   PasswordWidget,
 } as const;
 
@@ -30,6 +32,7 @@ export const FORM_WIDGETS = {
   TextWidget: JsonataTextWidget,
   TextareaWidget: JsonataTextWidget,
   URLWidget: JsonataTextWidget,
+  EmailWidget: JsonataTextWidget,
   UpDownWidget: JsonataTextWidget,
 } as const;
 
