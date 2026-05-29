@@ -73,6 +73,25 @@ describe('workflow values', () => {
     });
   });
 
+  it('evaluates nested expressions inside literal objects', async () => {
+    const mapping = {
+      headers: compileValue({
+        nestedFiled: '=$input.headerValue',
+      }),
+    };
+    const values = await evaluateMapping(mapping, {
+      input: { headerValue: 'Bearer token-value' },
+      context: new TestContext().state,
+      output: {},
+    });
+
+    expect(values).toEqual({
+      headers: {
+        nestedFiled: 'Bearer token-value',
+      },
+    });
+  });
+
   it('handles missing mappings and deep merges settings', async () => {
     await expect(
       evaluateMapping(undefined, {
