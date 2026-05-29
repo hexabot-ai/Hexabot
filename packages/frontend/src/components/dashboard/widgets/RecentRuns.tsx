@@ -51,9 +51,10 @@ export const RecentRuns = () => {
   const openRun = (run: WorkflowRun) => {
     const workflowId = resolveEntityId(run.workflow);
     const initiatorId = resolveEntityId(run.triggeredBy);
+    const runId = resolveEntityId(run.id);
 
-    if (workflowId && initiatorId) {
-      router.push(`/workflow/${workflowId}/runs/${initiatorId}`);
+    if (workflowId && initiatorId && runId) {
+      router.push(`/workflow/${workflowId}/runs/${initiatorId}/${runId}`);
     }
   };
   const resolveWorkflow = (run: WorkflowRun): Workflow | null => {

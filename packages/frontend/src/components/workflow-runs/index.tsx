@@ -45,7 +45,9 @@ export const WorkflowRuns = ({
       {
         action: ColumnActionType.View,
         onClick: (row) =>
-          router.push(`/workflow/${row.workflow}/runs/${row.triggeredBy}`),
+          router.push(
+            `/workflow/${row.workflow}/runs/${row.triggeredBy}/${row.id}`,
+          ),
       },
     ],
     t("label.operations"),

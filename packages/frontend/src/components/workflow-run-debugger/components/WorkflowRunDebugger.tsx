@@ -21,12 +21,14 @@ import { StepTracePanel } from "./panels/step-trace-panel";
 
 type WorkflowRunDebuggerProps = {
   initiatorId?: string;
+  runId?: string;
   workflow?: Workflow;
   workflowInput?: Record<string, unknown>;
 };
 
 export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
   initiatorId,
+  runId,
   workflow,
   workflowInput,
 }) => {
@@ -60,16 +62,16 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
     },
   );
   const latestRun = workflowRuns[0];
-  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(
-    undefined,
-  );
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(runId);
   const [selectedStepId, setSelectedStepId] = useState<string | undefined>(
     undefined,
   );
 
   useEffect(() => {
     if (!workflowRuns.length) {
-      setSelectedRunId(undefined);
+      if (!runId) {
+        setSelectedRunId(undefined);
+      }
 
       return;
     }
@@ -78,10 +80,17 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
       (run) => run.id === selectedRunId,
     );
 
-    if (!isSelectedStillAvailable) {
+    if (!isSelectedStillAvailable && !runId) {
       setSelectedRunId(workflowRuns[0]?.id);
     }
-  }, [selectedRunId, workflowRuns]);
+  }, [runId, selectedRunId, workflowRuns]);
+
+  useEffect(() => {
+    if (runId) {
+      setSelectedRunId(runId);
+      setSelectedStepId(undefined);
+    }
+  }, [runId]);
 
   const selectedRun = useMemo(
     () => workflowRuns.find((run) => run.id === selectedRunId) ?? latestRun,
@@ -94,10 +103,11 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
   }, [selectedRun?.stepLog, selectedStepId]);
 
   useEffect(() => {
+    if (runId) return;
     // New run
     setSelectedRunId(latestRun?.id);
     setSelectedStepId(undefined);
-  }, [workflowRuns.length]);
+  }, [latestRun?.id, runId]);
 
   useEffect(() => {
     setSelectedStepId(undefined);
