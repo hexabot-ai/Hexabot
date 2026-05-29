@@ -4,6 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
+import { useUpdateNodeInternals } from "@xyflow/react";
+import { useLayoutEffect } from "react";
+
+import { useWorkflowGraphHost } from "../../contexts/workflow-graph-host.context";
 import { useWorkflowNode } from "../../hooks/useWorkflowNode";
 import {
   ENodeType,
@@ -24,7 +28,13 @@ export const GenericNodePorts = <T extends ENodeType = ENodeType>({
     node: IWorkflowNodeContext<T>;
   }) => boolean;
 }) => {
+  const { direction } = useWorkflowGraphHost();
   const workflowNode = useWorkflowNode<T>();
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  useLayoutEffect(() => {
+    updateNodeInternals(workflowNode.id);
+  }, [direction, updateNodeInternals, workflowNode.id]);
 
   return (workflowNode.ports as WorkflowNodePort<T>[])?.map((portDef, idx) => {
     const port = getWorkflowPortId(portDef);
