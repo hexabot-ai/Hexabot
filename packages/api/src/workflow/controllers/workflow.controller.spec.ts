@@ -36,7 +36,6 @@ import {
   messagingWorkflowFixtures,
 } from '@/utils/test/fixtures/workflow';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WebsocketGateway } from '@/websocket/websocket.gateway';
 import {
@@ -226,13 +225,6 @@ describe('WorkflowController (TypeORM)', () => {
       await workflowService.deleteOne(id);
       createdWorkflowIds.delete(id);
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findMany', () => {

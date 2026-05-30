@@ -17,7 +17,6 @@ import { userFixtureIds } from '@/utils/test/fixtures/user';
 import { installScheduledWorkflowFixturesTypeOrm } from '@/utils/test/fixtures/workflow';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
 import {
-  closeTypeOrmConnections,
   getLastTypeOrmDataSource,
 } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
@@ -146,7 +145,6 @@ describe('WorkflowSchedulerService (TypeORM)', () => {
     if (module) {
       await module.close();
     }
-    await closeTypeOrmConnections();
   });
 
   it('registers cron jobs for scheduled workflows and triggers the agent handler', async () => {

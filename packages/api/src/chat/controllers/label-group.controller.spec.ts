@@ -13,7 +13,6 @@ import {
   installLabelGroupFixturesTypeOrm,
   labelGroupFixtures,
 } from '@/utils/test/fixtures/label-group';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelGroupCreateDto } from '../dto/label-group.dto';
@@ -46,13 +45,6 @@ describe('LabelGroupController', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findPage', () => {

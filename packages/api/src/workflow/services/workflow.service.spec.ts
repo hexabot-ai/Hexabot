@@ -19,7 +19,6 @@ import {
   installUserFixturesTypeOrm,
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WebsocketGateway } from '@/websocket';
 import {
@@ -157,13 +156,6 @@ describe('WorkflowService (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   it('creates workflows and returns stored definitions', async () => {

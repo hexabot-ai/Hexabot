@@ -9,7 +9,6 @@ import { TestingModule } from '@nestjs/testing';
 
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { roleFixtureIds, roleOrmFixtures } from '@/utils/test/fixtures/role';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { PermissionRepository } from '../repositories/permission.repository';
@@ -55,13 +54,6 @@ describe('RoleService (TypeORM)', () => {
     permissions = await permissionRepository.find({
       where: { role: { id: roleFixtureIds.admin } },
     });
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(jest.clearAllMocks);

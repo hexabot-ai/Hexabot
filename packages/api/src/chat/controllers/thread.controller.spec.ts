@@ -12,7 +12,6 @@ import { ThreadOrmEntity } from '@/chat/entities/thread.entity';
 import { ThreadService } from '@/chat/services/thread.service';
 import { TypeOrmSearchFilterPipe } from '@/utils/pipes/typeorm-search-filter.pipe';
 import { installMessageFixturesTypeOrm } from '@/utils/test/fixtures/message';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
@@ -63,13 +62,6 @@ describe('ThreadController (TypeORM)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('count', () => {

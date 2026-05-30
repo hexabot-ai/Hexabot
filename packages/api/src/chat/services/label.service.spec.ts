@@ -10,7 +10,6 @@ import { In } from 'typeorm';
 import { IGNORED_TEST_FIELDS } from '@/utils/test/constants';
 import { labelFixtures } from '@/utils/test/fixtures/label';
 import { installSubscriberFixturesTypeOrm } from '@/utils/test/fixtures/subscriber';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelRepository } from '../repositories/label.repository';
@@ -47,13 +46,6 @@ describe('LabelService (TypeORM)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findAllAndPopulate', () => {

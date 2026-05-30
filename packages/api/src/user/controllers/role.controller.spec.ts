@@ -11,7 +11,6 @@ import { Request } from 'express';
 
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { roleFixtureIds, roleOrmFixtures } from '@/utils/test/fixtures/role';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { RoleCreateDto, RoleUpdateDto } from '../dto/role.dto';
@@ -61,13 +60,6 @@ describe('RoleController (TypeORM)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findPage', () => {

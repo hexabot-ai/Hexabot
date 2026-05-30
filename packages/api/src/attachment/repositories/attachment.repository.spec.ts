@@ -15,7 +15,6 @@ import {
   installAttachmentFixturesTypeOrm,
 } from '@/utils/test/fixtures/attachment';
 import { installUserFixturesTypeOrm } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
@@ -54,13 +53,6 @@ describe('AttachmentRepository (TypeORM)', () => {
       await repository.deleteOne(id);
       createdAttachmentIds.delete(id);
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('configuration', () => {

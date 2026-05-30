@@ -11,7 +11,6 @@ import {
   installPermissionFixturesTypeOrm,
   permissionOrmFixtures,
 } from '@/utils/test/fixtures/permission';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ModelRepository } from '../repositories/model.repository';
@@ -58,13 +57,6 @@ describe('PermissionService (TypeORM)', () => {
   });
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
 
   describe('findOneAndPopulate', () => {
     it('should find a permission and populate its role and model', async () => {

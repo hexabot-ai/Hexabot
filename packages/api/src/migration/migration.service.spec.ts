@@ -16,7 +16,6 @@ import { config } from '@/config';
 import { LoggerService } from '@/logger/logger.service';
 import { MetadataOrmEntity } from '@/setting/entities/metadata.entity';
 import { MetadataService } from '@/setting/services/metadata.service';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MigrationOrmEntity } from './migration.entity';
@@ -110,7 +109,6 @@ describe('MigrationService', () => {
     if (testingModule) {
       await testingModule.close();
     }
-    await closeTypeOrmConnections();
   });
 
   afterEach(() => {

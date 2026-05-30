@@ -17,7 +17,6 @@ import {
   offersMenuFixtures,
   rootMenuFixtures,
 } from '@/utils/test/fixtures/menu';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MenuType } from '../entities/menu.entity';
@@ -40,13 +39,6 @@ describe('MenuService (TypeORM)', () => {
     });
     module = testingModule;
     [menuService, cacheManager] = await getMocks([MenuService, CACHE_MANAGER]);
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(async () => {

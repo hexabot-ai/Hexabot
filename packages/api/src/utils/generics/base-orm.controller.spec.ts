@@ -17,7 +17,6 @@ import {
   dummyFixtures,
   installDummyFixturesTypeOrm,
 } from '@/utils/test/fixtures/dummy';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { DummyController } from '../test/dummy/controllers/dummy.controller';
@@ -53,13 +52,6 @@ describe('BaseOrmController', () => {
       await dummyService.deleteOne(id);
       createdIds.delete(id);
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('count', () => {

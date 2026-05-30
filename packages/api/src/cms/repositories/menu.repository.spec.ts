@@ -10,7 +10,6 @@ import {
   installMenuFixturesTypeOrm,
   rootMenuFixtures,
 } from '@/utils/test/fixtures/menu';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MenuType } from '../entities/menu.entity';
@@ -32,13 +31,6 @@ describe('MenuRepository (TypeORM)', () => {
     });
     module = testingModule;
     [repository] = await getMocks([MenuRepository]);
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(async () => {

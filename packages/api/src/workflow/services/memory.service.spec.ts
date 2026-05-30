@@ -19,7 +19,6 @@ import {
   memoryWorkflowFixtureId,
 } from '@/utils/test/fixtures/memory-record';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import type { WorkflowRuntimeContext } from '../contexts/workflow-runtime.context';
@@ -79,13 +78,6 @@ describe('MemoryService (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   it('throws when ownerId is missing', async () => {

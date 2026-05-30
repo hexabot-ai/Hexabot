@@ -13,7 +13,6 @@ import {
 } from '@/utils/test/fixtures/permission';
 import { roleFixtureIds } from '@/utils/test/fixtures/role';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { PermissionRepository } from './permission.repository';
@@ -57,13 +56,6 @@ describe('RoleRepository (TypeORM)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findOneAndPopulate', () => {

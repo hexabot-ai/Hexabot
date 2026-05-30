@@ -13,7 +13,6 @@ import {
   translationFixtures,
 } from '@/utils/test/fixtures/translation';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 
@@ -57,7 +56,6 @@ describe('TranslationController', () => {
   });
 
   afterEach(jest.clearAllMocks);
-  afterAll(closeTypeOrmConnections);
 
   describe('findOne', () => {
     it('should find one translation by id', async () => {

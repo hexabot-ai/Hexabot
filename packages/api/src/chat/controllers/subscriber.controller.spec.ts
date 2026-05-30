@@ -13,7 +13,6 @@ import {
   installSubscriberFixturesTypeOrm,
   subscriberFixtures,
 } from '@/utils/test/fixtures/subscriber';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { SubscriberController } from './subscriber.controller';
@@ -81,13 +80,6 @@ describe('SubscriberController (TypeORM)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findOne', () => {

@@ -14,7 +14,6 @@ import {
   settingFixtures,
 } from '@/utils/test/fixtures/setting';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
@@ -55,13 +54,6 @@ describe('SettingController', () => {
         RuntimeSettingsService,
         I18nService,
       ]);
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   beforeEach(() => {

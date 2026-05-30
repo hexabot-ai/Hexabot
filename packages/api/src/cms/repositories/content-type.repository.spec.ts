@@ -8,7 +8,6 @@ import { randomUUID } from 'crypto';
 
 import { TestingModule } from '@nestjs/testing';
 
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeRepository } from './content-type.repository';
@@ -29,13 +28,6 @@ describe('ContentTypeRepository (TypeORM)', () => {
       ContentTypeRepository,
       ContentRepository,
     ]);
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('deleteOne cascade', () => {

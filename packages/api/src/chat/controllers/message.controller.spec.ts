@@ -14,7 +14,6 @@ import {
   installMessageFixturesTypeOrm,
   messageFixtures,
 } from '@/utils/test/fixtures/message';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MessageController } from './message.controller';
@@ -85,13 +84,6 @@ describe('MessageController (TypeORM)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findOne', () => {

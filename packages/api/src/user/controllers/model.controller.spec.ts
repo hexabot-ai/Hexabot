@@ -8,7 +8,6 @@ import { ModelFull } from '@hexabot-ai/types';
 import { TestingModule } from '@nestjs/testing';
 
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ModelService } from '../services/model.service';
@@ -40,13 +39,6 @@ describe('ModelController (TypeORM)', () => {
   });
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
 
   describe('find', () => {
     it('should find models', async () => {

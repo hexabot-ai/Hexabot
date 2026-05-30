@@ -18,7 +18,6 @@ import {
   memoryDefinitionFixtureIds,
   memoryDefinitionOrmFixtures,
 } from '@/utils/test/fixtures/memory-definition';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MemoryDefinitionService } from '../services/memory-definition.service';
@@ -75,13 +74,6 @@ describe('MemoryDefinitionController (TypeORM)', () => {
       await service.deleteOne(id);
       createdIds.delete(id);
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('create', () => {

@@ -13,7 +13,6 @@ import {
   installContentFixturesTypeOrm,
 } from '@/utils/test/fixtures/content';
 import { installContentTypeFixturesTypeOrm } from '@/utils/test/fixtures/contenttype';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeService } from './content-type.service';
@@ -45,13 +44,6 @@ describe('ContentService (TypeORM)', () => {
       ContentTypeService,
     ]);
     logger = contentService.logger;
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(async () => {

@@ -23,7 +23,6 @@ import {
   installMessagingWorkflowFixturesTypeOrm,
   messagingWorkflowDefinition,
 } from '@/utils/test/fixtures/workflow';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WorkflowContextFactory } from '@/workflow/contexts/workflow-context-factory';
 import { WorkflowRunOrmEntity } from '@/workflow/entities/workflow-run.entity';
@@ -221,13 +220,6 @@ describe('AgenticService (TypeORM)', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('handleEvent', () => {

@@ -24,7 +24,6 @@ import { MenuService } from '@/cms/services/menu.service';
 import { installLabelGroupFixturesTypeOrm } from '@/utils/test/fixtures/label-group';
 import { installMessageFixturesTypeOrm } from '@/utils/test/fixtures/message';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { SocketRequest } from '@/websocket/utils/socket-request';
 import { SocketResponse } from '@/websocket/utils/socket-response';
@@ -163,7 +162,6 @@ describe('WebChannelHandler', () => {
     if (module) {
       await module.close();
     }
-    await closeTypeOrmConnections();
   });
 
   it('should have correct name', () => {

@@ -10,7 +10,6 @@ import { Repository } from 'typeorm';
 
 import { MessageOrmEntity } from '@/chat/entities/message.entity';
 import { installMessageFixturesTypeOrm } from '@/utils/test/fixtures/message';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MessageRepository } from './message.repository';
@@ -46,13 +45,6 @@ describe('MessageRepository (TypeORM)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findOneAndPopulate', () => {

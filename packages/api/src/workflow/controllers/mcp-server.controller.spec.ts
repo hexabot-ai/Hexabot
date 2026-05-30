@@ -17,7 +17,6 @@ import {
   mcpServerFixtureIds,
   mcpServerOrmFixtures,
 } from '@/utils/test/fixtures/mcp-server';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { McpClientPoolService } from '../services/mcp-client-pool.service';
@@ -82,13 +81,6 @@ describe('McpServerController (TypeORM)', () => {
       await service.deleteOne(id);
       createdIds.delete(id);
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('create', () => {

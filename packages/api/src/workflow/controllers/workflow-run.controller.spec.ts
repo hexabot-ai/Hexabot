@@ -16,7 +16,6 @@ import {
   workflowRunFixtureIds,
   workflowRunOrmFixtures,
 } from '@/utils/test/fixtures/workflow-run';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { WorkflowRunService } from '../services/workflow-run.service';
@@ -47,13 +46,6 @@ describe('WorkflowRunController (TypeORM)', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findMany', () => {

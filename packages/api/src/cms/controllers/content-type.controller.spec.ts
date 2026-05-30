@@ -12,7 +12,6 @@ import {
   contentTypeOrmFixtures,
   installContentTypeFixturesTypeOrm,
 } from '@/utils/test/fixtures/contenttype';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeCreateDto } from '../dto/contentType.dto';
@@ -42,13 +41,6 @@ describe('ContentTypeController (TypeORM)', () => {
       ContentTypeService,
     ]);
     logger = controller.logger;
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(async () => {

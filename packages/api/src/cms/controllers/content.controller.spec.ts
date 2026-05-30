@@ -15,7 +15,6 @@ import {
   installContentFixturesTypeOrm,
 } from '@/utils/test/fixtures/content';
 import { installContentTypeFixturesTypeOrm } from '@/utils/test/fixtures/contenttype';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeService } from '../services/content-type.service';
@@ -56,13 +55,6 @@ describe('ContentController (TypeORM)', () => {
         RagService,
       ]);
     logger = controller.logger;
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(async () => {

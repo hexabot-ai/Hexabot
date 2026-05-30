@@ -13,7 +13,6 @@ import {
   installLanguageFixturesTypeOrm,
   languageFixtures,
 } from '@/utils/test/fixtures/language';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LanguageUpdateDto } from '../dto/language.dto';
@@ -47,7 +46,6 @@ describe('LanguageController', () => {
   });
 
   afterEach(jest.clearAllMocks);
-  afterAll(closeTypeOrmConnections);
 
   describe('findOne', () => {
     it('should find one translation by id', async () => {

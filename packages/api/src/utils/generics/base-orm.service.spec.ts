@@ -17,7 +17,6 @@ import {
   dummyFixtures,
   installDummyFixturesTypeOrm,
 } from '@/utils/test/fixtures/dummy';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 describe('BaseOrmService', () => {
@@ -52,13 +51,6 @@ describe('BaseOrmService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('utilities', () => {

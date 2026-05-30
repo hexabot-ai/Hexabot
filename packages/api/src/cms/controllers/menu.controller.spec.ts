@@ -13,7 +13,6 @@ import {
   offerMenuFixture,
   rootMenuFixtures,
 } from '@/utils/test/fixtures/menu';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MenuType } from '../entities/menu.entity';
@@ -39,13 +38,6 @@ describe('MenuController (TypeORM)', () => {
     module = testingModule;
     [controller, menuService] = await getMocks([MenuController, MenuService]);
     logger = controller.logger;
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(async () => {

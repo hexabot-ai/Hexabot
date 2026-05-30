@@ -17,7 +17,6 @@ import {
   installMessagingWorkflowFixturesTypeOrm,
   installScheduledWorkflowFixturesTypeOrm,
 } from '@/utils/test/fixtures/workflow';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { WorkflowVersionService } from '../services/workflow-version.service';
@@ -89,13 +88,6 @@ describe('WorkflowVersionController (TypeORM)', () => {
       await workflowService.deleteOne(id);
       createdWorkflowIds.delete(id);
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findMany', () => {

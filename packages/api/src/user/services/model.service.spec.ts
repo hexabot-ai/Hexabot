@@ -9,7 +9,6 @@ import { TestingModule } from '@nestjs/testing';
 
 import { modelFixtureIds, modelOrmFixtures } from '@/utils/test/fixtures/model';
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ModelOrmEntity as ModelEntity } from '../entities/model.entity';
@@ -53,13 +52,6 @@ describe('ModelService (TypeORM)', () => {
   });
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
 
   describe('findOneAndPopulate', () => {
     it('should find a model and populate its permissions', async () => {

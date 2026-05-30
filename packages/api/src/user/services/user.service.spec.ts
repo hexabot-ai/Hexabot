@@ -10,7 +10,6 @@ import { TestingModule } from '@nestjs/testing';
 import { IGNORED_TEST_FIELDS } from '@/utils/test/constants';
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { userFixtures } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { UserRepository } from '../repositories/user.repository';
@@ -55,13 +54,6 @@ describe('UserService (TypeORM)', () => {
   }, 30000);
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
 
   describe('findOneAndPopulate', () => {
     it('should find one user and populate its roles', async () => {

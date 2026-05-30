@@ -16,7 +16,6 @@ import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permissi
 import { users } from '@/utils/test/fixtures/user';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
 import { MailerServiceProvider } from '@/utils/test/providers/mailer-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { UserRepository } from '../repositories/user.repository';
@@ -70,13 +69,6 @@ describe('PasswordResetService (TypeORM)', () => {
   });
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
 
   describe('requestReset', () => {
     it('should send an email with a token', async () => {

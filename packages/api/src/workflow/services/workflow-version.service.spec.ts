@@ -19,7 +19,6 @@ import {
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
 import {
-  closeTypeOrmConnections,
   getLastTypeOrmDataSource,
 } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
@@ -67,13 +66,6 @@ describe('WorkflowVersionService (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('createSnapshot', () => {

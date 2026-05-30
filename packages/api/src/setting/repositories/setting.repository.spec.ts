@@ -15,7 +15,6 @@ import {
   installSettingFixturesTypeOrm,
   settingFixtures,
 } from '@/utils/test/fixtures/setting';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { SettingOrmEntity } from '../entities/setting.entity';
@@ -50,13 +49,6 @@ describe('SettingRepository (TypeORM)', () => {
       await repository.delete(createdIds);
       createdIds.length = 0;
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findAll', () => {

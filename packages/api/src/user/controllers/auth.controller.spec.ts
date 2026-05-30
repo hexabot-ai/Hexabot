@@ -16,7 +16,6 @@ import { installLanguageFixturesTypeOrm } from '@/utils/test/fixtures/language';
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
 import { MailerServiceProvider } from '@/utils/test/providers/mailer-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LocalAuthController } from './auth.controller';
@@ -88,13 +87,6 @@ describe('AuthController (TypeORM)', () => {
   });
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
 
   describe('session payload', () => {
     it('should include license snapshot in /auth/me payload', async () => {

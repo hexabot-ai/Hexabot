@@ -12,7 +12,6 @@ import {
   memoryDefinitionOrmFixtures,
 } from '@/utils/test/fixtures/memory-definition';
 import { installMemoryRecordFixturesTypeOrm } from '@/utils/test/fixtures/memory-record';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MemoryScope } from '../types';
@@ -54,13 +53,6 @@ describe('MemoryDefinitionService (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
     jest.useRealTimers();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findBySlug', () => {

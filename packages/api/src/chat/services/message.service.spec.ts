@@ -13,7 +13,6 @@ import {
   installMessageFixturesTypeOrm,
   messageFixtures,
 } from '@/utils/test/fixtures/message';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 describe('MessageService (TypeORM)', () => {
@@ -79,13 +78,6 @@ describe('MessageService (TypeORM)', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findOneAndPopulate', () => {

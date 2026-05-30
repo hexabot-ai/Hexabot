@@ -13,7 +13,6 @@ import { In } from 'typeorm';
 
 import { installLabelFixturesTypeOrm } from '@/utils/test/fixtures/label';
 import { installSubscriberFixturesTypeOrm } from '@/utils/test/fixtures/subscriber';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelCreateDto, LabelUpdateDto } from '../dto/label.dto';
@@ -53,13 +52,6 @@ describe('LabelController (TypeORM)', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('findPage', () => {

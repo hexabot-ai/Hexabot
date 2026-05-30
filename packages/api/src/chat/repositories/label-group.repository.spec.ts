@@ -13,7 +13,6 @@ import {
   installLabelGroupFixturesTypeOrm,
   labelGroupFixtures,
 } from '@/utils/test/fixtures/label-group';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelGroupRepository } from './label-group.repository';
@@ -55,13 +54,6 @@ describe('LabelGroupRepository (TypeORM)', () => {
       const ids = createdGroupIds.splice(0);
       await Promise.all(ids.map((id) => labelGroupRepository.deleteOne(id)));
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   describe('populate helpers', () => {

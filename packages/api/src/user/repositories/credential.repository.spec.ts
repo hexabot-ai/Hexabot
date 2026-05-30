@@ -12,7 +12,6 @@ import { Repository } from 'typeorm';
 
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { CredentialOrmEntity } from '../entities/credential.entity';
@@ -61,13 +60,6 @@ describe('CredentialRepository (TypeORM)', () => {
       await ormRepository.delete(createdCredentialIds);
       createdCredentialIds.length = 0;
     }
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   const createPersistedCredential = async (

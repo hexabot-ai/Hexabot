@@ -11,7 +11,6 @@ import LocalStorageHelper from '@/extensions/helpers/local-storage/index.helper'
 import { HelperService } from '@/helper/helper.service';
 import { SettingService } from '@/setting/services/setting.service';
 import { installSettingFixturesTypeOrm } from '@/utils/test/fixtures/setting';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { CleanupService } from './cleanup.service';
@@ -53,13 +52,6 @@ describe('CleanupService', () => {
     initialSettings = await settingService.findAll();
 
     helperService.register(new LocalStorageHelper());
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(async () => {

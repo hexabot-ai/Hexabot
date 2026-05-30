@@ -10,7 +10,6 @@ import {
   contentTypeOrmFixtures,
   installContentTypeFixturesTypeOrm,
 } from '@/utils/test/fixtures/contenttype';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeDto } from '../dto/contentType.dto';
@@ -32,13 +31,6 @@ describe('ContentTypeService (TypeORM)', () => {
     });
     module = testingModule;
     [service] = await getMocks([ContentTypeService]);
-  });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(async () => {
