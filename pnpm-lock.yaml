@@ -345,6 +345,9 @@ importers:
       '@resvg/resvg-js-linux-arm64-musl':
         specifier: ^2.6.2
         version: 2.6.2
+      '@resvg/resvg-js-linux-x64-gnu':
+        specifier: 2.6.2
+        version: 2.6.2
       '@resvg/resvg-js-win32-x64-msvc':
         specifier: 2.6.2
         version: 2.6.2

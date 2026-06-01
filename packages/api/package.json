@@ -180,6 +180,7 @@
     "@css-inline/css-inline-linux-arm64-musl": "^0.14.1",
     "@resvg/resvg-js-darwin-arm64": "^2.6.2",
     "@resvg/resvg-js-linux-arm64-musl": "^2.6.2",
+    "@resvg/resvg-js-linux-x64-gnu": "2.6.2",
     "@resvg/resvg-js-win32-x64-msvc": "2.6.2"
   },
   "jest": {
