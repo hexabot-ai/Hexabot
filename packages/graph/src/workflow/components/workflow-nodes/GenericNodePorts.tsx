@@ -34,7 +34,7 @@ export const GenericNodePorts = <T extends ENodeType = ENodeType>({
 
   useLayoutEffect(() => {
     updateNodeInternals(workflowNode.id);
-  }, [direction, updateNodeInternals, workflowNode.id]);
+  }, [direction, updateNodeInternals, workflowNode.id, workflowNode.ports]);
 
   return (workflowNode.ports as WorkflowNodePort<T>[])?.map((portDef, idx) => {
     const port = getWorkflowPortId(portDef);
