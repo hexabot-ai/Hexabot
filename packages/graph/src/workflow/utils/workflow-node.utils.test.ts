@@ -1410,6 +1410,88 @@ describe("buildNodesAndEdges", () => {
     expect(placeholderToAfter?.hidden).toBe(true);
   });
 
+  it("expands the loop group bounds to enclose AI agent binding attachments", async () => {
+    const loopStep: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:agent", "agent")],
+    };
+    const flow: CompiledStep[] = [
+      loopStep,
+      taskStep("1:after_loop", "after_loop"),
+    ];
+    const tasks: TestTaskDefinitions = {
+      agent: {
+        action: "agent_action",
+        bindings: {
+          tools: ["search_tool"],
+          memory: ["profile_memory"],
+          model: "openai_model",
+          mcp: ["mcp_server"],
+        },
+        settings: {},
+      },
+      after_loop: { action: "after_action", settings: {} },
+    };
+    const graph = await buildGraph({
+      flow,
+      tasks,
+      defs: {
+        search_tool: { kind: "tools", settings: {} },
+        profile_memory: { kind: "memory", settings: {} },
+        openai_model: { kind: "model", settings: {} },
+        mcp_server: { kind: "mcp", settings: {} },
+      },
+      actionCatalog: createActionCatalog({
+        agent_action: ["tools", "memory", "model", "mcp"],
+      }),
+      bindingCatalog: createBindingCatalog([
+        { kind: "tools", multiple: true },
+        { kind: "memory", multiple: true },
+        { kind: "model", multiple: false },
+        { kind: "mcp", multiple: true },
+      ]),
+    });
+    const loopGroup = graph.nodes.find(
+      (node) => node.id === createGroupId(loopStep.id),
+    );
+    const agentAttachments = graph.nodes.filter(
+      (node) =>
+        node.type === ENodeType.BINDING_SINGLE ||
+        node.type === ENodeType.BINDING_MULTI,
+    );
+
+    expect(loopGroup).toBeDefined();
+    expect(agentAttachments.length).toBeGreaterThan(0);
+
+    const groupStyle = loopGroup?.style as
+      | { width: number; height: number }
+      | undefined;
+    const groupPosition = loopGroup?.position as
+      | { x: number; y: number }
+      | undefined;
+
+    expect(groupStyle).toBeDefined();
+    expect(groupPosition).toBeDefined();
+
+    const groupBottom = groupPosition!.y + groupStyle!.height;
+    const attachmentBottom = Math.max(
+      ...agentAttachments.map(
+        (node) =>
+          node.position.y +
+          (NODE_METRICS[node.type as ENodeType]?.dimensions.height ?? 0),
+      ),
+    );
+
+    expect(groupBottom).toBeGreaterThanOrEqual(attachmentBottom);
+  });
+
   it("attaches end-indicator edges with next insert path metadata", async () => {
     const flow: CompiledStep[] = [taskStep("0:single", "single")];
     const graph = await buildGraph({ flow, tasks: baseTasks(["single"]) });

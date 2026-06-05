@@ -498,24 +498,70 @@ const getGroupNodes = (
   nodes: GraphNode[],
   groups: Map<string, GroupMeta>,
   config: INodeConfig,
+  attachmentEdges: Edge[],
 ) => {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const groupNodes: GraphNode<ENodeType.GROUP>[] = [];
+  const attachmentChildrenByParent = new Map<string, Set<string>>();
 
-  groups.forEach((group) => {
-    const groupMembers = [...group.memberNodeIds]
-      .map((nodeId) => nodesById.get(nodeId))
-      .filter((node): node is GraphNode => Boolean(node));
-
-    if (!groupMembers.length) {
+  attachmentEdges.forEach(({ source, target }) => {
+    if (!nodesById.has(source) || !nodesById.has(target)) {
       return;
     }
 
+    if (!attachmentChildrenByParent.has(source)) {
+      attachmentChildrenByParent.set(source, new Set());
+    }
+
+    attachmentChildrenByParent.get(source)!.add(target);
+  });
+
+  const collectAttachmentDescendants = (rootId: string): string[] => {
+    const result: string[] = [];
+    const stack = [rootId];
+
+    while (stack.length) {
+      const current = stack.pop()!;
+      const children = attachmentChildrenByParent.get(current);
+
+      if (!children) {
+        continue;
+      }
+
+      children.forEach((childId) => {
+        if (!nodesById.has(childId)) {
+          return;
+        }
+
+        result.push(childId);
+        stack.push(childId);
+      });
+    }
+
+    return result;
+  };
+  const groupNodes: GraphNode<ENodeType.GROUP>[] = [];
+
+  groups.forEach((group) => {
+    const groupMemberIds = [...group.memberNodeIds].filter((nodeId) =>
+      nodesById.has(nodeId),
+    );
+
+    if (!groupMemberIds.length) {
+      return;
+    }
+
+    const boundsMemberIds = [
+      ...groupMemberIds,
+      ...groupMemberIds.flatMap(collectAttachmentDescendants),
+    ];
+    const boundsMembers = boundsMemberIds
+      .map((nodeId) => nodesById.get(nodeId))
+      .filter((node): node is GraphNode => Boolean(node));
     const color = config.highlights?.[group.operatorType]?.color;
     const basePadding = config.highlights?.[group.operatorType]?.padding || 0;
     const padding = getGroupPadding(basePadding, group.level);
     const backgroundAlpha = getGroupBackgroundAlpha(group.level);
-    const bounds = getNodesBounds(groupMembers);
+    const bounds = getNodesBounds(boundsMembers);
 
     groupNodes.push({
       ...DEFAULT_NODE_PROPS,
@@ -574,7 +620,12 @@ export const buildNodesAndEdges = async ({
       config,
     },
   );
-  const groupNodes = getGroupNodes(positionedNodes, traversal.groups, config);
+  const groupNodes = getGroupNodes(
+    positionedNodes,
+    traversal.groups,
+    config,
+    projected.edges.filter(isAttachmentEdge),
+  );
 
   return {
     edges: projected.edges,
