@@ -970,7 +970,32 @@ const walkStep = ({
 
             return portDef;
           })
-        : operatorBaseData.ports;
+        : operatorType === StepType.Loop
+          ? operatorBaseData.ports.map((portDef) => {
+              if (portDef === ELinkType.OPERATOR_OUT) {
+                return {
+                  id: ELinkType.OPERATOR_OUT,
+                  label: `visual_editor.loop_drawer.form.type.${
+                    (step as CompiledLoopStep).loopType
+                  }.label`,
+                };
+              }
+
+              if (
+                typeof portDef !== "string" &&
+                portDef.id === ELinkType.OPERATOR_OUT
+              ) {
+                return {
+                  ...portDef,
+                  label: `visual_editor.loop_drawer.form.type.${
+                    (step as CompiledLoopStep).loopType
+                  }.label`,
+                };
+              }
+
+              return portDef;
+            })
+          : operatorBaseData.ports;
   const resolvedPorts: WorkflowNodePort<ENodeType.OPERATOR>[] =
     operatorType === StepType.Conditional
       ? [ELinkType.OPERATOR_IN, ...ports]
