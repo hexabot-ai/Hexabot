@@ -29,6 +29,10 @@ import {
 
 import { withAlpha } from "./color.utils";
 import { decorateSemanticGraph } from "./graph-builder/decorate";
+import {
+  END_INDICATOR_ID,
+  START_INDICATOR_ID,
+} from "./graph-builder/id-factory";
 import { projectSemanticGraph } from "./graph-builder/project";
 import { traverseWorkflow } from "./graph-builder/traverse";
 import type { GroupMeta } from "./graph-builder/types";
@@ -494,6 +498,838 @@ const addExtraNodes = (
     ...overrides.get(node.id),
   }));
 };
+/**
+ * For every empty conditional branch (i.e. a BRANCH_PLACEHOLDER whose sole
+ * incoming edge originates directly from an OPERATOR node):
+ *
+ * 1. **Flow-direction alignment** – shift the placeholder's flow-axis position
+ *    (x in horizontal mode, y in vertical mode) to match the first task/operator
+ *    node of any sibling non-empty branch, so it starts at the same depth as
+ *    the branch content.
+ *
+ * 2. **Branch-spread positioning** – ELK compresses empty-branch placeholders
+ *    and may place them at y-positions that collide with nodes from other
+ *    branches once the x-alignment moves them into the same column.  This pass
+ *    always derives a safe spread-axis position from the branch-index order:
+ *
+ *      targetSpread = anchorSpread + gap × (emptyBranchIndex − anchorBranchIndex)
+ *
+ *    where `anchorSpread` is the ELK-assigned spread position of the nearest
+ *    non-empty branch first-node, and `gap` is the uniform inter-branch spacing
+ *    measured from ELK's layout.  This guarantees:
+ *    - Visual order matches branch-index order (branch 0 above branch 1 above …)
+ *    - No collisions with sibling non-empty branch nodes
+ *    - Non-empty branch nodes are never moved
+ *
+ * In horizontal mode: flow axis = x, branch-spread axis = y.
+ * In vertical mode:   flow axis = y, branch-spread axis = x.
+ */
+const alignEmptyBranchPlaceholders = (
+  nodes: GraphNode[],
+  edges: Edge[],
+  ctx: LayoutContext,
+): GraphNode[] => {
+  const isVertical = !isHorizontalDirection(ctx);
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  // Build outgoing-edge map with source handles: sourceId → [{targetId, sourceHandle}]
+  const outgoingBySource = new Map<
+    string,
+    Array<{ targetId: string; sourceHandle?: string }>
+  >();
+  // Build attachment-children map: nodeId → [attachmentNodeIds]
+  const attachmentChildrenByParent = new Map<string, string[]>();
+
+  edges.forEach(({ source, target, sourceHandle }) => {
+    outgoingBySource.set(source, [
+      ...(outgoingBySource.get(source) ?? []),
+      { targetId: target, sourceHandle: sourceHandle ?? undefined },
+    ]);
+
+    if (isAttachmentSourceHandle(sourceHandle)) {
+      attachmentChildrenByParent.set(source, [
+        ...(attachmentChildrenByParent.get(source) ?? []),
+        target,
+      ]);
+    }
+  });
+
+  // Compute the full spread-axis extent of a node including all its attachment
+  // descendants.  In horizontal mode attachments extend below the task (y+h),
+  // in vertical mode they extend to the left so they do NOT increase x+w.
+  const nodeSpreadExtent = (node: GraphNode): number => {
+    const dims = getWorkflowNodeDimensions(node.type, ctx.config);
+    let maxExtent =
+      (isVertical ? node.position.x : node.position.y) +
+      (isVertical ? dims.width : dims.height);
+
+    if (!isVertical) {
+      // Horizontal mode: attachments are placed below the task.
+      // Walk the attachment tree to find the furthest bottom edge.
+      const stack = [node.id];
+
+      while (stack.length) {
+        const current = stack.pop()!;
+        const children = attachmentChildrenByParent.get(current) ?? [];
+
+        children.forEach((childId) => {
+          const child = nodesById.get(childId);
+
+          if (!child) {
+            return;
+          }
+
+          const childDims = getWorkflowNodeDimensions(child.type, ctx.config);
+          const childExtent = child.position.y + childDims.height;
+
+          if (childExtent > maxExtent) {
+            maxExtent = childExtent;
+          }
+
+          stack.push(childId);
+        });
+      }
+    }
+
+    return maxExtent;
+  };
+  // Extract branchIndex from an operatorOut source handle: "operatorOut-{idx}-{total}"
+  const parseBranchIndex = (handle?: string): number => {
+    if (!handle) {
+      return -1;
+    }
+
+    const match = handle.match(/operatorOut-(\d+)-\d+/);
+
+    return match ? parseInt(match[1], 10) : -1;
+  };
+  const operatorIds = new Set(
+    nodes.filter((n) => n.type === ENodeType.OPERATOR).map((n) => n.id),
+  );
+  const overrides = new Map<string, { x: number; y: number }>();
+
+  operatorIds.forEach((operatorId) => {
+    const operatorNode = nodesById.get(operatorId);
+
+    if (!operatorNode) {
+      return;
+    }
+
+    // Build a list of all branch slots in branch-index order.
+    type BranchSlot = {
+      branchIndex: number;
+      node: GraphNode;
+      isEmpty: boolean;
+    };
+    const slots: BranchSlot[] = (outgoingBySource.get(operatorId) ?? [])
+      .map(({ targetId, sourceHandle }) => {
+        const node = nodesById.get(targetId);
+
+        if (!node) {
+          return null;
+        }
+
+        return {
+          branchIndex: parseBranchIndex(sourceHandle),
+          node,
+          isEmpty: node.type === ENodeType.BRANCH_PLACEHOLDER,
+        };
+      })
+      .filter((s): s is BranchSlot => s !== null && s.branchIndex >= 0)
+      .sort((a, b) => a.branchIndex - b.branchIndex);
+    const emptySlots = slots.filter((s) => s.isEmpty);
+
+    if (!emptySlots.length) {
+      return;
+    }
+
+    const nonEmptySlots = slots.filter((s) => !s.isEmpty);
+    // ── 1. Flow-direction alignment ──────────────────────────────────────────
+    // Move each empty placeholder's flow-axis (x in horizontal) to match the
+    // minimum flow-axis position of sibling non-empty branch first-nodes.
+    // When all branches are empty, place placeholders one ELK inter-layer gap
+    // after the operator — identical to ELK's natural position for a direct
+    // operator → placeholder edge (same arrow length as the empty branch of a
+    // mixed conditional).
+    const ELK_BETWEEN_LAYERS = 186;
+    const flowTarget = nonEmptySlots.length
+      ? Math.min(
+          ...nonEmptySlots.map((s) =>
+            isVertical ? s.node.position.y : s.node.position.x,
+          ),
+        )
+      : (isVertical ? operatorNode.position.y : operatorNode.position.x) +
+        (isVertical
+          ? getWorkflowNodeDimensions(operatorNode.type, ctx.config).height
+          : getWorkflowNodeDimensions(operatorNode.type, ctx.config).width) +
+        ELK_BETWEEN_LAYERS;
+
+    emptySlots.forEach(({ node: placeholder }) => {
+      const currentFlow = isVertical
+        ? placeholder.position.y
+        : placeholder.position.x;
+
+      if (Math.abs(currentFlow - flowTarget) > 0.5) {
+        overrides.set(placeholder.id, {
+          x: isVertical ? placeholder.position.x : flowTarget,
+          y: isVertical ? flowTarget : placeholder.position.y,
+        });
+      }
+    });
+
+    // ── 2. Branch-spread positioning ─────────────────────────────────────────
+    const placeholderDims = getWorkflowNodeDimensions(
+      ENodeType.BRANCH_PLACEHOLDER,
+      ctx.config,
+    );
+    const phSize = isVertical ? placeholderDims.width : placeholderDims.height;
+
+    // When all branches are empty there is no non-empty anchor to compute from.
+    // Distribute the placeholders evenly along the spread axis, centered on the
+    // operator's spread-axis midpoint. Use a task-sized slot pitch
+    // (taskSize + ELK node-node spacing = 86 + 64 = 150 px) so the spacing
+    // matches what ELK produces for branches that each hold one task node.
+    // The placeholder is centered within each slot.
+    if (!nonEmptySlots.length) {
+      const ELK_NODE_NODE_SPACING = 64;
+      const taskDims = getWorkflowNodeDimensions(ENodeType.TASK, ctx.config);
+      const slotSize = isVertical ? taskDims.width : taskDims.height;
+      const pitch = slotSize + ELK_NODE_NODE_SPACING;
+      const slotOffset = (slotSize - phSize) / 2;
+      const operatorDims = getWorkflowNodeDimensions(
+        operatorNode.type,
+        ctx.config,
+      );
+      const operatorSpreadCenter =
+        (isVertical ? operatorNode.position.x : operatorNode.position.y) +
+        (isVertical ? operatorDims.width : operatorDims.height) / 2;
+      const totalSpan = (emptySlots.length - 1) * pitch;
+      const firstSlotLeadingEdge =
+        operatorSpreadCenter - totalSpan / 2 - slotSize / 2;
+
+      emptySlots.forEach(({ node: placeholder }, idx) => {
+        const targetLeadingEdge =
+          firstSlotLeadingEdge + idx * pitch + slotOffset;
+        const existing = overrides.get(placeholder.id) ?? placeholder.position;
+
+        overrides.set(placeholder.id, {
+          x: isVertical ? targetLeadingEdge : existing.x,
+          y: isVertical ? existing.y : targetLeadingEdge,
+        });
+      });
+
+      return;
+    }
+
+    // nodeTrailingEdge: the spread-axis extent of a node including its
+    // attachment descendants (e.g. AI-agent binding chips below the task).
+    const nodeTrailingEdge = (node: GraphNode): number =>
+      nodeSpreadExtent(node);
+    // nodeLeadingEdge: the spread-axis edge that faces the previous branch.
+    const nodeLeadingEdge = (node: GraphNode): number =>
+      isVertical ? node.position.x : node.position.y;
+    // nodeCenter: midpoint between leading and trailing edges (with attachments).
+    const nodeCenter = (node: GraphNode): number =>
+      (nodeLeadingEdge(node) + nodeTrailingEdge(node)) / 2;
+    const nonEmptySortedByIndex = [...nonEmptySlots].sort(
+      (a, b) => a.branchIndex - b.branchIndex,
+    );
+    // Derive a fallback per-slot pitch from ELK's layout when there is only
+    // one non-empty branch (used for extrapolation at the edges).
+    let fallbackPitch = 0;
+
+    if (nonEmptySortedByIndex.length >= 2) {
+      const first = nonEmptySortedByIndex[0];
+      const last = nonEmptySortedByIndex[nonEmptySortedByIndex.length - 1];
+      const centerDiff = nodeCenter(last.node) - nodeCenter(first.node);
+      const indexDiff = last.branchIndex - first.branchIndex;
+
+      fallbackPitch = indexDiff > 0 ? centerDiff / indexDiff : 0;
+    }
+
+    if (fallbackPitch <= 0) {
+      // Single non-empty branch: derive pitch from ELK's maximum consecutive gap.
+      const allReps = [...slots].sort((a, b) => {
+        const aPos = isVertical ? a.node.position.x : a.node.position.y;
+        const bPos = isVertical ? b.node.position.x : b.node.position.y;
+
+        return aPos - bPos;
+      });
+
+      for (let i = 1; i < allReps.length; i++) {
+        const prev = isVertical
+          ? allReps[i - 1].node.position.x
+          : allReps[i - 1].node.position.y;
+        const curr = isVertical
+          ? allReps[i].node.position.x
+          : allReps[i].node.position.y;
+
+        fallbackPitch = Math.max(fallbackPitch, curr - prev);
+      }
+    }
+
+    if (fallbackPitch <= 0) {
+      const taskDims = getWorkflowNodeDimensions(ENodeType.TASK, ctx.config);
+
+      fallbackPitch = (isVertical ? taskDims.width : taskDims.height) + 20;
+    }
+
+    // Group empty slots by their (above, below) anchor pair so that multiple
+    // empties between the same two non-empty branches are distributed evenly.
+    type AnchorKey = string;
+    type EmptyGroup = {
+      above: (typeof nonEmptySortedByIndex)[0] | undefined;
+      below: (typeof nonEmptySortedByIndex)[0] | undefined;
+      slots: Array<{ branchIndex: number; node: GraphNode }>;
+    };
+    const emptyGroups = new Map<AnchorKey, EmptyGroup>();
+
+    emptySlots.forEach(({ branchIndex, node: placeholder }) => {
+      const above = nonEmptySortedByIndex
+        .filter((s) => s.branchIndex < branchIndex)
+        .at(-1);
+      const below = nonEmptySortedByIndex.find(
+        (s) => s.branchIndex > branchIndex,
+      );
+      const key = `${above?.branchIndex ?? "none"}_${below?.branchIndex ?? "none"}`;
+
+      if (!emptyGroups.has(key)) {
+        emptyGroups.set(key, { above, below, slots: [] });
+      }
+
+      emptyGroups.get(key)!.slots.push({ branchIndex, node: placeholder });
+    });
+
+    emptyGroups.forEach(({ above, below, slots: groupSlots }) => {
+      // Sort slots within each group by branch index for correct order.
+      groupSlots.sort((a, b) => a.branchIndex - b.branchIndex);
+      const count = groupSlots.length;
+
+      groupSlots.forEach(({ branchIndex, node: placeholder }, slotIdx) => {
+        let targetLeadingEdge: number;
+
+        if (above && below) {
+          // Distribute placeholders evenly in the gap between the above
+          // node's trailing edge and the below node's leading edge.
+          // Equal padding is placed before, between, and after placeholders.
+          // If the gap is too small, placeholders are packed from the center.
+          const gapStart = nodeTrailingEdge(above.node);
+          const gapEnd = nodeLeadingEdge(below.node);
+          const totalPlaceholderSize = count * phSize;
+          const totalPadding = Math.max(
+            0,
+            gapEnd - gapStart - totalPlaceholderSize,
+          );
+          const padding = totalPadding / (count + 1);
+
+          targetLeadingEdge = gapStart + padding + slotIdx * (phSize + padding);
+        } else if (above) {
+          // No branch below — extrapolate forward from above node's trailing edge.
+          // Use fallbackPitch as the slot size (leading-edge to leading-edge).
+          const stepsBelow = branchIndex - above.branchIndex;
+
+          targetLeadingEdge =
+            nodeTrailingEdge(above.node) +
+            (fallbackPitch - phSize) / 2 +
+            (stepsBelow - 1) * fallbackPitch;
+        } else if (below) {
+          // No branch above — extrapolate backward from below node's leading edge.
+          const stepsAbove = below.branchIndex - branchIndex;
+
+          targetLeadingEdge =
+            nodeLeadingEdge(below.node) -
+            (fallbackPitch - phSize) / 2 -
+            stepsAbove * fallbackPitch;
+        } else {
+          return;
+        }
+
+        const existing = overrides.get(placeholder.id) ?? placeholder.position;
+
+        overrides.set(placeholder.id, {
+          x: isVertical ? targetLeadingEdge : existing.x,
+          y: isVertical ? existing.y : targetLeadingEdge,
+        });
+      });
+    });
+  });
+
+  return nodes.map((node) => {
+    const override = overrides.get(node.id);
+
+    if (!override) {
+      return node;
+    }
+
+    return { ...node, position: override };
+  });
+};
+const alignNextNodesWithPlaceholders = (
+  nodes: GraphNode[],
+  edges: Edge[],
+  groups: Map<string, GroupMeta>,
+  ctx: LayoutContext,
+) => {
+  const isVertical = !isHorizontalDirection(ctx);
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodeToInnermostGroup = new Map<string, string>();
+
+  groups.forEach((group, groupId) => {
+    const currentLevel = group.level;
+
+    group.memberNodeIds.forEach((nodeId) => {
+      const existingGroupId = nodeToInnermostGroup.get(nodeId);
+
+      if (!existingGroupId) {
+        nodeToInnermostGroup.set(nodeId, groupId);
+
+        return;
+      }
+
+      const existingLevel = groups.get(existingGroupId)?.level ?? 0;
+
+      if (currentLevel > existingLevel) {
+        nodeToInnermostGroup.set(nodeId, groupId);
+      }
+    });
+  });
+  // Resolve the bounding-box center of each group so the alignment can use
+  // it instead of each branch placeholder's individual position.
+  // This keeps the "next" step aligned to the group's visual midpoint
+  // (the center of the group rectangle), which is also where xyflow connects
+  // overlay edges — keeping Start → group → Stop on the same axis.
+  const groupBBoxCenterByGroupId = new Map<string, number>();
+
+  groups.forEach((group, groupId) => {
+    const memberNodes = [...group.memberNodeIds]
+      .map((id) => nodesById.get(id))
+      .filter((n): n is GraphNode => Boolean(n));
+
+    if (!memberNodes.length) {
+      return;
+    }
+
+    const bounds = getNodesBounds(memberNodes);
+
+    groupBBoxCenterByGroupId.set(
+      groupId,
+      isVertical ? bounds.x + bounds.width / 2 : bounds.y + bounds.height / 2,
+    );
+  });
+  // Collect per-target offset contributions grouped by the *origin* group, so
+  // a Conditional with N branches contributes N entries that all point to the
+  // same operator center. We average them per target below.
+  const offsetContributions = new Map<
+    string,
+    Array<{ x: number; y: number }>
+  >();
+
+  nodes
+    .filter((node) => node.type === ENodeType.BRANCH_PLACEHOLDER)
+    .forEach((placeholder) => {
+      const outgoingEdge = edges.find((edge) => edge.source === placeholder.id);
+
+      if (!outgoingEdge) {
+        return;
+      }
+
+      const target = nodesById.get(outgoingEdge.target);
+
+      if (!target) {
+        return;
+      }
+
+      const originGroupId = nodeToInnermostGroup.get(placeholder.id);
+      const groupBBoxCenter = originGroupId
+        ? groupBBoxCenterByGroupId.get(originGroupId)
+        : undefined;
+      const targetDims = getWorkflowNodeDimensions(target.type, ctx.config);
+      // Use the group's bounding-box center as the reference so the next step
+      // aligns with the group's visual midpoint (where xyflow routes the exit
+      // overlay edge).  Fall back to the placeholder's own center when there
+      // is no group.
+      const referenceCenter =
+        groupBBoxCenter ??
+        (isVertical
+          ? placeholder.position.x +
+            getWorkflowNodeDimensions(placeholder.type, ctx.config).width / 2
+          : placeholder.position.y +
+            getWorkflowNodeDimensions(placeholder.type, ctx.config).height / 2);
+      const targetCenter = isVertical
+        ? target.position.x + targetDims.width / 2
+        : target.position.y + targetDims.height / 2;
+      const offset = isVertical
+        ? { x: referenceCenter - targetCenter, y: 0 }
+        : { x: 0, y: referenceCenter - targetCenter };
+
+      if (offset.x === 0 && offset.y === 0) {
+        return;
+      }
+
+      const contributions = offsetContributions.get(target.id) ?? [];
+
+      contributions.push(offset);
+      offsetContributions.set(target.id, contributions);
+    });
+  const offsets = new Map<string, { x: number; y: number }>();
+
+  offsetContributions.forEach((contributions, targetId) => {
+    const count = contributions.length;
+    const sumX = contributions.reduce((sum, c) => sum + c.x, 0);
+    const sumY = contributions.reduce((sum, c) => sum + c.y, 0);
+    const avgOffset = { x: sumX / count, y: sumY / count };
+
+    if (avgOffset.x === 0 && avgOffset.y === 0) {
+      return;
+    }
+
+    const targetGroupId = nodeToInnermostGroup.get(targetId);
+    const targetGroup = targetGroupId ? groups.get(targetGroupId) : undefined;
+    const memberIds = targetGroup ? [...targetGroup.memberNodeIds] : [targetId];
+
+    memberIds.forEach((id) => {
+      const existing = offsets.get(id) ?? { x: 0, y: 0 };
+
+      offsets.set(id, {
+        x: existing.x + avgOffset.x,
+        y: existing.y + avgOffset.y,
+      });
+    });
+  });
+
+  return nodes.map((node) => {
+    const offset = offsets.get(node.id);
+
+    if (!offset || (offset.x === 0 && offset.y === 0)) {
+      return node;
+    }
+
+    return {
+      ...node,
+      position: {
+        x: node.position.x + offset.x,
+        y: node.position.y + offset.y,
+      },
+    };
+  });
+};
+const alignAllNodesToStartAxis = (
+  nodes: GraphNode[],
+  edges: Edge[],
+  groups: Map<string, GroupMeta>,
+  ctx: LayoutContext,
+) => {
+  const isVertical = !isHorizontalDirection(ctx);
+  const startNode = nodes.find((node) => node.id === START_INDICATOR_ID);
+
+  if (!startNode) {
+    return nodes;
+  }
+
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  // Compute targetAxis from the content nodes (groups and top-level non-indicator
+  // nodes), NOT from Start/Stop positions.  Start/Stop will then be moved to
+  // align with the content axis so they share the same perpendicular position
+  // as the group entry/exit ports.
+  //
+  // For each top-level group, use its bounding-box center.
+  // For each top-level non-indicator, non-attachment node, use its node center.
+  // The targetAxis is the average of all these reference centers.
+  const indicatorIds = new Set([START_INDICATOR_ID, END_INDICATOR_ID]);
+  const processedGroupIds = new Set<string>();
+  const referenceCenters: number[] = [];
+  // Build parent/children maps for attachment edges so we can shift the
+  // entire attachment stack (parent + descendants) as a single unit. Without
+  // this, children would shift independently and break the relative
+  // positioning established by `addExtraNodes`.
+  const attachmentChildrenByParent = new Map<string, string[]>();
+  const attachmentParentByChild = new Map<string, string>();
+
+  edges.forEach((edge) => {
+    if (!isAttachmentEdge(edge)) {
+      return;
+    }
+
+    if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) {
+      return;
+    }
+
+    const children = attachmentChildrenByParent.get(edge.source) ?? [];
+
+    children.push(edge.target);
+    attachmentChildrenByParent.set(edge.source, children);
+    attachmentParentByChild.set(edge.target, edge.source);
+  });
+  // Map every node to its innermost group so the alignment can shift each
+  // group (operator + all its members, including branch placeholders) as a
+  // single unit. Without this, the branch placeholders of a Conditional would
+  // all snap to the reference axis and collapse onto a single line.
+  const nodeToInnermostGroup = new Map<string, string>();
+
+  groups.forEach((group, groupId) => {
+    const currentLevel = group.level;
+
+    group.memberNodeIds.forEach((nodeId) => {
+      const existingGroupId = nodeToInnermostGroup.get(nodeId);
+
+      if (!existingGroupId) {
+        nodeToInnermostGroup.set(nodeId, groupId);
+
+        return;
+      }
+
+      const existingLevel = groups.get(existingGroupId)?.level ?? 0;
+
+      if (currentLevel > existingLevel) {
+        nodeToInnermostGroup.set(nodeId, groupId);
+      }
+    });
+  });
+  // Compute targetAxis from the content reference centers.
+  // Walk all nodes once (skipping attachment children, indicators, and GROUP
+  // overlay nodes) and collect the bounding-box center of each top-level group
+  // and the node center of each standalone non-indicator node.  The targetAxis
+  // is the average of these — Start/Stop will be moved to align with it.
+  nodes.forEach((node) => {
+    if (indicatorIds.has(node.id)) {
+      return;
+    }
+
+    // Skip GROUP overlay nodes — they duplicate the bounding-box center of
+    // their member nodes which are already counted via nodeToInnermostGroup.
+    if (node.type === ENodeType.GROUP) {
+      return;
+    }
+
+    if (attachmentParentByChild.has(node.id)) {
+      return;
+    }
+
+    const groupId = nodeToInnermostGroup.get(node.id);
+
+    if (groupId) {
+      if (processedGroupIds.has(groupId)) {
+        return;
+      }
+
+      processedGroupIds.add(groupId);
+
+      // Use the GROUP overlay node (if present) for the definitive bounding
+      // box since it has the final position+size including padding.
+      const groupOverlay = nodesById.get(groupId);
+
+      if (groupOverlay) {
+        const gStyle = groupOverlay.style as
+          | { width?: number; height?: number }
+          | undefined;
+
+        referenceCenters.push(
+          isVertical
+            ? groupOverlay.position.x + (gStyle?.width ?? 0) / 2
+            : groupOverlay.position.y + (gStyle?.height ?? 0) / 2,
+        );
+
+        return;
+      }
+
+      // Fallback when GROUP overlay node is not in the list yet.
+      const group = groups.get(groupId);
+
+      if (!group) {
+        return;
+      }
+
+      // Include attachment descendants so the bounding box matches
+      // what getGroupNodes computes for the group rectangle.
+      const allMemberIds = new Set<string>();
+
+      group.memberNodeIds.forEach((memberId) => {
+        if (!nodesById.has(memberId)) {
+          return;
+        }
+
+        allMemberIds.add(memberId);
+        const stack = [memberId];
+
+        while (stack.length) {
+          const current = stack.pop()!;
+          const children = attachmentChildrenByParent.get(current) ?? [];
+
+          children.forEach((childId) => {
+            if (nodesById.has(childId) && !allMemberIds.has(childId)) {
+              allMemberIds.add(childId);
+              stack.push(childId);
+            }
+          });
+        }
+      });
+
+      const memberNodes = [...allMemberIds]
+        .map((id) => nodesById.get(id))
+        .filter((n): n is GraphNode => Boolean(n));
+
+      if (!memberNodes.length) {
+        return;
+      }
+
+      const bounds = getNodesBounds(memberNodes);
+
+      referenceCenters.push(
+        isVertical ? bounds.x + bounds.width / 2 : bounds.y + bounds.height / 2,
+      );
+
+      return;
+    }
+
+    const dims = getWorkflowNodeDimensions(node.type, ctx.config);
+
+    referenceCenters.push(
+      isVertical
+        ? node.position.x + dims.width / 2
+        : node.position.y + dims.height / 2,
+    );
+  });
+
+  // Fall back to Start's own center when there are no content nodes.
+  const startDims = getWorkflowNodeDimensions(startNode.type, ctx.config);
+  const targetAxis =
+    referenceCenters.length > 0
+      ? referenceCenters.reduce((a, b) => a + b, 0) / referenceCenters.length
+      : isVertical
+        ? startNode.position.x + startDims.width / 2
+        : startNode.position.y + startDims.height / 2;
+  const deltas = new Map<string, number>();
+  const processedGroups = new Set<string>();
+  const collectGroupMemberIds = (groupId: string): Set<string> => {
+    const memberIds = new Set<string>();
+    const group = groups.get(groupId);
+
+    if (!group) {
+      return memberIds;
+    }
+
+    group.memberNodeIds.forEach((memberId) => {
+      if (!nodesById.has(memberId)) {
+        return;
+      }
+
+      memberIds.add(memberId);
+      const stack = [memberId];
+
+      while (stack.length) {
+        const current = stack.pop()!;
+        const children = attachmentChildrenByParent.get(current) ?? [];
+
+        children.forEach((childId) => {
+          if (nodesById.has(childId) && !memberIds.has(childId)) {
+            memberIds.add(childId);
+            stack.push(childId);
+          }
+        });
+      }
+    });
+
+    return memberIds;
+  };
+
+  nodes.forEach((node) => {
+    if (attachmentParentByChild.has(node.id)) {
+      return;
+    }
+
+    // GROUP overlay nodes move with the same delta as their members; skip
+    // them here — they're handled below via the groupId path on member nodes.
+    if (node.type === ENodeType.GROUP) {
+      return;
+    }
+
+    const groupId = nodeToInnermostGroup.get(node.id);
+
+    if (groupId) {
+      if (processedGroups.has(groupId)) {
+        return;
+      }
+
+      processedGroups.add(groupId);
+      const memberIds = collectGroupMemberIds(groupId);
+      // Use the GROUP overlay node's actual position+size as the reference
+      // when it's present in the node list (it has the final bounding box
+      // including padding).  Fall back to member bounding-box otherwise.
+      const groupOverlayNode = nodesById.get(groupId);
+      let referenceCenter: number;
+
+      if (groupOverlayNode) {
+        const gStyle = groupOverlayNode.style as
+          | { width?: number; height?: number }
+          | undefined;
+
+        referenceCenter = isVertical
+          ? groupOverlayNode.position.x + (gStyle?.width ?? 0) / 2
+          : groupOverlayNode.position.y + (gStyle?.height ?? 0) / 2;
+      } else {
+        const memberNodes = [...memberIds]
+          .map((id) => nodesById.get(id))
+          .filter((member): member is GraphNode => Boolean(member));
+        const bounds = getNodesBounds(memberNodes);
+
+        referenceCenter = isVertical
+          ? bounds.x + bounds.width / 2
+          : bounds.y + bounds.height / 2;
+      }
+
+      const delta = targetAxis - referenceCenter;
+
+      if (delta === 0) {
+        return;
+      }
+
+      memberIds.forEach((id) => {
+        deltas.set(id, delta);
+      });
+      // Also shift the GROUP overlay node itself (same delta as its members).
+      deltas.set(groupId, delta);
+
+      return;
+    }
+
+    const dims = getWorkflowNodeDimensions(node.type, ctx.config);
+    const nodeCenter = isVertical
+      ? node.position.x + dims.width / 2
+      : node.position.y + dims.height / 2;
+    const delta = targetAxis - nodeCenter;
+
+    if (delta === 0) {
+      return;
+    }
+
+    deltas.set(node.id, delta);
+    const stack = [node.id];
+
+    while (stack.length) {
+      const current = stack.pop()!;
+      const children = attachmentChildrenByParent.get(current) ?? [];
+
+      children.forEach((childId) => {
+        deltas.set(childId, delta);
+        stack.push(childId);
+      });
+    }
+  });
+
+  return nodes.map((node) => {
+    const delta = deltas.get(node.id);
+
+    if (delta === undefined || delta === 0) {
+      return node;
+    }
+
+    return {
+      ...node,
+      position: isVertical
+        ? { x: node.position.x + delta, y: node.position.y }
+        : { x: node.position.x, y: node.position.y + delta },
+    };
+  });
+};
 const getGroupNodes = (
   nodes: GraphNode[],
   groups: Map<string, GroupMeta>,
@@ -562,19 +1398,20 @@ const getGroupNodes = (
     const padding = getGroupPadding(basePadding, group.level);
     const backgroundAlpha = getGroupBackgroundAlpha(group.level);
     const bounds = getNodesBounds(boundsMembers);
+    const groupX = bounds.x - padding / 2;
+    const groupY = bounds.y - padding / 2;
+    const groupWidth = bounds.width + padding;
+    const groupHeight = bounds.height + padding;
 
     groupNodes.push({
       ...DEFAULT_NODE_PROPS,
       id: group.id,
       type: ENodeType.GROUP,
-      position: {
-        x: bounds.x - padding / 2,
-        y: bounds.y - padding / 2,
-      },
+      position: { x: groupX, y: groupY },
       data: config.nodes[ENodeType.GROUP],
       style: {
-        width: bounds.width + padding,
-        height: bounds.height + padding,
+        width: groupWidth,
+        height: groupHeight,
         zIndex: -1,
         borderRadius: "1rem",
         backgroundColor: color ? withAlpha(color, backgroundAlpha) : undefined,
@@ -613,23 +1450,45 @@ export const buildNodesAndEdges = async ({
   const elkNodes = await layoutNodesWithElk(projected.nodes, projected.edges, {
     config,
   });
-  const positionedNodes = addExtraNodes(
+  const alignedNodes = alignNextNodesWithPlaceholders(
     elkNodes,
+    projected.edges,
+    traversal.groups,
+    { config },
+  );
+  const positionedNodes = addExtraNodes(
+    alignedNodes,
     projected.edges.filter(isAttachmentEdge),
     {
       config,
     },
   );
-  const groupNodes = getGroupNodes(
+  const emptyBranchAlignedNodes = alignEmptyBranchPlaceholders(
     positionedNodes,
+    projected.edges,
+    { config },
+  );
+  const groupNodes = getGroupNodes(
+    emptyBranchAlignedNodes,
     traversal.groups,
     config,
     projected.edges.filter(isAttachmentEdge),
   );
+  // Run axis alignment last — after getGroupNodes — so that alignAllNodesToStartAxis
+  // computes targetAxis from the final group bounding boxes (which include
+  // padding and attachment-shifted positions).  This ensures groups, top-level
+  // nodes, and Start/Stop all land on the same perpendicular-axis line.
+  const allNodesBeforeAlign = [...groupNodes, ...emptyBranchAlignedNodes];
+  const finalNodes = alignAllNodesToStartAxis(
+    allNodesBeforeAlign,
+    projected.edges,
+    traversal.groups,
+    { config },
+  );
 
   return {
     edges: projected.edges,
-    nodes: [...groupNodes, ...positionedNodes],
+    nodes: finalNodes,
   };
 };
 

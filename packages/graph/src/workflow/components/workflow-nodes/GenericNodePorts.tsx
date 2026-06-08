@@ -5,7 +5,7 @@
  */
 
 import { useUpdateNodeInternals } from "@xyflow/react";
-import { useLayoutEffect } from "react";
+import { type CSSProperties, useLayoutEffect } from "react";
 
 import { useWorkflowGraphHost } from "../../contexts/workflow-graph-host.context";
 import { useWorkflowNode } from "../../hooks/useWorkflowNode";
@@ -20,6 +20,7 @@ import { GenericHandle } from "../handles/GenericHandle";
 
 export const GenericNodePorts = <T extends ENodeType = ENodeType>({
   getDisabled,
+  getHandleStyle,
 }: {
   getDisabled?: (props: {
     port: Port<T>;
@@ -27,6 +28,12 @@ export const GenericNodePorts = <T extends ENodeType = ENodeType>({
     idx: number;
     node: IWorkflowNodeContext<T>;
   }) => boolean;
+  getHandleStyle?: (props: {
+    port: Port<T>;
+    portDef: WorkflowNodePort<T>;
+    idx: number;
+    node: IWorkflowNodeContext<T>;
+  }) => CSSProperties | undefined;
 }) => {
   const { direction } = useWorkflowGraphHost();
   const workflowNode = useWorkflowNode<T>();
@@ -44,10 +51,22 @@ export const GenericNodePorts = <T extends ENodeType = ENodeType>({
       idx,
       node: workflowNode,
     });
+    const extraStyle = getHandleStyle?.({
+      port,
+      portDef,
+      idx,
+      node: workflowNode,
+    });
     const label = typeof portDef === "string" ? undefined : portDef.label;
 
     return (
-      <GenericHandle key={port} id={port} label={label} hidden={isHidden} />
+      <GenericHandle
+        key={port}
+        id={port}
+        label={label}
+        hidden={isHidden}
+        style={extraStyle}
+      />
     );
   });
 };

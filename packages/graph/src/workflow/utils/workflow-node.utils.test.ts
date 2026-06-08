@@ -25,6 +25,7 @@ import {
 
 import {
   END_INDICATOR_ID,
+  START_INDICATOR_ID,
   createGroupId,
   createPlaceholderNodeId,
   createStepNodeId,
@@ -124,15 +125,17 @@ const buildGraph = async ({
   defs = {},
   actionCatalog = new Map(),
   bindingCatalog = new Map(),
+  direction = "horizontal",
 }: {
   flow: CompiledStep[];
   tasks: TestTaskDefinitions;
   defs?: DefDefinitions;
   actionCatalog?: ReadonlyMap<string, WorkflowAction>;
   bindingCatalog?: ReadonlyMap<string, WorkflowBindingDefinition>;
+  direction?: "horizontal" | "vertical";
 }) => {
   const graph = await buildNodesAndEdges({
-    config: getWorkflowDefaultConfig("horizontal"),
+    config: getWorkflowDefaultConfig(direction),
     flow,
     defs: {
       ...defs,
@@ -1617,5 +1620,995 @@ describe("buildNodesAndEdges", () => {
     });
 
     expect(graph).toBeUndefined();
+  });
+
+  it("aligns the next step vertically with the loop's join placeholder in horizontal mode", async () => {
+    const loopStep: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:loop_task", "loop_task")],
+    };
+    const flow: CompiledStep[] = [
+      loopStep,
+      taskStep("1:after_loop", "after_loop"),
+    ];
+    const tasks = baseTasks(["loop_task", "after_loop"]);
+    const graph = await buildGraph({ flow, tasks });
+    const placeholderId = createPlaceholderNodeId(loopStep.id, "loop", 0);
+    const placeholder = graph.nodes.find((node) => node.id === placeholderId);
+    const afterNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("1:after_loop", "task"),
+    );
+
+    expect(placeholder).toBeDefined();
+    expect(afterNode).toBeDefined();
+
+    const placeholderCenter =
+      placeholder!.position.y +
+      (NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions.height ?? 0) / 2;
+    const afterCenter =
+      afterNode!.position.y +
+      (NODE_METRICS[ENodeType.TASK]?.dimensions.height ?? 0) / 2;
+
+    expect(Math.abs(placeholderCenter - afterCenter)).toBeLessThan(1);
+  });
+
+  it("aligns the next step horizontally with the loop's join placeholder in vertical mode", async () => {
+    const loopStep: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:loop_task", "loop_task")],
+    };
+    const flow: CompiledStep[] = [
+      loopStep,
+      taskStep("1:after_loop", "after_loop"),
+    ];
+    const tasks = baseTasks(["loop_task", "after_loop"]);
+    const graph = await buildGraph({ flow, tasks, direction: "vertical" });
+    const placeholderId = createPlaceholderNodeId(loopStep.id, "loop", 0);
+    const placeholder = graph.nodes.find((node) => node.id === placeholderId);
+    const afterNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("1:after_loop", "task"),
+    );
+
+    expect(placeholder).toBeDefined();
+    expect(afterNode).toBeDefined();
+
+    const placeholderCenter =
+      placeholder!.position.x +
+      (NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions.width ?? 0) / 2;
+    const afterCenter =
+      afterNode!.position.x +
+      (NODE_METRICS[ENodeType.TASK]?.dimensions.width ?? 0) / 2;
+
+    expect(Math.abs(placeholderCenter - afterCenter)).toBeLessThan(1);
+  });
+
+  it("shifts the next group as a whole so its operator aligns with the previous group's join placeholder", async () => {
+    const firstLoop: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:loop_task", "loop_task")],
+    };
+    const secondLoop: CompiledLoopStep = {
+      id: "1:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("1.loop.0:loop_task_2", "loop_task_2")],
+    };
+    const flow: CompiledStep[] = [firstLoop, secondLoop];
+    const tasks = baseTasks(["loop_task", "loop_task_2"]);
+    const graph = await buildGraph({ flow, tasks });
+    const firstPlaceholder = graph.nodes.find(
+      (node) => node.id === createPlaceholderNodeId("0:loop", "loop", 0),
+    );
+    const secondOperator = graph.nodes.find(
+      (node) => node.id === createStepNodeId("1:loop", "operator"),
+    );
+    const secondTask = graph.nodes.find(
+      (node) => node.id === createStepNodeId("1.loop.0:loop_task_2", "task"),
+    );
+
+    expect(firstPlaceholder).toBeDefined();
+    expect(secondOperator).toBeDefined();
+    expect(secondTask).toBeDefined();
+
+    const placeholderCenterY =
+      firstPlaceholder!.position.y +
+      (NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions.height ?? 0) / 2;
+    const operatorCenterY =
+      secondOperator!.position.y +
+      (NODE_METRICS[ENodeType.OPERATOR]?.dimensions.height ?? 0) / 2;
+    const taskDeltaY = secondTask!.position.y - secondOperator!.position.y;
+
+    expect(Math.abs(placeholderCenterY - operatorCenterY)).toBeLessThan(1);
+    expect(Math.abs(taskDeltaY)).toBeLessThan(20);
+  });
+
+  it("aligns the next step with the conditional group's vertical center in horizontal mode", async () => {
+    const conditional: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "yes" },
+          steps: [taskStep("0.conditional.0:branch_yes", "branch_yes")],
+        },
+        {
+          id: "0:conditional:when:1",
+          steps: [taskStep("0.conditional.1:branch_no", "branch_no")],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [
+      conditional,
+      taskStep("1:after_conditional", "after_conditional"),
+    ];
+    const tasks = baseTasks(["branch_yes", "branch_no", "after_conditional"]);
+    const graph = await buildGraph({ flow, tasks });
+    const conditionalGroup = graph.nodes.find(
+      (node) => node.id === createGroupId("0:conditional"),
+    );
+    const afterNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("1:after_conditional", "task"),
+    );
+
+    expect(conditionalGroup).toBeDefined();
+    expect(afterNode).toBeDefined();
+
+    const groupStyle = conditionalGroup?.style as
+      | { width: number; height: number }
+      | undefined;
+    // The node after the conditional must align with the group's bounding-box
+    // center — the same point where xyflow routes the exit overlay edge.
+    const groupCenterY =
+      conditionalGroup!.position.y + (groupStyle?.height ?? 0) / 2;
+    const afterCenterY =
+      afterNode!.position.y +
+      (NODE_METRICS[ENodeType.TASK]?.dimensions.height ?? 0) / 2;
+
+    expect(Math.abs(groupCenterY - afterCenterY)).toBeLessThan(1);
+  });
+
+  it("aligns top-level nodes on the same vertical axis between start and end in horizontal mode", async () => {
+    const loopStep: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:loop_task", "loop_task")],
+    };
+    const flow: CompiledStep[] = [
+      loopStep,
+      taskStep("1:after_loop", "after_loop"),
+    ];
+    const tasks = baseTasks(["loop_task", "after_loop"]);
+    const graph = await buildGraph({ flow, tasks });
+    const startNode = graph.nodes.find(
+      (node) => node.id === START_INDICATOR_ID,
+    );
+    const endNode = graph.nodes.find((node) => node.id === END_INDICATOR_ID);
+    const loopOperator = graph.nodes.find(
+      (node) => node.id === createStepNodeId("0:loop", "operator"),
+    );
+    const afterNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("1:after_loop", "task"),
+    );
+
+    expect(startNode).toBeDefined();
+    expect(endNode).toBeDefined();
+    expect(loopOperator).toBeDefined();
+    expect(afterNode).toBeDefined();
+
+    const startCenterY =
+      startNode!.position.y +
+      (NODE_METRICS[ENodeType.INDICATOR]?.dimensions.height ?? 0) / 2;
+    const endCenterY =
+      endNode!.position.y +
+      (NODE_METRICS[ENodeType.INDICATOR]?.dimensions.height ?? 0) / 2;
+    const loopCenterY =
+      loopOperator!.position.y +
+      (NODE_METRICS[ENodeType.OPERATOR]?.dimensions.height ?? 0) / 2;
+    const afterCenterY =
+      afterNode!.position.y +
+      (NODE_METRICS[ENodeType.TASK]?.dimensions.height ?? 0) / 2;
+    const referenceAxis = (startCenterY + endCenterY) / 2;
+
+    expect(Math.abs(loopCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(afterCenterY - referenceAxis)).toBeLessThan(1);
+    // Start and End indicators must share the same perpendicular-axis center
+    // as the rest of the flow.
+    expect(Math.abs(startCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(endCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(startCenterY - endCenterY)).toBeLessThan(1);
+  });
+
+  it("aligns start and end indicators on the same axis across multiple groups", async () => {
+    const buildLoop = (id: string, taskName: string): CompiledLoopStep => ({
+      id,
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep(`${id}.loop.0:${taskName}`, taskName)],
+    });
+    const flow: CompiledStep[] = [
+      buildLoop("0:loop", "loop_task_0"),
+      buildLoop("1:loop", "loop_task_1"),
+      buildLoop("2:loop", "loop_task_2"),
+      buildLoop("3:loop", "loop_task_3"),
+      taskStep("4:after_loops", "after_loops"),
+    ];
+    const tasks = baseTasks([
+      "loop_task_0",
+      "loop_task_1",
+      "loop_task_2",
+      "loop_task_3",
+      "after_loops",
+    ]);
+    const graph = await buildGraph({ flow, tasks });
+    const startNode = graph.nodes.find(
+      (node) => node.id === START_INDICATOR_ID,
+    );
+    const endNode = graph.nodes.find((node) => node.id === END_INDICATOR_ID);
+    const operators = graph.nodes.filter(
+      (node) => node.type === ENodeType.OPERATOR,
+    );
+    const afterNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("4:after_loops", "task"),
+    );
+
+    expect(startNode).toBeDefined();
+    expect(endNode).toBeDefined();
+    expect(operators.length).toBe(4);
+    expect(afterNode).toBeDefined();
+
+    const indicatorDims = NODE_METRICS[ENodeType.INDICATOR]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const operatorDims = NODE_METRICS[ENodeType.OPERATOR]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const taskDims = NODE_METRICS[ENodeType.TASK]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const startCenterY = startNode!.position.y + indicatorDims.height / 2;
+    const endCenterY = endNode!.position.y + indicatorDims.height / 2;
+    const referenceAxis = (startCenterY + endCenterY) / 2;
+    const centers = [
+      startCenterY,
+      endCenterY,
+      ...operators.map(
+        (operator) => operator.position.y + operatorDims.height / 2,
+      ),
+      afterNode!.position.y + taskDims.height / 2,
+    ];
+
+    centers.forEach((centerY) => {
+      expect(Math.abs(centerY - referenceAxis)).toBeLessThan(1);
+    });
+  });
+
+  it("stacks conditional branch placeholders on separate lines in horizontal mode", async () => {
+    const conditional: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "yes" },
+          steps: [taskStep("0.conditional.0:branch_yes", "branch_yes")],
+        },
+        {
+          id: "0:conditional:when:1",
+          steps: [taskStep("0.conditional.1:branch_no", "branch_no")],
+        },
+        {
+          id: "0:conditional:when:2",
+          steps: [taskStep("0.conditional.2:branch_maybe", "branch_maybe")],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [
+      conditional,
+      taskStep("1:after_conditional", "after_conditional"),
+    ];
+    const tasks = baseTasks([
+      "branch_yes",
+      "branch_no",
+      "branch_maybe",
+      "after_conditional",
+    ]);
+    const graph = await buildGraph({ flow, tasks });
+    const placeholders = graph.nodes
+      .filter((node) => node.type === ENodeType.BRANCH_PLACEHOLDER)
+      .sort((a, b) => a.position.y - b.position.y);
+
+    expect(placeholders.length).toBeGreaterThanOrEqual(2);
+    const uniqueYs = new Set(
+      placeholders.map(
+        (node) =>
+          node.position.y +
+          (NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions.height ?? 0) /
+            2,
+      ),
+    );
+
+    expect(uniqueYs.size).toBe(placeholders.length);
+  });
+
+  it("aligns start, stop and the operator on the same axis when a group has AI agent binding attachments", async () => {
+    const loopStep: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:agent", "agent")],
+    };
+    const flow: CompiledStep[] = [
+      loopStep,
+      taskStep("1:after_loop", "after_loop"),
+    ];
+    const tasks: TestTaskDefinitions = {
+      agent: {
+        action: "agent_action",
+        bindings: {
+          tools: ["search_tool"],
+          memory: ["profile_memory"],
+          model: "openai_model",
+          mcp: ["mcp_server"],
+        },
+        settings: {},
+      },
+      after_loop: { action: "after_action", settings: {} },
+    };
+    const graph = await buildGraph({
+      flow,
+      tasks,
+      defs: {
+        search_tool: { kind: "tools", settings: {} },
+        profile_memory: { kind: "memory", settings: {} },
+        openai_model: { kind: "model", settings: {} },
+        mcp_server: { kind: "mcp", settings: {} },
+      },
+      actionCatalog: createActionCatalog({
+        agent_action: ["tools", "memory", "model", "mcp"],
+      }),
+      bindingCatalog: createBindingCatalog([
+        { kind: "tools", multiple: true },
+        { kind: "memory", multiple: true },
+        { kind: "model", multiple: false },
+        { kind: "mcp", multiple: true },
+      ]),
+    });
+    const startNode = graph.nodes.find(
+      (node) => node.id === START_INDICATOR_ID,
+    );
+    const endNode = graph.nodes.find((node) => node.id === END_INDICATOR_ID);
+    const operatorNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("0:loop", "operator"),
+    );
+    const afterNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("1:after_loop", "task"),
+    );
+
+    expect(startNode).toBeDefined();
+    expect(endNode).toBeDefined();
+    expect(operatorNode).toBeDefined();
+    expect(afterNode).toBeDefined();
+
+    const indicatorDims = NODE_METRICS[ENodeType.INDICATOR]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const taskDims = NODE_METRICS[ENodeType.TASK]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const startCenterY = startNode!.position.y + indicatorDims.height / 2;
+    const endCenterY = endNode!.position.y + indicatorDims.height / 2;
+    const referenceAxis = (startCenterY + endCenterY) / 2;
+    const loopGroup = graph.nodes.find(
+      (node) => node.id === createGroupId("0:loop"),
+    );
+    const groupStyle = loopGroup?.style as
+      | { width: number; height: number }
+      | undefined;
+    const groupCenterY = loopGroup!.position.y + (groupStyle?.height ?? 0) / 2;
+    const afterCenterY = afterNode!.position.y + taskDims.height / 2;
+
+    // Start, Stop, group center and after-loop task must all share the same
+    // horizontal axis. Group ports are at the group's visual center (50%)
+    // so the overlay edge enters/exits at the group center y.
+    expect(Math.abs(groupCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(afterCenterY - referenceAxis)).toBeLessThan(1);
+  });
+
+  it("aligns start/stop with group bounding-box center in horizontal mode (group ports at 50%)", async () => {
+    // When a group contains AI agent with binding attachments below the operator,
+    // Start/Stop must align with the group's bounding-box center (where group
+    // ports are at 50% of the group height).
+    const loopStep: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:agent", "agent")],
+    };
+    const flow: CompiledStep[] = [loopStep];
+    const tasks: TestTaskDefinitions = {
+      agent: {
+        action: "agent_action",
+        bindings: {
+          tools: ["search_tool"],
+          memory: ["profile_memory"],
+          model: "openai_model",
+          mcp: ["mcp_server"],
+        },
+        settings: {},
+      },
+    };
+    const graph = await buildGraph({
+      flow,
+      tasks,
+      defs: {
+        search_tool: { kind: "tools", settings: {} },
+        profile_memory: { kind: "memory", settings: {} },
+        openai_model: { kind: "model", settings: {} },
+        mcp_server: { kind: "mcp", settings: {} },
+      },
+      actionCatalog: createActionCatalog({
+        agent_action: ["tools", "memory", "model", "mcp"],
+      }),
+      bindingCatalog: createBindingCatalog([
+        { kind: "tools", multiple: true },
+        { kind: "memory", multiple: true },
+        { kind: "model", multiple: false },
+        { kind: "mcp", multiple: true },
+      ]),
+    });
+    const startNode = graph.nodes.find((n) => n.id === START_INDICATOR_ID);
+    const endNode = graph.nodes.find((n) => n.id === END_INDICATOR_ID);
+    const loopGroup = graph.nodes.find((n) => n.id === createGroupId("0:loop"));
+
+    expect(startNode).toBeDefined();
+    expect(endNode).toBeDefined();
+    expect(loopGroup).toBeDefined();
+
+    const iH = NODE_METRICS[ENodeType.INDICATOR]?.dimensions.height ?? 68;
+    const groupStyle = loopGroup?.style as
+      | { width: number; height: number }
+      | undefined;
+    const startCenterY = startNode!.position.y + iH / 2;
+    const endCenterY = endNode!.position.y + iH / 2;
+    const groupCenterY = loopGroup!.position.y + (groupStyle?.height ?? 0) / 2;
+
+    // Start, Stop and group visual center must share the same horizontal axis.
+    expect(Math.abs(startCenterY - endCenterY)).toBeLessThan(1);
+    expect(Math.abs(groupCenterY - startCenterY)).toBeLessThan(1);
+  });
+
+  it("aligns start/stop with group bounding-box center in vertical mode (group ports at 50%)", async () => {
+    const loopStep: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:agent", "agent")],
+    };
+    const flow: CompiledStep[] = [loopStep];
+    const tasks: TestTaskDefinitions = {
+      agent: {
+        action: "agent_action",
+        bindings: {
+          tools: ["search_tool"],
+          memory: ["profile_memory"],
+          model: "openai_model",
+          mcp: ["mcp_server"],
+        },
+        settings: {},
+      },
+    };
+    const graph = await buildGraph({
+      flow,
+      tasks,
+      direction: "vertical",
+      defs: {
+        search_tool: { kind: "tools", settings: {} },
+        profile_memory: { kind: "memory", settings: {} },
+        openai_model: { kind: "model", settings: {} },
+        mcp_server: { kind: "mcp", settings: {} },
+      },
+      actionCatalog: createActionCatalog({
+        agent_action: ["tools", "memory", "model", "mcp"],
+      }),
+      bindingCatalog: createBindingCatalog([
+        { kind: "tools", multiple: true },
+        { kind: "memory", multiple: true },
+        { kind: "model", multiple: false },
+        { kind: "mcp", multiple: true },
+      ]),
+    });
+    const startNode = graph.nodes.find((n) => n.id === START_INDICATOR_ID);
+    const endNode = graph.nodes.find((n) => n.id === END_INDICATOR_ID);
+    const loopGroup = graph.nodes.find((n) => n.id === createGroupId("0:loop"));
+
+    expect(startNode).toBeDefined();
+    expect(endNode).toBeDefined();
+    expect(loopGroup).toBeDefined();
+
+    const iW = NODE_METRICS[ENodeType.INDICATOR]?.dimensions.width ?? 68;
+    const groupStyle = loopGroup?.style as
+      | { width: number; height: number }
+      | undefined;
+    const startCenterX = startNode!.position.x + iW / 2;
+    const endCenterX = endNode!.position.x + iW / 2;
+    const groupCenterX = loopGroup!.position.x + (groupStyle?.width ?? 0) / 2;
+
+    // Start, Stop and group visual center must share the same vertical axis.
+    expect(Math.abs(startCenterX - endCenterX)).toBeLessThan(1);
+    expect(Math.abs(groupCenterX - startCenterX)).toBeLessThan(1);
+  });
+
+  it("aligns empty conditional branch placeholder x with sibling first-task x in horizontal mode", async () => {
+    const conditionalStep: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "=false" },
+          steps: [
+            taskStep(
+              "0.conditional.0:send_text_message_7",
+              "send_text_message_7",
+            ),
+          ],
+        },
+        {
+          id: "0:conditional:when:1",
+          steps: [],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [conditionalStep];
+    const tasks = baseTasks(["send_text_message_7"]);
+    const graph = await buildGraph({ flow, tasks });
+    const siblingFirstTask = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createStepNodeId("0.conditional.0:send_text_message_7", "task"),
+    );
+    const emptyPlaceholder = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createPlaceholderNodeId(conditionalStep.id, "conditional", 1),
+    );
+    const nonEmptyPlaceholder = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createPlaceholderNodeId(conditionalStep.id, "conditional", 0),
+    );
+
+    expect(siblingFirstTask).toBeDefined();
+    expect(emptyPlaceholder).toBeDefined();
+    expect(nonEmptyPlaceholder).toBeDefined();
+
+    // In horizontal mode, the flow-direction axis (x) is aligned:
+    // the empty placeholder's x must match the sibling first task's x.
+    expect(
+      Math.abs(emptyPlaceholder!.position.x - siblingFirstTask!.position.x),
+    ).toBeLessThan(1);
+
+    // The branch-spread axis (y) is re-spaced: the two placeholders must
+    // remain on separate vertical lanes — no superposition.
+    expect(
+      Math.abs(emptyPlaceholder!.position.y - nonEmptyPlaceholder!.position.y),
+    ).toBeGreaterThan(1);
+  });
+
+  it("aligns empty conditional branch placeholder y with sibling first-task y in vertical mode", async () => {
+    const conditionalStep: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "=false" },
+          steps: [
+            taskStep(
+              "0.conditional.0:send_text_message_7",
+              "send_text_message_7",
+            ),
+          ],
+        },
+        {
+          id: "0:conditional:when:1",
+          steps: [],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [conditionalStep];
+    const tasks = baseTasks(["send_text_message_7"]);
+    const graph = await buildGraph({ flow, tasks, direction: "vertical" });
+    const siblingFirstTask = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createStepNodeId("0.conditional.0:send_text_message_7", "task"),
+    );
+    const emptyPlaceholder = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createPlaceholderNodeId(conditionalStep.id, "conditional", 1),
+    );
+    const nonEmptyPlaceholder = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createPlaceholderNodeId(conditionalStep.id, "conditional", 0),
+    );
+
+    expect(siblingFirstTask).toBeDefined();
+    expect(emptyPlaceholder).toBeDefined();
+    expect(nonEmptyPlaceholder).toBeDefined();
+
+    // In vertical mode, the flow-direction axis (y) is aligned:
+    // the empty placeholder's y must match the sibling first task's y.
+    expect(
+      Math.abs(emptyPlaceholder!.position.y - siblingFirstTask!.position.y),
+    ).toBeLessThan(1);
+
+    // The branch-spread axis (x) is re-spaced: the two placeholders must
+    // remain on separate horizontal lanes — no superposition.
+    expect(
+      Math.abs(emptyPlaceholder!.position.x - nonEmptyPlaceholder!.position.x),
+    ).toBeGreaterThan(1);
+  });
+
+  it("spaces multiple empty placeholders with the same gap as non-empty branches", async () => {
+    const conditionalStep: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "=false" },
+          steps: [
+            taskStep(
+              "0.conditional.0:send_text_message_7",
+              "send_text_message_7",
+            ),
+          ],
+        },
+        {
+          id: "0:conditional:when:1",
+          condition: { kind: "literal", value: "=false" },
+          steps: [],
+        },
+        {
+          id: "0:conditional:when:2",
+          steps: [],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [conditionalStep];
+    const tasks = baseTasks(["send_text_message_7"]);
+    const graph = await buildGraph({ flow, tasks });
+    const placeholder1 = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createPlaceholderNodeId(conditionalStep.id, "conditional", 1),
+    );
+    const placeholder2 = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createPlaceholderNodeId(conditionalStep.id, "conditional", 2),
+    );
+    const siblingTask = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createStepNodeId("0.conditional.0:send_text_message_7", "task"),
+    );
+
+    expect(placeholder1).toBeDefined();
+    expect(placeholder2).toBeDefined();
+    expect(siblingTask).toBeDefined();
+
+    // The two empty placeholders must be on different y lanes.
+    const gapBetweenEmpties = Math.abs(
+      placeholder2!.position.y - placeholder1!.position.y,
+    );
+
+    expect(gapBetweenEmpties).toBeGreaterThan(1);
+
+    // The gap between empty placeholders must be at least as large as the
+    // placeholder height (64 px) — they should not overlap.
+    expect(gapBetweenEmpties).toBeGreaterThanOrEqual(
+      NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions.height ?? 64,
+    );
+
+    // Both empty placeholders must be aligned to the sibling task's x.
+    expect(
+      Math.abs(placeholder1!.position.x - siblingTask!.position.x),
+    ).toBeLessThan(1);
+    expect(
+      Math.abs(placeholder2!.position.x - siblingTask!.position.x),
+    ).toBeLessThan(1);
+  });
+
+  it("does not affect non-empty conditional branch placeholders", async () => {
+    const conditionalStep: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "yes" },
+          steps: [taskStep("0.conditional.0:branch_yes", "branch_yes")],
+        },
+        {
+          id: "0:conditional:when:1",
+          steps: [taskStep("0.conditional.1:branch_no", "branch_no")],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [conditionalStep];
+    const tasks = baseTasks(["branch_yes", "branch_no"]);
+    const graph = await buildGraph({ flow, tasks });
+    const placeholder0 = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createPlaceholderNodeId(conditionalStep.id, "conditional", 0),
+    );
+    const placeholder1 = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createPlaceholderNodeId(conditionalStep.id, "conditional", 1),
+    );
+
+    expect(placeholder0).toBeDefined();
+    expect(placeholder1).toBeDefined();
+
+    // Both branches are non-empty — the alignment pass must not touch them.
+    // Their y positions should differ (they represent separate branches).
+    expect(
+      Math.abs(placeholder0!.position.y - placeholder1!.position.y),
+    ).toBeGreaterThan(1);
+  });
+
+  it("preserves branch-index visual order when empty branches are interspersed with non-empty ones", async () => {
+    // Branch 0: empty, Branch 1: non-empty (Send Text Message 7), Branch 2: empty
+    // Visual order (top to bottom) must follow branch index order: 0 → 1 → 2.
+    const conditionalStep: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "=false" },
+          steps: [],
+        },
+        {
+          id: "0:conditional:when:1",
+          condition: { kind: "literal", value: "=false" },
+          steps: [
+            taskStep(
+              "0.conditional.1:send_text_message_7",
+              "send_text_message_7",
+            ),
+          ],
+        },
+        {
+          id: "0:conditional:when:2",
+          steps: [],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [conditionalStep];
+    const tasks = baseTasks(["send_text_message_7"]);
+    const graph = await buildGraph({ flow, tasks });
+    const ph0 = graph.nodes.find(
+      (n) =>
+        n.id === createPlaceholderNodeId(conditionalStep.id, "conditional", 0),
+    );
+    const task1 = graph.nodes.find(
+      (n) =>
+        n.id ===
+        createStepNodeId("0.conditional.1:send_text_message_7", "task"),
+    );
+    const ph2 = graph.nodes.find(
+      (n) =>
+        n.id === createPlaceholderNodeId(conditionalStep.id, "conditional", 2),
+    );
+
+    expect(ph0).toBeDefined();
+    expect(task1).toBeDefined();
+    expect(ph2).toBeDefined();
+
+    // Branch 0 (empty) must appear above branch 1 (task).
+    expect(ph0!.position.y).toBeLessThan(task1!.position.y);
+    // Branch 2 (empty) must appear below branch 1 (task).
+    expect(ph2!.position.y).toBeGreaterThan(task1!.position.y);
+  });
+
+  it("does not overlap with nodes in other branches that share the same x column", async () => {
+    // Branch 0: stm7 (single node)
+    // Branch 1: empty placeholder  ← must not collide with stm10 below
+    // Branch 2: stm10 → stm11 (longer branch)
+    const conditionalStep: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "=false" },
+          steps: [taskStep("0.conditional.0:stm7", "stm7")],
+        },
+        {
+          id: "0:conditional:when:1",
+          condition: { kind: "literal", value: "=false" },
+          steps: [],
+        },
+        {
+          id: "0:conditional:when:2",
+          steps: [
+            taskStep("0.conditional.2:stm10", "stm10"),
+            taskStep("0.conditional.2.1:stm11", "stm11"),
+          ],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [conditionalStep];
+    const tasks = baseTasks(["stm7", "stm10", "stm11"]);
+    const graph = await buildGraph({ flow, tasks });
+    const emptyPh = graph.nodes.find(
+      (n) =>
+        n.id === createPlaceholderNodeId(conditionalStep.id, "conditional", 1),
+    );
+    const stm10 = graph.nodes.find(
+      (n) => n.id === createStepNodeId("0.conditional.2:stm10", "task"),
+    );
+
+    expect(emptyPh).toBeDefined();
+    expect(stm10).toBeDefined();
+
+    const phHeight =
+      NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions.height ?? 64;
+    const taskHeight = NODE_METRICS[ENodeType.TASK]?.dimensions.height ?? 86;
+    // The placeholder and stm10 share the same x column — ensure their
+    // y ranges do not overlap.
+    const phBottom = emptyPh!.position.y + phHeight;
+    const stm10Top = stm10!.position.y;
+    const stm10Bottom = stm10!.position.y + taskHeight;
+    const phTop = emptyPh!.position.y;
+    // No vertical overlap: either placeholder is entirely above stm10 or below.
+    const noOverlap = phBottom <= stm10Top || phTop >= stm10Bottom;
+
+    expect(noOverlap).toBe(true);
+  });
+
+  it("distributes multiple empty placeholders between the same two non-empty branches without superposition", async () => {
+    // 4 branches: b0=stm7 (non-empty), b1=empty, b2=empty, b3=stm10 (non-empty)
+    // b1 and b2 both fall between b0 and b3 — they must not land at the same y.
+    const conditionalStep: CompiledConditionalStep = {
+      id: "0:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:conditional:when:0",
+          condition: { kind: "literal", value: "=false" },
+          steps: [taskStep("0.conditional.0:stm7", "stm7")],
+        },
+        {
+          id: "0:conditional:when:1",
+          condition: { kind: "literal", value: "=false" },
+          steps: [],
+        },
+        {
+          id: "0:conditional:when:2",
+          condition: { kind: "literal", value: "=false" },
+          steps: [],
+        },
+        {
+          id: "0:conditional:when:3",
+          steps: [taskStep("0.conditional.3:stm10", "stm10")],
+        },
+      ],
+    };
+    const flow: CompiledStep[] = [conditionalStep];
+    const tasks = baseTasks(["stm7", "stm10"]);
+    const graph = await buildGraph({ flow, tasks });
+    const ph1 = graph.nodes.find(
+      (n) =>
+        n.id === createPlaceholderNodeId(conditionalStep.id, "conditional", 1),
+    );
+    const ph2 = graph.nodes.find(
+      (n) =>
+        n.id === createPlaceholderNodeId(conditionalStep.id, "conditional", 2),
+    );
+    const stm7 = graph.nodes.find(
+      (n) => n.id === createStepNodeId("0.conditional.0:stm7", "task"),
+    );
+    const stm10 = graph.nodes.find(
+      (n) => n.id === createStepNodeId("0.conditional.3:stm10", "task"),
+    );
+
+    expect(ph1).toBeDefined();
+    expect(ph2).toBeDefined();
+    expect(stm7).toBeDefined();
+    expect(stm10).toBeDefined();
+
+    const phHeight =
+      NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions.height ?? 64;
+
+    // The two empty placeholders must NOT be superposed.
+    expect(Math.abs(ph1!.position.y - ph2!.position.y)).toBeGreaterThan(1);
+
+    // Both placeholders must be between stm7 and stm10 vertically.
+    expect(ph1!.position.y).toBeGreaterThan(stm7!.position.y);
+    expect(ph2!.position.y).toBeGreaterThan(stm7!.position.y);
+    expect(ph1!.position.y + phHeight).toBeLessThan(
+      stm10!.position.y + NODE_METRICS[ENodeType.TASK]!.dimensions.height,
+    );
+    expect(ph2!.position.y + phHeight).toBeLessThan(
+      stm10!.position.y + NODE_METRICS[ENodeType.TASK]!.dimensions.height,
+    );
+
+    // ph1 (branchIndex=1) must be above ph2 (branchIndex=2).
+    expect(ph1!.position.y).toBeLessThan(ph2!.position.y);
   });
 });
