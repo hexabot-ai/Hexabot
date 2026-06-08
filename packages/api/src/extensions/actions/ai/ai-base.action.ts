@@ -5,13 +5,14 @@
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { ProviderV2, ProviderV3 } from '@ai-sdk/provider';
 import {
   IncomingMessageType,
   Message,
-  Thread,
   StdIncomingMessage,
   StdOutgoingMessage,
+  Thread,
 } from '@hexabot-ai/types';
 import {
   LanguageModel,
@@ -148,7 +149,11 @@ export abstract class AiBaseAction<
     }
 
     if (providerId === 'litellm') {
-      return createOpenAI(options);
+      return createOpenAICompatible({
+        ...options,
+        name: 'litellm',
+        baseURL: options.baseURL || '',
+      });
     }
 
     const moduleCandidates = new Set<string>([

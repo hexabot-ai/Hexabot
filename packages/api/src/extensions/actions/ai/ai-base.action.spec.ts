@@ -6,6 +6,7 @@
 
 import { createGatewayProvider } from '@ai-sdk/gateway';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { Message, OutgoingMessageType } from '@hexabot-ai/types';
 import { LanguageModelUsage } from 'ai';
 import { z } from 'zod';
@@ -24,6 +25,10 @@ import {
 
 jest.mock('@ai-sdk/openai', () => ({
   createOpenAI: jest.fn(),
+}));
+
+jest.mock('@ai-sdk/openai-compatible', () => ({
+  createOpenAICompatible: jest.fn(),
 }));
 
 jest.mock('@ai-sdk/gateway', () => ({
@@ -265,18 +270,22 @@ describe('AiBaseAction', () => {
       expect(result).toBe(provider);
     });
 
-    it('loads litellm provider via createOpenAI with compatible mode', async () => {
+    it('loads litellm provider via createOpenAICompatible with compatible mode', async () => {
       const provider = createProviderStub();
       const options: ProviderInitOptions = {
         apiKey: 'sk-litellm-key',
         baseURL: 'http://localhost:4000/v1',
       };
 
-      (createOpenAI as jest.Mock).mockReturnValue(provider);
+      (createOpenAICompatible as jest.Mock).mockReturnValue(provider);
 
       const result = await action.loadProviderPublic('litellm', options);
 
-      expect(createOpenAI).toHaveBeenCalledWith(options);
+      expect(createOpenAICompatible).toHaveBeenCalledWith({
+        ...options,
+        name: 'litellm',
+        baseURL: options.baseURL,
+      });
       expect(result).toBe(provider);
     });
 
