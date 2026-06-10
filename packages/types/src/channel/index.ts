@@ -15,5 +15,7 @@ export { sourceFullSchema, type SourceFull } from "./source-full";
 
 export {
   channelMetadataSchema,
+  channelVisibilitySchema,
   type ChannelMetadata,
+  type ChannelVisibility,
 } from "./channel-metadata";

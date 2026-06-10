@@ -10,6 +10,7 @@ import type {
   ActionOptions,
   Attachment,
   AttachmentRef,
+  ChannelVisibility,
   Source,
   StdOutgoingMessageEnvelope,
 } from '@hexabot-ai/types';
@@ -70,6 +71,7 @@ export default abstract class ChannelHandler<
   constructor(
     name: N,
     private readonly sourceSettingsSchema: z.ZodTypeAny = z.strictObject({}),
+    private readonly visibility: ChannelVisibility = 'public',
   ) {
     super(name);
   }
@@ -112,6 +114,10 @@ export default abstract class ChannelHandler<
 
   getSourceSettingsSchema(): z.ZodTypeAny {
     return this.sourceSettingsSchema;
+  }
+
+  getVisibility(): ChannelVisibility {
+    return this.visibility;
   }
 
   /**

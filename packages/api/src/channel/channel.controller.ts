@@ -34,6 +34,7 @@ export class ChannelController {
 
       return {
         name: channelName,
+        visibility: handler.getVisibility(),
         settingsSchema: toDraft07JsonSchema(
           handler.getSourceSettingsSchema(),
           this.i18nService.getJsonSchemaLocalizationOptions(channelName, lang),

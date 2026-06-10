@@ -4,15 +4,24 @@
  * Full terms: see LICENSE.md.
  */
 
-import { type Source, type SourceFull } from "@hexabot-ai/types";
+import {
+  type ChannelVisibility,
+  type Source,
+  type SourceFull,
+} from "@hexabot-ai/types";
 import type { RJSFSchema, UiSchema } from "@rjsf/utils";
 
 import { extractUiSchema } from "@/components/visual-editor/v4/utils/schema-defaults.utils";
+import { EntityType } from "@/services/types";
 import type { IChannel } from "@/types/channel.types";
+import type { SearchPayload } from "@/types/search.types";
 import { isRecord } from "@/utils/object";
 
 type SourceLike = Source | SourceFull;
+type SourceSearchPayload = SearchPayload<EntityType.SOURCE>;
 export const CONSOLE_CHANNEL_NAME = "console";
+export const PUBLIC_CHANNEL_VISIBILITY: ChannelVisibility = "public";
+export const SYSTEM_CHANNEL_VISIBILITY: ChannelVisibility = "system";
 
 export const EMPTY_SOURCE_SETTINGS_SCHEMA: RJSFSchema = {
   type: "object",
@@ -39,6 +48,76 @@ export const isConsoleSourceChannel = (
   channelName: string | null | undefined,
 ): boolean => channelName === CONSOLE_CHANNEL_NAME;
 
+export const getChannelVisibility = (
+  channel: Pick<IChannel, "visibility"> | null | undefined,
+): ChannelVisibility => channel?.visibility ?? PUBLIC_CHANNEL_VISIBILITY;
+
+export const isSystemChannel = (
+  channel: Pick<IChannel, "visibility"> | null | undefined,
+): boolean => getChannelVisibility(channel) === SYSTEM_CHANNEL_VISIBILITY;
+
+export const isSystemSourceChannel = (
+  channelName: string | null | undefined,
+  channelsByName: Record<string, IChannel> | null | undefined,
+): boolean =>
+  Boolean(
+    channelName &&
+      (isConsoleSourceChannel(channelName) ||
+        isSystemChannel(channelsByName?.[channelName])),
+  );
+
+export const getPublicChannels = (channels: IChannel[]): IChannel[] =>
+  channels.filter(
+    (channel) =>
+      !isConsoleSourceChannel(channel.name) && !isSystemChannel(channel),
+  );
+
+export const getSystemChannelNames = (channels: IChannel[]): string[] =>
+  Array.from(
+    new Set([
+      CONSOLE_CHANNEL_NAME,
+      ...channels
+        .filter((channel) => isSystemChannel(channel))
+        .map((channel) => channel.name),
+    ]),
+  );
+
+export const getSourceDisplayChannelName = (
+  channelName: string,
+  channelsByName: Record<string, IChannel> | null | undefined,
+  consoleLabel = "Admin test console",
+): string => {
+  if (isConsoleSourceChannel(channelName)) {
+    return consoleLabel;
+  }
+
+  return channelsByName?.[channelName]?.name ?? channelName;
+};
+
+export const buildSourcesSearchParams = ({
+  searchPayload,
+  showSystemSources,
+  systemChannelNames,
+}: {
+  searchPayload: SourceSearchPayload;
+  showSystemSources: boolean;
+  systemChannelNames: string[];
+}): SourceSearchPayload => {
+  if (showSystemSources || systemChannelNames.length === 0) {
+    return searchPayload;
+  }
+
+  return {
+    ...searchPayload,
+    where: {
+      ...(searchPayload.where ?? {}),
+      channel: {
+        "!=": systemChannelNames,
+      },
+    },
+  };
+};
+
 export const resolveSourceState = (
   channelName: string,
   state: boolean,
@@ -46,13 +125,19 @@ export const resolveSourceState = (
 
 export const isSourceStateToggleDisabled = ({
   channelName,
-  state,
   disabled,
 }: {
   channelName: string;
-  state: boolean;
   disabled: boolean;
-}): boolean => disabled || (isConsoleSourceChannel(channelName) && state);
+}): boolean => disabled || isConsoleSourceChannel(channelName);
+
+export const isSourceStateFieldHidden = ({
+  channelName,
+  channelsByName,
+}: {
+  channelName: string;
+  channelsByName: Record<string, IChannel> | null | undefined;
+}): boolean => isSystemSourceChannel(channelName, channelsByName);
 
 export const shouldDisableSourceFormSubmit = ({
   channelName,

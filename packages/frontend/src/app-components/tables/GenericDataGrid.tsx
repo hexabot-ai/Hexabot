@@ -12,6 +12,7 @@ import {
   GridRowSelectionModel,
 } from "@mui/x-data-grid";
 import { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { useDataGridProps } from "@/hooks/useDataGridProps";
 import { useTranslate } from "@/hooks/useTranslate";
@@ -52,6 +53,7 @@ export const GenericDataGrid = <
   headerI18nTitle,
   headerTitleChip,
   headerLeftButtons,
+  footerControls,
   selectionChangeHandler,
   filters,
   hasTextFilter = true,
@@ -69,6 +71,7 @@ export const GenericDataGrid = <
   headerI18nTitle?: TTranslationKeys;
   headerTitleChip?: string;
   headerLeftButtons?: React.ReactElement;
+  footerControls?: ReactNode;
   selectionChangeHandler?: (selection: GridRowSelectionModel) => void;
   filters?: Filter[];
   hasTextFilter?: boolean;
@@ -118,13 +121,20 @@ export const GenericDataGrid = <
             </Grid>
           </Grid>
         </PageHeader>
-        <DataGrid
-          columns={columns}
-          {...dataGridProps}
-          checkboxSelection={!!selectionChangeHandler}
-          onRowSelectionModelChange={selectionChangeHandler}
-          {...restDataGridProps}
-        />
+        <Grid container flexDirection="column" gap={1}>
+          <DataGrid
+            columns={columns}
+            {...dataGridProps}
+            checkboxSelection={!!selectionChangeHandler}
+            onRowSelectionModelChange={selectionChangeHandler}
+            {...restDataGridProps}
+          />
+          {footerControls ? (
+            <Grid container justifyContent="flex-end">
+              {footerControls}
+            </Grid>
+          ) : null}
+        </Grid>
       </Grid>
     </Grid>
   );

@@ -558,10 +558,19 @@ describe("@hexabot-ai/types schemas", () => {
         type: "object",
       },
     });
+    const systemMetadata = channelMetadataSchema.parse({
+      name: "console",
+      visibility: "system",
+      settingsSchema: {
+        type: "object",
+      },
+    });
 
     expect(source.defaultWorkflow).toBe("wf_1");
     expect(sourceFull.defaultWorkflow?.id).toBe("wf_1");
     expect(metadata.name).toBe("web");
+    expect(metadata.visibility).toBe("public");
+    expect(systemMetadata.visibility).toBe("system");
   });
 
   it("accepts source and auditlog as valid model identities", () => {
