@@ -17,7 +17,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       {...{
         apiUrl: "http://localhost:3000/api",
         channel: "web",
-        sourceId: "replace-with-source-id",
+        sourceId: "7a59d3c3-b84c-40ac-9263-973bbe5843bc",
         language: "en",
         primaryColor: "#1BA089",
       }}

@@ -2,6 +2,10 @@
   margin: 0 0.625rem 0.375rem;
   display: flex;
 
+  &.hb-message--new {
+    animation: hb-message-enter 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   &:first-child {
     margin-top: 50%;
   }
@@ -97,6 +101,24 @@
         }
       }
     }
+  }
+}
+
+@keyframes hb-message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hb-message.hb-message--new {
+    animation: none;
   }
 }
 

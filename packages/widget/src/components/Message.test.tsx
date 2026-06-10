@@ -18,7 +18,7 @@ vi.mock("../providers/ChatProvider", () => ({
   useChat: () => mockUseChat(),
 }));
 
-const createMessage = (): UiMessage => ({
+const createMessage = (overrides: Partial<UiMessage> = {}): UiMessage => ({
   type: Web.OutboundMessageType.text,
   data: {
     text: "Hello",
@@ -30,6 +30,7 @@ const createMessage = (): UiMessage => ({
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   direction: Direction.received,
   handover: false,
+  ...overrides,
 });
 
 describe("Message", () => {
@@ -115,5 +116,41 @@ describe("Message", () => {
 
     expect(container.querySelector(".hb-message--avatar")).not.toBeNull();
     expect(container.querySelector("[data-custom-avatar='1']")).not.toBeNull();
+  });
+
+  it("marks the message for entry animation when requested", async () => {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<Message message={createMessage()} animate />);
+    });
+
+    expect(
+      container
+        .querySelector(".hb-message")
+        ?.classList.contains("hb-message--new"),
+    ).toBe(true);
+    expect(
+      container
+        .querySelector(".hb-message--text-content")
+        ?.classList.contains("typewriter"),
+    ).toBe(true);
+  });
+
+  it("does not typewrite sent messages when animating", async () => {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(
+        <Message
+          message={createMessage({ direction: Direction.sent })}
+          animate
+        />,
+      );
+    });
+
+    expect(
+      container
+        .querySelector(".hb-message--text-content")
+        ?.classList.contains("typewriter"),
+    ).toBe(false);
   });
 });

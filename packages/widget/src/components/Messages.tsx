@@ -20,7 +20,7 @@ type MessagesProps = PropsWithChildren<{
 
 const Messages: React.FC<MessagesProps> = ({ Avatar }) => {
   const { scroll, setScroll, isOpen } = useWidget();
-  const { messages, showTypingIndicator, setNewIOMessage } = useChat();
+  const { messages, newIOMessage, showTypingIndicator } = useChat();
   const scrollListRef = useRef<HTMLDivElement>(null);
   const [lastReceivedMessage, setLastReceivedMessage] = useState<
     UiMessage | undefined
@@ -58,11 +58,6 @@ const Messages: React.FC<MessagesProps> = ({ Avatar }) => {
   }, [scroll, isOpen, messages.length]);
 
   useEffect(() => {
-    setNewIOMessage(messages[messages.length - 1]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
     const newestReceivedMessage = messages[messages.length - 1];
 
     if (lastReceivedMessage !== newestReceivedMessage) {
@@ -85,7 +80,12 @@ const Messages: React.FC<MessagesProps> = ({ Avatar }) => {
       }}
     >
       {messages.map((message) => (
-        <Message key={message.mid} message={message} Avatar={Avatar} />
+        <Message
+          key={message.mid}
+          message={message}
+          Avatar={Avatar}
+          animate={message.mid === newIOMessage?.mid}
+        />
       ))}
       {showTypingIndicator && <TypingMessage />}
     </div>

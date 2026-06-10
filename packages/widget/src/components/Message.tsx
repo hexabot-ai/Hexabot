@@ -25,11 +25,16 @@ import MessageStatus from "./MessageStatus";
 dayjs.extend(relativeTime);
 
 type MessageProps = PropsWithChildren<{
+  animate?: boolean;
   Avatar?: () => JSX.Element;
   message: UiMessage;
 }>;
 
-const Message: React.FC<MessageProps> = ({ message, Avatar }) => {
+const Message: React.FC<MessageProps> = ({
+  message,
+  animate = false,
+  Avatar,
+}) => {
   const { participants } = useChat();
   const [isTimeVisible, setIsTimeVisible] = useState(false);
   const user = participants.find(
@@ -47,9 +52,14 @@ const Message: React.FC<MessageProps> = ({ message, Avatar }) => {
   const shouldShowAvatar =
     message.direction === Direction.received &&
     (Boolean(user.imageUrl) || Boolean(Avatar));
+  const shouldTypewrite = animate && message.direction === Direction.received;
 
   return (
-    <div className={`hb-message ${message.direction}`}>
+    <div
+      className={`hb-message ${message.direction}${
+        animate ? " hb-message--new" : ""
+      }`}
+    >
       <div
         className={`hb-message--content ${message.direction} ${
           shouldShowAvatar ? "with-avatar" : "no-avatar"
@@ -72,7 +82,7 @@ const Message: React.FC<MessageProps> = ({ message, Avatar }) => {
         )}
         <div className="hb-message--wrapper" onClick={handleTime}>
           {message.data && "text" in message.data && (
-            <TextMessage message={message} />
+            <TextMessage message={message} typewriter={shouldTypewrite} />
           )}
           {message.type === Web.InboundMessageType.file && (
             <FileMessage message={message} />
