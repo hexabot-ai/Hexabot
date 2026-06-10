@@ -47,7 +47,7 @@ export type ChannelSettings = {
   persistent_menu: boolean;
   theme?: ThemeOverrides;
   window_title: string;
-  avatar_url: string;
+  avatar_url?: string;
   show_emoji: boolean;
   show_file: boolean;
   show_location: boolean;
@@ -139,13 +139,15 @@ export const SettingsProvider: React.FC<ChatSettingsProviderProps> = ({
   }, [scopedSettings, legacySettings, settingsStorageKey]);
 
   useSubscribe("settings", (settings: ChannelSettings) => {
+    const avatarUrl = settings.avatar_url?.trim() || "";
+
     setSettings({
       ...defaultSettings,
       showEmoji: settings.show_emoji,
       showFile: settings.show_file,
       showLocation: settings.show_location,
       title: settings.window_title,
-      titleImageUrl: settings.avatar_url,
+      titleImageUrl: avatarUrl,
       menu: settings.menu,
       allowedUploadTypes: settings.allowed_upload_types
         ? settings.allowed_upload_types.split(",")
@@ -154,7 +156,7 @@ export const SettingsProvider: React.FC<ChatSettingsProviderProps> = ({
       theme: settings.theme,
       greetingMessage: settings.greeting_message,
       placeholder: t("settings.placeholder"),
-      avatarUrl: settings.avatar_url,
+      avatarUrl,
     });
   });
 

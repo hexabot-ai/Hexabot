@@ -8,11 +8,10 @@ import dayjs from "dayjs";
 import "dayjs/locale/en";
 import "dayjs/locale/fr";
 import relativeTime from "dayjs/plugin/relativeTime";
-import { MessageCircle } from "lucide-react";
 import React, { PropsWithChildren, useState } from "react";
 
 import { useChat } from "../providers/ChatProvider";
-import { UiMessage, Web } from "../types/message.types";
+import { Direction, UiMessage, Web } from "../types/message.types";
 
 import "./Message.scss";
 import ButtonsMessage from "./messages/ButtonMessage";
@@ -45,27 +44,28 @@ const Message: React.FC<MessageProps> = ({ message, Avatar }) => {
   const fromNow = (time: Date) => {
     return dayjs(time).fromNow();
   };
+  const shouldShowAvatar =
+    message.direction === Direction.received &&
+    (Boolean(user.imageUrl) || Boolean(Avatar));
 
   return (
     <div className={`hb-message ${message.direction}`}>
       <div className={`hb-message--content ${message.direction}`}>
-        <div
-          title={user.name}
-          className="hb-message--avatar"
-          style={
-            user.imageUrl
-              ? {
-                  backgroundImage: `url(${user.imageUrl})`,
-                }
-              : undefined
-          }
-        >
-          {Avatar ? (
-            <Avatar />
-          ) : !user.imageUrl ? (
-            <MessageCircle width="32px" height="32px" />
-          ) : null}
-        </div>
+        {shouldShowAvatar && (
+          <div
+            title={user.name}
+            className="hb-message--avatar"
+            style={
+              user.imageUrl
+                ? {
+                    backgroundImage: `url(${user.imageUrl})`,
+                  }
+                : undefined
+            }
+          >
+            {Avatar ? <Avatar /> : null}
+          </div>
+        )}
         <div className="hb-message--wrapper" onClick={handleTime}>
           {message.data && "text" in message.data && (
             <TextMessage message={message} />
