@@ -43,6 +43,10 @@
     max-width: calc(100% - 2.5rem);
     width: 100%;
 
+    &.no-avatar {
+      max-width: 100%;
+    }
+
     .hb-message--avatar {
       width: 28px;
       height: 28px;

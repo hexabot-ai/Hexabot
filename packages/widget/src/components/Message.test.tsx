@@ -67,6 +67,11 @@ describe("Message", () => {
     });
 
     expect(container.querySelector(".hb-message--avatar")).toBeNull();
+    expect(
+      container
+        .querySelector(".hb-message--content")
+        ?.classList.contains("no-avatar"),
+    ).toBe(true);
   });
 
   it("renders an avatar with background image when the participant has an image URL", async () => {
@@ -90,6 +95,11 @@ describe("Message", () => {
     );
 
     expect(avatarNode).not.toBeNull();
+    expect(
+      container
+        .querySelector(".hb-message--content")
+        ?.classList.contains("with-avatar"),
+    ).toBe(true);
     expect(avatarNode?.style.backgroundImage).toContain(
       "https://example.com/avatar.png",
     );

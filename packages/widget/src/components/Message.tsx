@@ -50,7 +50,11 @@ const Message: React.FC<MessageProps> = ({ message, Avatar }) => {
 
   return (
     <div className={`hb-message ${message.direction}`}>
-      <div className={`hb-message--content ${message.direction}`}>
+      <div
+        className={`hb-message--content ${message.direction} ${
+          shouldShowAvatar ? "with-avatar" : "no-avatar"
+        }`}
+      >
         {shouldShowAvatar && (
           <div
             title={user.name}
