@@ -8,6 +8,7 @@ import type { WorkflowEventMap } from '@hexabot-ai/agentic';
 import { WorkflowFull, Workflow } from '@hexabot-ai/types';
 import {
   BadRequestException,
+  Inject,
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
@@ -19,15 +20,16 @@ import { UpdateOneOptions } from '@/utils/generics/base-orm.repository';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
 import { InferCreateDto } from '@/utils/types/dto.types';
 import {
-  Room,
   SocketGet,
   SocketPost,
-  SocketReq,
-  SocketRequest,
-  SocketRes,
-  SocketResponse,
-  WebsocketGateway,
-} from '@/websocket';
+} from '@/websocket/decorators/socket-method.decorator';
+import { SocketReq } from '@/websocket/decorators/socket-req.decorator';
+import { SocketRes } from '@/websocket/decorators/socket-res.decorator';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
+import { Room } from '@/websocket/types';
+import { SocketRequest } from '@/websocket/utils/socket-request';
+import { SocketResponse } from '@/websocket/utils/socket-response';
+import type { WebsocketGateway } from '@/websocket/websocket.gateway';
 
 import { WorkflowUpdateDto } from '../dto/workflow.dto';
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
@@ -35,6 +37,11 @@ import { WorkflowRepository } from '../repositories/workflow.repository';
 import { WorkflowType } from '../types';
 
 import { WorkflowRunService } from './workflow-run.service';
+
+type WorkflowSocketGateway = Pick<
+  WebsocketGateway,
+  'joinSockets' | 'broadcastWorkflowEvent'
+>;
 
 @Injectable()
 export class WorkflowService extends BaseOrmService<WorkflowOrmEntity> {
@@ -51,7 +58,8 @@ export class WorkflowService extends BaseOrmService<WorkflowOrmEntity> {
    */
   constructor(
     readonly repository: WorkflowRepository,
-    private readonly gateway: WebsocketGateway,
+    @Inject(WEBSOCKET_GATEWAY)
+    private readonly gateway: WorkflowSocketGateway,
     private readonly workflowRunService: WorkflowRunService,
   ) {
     super(repository);

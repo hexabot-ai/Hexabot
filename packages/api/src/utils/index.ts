@@ -46,6 +46,8 @@ export * from './helpers/misc';
 
 export * from './helpers/object';
 
+export * from './helpers/parse';
+
 export * from './helpers/safeRandom';
 
 export * from './helpers/svg';

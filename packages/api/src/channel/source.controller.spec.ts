@@ -14,6 +14,8 @@ import { ThreadOrmEntity } from '@/chat/entities/thread.entity';
 import { installMessageFixturesTypeOrm } from '@/utils/test/fixtures/message';
 import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
+import type { WebsocketGateway } from '@/websocket/websocket.gateway';
 
 import { SourceOrmEntity } from './entities/source.entity';
 import { SourceService } from './services/source.service';
@@ -118,11 +120,23 @@ describe('SourceController (TypeORM cascade)', () => {
   let sourceRepository: Repository<SourceOrmEntity>;
   let threadRepository: Repository<ThreadOrmEntity>;
   let messageRepository: Repository<MessageOrmEntity>;
+  const websocketGatewayMock = {
+    joinSockets: jest.fn(),
+    broadcastWorkflowEvent: jest.fn(),
+  } as jest.Mocked<
+    Pick<WebsocketGateway, 'joinSockets' | 'broadcastWorkflowEvent'>
+  >;
 
   beforeAll(async () => {
     const testing = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [SourceController],
+      providers: [
+        {
+          provide: WEBSOCKET_GATEWAY,
+          useValue: websocketGatewayMock,
+        },
+      ],
       typeorm: {
         fixtures: installMessageFixturesTypeOrm,
       },

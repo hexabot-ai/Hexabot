@@ -50,6 +50,7 @@ import { MessageService } from '@/chat/services/message.service';
 import type { SubscriberChannelData } from '@/chat/types/channel';
 import { MenuService } from '@/cms/services/menu.service';
 import { config } from '@/config';
+import { getAllowedDomains } from '@/utils/helpers/origin';
 import { SocketRequest } from '@/websocket/utils/socket-request';
 import { SocketResponse } from '@/websocket/utils/socket-response';
 
@@ -303,12 +304,11 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
     res: Response | SocketResponse,
     source: Source,
   ): Promise<void> {
-    const allowedDomains =
-      typeof source.settings.allowed_domains === 'string'
-        ? source.settings.allowed_domains
-        : '*';
-
-    await this.sessionService.validateCors(req, res, allowedDomains);
+    await this.sessionService.validateCors(
+      req,
+      res,
+      getAllowedDomains(source.settings),
+    );
   }
 
   protected async getOrCreateSession(

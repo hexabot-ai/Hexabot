@@ -19,6 +19,7 @@ import {
 } from '@/utils/test/fixtures/workflow';
 import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
 import { WorkflowVersionService } from '../services/workflow-version.service';
 import { WorkflowService } from '../services/workflow.service';
@@ -33,6 +34,10 @@ describe('WorkflowVersionController (TypeORM)', () => {
   let workflowVersionService: WorkflowVersionService;
   let logger: LoggerService;
   const createdWorkflowIds = new Set<string>();
+  const websocketGatewayMock = {
+    joinSockets: jest.fn(),
+    broadcastWorkflowEvent: jest.fn(),
+  };
   let counter = 0;
 
   const buildWorkflowPayload = () => {
@@ -65,6 +70,12 @@ describe('WorkflowVersionController (TypeORM)', () => {
     const { module: testingModule, getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [WorkflowVersionController],
+      providers: [
+        {
+          provide: WEBSOCKET_GATEWAY,
+          useValue: websocketGatewayMock,
+        },
+      ],
       typeorm: {
         fixtures: [
           installMessagingWorkflowFixturesTypeOrm,

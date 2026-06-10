@@ -23,6 +23,7 @@ import {
   getLastTypeOrmDataSource,
 } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
 import { WorkflowVersionOrmEntity } from '../entities/workflow-version.entity';
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
@@ -34,7 +35,10 @@ describe('WorkflowVersionService (TypeORM)', () => {
   let module: TestingModule;
   let workflowVersionService: WorkflowVersionService;
   let workflowRepository: Repository<WorkflowOrmEntity>;
-
+  const websocketGatewayMock = {
+    joinSockets: jest.fn(),
+    broadcastWorkflowEvent: jest.fn(),
+  };
   const createWorkflow = async (
     overrides: Partial<WorkflowOrmEntity> = {},
   ): Promise<WorkflowOrmEntity> => {
@@ -52,7 +56,10 @@ describe('WorkflowVersionService (TypeORM)', () => {
   beforeAll(async () => {
     const testing = await buildTestingMocks({
       autoInjectFrom: ['providers'],
-      providers: [WorkflowVersionService],
+      providers: [
+        WorkflowVersionService,
+        { provide: WEBSOCKET_GATEWAY, useValue: websocketGatewayMock },
+      ],
       typeorm: {
         fixtures: [installUserFixturesTypeOrm],
       },

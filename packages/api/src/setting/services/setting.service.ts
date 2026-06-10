@@ -28,6 +28,7 @@ import {
 import { Cacheable } from '@/utils/decorators/cacheable.decorator';
 import { UpdateOneOptions } from '@/utils/generics/base-orm.repository';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
+import { splitAllowedOrigins } from '@/utils/helpers/origin';
 import { UpdateEntityEvent } from '@/utils/types/entity-event.types';
 
 import { SettingCreateDto, SettingUpdateDto } from '../dto/setting.dto';
@@ -272,9 +273,9 @@ export class SettingService extends BaseOrmService<SettingOrmEntity> {
       where: { label: 'allowed_domains' },
     })) as Setting[];
     const allowedDomains = settings.flatMap((setting) =>
-      (typeof setting.value === 'string' ? setting.value : '')
-        .split(',')
-        .filter((origin) => origin),
+      typeof setting.value === 'string'
+        ? splitAllowedOrigins(setting.value)
+        : [],
     );
     const uniqueOrigins = new Set([
       ...config.security.cors.allowOrigins,

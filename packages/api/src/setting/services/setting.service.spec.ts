@@ -173,7 +173,7 @@ describe('SettingService', () => {
         }),
         makeSetting({
           label: 'allowed_domains',
-          value: 'https://example.com,https://another.com',
+          value: ' https://example.com, https://another.com ',
         }),
       ];
 

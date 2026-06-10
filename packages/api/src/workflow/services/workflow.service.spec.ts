@@ -21,7 +21,7 @@ import {
 } from '@/utils/test/fixtures/user';
 import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
-import { WebsocketGateway } from '@/websocket';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import {
   conversationalWorkflowInputJsonSchema,
   scheduledWorkflowInputJsonSchema,
@@ -107,7 +107,7 @@ describe('WorkflowService (TypeORM)', () => {
         WorkflowVersionService,
         WorkflowRunService,
         WorkflowRunRepository,
-        { provide: WebsocketGateway, useValue: gatewayMock },
+        { provide: WEBSOCKET_GATEWAY, useValue: gatewayMock },
       ],
       typeorm: {
         fixtures: installUserFixturesTypeOrm,

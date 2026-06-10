@@ -27,7 +27,8 @@ import {
   InsertEntityEvent,
   UpdateEntityEvent,
 } from '@/utils/types/entity-event.types';
-import { WebsocketGateway } from '@/websocket/websocket.gateway';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
+import type { WebsocketGateway } from '@/websocket/websocket.gateway';
 import { WorkflowType } from '@/workflow/types';
 
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
@@ -102,7 +103,7 @@ describe('WorkflowSchedulerService (TypeORM)', () => {
           useValue: workflowRunServiceMock,
         },
         {
-          provide: WebsocketGateway,
+          provide: WEBSOCKET_GATEWAY,
           useValue: websocketGatewayMock,
         },
         I18nServiceProvider,

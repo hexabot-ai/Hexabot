@@ -12,6 +12,7 @@ import { SubscriberCreateDto } from '@/chat/dto/subscriber.dto';
 import { SubscriberService } from '@/chat/services/subscriber.service';
 import { ThreadService } from '@/chat/services/thread.service';
 import { LoggerService } from '@/logger/logger.service';
+import { isAllowedOrigin, normalizeOrigin } from '@/utils/helpers/origin';
 import { SocketRequest } from '@/websocket/utils/socket-request';
 import { SocketResponse } from '@/websocket/utils/socket-response';
 
@@ -62,38 +63,26 @@ export class WebSessionService {
     res: Response | SocketResponse,
     allowedDomains: string,
   ): Promise<void> {
-    if (!req.headers?.origin) {
+    const origin = req.headers?.origin;
+
+    if (!origin) {
       this.logger.debug('No origin ', req.headers);
       throw new Error('CORS - No origin provided!');
     }
 
-    const originUrl = new URL(req.headers.origin);
-    if (!['http:', 'https:'].includes(originUrl.protocol)) {
+    const normalizedOrigin = normalizeOrigin(origin);
+
+    if (!normalizedOrigin) {
       throw new Error('CORS - Invalid origin!');
     }
 
-    const origins = allowedDomains.split(',');
-    const foundOrigin = origins
-      .filter((o) => o.trim() !== '*')
-      .map((o) => {
-        try {
-          return new URL(o.trim()).origin;
-        } catch {
-          this.logger.error(`Invalid URL in allowed domains: ${o}`);
-
-          return null;
-        }
-      })
-      .filter((o): o is string => o !== null)
-      .some((o) => o === originUrl.origin);
-
-    if (!foundOrigin && !origins.includes('*')) {
+    if (!isAllowedOrigin(normalizedOrigin, allowedDomains)) {
       res.set('Access-Control-Allow-Origin', '');
-      this.logger.debug('No origin found ', req.headers.origin);
+      this.logger.debug('No origin found ', origin);
       throw new Error('CORS - Domain not allowed!');
     }
 
-    res.set('Access-Control-Allow-Origin', originUrl.origin);
+    res.set('Access-Control-Allow-Origin', normalizedOrigin);
     res.set('Access-Control-Allow-Credentials', 'true');
     res.set('Access-Control-Expose-Headers', '');
     if (req.method === 'OPTIONS') {

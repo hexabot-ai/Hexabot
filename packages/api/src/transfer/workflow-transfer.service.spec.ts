@@ -36,7 +36,8 @@ import {
 } from '@/utils/test/fixtures/user';
 import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
-import { WebsocketGateway } from '@/websocket/websocket.gateway';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
+import type { WebsocketGateway } from '@/websocket/websocket.gateway';
 import { workflowResourceRef } from '@/workflow/resource-refs';
 import { McpClientPoolService } from '@/workflow/services/mcp-client-pool.service';
 import { McpServerService } from '@/workflow/services/mcp-server.service';
@@ -168,7 +169,7 @@ describe('WorkflowTransferService', () => {
         McpServerTransferAdapter,
         KnowledgeBaseTransferAdapter,
         {
-          provide: WebsocketGateway,
+          provide: WEBSOCKET_GATEWAY,
           useValue: websocketGatewayMock,
         },
         {

@@ -38,7 +38,8 @@ import {
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
 import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
-import { WebsocketGateway } from '@/websocket/websocket.gateway';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
+import type { WebsocketGateway } from '@/websocket/websocket.gateway';
 import {
   conversationalWorkflowInputJsonSchema,
   scheduledWorkflowInputJsonSchema,
@@ -151,7 +152,7 @@ describe('WorkflowController (TypeORM)', () => {
           useValue: workflowRunServiceMock,
         },
         {
-          provide: WebsocketGateway,
+          provide: WEBSOCKET_GATEWAY,
           useValue: websocketGatewayMock,
         },
       ],

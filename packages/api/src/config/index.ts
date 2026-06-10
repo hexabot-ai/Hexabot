@@ -6,6 +6,13 @@
 
 import { join } from 'path';
 
+import {
+  parseAuditHeaders,
+  parseCsv,
+  parseIntWithFallback,
+  parseOptionalInt,
+} from '@/utils/helpers/parse';
+
 import { Config } from './types';
 
 const isProduction = (process.env.NODE_ENV || 'development')
@@ -16,59 +23,6 @@ const shouldAutoMigrate =
   (autoMigrateToggle === 'true' &&
     (process.env.API_IS_PRIMARY_NODE || 'true') === 'true') ||
   !isProduction;
-const parseIntWithFallback = (
-  value: string | undefined,
-  fallback: number,
-): number => {
-  if (!value) {
-    return fallback;
-  }
-  const parsed = Number.parseInt(value, 10);
-
-  return Number.isNaN(parsed) ? fallback : parsed;
-};
-const parseOptionalInt = (value: string | undefined): number | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(value, 10);
-
-  return Number.isNaN(parsed) ? undefined : parsed;
-};
-const parseCsv = (value: string | undefined, fallback: string[]): string[] => {
-  if (!value) {
-    return fallback;
-  }
-
-  return value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-};
-const parseAuditHeaders = (
-  value: string | undefined,
-): Record<string, string> => {
-  if (!value) {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {};
-    }
-
-    return Object.fromEntries(
-      Object.entries(parsed).map(([key, headerValue]) => [
-        key,
-        String(headerValue),
-      ]),
-    );
-  } catch {
-    return {};
-  }
-};
 const sessionMaxAge = parseIntWithFallback(
   process.env.SESSION_MAX_AGE,
   24 * 60 * 60 * 1000,
@@ -114,9 +68,7 @@ export const config: Config = {
       headers:
         'content-type,x-xsrf-token,x-csrf-token,authorization,mcp-session-id,last-event-id',
       methods: ['GET', 'PATCH', 'POST', 'DELETE', 'OPTIONS', 'HEAD'],
-      allowOrigins: process.env.FRONTEND_ORIGIN
-        ? process.env.FRONTEND_ORIGIN.split(',').map((origin) => origin.trim())
-        : ['*'],
+      allowOrigins: parseCsv(process.env.FRONTEND_ORIGIN, ['*']),
       allowCredentials: true,
     },
     csrf: true,
@@ -174,9 +126,9 @@ export const config: Config = {
     // that sets a cookie (this is used by the sails.io.js socket client
     // to get access to a 3rd party cookie and to enable sessions).
     grant3rdPartyCookie: true,
-    onlyAllowOrigins: process.env.FRONTEND_ORIGIN
-      ? process.env.FRONTEND_ORIGIN.split(',').map((origin) => origin.trim())
-      : [], // ['http://example.com', 'https://example.com'],
+    // Admin/frontend origins for Socket.IO connections without a web source.
+    // Web widget origins are controlled by each web source's allowed_domains.
+    onlyAllowOrigins: parseCsv(process.env.FRONTEND_ORIGIN, []), // ['http://example.com', 'https://example.com'],
   },
   session: {
     secret: process.env.SESSION_SECRET || 'changeme',

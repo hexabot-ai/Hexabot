@@ -16,6 +16,7 @@ import {
 } from '@/utils/test/fixtures/message';
 import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
 import { MessageController } from './message.controller';
 
@@ -37,6 +38,10 @@ describe('MessageController (TypeORM)', () => {
     findChannel: jest.fn(),
     getChannelHandler: jest.fn(),
   };
+  const websocketGatewayMock = {
+    joinSockets: jest.fn(),
+    broadcastWorkflowEvent: jest.fn(),
+  };
   const defaultOrder = { order: { createdAt: 'ASC' as const } };
 
   beforeAll(async () => {
@@ -51,6 +56,10 @@ describe('MessageController (TypeORM)', () => {
         {
           provide: ChannelService,
           useValue: channelServiceMock,
+        },
+        {
+          provide: WEBSOCKET_GATEWAY,
+          useValue: websocketGatewayMock,
         },
       ],
       typeorm: {

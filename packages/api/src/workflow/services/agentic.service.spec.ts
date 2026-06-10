@@ -25,6 +25,7 @@ import {
 } from '@/utils/test/fixtures/workflow';
 import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import { WorkflowContextFactory } from '@/workflow/contexts/workflow-context-factory';
 import { WorkflowRunOrmEntity } from '@/workflow/entities/workflow-run.entity';
 import { WorkflowVersionOrmEntity } from '@/workflow/entities/workflow-version.entity';
@@ -56,6 +57,10 @@ const i18nServiceMock = {
   ),
 };
 const moduleRefMock: Partial<ModuleRef> = {};
+const websocketGatewayMock = {
+  joinSockets: jest.fn(),
+  broadcastWorkflowEvent: jest.fn(),
+};
 const buildRunnerMock = ({
   startResult,
   resumeResult,
@@ -180,6 +185,7 @@ describe('AgenticService (TypeORM)', () => {
         },
         { provide: I18nService, useValue: i18nServiceMock },
         { provide: ModuleRef, useValue: moduleRefMock },
+        { provide: WEBSOCKET_GATEWAY, useValue: websocketGatewayMock },
       ],
       typeorm: {
         entities: [

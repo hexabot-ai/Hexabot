@@ -19,6 +19,7 @@ import {
 } from '@/utils/test/fixtures/user';
 import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
 import { WorkflowRunOrmEntity } from '../entities/workflow-run.entity';
 import { WorkflowVersionOrmEntity } from '../entities/workflow-version.entity';
@@ -43,7 +44,10 @@ describe('WorkflowRunService (TypeORM)', () => {
   let workflowVersionId: string | null;
   let counter = 0;
   let creatorId: string;
-
+  const websocketGatewayMock = {
+    joinSockets: jest.fn(),
+    broadcastWorkflowEvent: jest.fn(),
+  };
   const buildWorkflowDefinition = (): WorkflowDefinition => ({
     defs: {
       greet: { kind: 'task', action: 'greet' },
@@ -71,6 +75,7 @@ describe('WorkflowRunService (TypeORM)', () => {
         WorkflowRunService,
         WorkflowRunRepository,
         WorkflowVersionService,
+        { provide: WEBSOCKET_GATEWAY, useValue: websocketGatewayMock },
       ],
       typeorm: {
         entities: [
