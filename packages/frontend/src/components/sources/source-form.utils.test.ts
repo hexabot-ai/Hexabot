@@ -10,10 +10,16 @@ import { describe, expect, it } from "vitest";
 import {
   buildSourcePayload,
   buildSourceSettingsUiSchema,
+  buildSourcesSearchParams,
+  getPublicChannels,
   getSourceFormDefaults,
+  getSourceDisplayChannelName,
+  getSystemChannelNames,
   isConsoleSourceChannel,
   isSourceChannelRegistered,
+  isSourceStateFieldHidden,
   isSourceStateToggleDisabled,
+  isSystemSourceChannel,
   pruneSourceSettingsBySchema,
   resolveDefaultWorkflowId,
   resolveSourceChannel,
@@ -58,6 +64,106 @@ describe("source form utils", () => {
     });
   });
 
+  describe("channel visibility helpers", () => {
+    const webChannel = {
+      id: "web",
+      name: "web",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      settingsSchema: {},
+      visibility: "public" as const,
+    };
+    const consoleChannel = {
+      id: "console",
+      name: "console",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      settingsSchema: {},
+      visibility: "system" as const,
+    };
+    const channelsByName = {
+      web: webChannel,
+      console: consoleChannel,
+    };
+
+    it("separates public and system channels from metadata visibility", () => {
+      expect(getPublicChannels([webChannel, consoleChannel])).toEqual([
+        webChannel,
+      ]);
+      expect(getSystemChannelNames([webChannel, consoleChannel])).toEqual([
+        "console",
+      ]);
+      expect(isSystemSourceChannel("console", channelsByName)).toBe(true);
+      expect(isSystemSourceChannel("console", {})).toBe(true);
+      expect(isSystemSourceChannel("web", channelsByName)).toBe(false);
+    });
+
+    it("builds source grid filters that hide system channels by default", () => {
+      expect(
+        buildSourcesSearchParams({
+          searchPayload: {
+            where: {
+              or: [{ name: { contains: "main" } }],
+            },
+          },
+          showSystemSources: false,
+          systemChannelNames: ["console"],
+        }),
+      ).toEqual({
+        where: {
+          or: [{ name: { contains: "main" } }],
+          channel: { "!=": ["console"] },
+        },
+      });
+      expect(
+        buildSourcesSearchParams({
+          searchPayload: { where: {} },
+          showSystemSources: true,
+          systemChannelNames: ["console"],
+        }),
+      ).toEqual({ where: {} });
+    });
+
+    it("uses a clear console display label fallback", () => {
+      expect(getSourceDisplayChannelName("console", channelsByName)).toBe(
+        "Admin test console",
+      );
+      expect(
+        getSourceDisplayChannelName("console", channelsByName, "Console admin"),
+      ).toBe("Console admin");
+      expect(getSourceDisplayChannelName("web", channelsByName)).toBe("web");
+      expect(getSourceDisplayChannelName("custom", channelsByName)).toBe(
+        "custom",
+      );
+    });
+
+    it("hides state fields for console or system sources", () => {
+      expect(
+        isSourceStateFieldHidden({
+          channelName: "console",
+          channelsByName,
+        }),
+      ).toBe(true);
+      expect(
+        isSourceStateFieldHidden({
+          channelName: "web",
+          channelsByName: {
+            web: {
+              ...webChannel,
+              visibility: "system",
+            },
+          },
+        }),
+      ).toBe(true);
+      expect(
+        isSourceStateFieldHidden({
+          channelName: "web",
+          channelsByName,
+        }),
+      ).toBe(false);
+    });
+  });
+
   describe("console source helpers", () => {
     it("detects console channels", () => {
       expect(isConsoleSourceChannel("console")).toBe(true);
@@ -71,32 +177,28 @@ describe("source form utils", () => {
       expect(resolveSourceState("web", false)).toBe(false);
     });
 
-    it("locks only active console source toggles", () => {
+    it("locks all console source toggles", () => {
       expect(
         isSourceStateToggleDisabled({
           channelName: "console",
-          state: true,
           disabled: false,
         }),
       ).toBe(true);
       expect(
         isSourceStateToggleDisabled({
           channelName: "console",
-          state: false,
           disabled: false,
         }),
-      ).toBe(false);
+      ).toBe(true);
       expect(
         isSourceStateToggleDisabled({
           channelName: "web",
-          state: true,
           disabled: false,
         }),
       ).toBe(false);
       expect(
         isSourceStateToggleDisabled({
           channelName: "console",
-          state: false,
           disabled: true,
         }),
       ).toBe(true);

@@ -19,6 +19,9 @@ Shared zod-first runtime contracts for Hexabot API entity outputs.
 `AuditLog` includes nullable `actorLabel` and `resourceLabel` display fields in
 addition to the stable actor/resource identifiers.
 
+`ChannelMetadata` includes `visibility` (`public` or `system`) so clients can
+separate customer-facing channels from internal tooling channels.
+
 ## Standard Export Pattern
 
 Each migrated entity exposes:

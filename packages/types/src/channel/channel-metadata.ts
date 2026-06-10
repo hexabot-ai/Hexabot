@@ -10,11 +10,17 @@ const jsonObjectSchema: z.ZodType<Record<string, unknown>> = z.record(
   z.string(),
   z.unknown(),
 );
+
+export const channelVisibilitySchema = z.enum(["public", "system"]);
+
 const channelMetadataObjectSchema = z.object({
   name: z.string(),
   settingsSchema: jsonObjectSchema,
+  visibility: channelVisibilitySchema.default("public"),
 });
 
 export const channelMetadataSchema = channelMetadataObjectSchema;
+
+export type ChannelVisibility = z.infer<typeof channelVisibilitySchema>;
 
 export type ChannelMetadata = z.infer<typeof channelMetadataSchema>;

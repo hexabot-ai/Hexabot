@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 
 import type {
   Attachment,
+  ChannelVisibility,
   Source,
   StdOutgoingMessageEnvelope,
   Subscriber,
@@ -117,8 +118,12 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
   @ExtensionInject(WebHistoryService)
   private historyService!: WebHistoryService;
 
-  constructor(name: N, sourceSettingsSchema?: z.ZodTypeAny) {
-    super(name, sourceSettingsSchema);
+  constructor(
+    name: N,
+    sourceSettingsSchema?: z.ZodTypeAny,
+    visibility?: ChannelVisibility,
+  ) {
+    super(name, sourceSettingsSchema, visibility);
   }
 
   async onModuleInit() {

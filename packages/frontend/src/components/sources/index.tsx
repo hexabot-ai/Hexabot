@@ -8,6 +8,7 @@ import { Action, type SourceFull } from "@hexabot-ai/types";
 import {
   Button,
   Chip,
+  FormControlLabel,
   IconButton,
   Menu,
   MenuItem,
@@ -38,8 +39,14 @@ import { writeToClipboard } from "@/utils/clipboard";
 import { getDateTimeFormatter } from "@/utils/date";
 
 import {
+  buildSourcesSearchParams,
+  getPublicChannels,
+  getSourceDisplayChannelName,
+  getSystemChannelNames,
+  isConsoleSourceChannel,
   isSourceChannelRegistered,
   isSourceStateToggleDisabled,
+  isSystemSourceChannel,
 } from "./source-form.utils";
 import { SourceFormDialog } from "./SourceFormDialog";
 
@@ -52,6 +59,7 @@ export const Sources = () => {
   const [addMenuAnchorEl, setAddMenuAnchorEl] = useState<HTMLElement | null>(
     null,
   );
+  const [showSystemSources, setShowSystemSources] = useState(false);
   const hasPermission = useHasPermission();
   const canUpdateSources = hasPermission(EntityType.SOURCE, Action.UPDATE);
   const { data: channels = [], isLoading: isLoadingChannels } = useFind(
@@ -68,6 +76,11 @@ export const Sources = () => {
         },
         {} as Record<string, IChannel>,
       ),
+    [channels],
+  );
+  const publicChannels = useMemo(() => getPublicChannels(channels), [channels]);
+  const systemChannelNames = useMemo(
+    () => getSystemChannelNames(channels),
     [channels],
   );
   const { mutate: updateSource } = useUpdate(EntityType.SOURCE, {
@@ -88,7 +101,7 @@ export const Sources = () => {
     });
   };
   const handleOpenAddMenu = (event: MouseEvent<HTMLElement>) => {
-    if (!isLoadingChannels && channels.length > 0) {
+    if (!isLoadingChannels && publicChannels.length > 0) {
       setAddMenuAnchorEl(event.currentTarget);
     }
   };
@@ -179,12 +192,36 @@ export const Sources = () => {
           row.channel,
           channelMetadataByName,
         );
+        const isSystemSource = isSystemSourceChannel(
+          row.channel,
+          channelMetadataByName,
+        );
+        const channelLabel = getSourceDisplayChannelName(
+          row.channel,
+          channelMetadataByName,
+          t("label.admin_test_console"),
+        );
 
         return (
           <Stack alignItems="center" direction="row" spacing={1} width="100%">
-            <Typography noWrap variant="body2" sx={{ minWidth: 0 }}>
-              {row.channel}
+            <Typography
+              noWrap
+              title={
+                isConsoleSourceChannel(row.channel) ? row.channel : channelLabel
+              }
+              variant="body2"
+              sx={{ minWidth: 0 }}
+            >
+              {channelLabel}
             </Typography>
+            {isSystemSource ? (
+              <Chip
+                color="default"
+                label={t("label.system")}
+                size="small"
+                variant="outlined"
+              />
+            ) : null}
             {!isLoadingChannels && !isRegisteredChannel ? (
               <Tooltip
                 title={t("message.source_channel_handler_not_registered")}
@@ -237,9 +274,11 @@ export const Sources = () => {
             checked={row.state}
             disabled={isSourceStateToggleDisabled({
               channelName: row.channel,
-              state: row.state,
               disabled:
-                !canUpdateSources || isLoadingChannels || !isRegisteredChannel,
+                !canUpdateSources ||
+                isLoadingChannels ||
+                !isRegisteredChannel ||
+                isSystemSourceChannel(row.channel, channelMetadataByName),
             })}
             onChange={() =>
               updateSource({
@@ -289,7 +328,7 @@ export const Sources = () => {
                 startIcon={<Plus />}
                 endIcon={<ChevronDown size={18} />}
                 onClick={handleOpenAddMenu}
-                disabled={isLoadingChannels || channels.length === 0}
+                disabled={isLoadingChannels || publicChannels.length === 0}
               >
                 {t("button.add")}
               </Button>
@@ -301,16 +340,38 @@ export const Sources = () => {
         searchParams={{
           $or: ["name", "channel"],
           syncUrl: true,
+          getFindParams: (searchPayload) =>
+            buildSourcesSearchParams({
+              searchPayload,
+              showSystemSources,
+              systemChannelNames,
+            }),
         }}
         headerI18nTitle="title.channel_sources"
+        footerControls={
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showSystemSources}
+                onChange={(_event, checked) => setShowSystemSources(checked)}
+                size="small"
+              />
+            }
+            label={t("label.show_system_sources")}
+            sx={{
+              m: 0,
+              whiteSpace: "nowrap",
+            }}
+          />
+        }
       />
       <Menu
         anchorEl={addMenuAnchorEl}
         open={Boolean(addMenuAnchorEl)}
         onClose={handleCloseAddMenu}
       >
-        {channels.length > 0 ? (
-          channels.map((channel) => (
+        {publicChannels.length > 0 ? (
+          publicChannels.map((channel) => (
             <MenuItem
               key={channel.name}
               onClick={() => {

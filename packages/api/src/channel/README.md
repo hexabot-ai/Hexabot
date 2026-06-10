@@ -42,7 +42,7 @@ At request time:
 
 Also available:
 
-- `GET /api/channel` returns channel metadata (`name`, settings JSON schema).
+- `GET /api/channel` returns channel metadata (`name`, `visibility`, settings JSON schema).
 - `GET /api/source`, `GET /api/source/:id`, `POST /api/source`, `PATCH /api/source/:id`.
 - Sources are not physically deleted. Disable them with `PATCH /api/source/:id` and `state: false`.
 
@@ -56,6 +56,7 @@ Base abstraction for all channels:
 - `doSendMessage(event, envelope, options)`: channel-specific outbound send.
 - `getSubscriberData(event)`: map platform user data to `SubscriberCreateDto`.
 - `getCapabilities()`: declares supported outgoing formats and features.
+- `getVisibility()`: marks channels as `public` or `system` for admin UI separation.
 
 Optional extension points:
 

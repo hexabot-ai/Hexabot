@@ -55,7 +55,7 @@ export type SearchItem<T> = {
         ? undefined
         : { contains?: Extract<T[K], string> })
     | {
-        "!="?: T[K];
+        "!="?: T[K] | T[K][];
       }
     | {
         $in?: T[K] | T[K][];

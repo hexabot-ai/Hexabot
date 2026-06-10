@@ -31,7 +31,9 @@ import {
   buildSourcePayload,
   buildSourceSettingsUiSchema,
   getSourceFormDefaults,
+  getSourceDisplayChannelName,
   isSourceChannelRegistered,
+  isSourceStateFieldHidden,
   isSourceStateToggleDisabled,
   resolveSourceChannel,
   resolveSourceSettingsSchema,
@@ -114,6 +116,15 @@ export const SourceForm: FC<
   const { mutate: createSource } = useCreate(EntityType.SOURCE, options);
   const { mutate: updateSource } = useUpdate(EntityType.SOURCE, options);
   const isFormDisabled = isUnregisteredChannel;
+  const isStateFieldHidden = isSourceStateFieldHidden({
+    channelName,
+    channelsByName: presetValues?.channelsByName,
+  });
+  const channelLabel = getSourceDisplayChannelName(
+    channelName,
+    presetValues?.channelsByName,
+    t("label.admin_test_console"),
+  );
   const isSubmitDisabled = shouldDisableSourceFormSubmit({
     channelName,
     isUnregisteredChannel,
@@ -177,6 +188,11 @@ export const SourceForm: FC<
               </Alert>
             </ContentItem>
           ) : null}
+          {isStateFieldHidden ? (
+            <ContentItem>
+              <Alert severity="info">{t("message.system_source_info")}</Alert>
+            </ContentItem>
+          ) : null}
           <ContentItem>
             <TextField
               label={t("label.name")}
@@ -193,10 +209,14 @@ export const SourceForm: FC<
           <ContentItem>
             <TextField
               label={t("label.channel")}
-              value={channelName}
+              value={channelLabel}
               disabled
               helperText={
-                channelName ? null : t("message.no_channel_selected_for_source")
+                channelName
+                  ? channelLabel === channelName
+                    ? null
+                    : channelName
+                  : t("message.no_channel_selected_for_source")
               }
             />
           </ContentItem>
@@ -221,28 +241,29 @@ export const SourceForm: FC<
               )}
             />
           </ContentItem>
-          <ContentItem>
-            <Controller
-              name="state"
-              control={control}
-              render={({ field }) => (
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={field.value}
-                      disabled={isSourceStateToggleDisabled({
-                        channelName,
-                        state: field.value,
-                        disabled: isFormDisabled,
-                      })}
-                      onChange={(_event, checked) => field.onChange(checked)}
-                    />
-                  }
-                  label={t("label.enabled")}
-                />
-              )}
-            />
-          </ContentItem>
+          {!isStateFieldHidden ? (
+            <ContentItem>
+              <Controller
+                name="state"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={field.value}
+                        disabled={isSourceStateToggleDisabled({
+                          channelName,
+                          disabled: isFormDisabled,
+                        })}
+                        onChange={(_event, checked) => field.onChange(checked)}
+                      />
+                    }
+                    label={t("label.enabled")}
+                  />
+                )}
+              />
+            </ContentItem>
+          ) : null}
           {!isUnregisteredChannel ? (
             <ContentItem>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
