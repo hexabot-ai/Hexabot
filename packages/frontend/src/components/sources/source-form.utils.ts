@@ -12,6 +12,7 @@ import type { IChannel } from "@/types/channel.types";
 import { isRecord } from "@/utils/object";
 
 type SourceLike = Source | SourceFull;
+export const CONSOLE_CHANNEL_NAME = "console";
 
 export const EMPTY_SOURCE_SETTINGS_SCHEMA: RJSFSchema = {
   type: "object",
@@ -33,6 +34,25 @@ export const isSourceChannelRegistered = (
   channelName: string | null | undefined,
   channelsByName: Record<string, IChannel> | null | undefined,
 ): boolean => Boolean(channelName && channelsByName?.[channelName]);
+
+export const isConsoleSourceChannel = (
+  channelName: string | null | undefined,
+): boolean => channelName === CONSOLE_CHANNEL_NAME;
+
+export const resolveSourceState = (
+  channelName: string,
+  state: boolean,
+): boolean => (isConsoleSourceChannel(channelName) ? true : state);
+
+export const isSourceStateToggleDisabled = ({
+  channelName,
+  state,
+  disabled,
+}: {
+  channelName: string;
+  state: boolean;
+  disabled: boolean;
+}): boolean => disabled || (isConsoleSourceChannel(channelName) && state);
 
 export const shouldDisableSourceFormSubmit = ({
   channelName,
@@ -74,6 +94,26 @@ export const buildSourceSettingsUiSchema = (schema: RJSFSchema): UiSchema => {
   };
 };
 
+export const pruneSourceSettingsBySchema = (
+  settings: unknown,
+  schema: RJSFSchema,
+): Record<string, unknown> => {
+  const normalizedSettings = normalizeSourceSettings(settings);
+  const propertyNames = Object.keys(schema.properties || {});
+
+  if (propertyNames.length === 0) {
+    return {};
+  }
+
+  return propertyNames.reduce<Record<string, unknown>>((acc, key) => {
+    if (Object.prototype.hasOwnProperty.call(normalizedSettings, key)) {
+      acc[key] = normalizedSettings[key];
+    }
+
+    return acc;
+  }, {});
+};
+
 export const resolveDefaultWorkflowId = (
   value: SourceLike["defaultWorkflow"] | null | undefined,
 ): string | null => {
@@ -111,17 +151,21 @@ export const buildSourcePayload = ({
   name,
   state,
   settings,
+  settingsSchema,
   defaultWorkflow,
 }: {
   channel: string;
   name: string;
   state: boolean;
   settings: Record<string, unknown>;
+  settingsSchema?: RJSFSchema;
   defaultWorkflow: SourceLike["defaultWorkflow"] | null | undefined;
 }) => ({
   channel,
   name: name.trim(),
-  state,
-  settings: normalizeSourceSettings(settings),
+  state: resolveSourceState(channel, state),
+  settings: settingsSchema
+    ? pruneSourceSettingsBySchema(settings, settingsSchema)
+    : normalizeSourceSettings(settings),
   defaultWorkflow: resolveDefaultWorkflowId(defaultWorkflow),
 });

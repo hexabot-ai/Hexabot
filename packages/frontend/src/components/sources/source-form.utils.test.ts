@@ -11,10 +11,14 @@ import {
   buildSourcePayload,
   buildSourceSettingsUiSchema,
   getSourceFormDefaults,
+  isConsoleSourceChannel,
   isSourceChannelRegistered,
+  isSourceStateToggleDisabled,
+  pruneSourceSettingsBySchema,
   resolveDefaultWorkflowId,
   resolveSourceChannel,
   resolveSourceSettingsSchema,
+  resolveSourceState,
   shouldDisableSourceFormSubmit,
 } from "./source-form.utils";
 
@@ -51,6 +55,51 @@ describe("source form utils", () => {
       expect(isSourceChannelRegistered("custom-channel", {})).toBe(false);
       expect(isSourceChannelRegistered("", {})).toBe(false);
       expect(isSourceChannelRegistered("web", undefined)).toBe(false);
+    });
+  });
+
+  describe("console source helpers", () => {
+    it("detects console channels", () => {
+      expect(isConsoleSourceChannel("console")).toBe(true);
+      expect(isConsoleSourceChannel("web")).toBe(false);
+      expect(isConsoleSourceChannel(undefined)).toBe(false);
+    });
+
+    it("forces console source state to enabled in payloads", () => {
+      expect(resolveSourceState("console", false)).toBe(true);
+      expect(resolveSourceState("console", true)).toBe(true);
+      expect(resolveSourceState("web", false)).toBe(false);
+    });
+
+    it("locks only active console source toggles", () => {
+      expect(
+        isSourceStateToggleDisabled({
+          channelName: "console",
+          state: true,
+          disabled: false,
+        }),
+      ).toBe(true);
+      expect(
+        isSourceStateToggleDisabled({
+          channelName: "console",
+          state: false,
+          disabled: false,
+        }),
+      ).toBe(false);
+      expect(
+        isSourceStateToggleDisabled({
+          channelName: "web",
+          state: true,
+          disabled: false,
+        }),
+      ).toBe(false);
+      expect(
+        isSourceStateToggleDisabled({
+          channelName: "console",
+          state: false,
+          disabled: true,
+        }),
+      ).toBe(true);
     });
   });
 
@@ -147,6 +196,43 @@ describe("source form utils", () => {
     });
   });
 
+  describe("pruneSourceSettingsBySchema", () => {
+    it("keeps only settings declared by the active schema", () => {
+      expect(
+        pruneSourceSettingsBySchema(
+          {
+            greeting_message: "legacy",
+            start_button: true,
+            input_disabled: false,
+            show_file: true,
+          },
+          {
+            type: "object",
+            properties: {
+              input_disabled: { type: "boolean" },
+              show_file: { type: "boolean" },
+            },
+          },
+        ),
+      ).toEqual({
+        input_disabled: false,
+        show_file: true,
+      });
+    });
+
+    it("returns an empty object when the schema has no settings", () => {
+      expect(
+        pruneSourceSettingsBySchema(
+          { input_disabled: false },
+          {
+            type: "object",
+            properties: {},
+          },
+        ),
+      ).toEqual({});
+    });
+  });
+
   describe("resolveDefaultWorkflowId", () => {
     it("normalizes workflow ids from string or populated workflow object", () => {
       expect(resolveDefaultWorkflowId("wf_1")).toBe("wf_1");
@@ -188,6 +274,34 @@ describe("source form utils", () => {
         state: true,
         settings: { greeting_message: "hello" },
         defaultWorkflow: "wf_1",
+      });
+    });
+
+    it("forces console sources enabled and prunes removed settings", () => {
+      expect(
+        buildSourcePayload({
+          channel: "console",
+          name: "Console",
+          state: false,
+          settings: {
+            greeting_message: "legacy",
+            start_button: true,
+            input_disabled: false,
+          },
+          settingsSchema: {
+            type: "object",
+            properties: {
+              input_disabled: { type: "boolean" },
+            },
+          },
+          defaultWorkflow: null,
+        }),
+      ).toEqual({
+        channel: "console",
+        name: "Console",
+        state: true,
+        settings: { input_disabled: false },
+        defaultWorkflow: null,
       });
     });
   });

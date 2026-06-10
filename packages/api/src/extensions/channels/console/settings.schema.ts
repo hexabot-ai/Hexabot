@@ -22,10 +22,6 @@ export const CONSOLE_CHANNEL_SOURCE_SETTINGS_SCHEMA = z
         title: 'Allowed domains',
         description: 'Comma-separated list of allowed CORS origins.',
       }),
-    start_button: z.boolean().default(true).meta({
-      title: 'Show start button',
-      description: 'Display the start button before chat begins.',
-    }),
     input_disabled: z.boolean().default(false).meta({
       title: 'Disable input',
       description: 'Disable the user input field in the chat widget.',
@@ -34,14 +30,6 @@ export const CONSOLE_CHANNEL_SOURCE_SETTINGS_SCHEMA = z
       title: 'Persistent menu',
       description: 'Keep the menu visible in the chat interface.',
     }),
-    greeting_message: z
-      .string()
-      .default('Welcome! Ready to start chatting with our chatbot?')
-      .meta({
-        title: 'Greeting message',
-        description: 'Greeting shown to users when the conversation starts.',
-        'ui:widget': 'textarea',
-      }),
     show_emoji: z.boolean().default(true).meta({
       title: 'Show emoji',
       description: 'Enable emoji picker in the chat interface.',

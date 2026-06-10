@@ -37,7 +37,10 @@ import { IChannel } from "@/types/channel.types";
 import { writeToClipboard } from "@/utils/clipboard";
 import { getDateTimeFormatter } from "@/utils/date";
 
-import { isSourceChannelRegistered } from "./source-form.utils";
+import {
+  isSourceChannelRegistered,
+  isSourceStateToggleDisabled,
+} from "./source-form.utils";
 import { SourceFormDialog } from "./SourceFormDialog";
 
 const SOURCE_REF_ICON_SIZE = 18;
@@ -223,22 +226,30 @@ export const Sources = () => {
       headerName: t("label.enabled"),
       disableColumnMenu: true,
       headerAlign: "left",
-      renderCell: ({ row }) => (
-        <Switch
-          checked={row.state}
-          disabled={
-            !canUpdateSources ||
-            isLoadingChannels ||
-            !isSourceChannelRegistered(row.channel, channelMetadataByName)
-          }
-          onChange={() =>
-            updateSource({
-              id: row.id,
-              params: { state: !row.state },
-            })
-          }
-        />
-      ),
+      renderCell: ({ row }) => {
+        const isRegisteredChannel = isSourceChannelRegistered(
+          row.channel,
+          channelMetadataByName,
+        );
+
+        return (
+          <Switch
+            checked={row.state}
+            disabled={isSourceStateToggleDisabled({
+              channelName: row.channel,
+              state: row.state,
+              disabled:
+                !canUpdateSources || isLoadingChannels || !isRegisteredChannel,
+            })}
+            onChange={() =>
+              updateSource({
+                id: row.id,
+                params: { state: !row.state },
+              })
+            }
+          />
+        );
+      },
     },
     {
       minWidth: 140,
