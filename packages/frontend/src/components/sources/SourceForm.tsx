@@ -32,6 +32,7 @@ import {
   buildSourceSettingsUiSchema,
   getSourceFormDefaults,
   isSourceChannelRegistered,
+  isSourceStateToggleDisabled,
   resolveSourceChannel,
   resolveSourceSettingsSchema,
   shouldDisableSourceFormSubmit,
@@ -142,6 +143,7 @@ export const SourceForm: FC<
       name: params.name,
       state: params.state,
       settings: settingsData,
+      settingsSchema,
       defaultWorkflow: params.defaultWorkflow,
     });
 
@@ -228,7 +230,11 @@ export const SourceForm: FC<
                   control={
                     <Switch
                       checked={field.value}
-                      disabled={isFormDisabled}
+                      disabled={isSourceStateToggleDisabled({
+                        channelName,
+                        state: field.value,
+                        disabled: isFormDisabled,
+                      })}
                       onChange={(_event, checked) => field.onChange(checked)}
                     />
                   }

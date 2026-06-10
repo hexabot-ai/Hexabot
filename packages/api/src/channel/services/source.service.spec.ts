@@ -8,6 +8,7 @@ import { BadRequestException } from '@nestjs/common';
 import { In, Not } from 'typeorm';
 import z from 'zod';
 
+import { CONSOLE_CHANNEL_NAME } from '@/extensions/channels/console/settings.schema';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 
 import { SourceRepository } from '../repositories/source.repository';
@@ -156,9 +157,98 @@ describe('SourceService', () => {
       sourceId,
       expect.objectContaining({
         channel: 'web',
-        settings: {},
         defaultWorkflow: workflowId,
       }),
+      undefined,
+    );
+  });
+
+  it('rejects disabling console sources', async () => {
+    const sourceId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    jest.spyOn(service, 'findOne').mockResolvedValue({
+      id: sourceId,
+      channel: CONSOLE_CHANNEL_NAME,
+      settings: {},
+      defaultWorkflow: null,
+      state: true,
+    } as any);
+
+    await expect(service.updateOne(sourceId, { state: false })).rejects.toThrow(
+      new BadRequestException('Console source cannot be disabled'),
+    );
+
+    expect(repository.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('allows re-enabling a console source without validating legacy stored settings', async () => {
+    const sourceId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    registerSchema(
+      z.strictObject({
+        input_disabled: z.boolean().default(false),
+      }),
+    );
+    jest.spyOn(service, 'findOne').mockResolvedValue({
+      id: sourceId,
+      channel: CONSOLE_CHANNEL_NAME,
+      settings: {
+        greeting_message: 'legacy',
+        start_button: true,
+      },
+      defaultWorkflow: null,
+      state: false,
+    } as any);
+    repository.updateOne.mockResolvedValue({
+      id: sourceId,
+      channel: CONSOLE_CHANNEL_NAME,
+      state: true,
+    } as any);
+
+    await service.updateOne(sourceId, { state: true });
+
+    expect(repository.updateOne).toHaveBeenCalledWith(
+      sourceId,
+      {
+        state: true,
+        channel: CONSOLE_CHANNEL_NAME,
+      },
+      undefined,
+    );
+  });
+
+  it('allows unrelated console source updates without validating legacy stored settings', async () => {
+    const sourceId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    registerSchema(
+      z.strictObject({
+        input_disabled: z.boolean().default(false),
+      }),
+    );
+    jest.spyOn(service, 'findOne').mockResolvedValue({
+      id: sourceId,
+      channel: CONSOLE_CHANNEL_NAME,
+      settings: {
+        greeting_message: 'legacy',
+        start_button: true,
+      },
+      defaultWorkflow: null,
+      state: true,
+    } as any);
+    repository.updateOne.mockResolvedValue({
+      id: sourceId,
+      channel: CONSOLE_CHANNEL_NAME,
+      name: 'Edited Console',
+    } as any);
+
+    await service.updateOne(sourceId, { name: 'Edited Console' });
+
+    expect(repository.updateOne).toHaveBeenCalledWith(
+      sourceId,
+      {
+        name: 'Edited Console',
+        channel: CONSOLE_CHANNEL_NAME,
+      },
       undefined,
     );
   });

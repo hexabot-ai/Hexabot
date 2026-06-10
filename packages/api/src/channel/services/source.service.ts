@@ -15,6 +15,7 @@ import { FindManyOptions, FindOneOptions, In, Not } from 'typeorm';
 import { DeleteResult } from 'typeorm/driver/mongodb/typings';
 import z from 'zod';
 
+import { CONSOLE_CHANNEL_NAME } from '@/extensions/channels/console/settings.schema';
 import { UpdateOneOptions } from '@/utils/generics/base-orm.repository';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
@@ -113,9 +114,17 @@ export class SourceService extends BaseOrmService<SourceOrmEntity> {
     return keys.length === 1 && keys[0] === 'state' && payload.state === false;
   }
 
+  private ensureSourceCanBeDisabled(channel: string, state?: boolean): void {
+    if (channel === CONSOLE_CHANNEL_NAME && state === false) {
+      throw new BadRequestException('Console source cannot be disabled');
+    }
+  }
+
   private async buildCreatePayload(
     payload: SourceCreateDto,
   ): Promise<SourceCreateDto> {
+    this.ensureSourceCanBeDisabled(payload.channel, payload.state);
+
     const normalizedSettings = this.normalizeSettings(
       payload.channel,
       payload.settings,
@@ -147,6 +156,9 @@ export class SourceService extends BaseOrmService<SourceOrmEntity> {
       throw new NotFoundException('Source not found');
     }
 
+    const channel = payload.channel ?? existing.channel;
+    this.ensureSourceCanBeDisabled(channel, payload.state);
+
     if (!this.channelRegistry.findChannel(existing.channel)) {
       if (this.isStateOnlyDisablePayload(payload)) {
         return await super.updateOne(idOrOptions, { state: false }, options);
@@ -157,13 +169,16 @@ export class SourceService extends BaseOrmService<SourceOrmEntity> {
       );
     }
 
-    const channel = payload.channel ?? existing.channel;
     const shouldResetSettings =
       payload.channel !== undefined && payload.settings === undefined;
-    const settingsInput = shouldResetSettings
-      ? {}
-      : (payload.settings ?? existing.settings);
-    const normalizedSettings = this.normalizeSettings(channel, settingsInput);
+    const shouldNormalizeSettings =
+      payload.settings !== undefined || shouldResetSettings;
+    const normalizedSettings = shouldNormalizeSettings
+      ? this.normalizeSettings(
+          channel,
+          shouldResetSettings ? {} : payload.settings,
+        )
+      : undefined;
     const normalizedDefaultWorkflow =
       payload.defaultWorkflow !== undefined
         ? await this.normalizeDefaultWorkflow(payload.defaultWorkflow)
@@ -174,7 +189,9 @@ export class SourceService extends BaseOrmService<SourceOrmEntity> {
       {
         ...payload,
         channel,
-        settings: normalizedSettings,
+        ...(normalizedSettings !== undefined
+          ? { settings: normalizedSettings }
+          : {}),
         ...(normalizedDefaultWorkflow !== undefined
           ? { defaultWorkflow: normalizedDefaultWorkflow }
           : {}),
