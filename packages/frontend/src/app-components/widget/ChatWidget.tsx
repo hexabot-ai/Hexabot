@@ -5,10 +5,9 @@
  */
 
 import UiChatWidget from "@hexabot-ai/widget/src/UiChatWidget";
-import { Avatar, Box, useColorScheme, useTheme } from "@mui/material";
+import { Box, useColorScheme, useTheme } from "@mui/material";
 import { memo, useCallback, useMemo } from "react";
 
-import { getAvatarSrc } from "@/components/inbox/helpers/mapMessages";
 import { useFind } from "@/hooks/crud/useFind";
 import { useAppRouter } from "@/hooks/useAppRouter";
 import { useAuth } from "@/hooks/useAuth";
@@ -115,15 +114,6 @@ const ChatWidgetComponent = ({
       workflowId,
     ],
   );
-  const avatarSrc = useMemo(
-    () =>
-      `${getAvatarSrc(apiUrl, EntityType.USER, "bot")}?color=${encodeURIComponent(primaryColor)}`,
-    [apiUrl, primaryColor],
-  );
-  const renderAvatar = useCallback(
-    () => <Avatar sx={{ width: "32px", height: "32px" }} src={avatarSrc} />,
-    [avatarSrc],
-  );
   const handleUnauthorized = useCallback(() => {
     reload();
   }, [reload]);
@@ -142,7 +132,6 @@ const ChatWidgetComponent = ({
     <Box sx={containerSx}>
       <UiChatWidget
         config={widgetConfig}
-        CustomAvatar={renderAvatar}
         CustomHeader={isEmbedded ? HiddenHeader : undefined}
         CustomLauncher={isEmbedded ? HiddenLauncher : undefined}
         defaultIsOpen={isEmbedded}
