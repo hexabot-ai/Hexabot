@@ -73,7 +73,7 @@ export const WorkflowProvider: React.FC<WorkflowContextProps> = ({
   const { refetchUser } = useAuth();
   const queryClient = useTanstackQueryClient();
   const [flowId] = useQueryState("flowId");
-  const { data: workflows } = useFind(
+  const { data: workflows, isSuccess: isWorkflowsSuccess } = useFind(
     {
       entity: EntityType.WORKFLOW,
       format: Format.FULL,
@@ -426,10 +426,14 @@ export const WorkflowProvider: React.FC<WorkflowContextProps> = ({
   );
 
   useEffect(() => {
-    if (!flowId && workflows?.length) {
-      updateWorkflowURL(workflows[0].id);
+    if (!isWorkflowsSuccess) return;
+
+    if (!flowId && workflows.length) {
+      updateWorkflowURL(workflows.at(-1)?.id || workflows[0].id);
+    } else if (flowId && !workflows.some((w) => w.id === flowId)) {
+      void router.replace(`/${RouterType.WORKFLOW_EDITOR}/${workflows[0].id}`);
     }
-  }, [flowId, workflows, updateWorkflowURL]);
+  }, [flowId, workflows, isWorkflowsSuccess, updateWorkflowURL, router]);
 
   return (
     <WorkflowContext.Provider
