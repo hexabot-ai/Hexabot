@@ -5,6 +5,7 @@
  */
 
 import { MemoryDefinition, MemoryRecordFull } from '@hexabot-ai/types';
+import pLimit from 'p-limit';
 import { ZodSchema, z } from 'zod';
 
 import { cloneObject } from '@/utils/helpers/clone';
@@ -376,27 +377,30 @@ export class MemoryStore {
       return {};
     }
 
+    const dbLimit = pLimit(8);
     const updates = await Promise.all(
-      entries.map(async ([slug, value]) => {
-        const currentValue = this.raw[slug];
-        const canMerge =
-          currentValue !== null &&
-          value !== null &&
-          typeof currentValue === 'object' &&
-          typeof value === 'object' &&
-          !Array.isArray(currentValue) &&
-          !Array.isArray(value);
-        const nextValue = canMerge
-          ? deepMerge(cloneObject(currentValue), value)
-          : value;
-        const parsedValue = await this.updateStoreEntry(
-          slug,
-          nextValue,
-          persistRecord,
-        );
+      entries.map(([slug, value]) =>
+        dbLimit(async () => {
+          const currentValue = this.raw[slug];
+          const canMerge =
+            currentValue !== null &&
+            value !== null &&
+            typeof currentValue === 'object' &&
+            typeof value === 'object' &&
+            !Array.isArray(currentValue) &&
+            !Array.isArray(value);
+          const nextValue = canMerge
+            ? deepMerge(cloneObject(currentValue), value)
+            : value;
+          const parsedValue = await this.updateStoreEntry(
+            slug,
+            nextValue,
+            persistRecord,
+          );
 
-        return [slug, parsedValue] as const;
-      }),
+          return [slug, parsedValue] as const;
+        }),
+      ),
     );
 
     return Object.fromEntries(updates);

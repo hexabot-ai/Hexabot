@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { Request } from 'express';
+import pLimit from 'p-limit';
 import qs from 'qs';
 import { FindOneOptions, In } from 'typeorm';
 
@@ -179,10 +180,12 @@ export class AttachmentGuard implements CanActivate {
       return false;
     }
 
+    const dbLimit = pLimit(10);
+
     return (
       await Promise.all(
         permissions.map(([identity, action]) =>
-          this.hasPermission(user, identity, action),
+          dbLimit(() => this.hasPermission(user, identity, action)),
         ),
       )
     ).every(Boolean);
@@ -244,9 +247,13 @@ export class AttachmentGuard implements CanActivate {
             throw new BadRequestException('Invalid resource ref');
           }
 
+          const dbLimit = pLimit(10);
+
           return (
             await Promise.all(
-              resourceRef.map((c) => this.isAuthorized(Action.READ, user, c)),
+              resourceRef.map((c) =>
+                dbLimit(() => this.isAuthorized(Action.READ, user, c)),
+              ),
             )
           ).every(Boolean);
         } else {
