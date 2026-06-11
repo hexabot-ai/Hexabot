@@ -4,7 +4,12 @@
  * Full terms: see LICENSE.md.
  */
 
-import { type Source, type SourceFull, type Workflow } from "@hexabot-ai/types";
+import {
+  type Source,
+  type SourceFull,
+  type Workflow,
+  WorkflowType,
+} from "@hexabot-ai/types";
 import {
   Alert,
   FormControlLabel,
@@ -234,6 +239,7 @@ export const SourceForm: FC<
                   multiple={false}
                   disabled={isFormDisabled}
                   value={field.value}
+                  where={{ type: WorkflowType.conversational }}
                   onChange={(_event, selected) =>
                     field.onChange(selected?.id || null)
                   }
