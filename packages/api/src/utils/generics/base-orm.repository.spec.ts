@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'crypto';
 
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TestingModule } from '@nestjs/testing';
 import { In, InsertEvent, RemoveEvent, Repository, UpdateEvent } from 'typeorm';
@@ -271,6 +271,94 @@ describe('BaseOrmRepository', () => {
       expect(result.dummy).toBe(payload.dummy);
       const stored = await ormRepository.findOne({ where: { id: result.id } });
       expect(stored!.dummy).toBe(payload.dummy);
+    });
+  });
+
+  describe('prototype pollution guard', () => {
+    it('should reject create with __proto__ key', async () => {
+      const payload = JSON.parse('{"__proto__":{"polluted":true}}');
+      await expect(dummyRepository.create(payload)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('should reject create with nested forbidden key', async () => {
+      await expect(
+        dummyRepository.create({
+          dummy: 'safe',
+          dynamicField: { constructor: { polluted: true } },
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject createMany with forbidden key', async () => {
+      await expect(
+        dummyRepository.createMany([
+          { dummy: 'safe' },
+          { prototype: { polluted: true } } as any,
+        ]),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject updateOne with forbidden key', async () => {
+      const target = baselineEntities[0];
+      const payload = JSON.parse('{"__proto__":{"polluted":true}}');
+      await expect(
+        dummyRepository.updateOne(target.id, payload),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject updateOne with nested forbidden key in flatten mode', async () => {
+      const target = baselineEntities[0];
+      const payload = JSON.parse(
+        '{"dynamicField":{"__proto__":{"polluted":true}}}',
+      );
+      await expect(
+        dummyRepository.updateOne(target.id, payload, {
+          shouldFlatten: true,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject updateMany with forbidden key', async () => {
+      await expect(
+        dummyRepository.updateMany({}, {
+          constructor: { polluted: true },
+        } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject create with forbidden key inside array value', async () => {
+      const payload = {
+        dummy: 'safe',
+        dynamicField: {
+          items: JSON.parse('[{"__proto__":{"polluted":true}}]'),
+        },
+      };
+      await expect(
+        dummyRepository.create(payload as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject createMany with forbidden key nested in array', async () => {
+      await expect(
+        dummyRepository.createMany([
+          {
+            dummy: 'safe',
+            dynamicField: {
+              items: JSON.parse('[{"constructor":{"polluted":true}}]'),
+            },
+          } as any,
+        ]),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should allow safe payloads through', async () => {
+      const result = await dummyRepository.create({
+        dummy: 'safe payload',
+        dynamicField: { constructorName: 'safe', nested: { value: true } },
+      });
+      expect(result.dummy).toBe('safe payload');
     });
   });
 

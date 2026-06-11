@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Inject, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { instanceToPlain, plainToInstance } from 'class-transformer';
 import camelCase from 'lodash/camelCase';
@@ -31,6 +31,7 @@ import {
 import { BaseOrmEntity } from '@/database/entities/base.entity';
 import { LoggerService } from '@/logger/logger.service';
 import { flatten } from '@/utils/helpers/flatten';
+import { hasForbiddenSegment } from '@/utils/helpers/safe-property-path';
 
 import {
   DtoAction,
@@ -138,6 +139,30 @@ export abstract class BaseOrmRepository<
     }
 
     return result;
+  }
+
+  private assertSafePayload(data: unknown): void {
+    if (!data || typeof data !== 'object') return;
+
+    if (Array.isArray(data)) {
+      data.forEach((item) => this.assertSafePayload(item));
+
+      return;
+    }
+
+    const flat = flatten(data as Record<string, unknown>) as Record<
+      string,
+      unknown
+    >;
+
+    for (const [key, value] of Object.entries(flat)) {
+      if (hasForbiddenSegment(key)) {
+        throw new BadRequestException(`Forbidden property path: "${key}"`);
+      }
+      if (Array.isArray(value)) {
+        value.forEach((item) => this.assertSafePayload(item));
+      }
+    }
   }
 
   public actionDtoToEntity<Action extends DtoAction>(
@@ -269,6 +294,7 @@ export abstract class BaseOrmRepository<
   }
 
   async create(payload: InferCreateDto<Entity>): Promise<InferPlain<Entity>> {
+    this.assertSafePayload(payload);
     const entity = this.repository.create(this.actionDtoToEntity(payload));
     await this.emitEvent<EHook.preCreate>({
       action: EHook.preCreate,
@@ -290,6 +316,7 @@ export abstract class BaseOrmRepository<
   async createMany(
     payloads: InferCreateDto<Entity>[],
   ): Promise<InferPlain<Entity>[]> {
+    payloads.forEach((payload) => this.assertSafePayload(payload));
     const entities = this.repository.create(
       payloads.map((payload) => this.actionDtoToEntity(payload)),
     );
@@ -320,6 +347,7 @@ export abstract class BaseOrmRepository<
     payload: InferUpdateDto<Entity>,
     options?: UpdateOneOptions,
   ): Promise<InferPlain<Entity>> {
+    this.assertSafePayload(payload);
     const entity = await this.findOneEntity(idOrOptions);
     const databaseEntity = await this.findOneEntity(idOrOptions);
     if (entity && databaseEntity) {
@@ -383,6 +411,7 @@ export abstract class BaseOrmRepository<
     options: FindManyOptions<Entity> = {} as FindManyOptions<Entity>,
     payload: InferUpdateDto<Entity>,
   ): Promise<InferPlain<Entity>[]> {
+    this.assertSafePayload(payload);
     const entities = await this.findEntities(options);
 
     if (!entities.length) {
