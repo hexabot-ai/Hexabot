@@ -35,10 +35,10 @@
   "devDependencies": {
     "@commitlint/cli": "^19.3.0",
     "@commitlint/config-conventional": "^19.2.2",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "husky": "^9.0.11",
     "rimraf": "^6.0.1",
-    "turbo": "^2.2.3"
+    "turbo": "^2.9.18"
   },
   "pnpm": {
     "overrides": {
@@ -50,6 +50,7 @@
       "@tootallnate/once": "3.0.1",
       "nestjs-auditlog>@opentelemetry/auto-instrumentations-node": "0.75.0",
       "nestjs-auditlog>@opentelemetry/sdk-node": "0.217.0",
+      "@grpc/grpc-js": "1.14.4",
       "ajv@6": "6.14.0",
       "ajv@8": "8.20.0",
       "body-parser": "2.2.1",
@@ -60,7 +61,7 @@
       "flatted": "3.4.2",
       "follow-redirects": "1.16.0",
       "glob": "13.0.6",
-      "hono": "4.12.18",
+      "hono": "4.12.25",
       "ip-address": "10.1.1",
       "js-yaml": "4.1.1",
       "jsonwebtoken": "9.0.3",
@@ -69,8 +70,8 @@
       "lodash-es": "4.18.1",
       "minimatch": "10.2.5",
       "picomatch": "4.0.4",
-      "protobufjs": "7.5.6",
-      "qs": "6.15.1",
+      "protobufjs": "7.6.3",
+      "qs": "6.15.2",
       "rollup": "4.59.0",
       "serialize-javascript": "7.0.5",
       "socket.io-parser": "4.2.6",
