@@ -50,6 +50,7 @@
       "@tootallnate/once": "3.0.1",
       "nestjs-auditlog>@opentelemetry/auto-instrumentations-node": "0.75.0",
       "nestjs-auditlog>@opentelemetry/sdk-node": "0.217.0",
+      "@grpc/grpc-js": "1.14.4",
       "ajv@6": "6.14.0",
       "ajv@8": "8.20.0",
       "body-parser": "2.2.1",
