@@ -46,7 +46,6 @@ The API is divided into several key modules, each responsible for specific funct
 - Channel/helper runtime setting group keys and settings hook namespaces are now the extension `name` (kebab-case).
 - Third-party channel/helper extensions must define settings groups and i18n namespaces with the same kebab-case extension `name`.
 
-
 ## Installation
 
 ```bash
@@ -102,7 +101,7 @@ pnpm --filter @hexabot-ai/api run cli migration migrate down [version]
 
 Auto-migration runs outside production by default, or in production when `DB_AUTO_MIGRATE=true` and `API_IS_PRIMARY_NODE=true`.
 
-Check the Migration README file for more: [Migration Module](./src/migration/README.md)
+Check the Migration README file for more: [Migration Module](https://github.com/hexabot-ai/Hexabot/blob/main/packages/api/src/migration/README.md)
 
 ## Documentation
 
@@ -119,7 +118,6 @@ For detailed information about the API routes and usage, refer to the API docume
 We welcome contributions from the community! Whether you want to report a bug, suggest new features, or submit a pull request, your input is valuable to us.
 
 Feel free to join us on [Discord](https://discord.gg/rNb9t2MFkG)
-
 
 ## License
 

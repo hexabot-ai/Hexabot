@@ -2,7 +2,6 @@
 
 Hexabot CLI is the command-line entry point for creating, configuring, and operating Hexabot v3 projects. With it, you can scaffold new automation workspaces, initialize environments, start services in local or Docker modes, run database migrations, and manage the project lifecycle.
 
-
 Not yet familiar with [Hexabot](https://hexabot.ai/)? Hexabot v3 is an agentic AI automation platform for building and running workflows across channels with actions, bindings, memory, tools, MCP, and RAG. If you would like to learn more, please visit the [official GitHub repo](https://github.com/hexabot-ai/Hexabot/).
 
 ## Getting Started
@@ -153,21 +152,20 @@ For detailed information on how to get started, as well as in-depth user and dev
 
 You can also find specific documentation for different components of the project in the following locations:
 
-- [API Documentation](../api/README.md)
-- [UI Documentation](../frontend/README.md)
-- [Agentic Package Documentation](../agentic/README.md)
-- [Types Package Documentation](../types/README.md)
-- [Workflow Graph Documentation](../graph/README.md)
-- [Live Chat Widget Documentation](../widget/README.md)
+- [API Documentation](https://github.com/hexabot-ai/Hexabot/blob/main/packages/api/README.md)
+- [UI Documentation](https://github.com/hexabot-ai/Hexabot/blob/main/packages/frontend/README.md)
+- [Agentic Package Documentation](https://github.com/hexabot-ai/Hexabot/blob/main/packages/agentic/README.md)
+- [Types Package Documentation](https://github.com/hexabot-ai/Hexabot/blob/main/packages/types/README.md)
+- [Workflow Graph Documentation](https://github.com/hexabot-ai/Hexabot/blob/main/packages/graph/README.md)
+- [Live Chat Widget Documentation](https://github.com/hexabot-ai/Hexabot/blob/main/packages/widget/README.md)
 
 ## Contributing
 
 We welcome contributions from the community! Whether you want to report a bug, suggest new features, or submit a pull request, your input is valuable to us.
 
-Please refer to our contribution policy first : [How to contribute to Hexabot](./CONTRIBUTING.md)
+Please refer to our contribution policy first : [How to contribute to Hexabot](https://github.com/hexabot-ai/Hexabot/blob/main/CONTRIBUTING.md)
 
-
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](./CODE_OF_CONDUCT.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](https://github.com/hexabot-ai/Hexabot/blob/main/CODE_OF_CONDUCT.md)
 
 Feel free to join us on [Discord](https://discord.gg/rNb9t2MFkG)
 
