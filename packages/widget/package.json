@@ -54,7 +54,7 @@
     "rimraf": "^6.0.1",
     "sass": "^1.98.0",
     "typescript": "^5.8.3",
-    "vite": "^6.4.2",
+    "vite": "^6.4.3",
     "vite-plugin-dts": "^4.5.3",
     "vitest": "^4.1.8"
   },
