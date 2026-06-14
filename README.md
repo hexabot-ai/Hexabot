@@ -24,6 +24,14 @@
 
 Hexabot v3 is an automation platform with first-class AI capabilities, combining workflows, actions, and conversational channels in one runtime.
 
+## Demo Video
+
+<p align="center">
+  <a href="https://youtu.be/wR9nnKgog2U" target="_blank">
+    <img src="https://markdown-videos-api.jorgenkh.no/youtube/wR9nnKgog2U?width=960&amp;height=540" alt="Watch the Hexabot demo video on YouTube" width="960" />
+  </a>
+</p>
+
 ## Quick Start
 
 ### Prerequisites
