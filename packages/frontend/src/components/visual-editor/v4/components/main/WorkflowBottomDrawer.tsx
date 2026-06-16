@@ -8,13 +8,7 @@ import { WorkflowType } from "@hexabot-ai/types";
 import { Divider, Drawer, Paper, Stack, useMediaQuery } from "@mui/material";
 import { alpha, styled, useTheme } from "@mui/material/styles";
 import { getDefaultFormState, type RJSFSchema } from "@rjsf/utils";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ChatWidget } from "@/app-components/widget/ChatWidget";
 import { TriggerSimulatorPanel } from "@/components/workflow-run-debugger/components/panels/trigger-simulator-panel/TriggerSimulatorPanel";
@@ -23,10 +17,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTranslate } from "@/hooks/useTranslate";
 import validator from "@/utils/rjsf-zod-validator";
 
+import { useResizableDrawerSize } from "../../../../../hooks/useResizableDrawerSize";
 import { useWorkflow } from "../../hooks/useWorkflow";
 
 const defaultDrawerHeight = 380;
 const minDrawerHeight = 160;
+const drawerHeightStorageKey = "hexabot.visual_editor.bottom_drawer_height";
 const columnDividerWidth = 16;
 const minChatColumnWidth = 280;
 const minDetailsColumnWidth = 240;
@@ -166,6 +162,20 @@ const getDefaultManualInput = (schema?: unknown): Record<string, unknown> => {
     return {};
   }
 };
+const drawerId = "workflow-bottom-drawer";
+const clampChatColumnWidth = (width: number, containerWidth: number) => {
+  const maxWidth = Math.max(
+    minChatColumnWidth,
+    containerWidth - columnDividerWidth - minDetailsColumnWidth,
+  );
+
+  return Math.min(Math.max(width, minChatColumnWidth), maxWidth);
+};
+const getDefaultChatColumnWidth = (containerWidth: number) =>
+  clampChatColumnWidth(
+    Math.round((containerWidth - columnDividerWidth) * defaultChatColumnRatio),
+    containerWidth,
+  );
 
 export const WorkflowBottomDrawer = () => {
   const { t } = useTranslate();
@@ -175,126 +185,46 @@ export const WorkflowBottomDrawer = () => {
   const isConversationalWorkflow =
     workflow?.type === WorkflowType.conversational;
   const isStacked = useMediaQuery(theme.breakpoints.down("md"));
-  const clampDrawerHeight = useCallback(
-    (height: number) => Math.max(height, minDrawerHeight),
-    [],
-  );
-  const [drawerHeight, setDrawerHeight] = useState(defaultDrawerHeight);
+  const { size: drawerHeight, handleResizeStart } = useResizableDrawerSize({
+    sizeStorageKey: drawerHeightStorageKey,
+    defaultSize: defaultDrawerHeight,
+    minSize: minDrawerHeight,
+    axis: "vertical",
+  });
   const [workflowInput, setWorkflowInput] = useState<Record<string, unknown>>(
     {},
   );
-  const [chatColumnWidth, setChatColumnWidth] = useState<number | null>(null);
   const drawerBodyRef = useRef<HTMLDivElement | null>(null);
-  const resizeStateRef = useRef({
-    startY: 0,
-    startHeight: drawerHeight,
-    isResizing: false,
-  });
-  const hasUserResizedColumnsRef = useRef(false);
-  const columnResizeStateRef = useRef({
-    startX: 0,
-    startWidth: 0,
-    isResizing: false,
-  });
-  const drawerId = "workflow-bottom-drawer";
-  const clampChatColumnWidth = useCallback(
-    (width: number, containerWidth: number) => {
-      const maxWidth = Math.max(
+  const {
+    size: chatColumnWidthSize,
+    setSize: setChatColumnWidth,
+    handleResizeStart: handleColumnResizeStart,
+  } = useResizableDrawerSize({
+    sizeStorageKey: "hexabot.visual_editor.bottom_drawer_column_width",
+    // 0 is the sentinel for "fluid / not yet dragged"
+    defaultSize: 0,
+    minSize: minChatColumnWidth,
+    maxSize: () => {
+      const containerWidth = drawerBodyRef.current?.clientWidth ?? 0;
+
+      if (!containerWidth) return undefined;
+
+      return Math.max(
         minChatColumnWidth,
         containerWidth - columnDividerWidth - minDetailsColumnWidth,
       );
-
-      return Math.min(Math.max(width, minChatColumnWidth), maxWidth);
     },
-    [],
-  );
-  const getDefaultChatColumnWidth = useCallback(
-    (containerWidth: number) =>
-      clampChatColumnWidth(
-        Math.round(
-          (containerWidth - columnDividerWidth) * defaultChatColumnRatio,
-        ),
-        containerWidth,
-      ),
-    [clampChatColumnWidth],
-  );
-  const handleResizeMove = useCallback(
-    (event: MouseEvent) => {
-      if (!resizeStateRef.current.isResizing) {
-        return;
+    axis: "horizontal",
+    onResizeStart: (initialSize) => {
+      if (initialSize === 0) {
+        const containerWidth = drawerBodyRef.current?.clientWidth ?? 0;
+
+        setChatColumnWidth(getDefaultChatColumnWidth(containerWidth));
       }
-
-      const delta = resizeStateRef.current.startY - event.clientY;
-
-      setDrawerHeight(
-        clampDrawerHeight(resizeStateRef.current.startHeight + delta),
-      );
     },
-    [clampDrawerHeight],
-  );
-  const handleResizeEnd = useCallback(() => {
-    resizeStateRef.current.isResizing = false;
-    document.removeEventListener("mousemove", handleResizeMove);
-    document.removeEventListener("mouseup", handleResizeEnd);
-  }, [handleResizeMove]);
-  const handleResizeStart = (event: ReactMouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    resizeStateRef.current = {
-      startY: event.clientY,
-      startHeight: drawerHeight,
-      isResizing: true,
-    };
-    document.addEventListener("mousemove", handleResizeMove);
-    document.addEventListener("mouseup", handleResizeEnd);
-  };
-  const handleColumnResizeMove = useCallback(
-    (event: MouseEvent) => {
-      if (!columnResizeStateRef.current.isResizing || !drawerBodyRef.current) {
-        return;
-      }
-
-      const containerWidth = drawerBodyRef.current.clientWidth;
-      const delta = event.clientX - columnResizeStateRef.current.startX;
-
-      setChatColumnWidth(
-        clampChatColumnWidth(
-          columnResizeStateRef.current.startWidth + delta,
-          containerWidth,
-        ),
-      );
-    },
-    [clampChatColumnWidth],
-  );
-  const handleColumnResizeEnd = useCallback(() => {
-    columnResizeStateRef.current.isResizing = false;
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleColumnResizeMove);
-    document.removeEventListener("mouseup", handleColumnResizeEnd);
-  }, [handleColumnResizeMove]);
-  const handleColumnResizeStart = (event: ReactMouseEvent<HTMLElement>) => {
-    event.preventDefault();
-
-    if (!drawerBodyRef.current) {
-      return;
-    }
-
-    const containerWidth = drawerBodyRef.current.clientWidth;
-    const initialWidth =
-      chatColumnWidth ?? getDefaultChatColumnWidth(containerWidth);
-
-    columnResizeStateRef.current = {
-      startX: event.clientX,
-      startWidth: initialWidth,
-      isResizing: true,
-    };
-    hasUserResizedColumnsRef.current = true;
-    setChatColumnWidth(initialWidth);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    document.addEventListener("mousemove", handleColumnResizeMove);
-    document.addEventListener("mouseup", handleColumnResizeEnd);
-  };
+  });
+  // null = fluid (grid auto-sizing); number = fixed px width chosen by user
+  const chatColumnWidth = chatColumnWidthSize > 0 ? chatColumnWidthSize : null;
 
   useEffect(() => {
     if (workflow?.type !== WorkflowType.manual) {
@@ -307,22 +237,6 @@ export const WorkflowBottomDrawer = () => {
   }, [workflow?.id, workflow?.inputSchema, workflow?.type]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const handleWindowResize = () => {
-      setDrawerHeight((prev) => clampDrawerHeight(prev));
-    };
-
-    window.addEventListener("resize", handleWindowResize);
-
-    return () => {
-      window.removeEventListener("resize", handleWindowResize);
-    };
-  }, [clampDrawerHeight]);
-
-  useEffect(() => {
     const element = drawerBodyRef.current;
 
     if (!element || typeof window === "undefined") {
@@ -330,17 +244,11 @@ export const WorkflowBottomDrawer = () => {
     }
 
     const applyWidth = (containerWidth: number) => {
-      if (!containerWidth) {
-        return;
-      }
+      if (!containerWidth) return;
 
-      setChatColumnWidth((previous) => {
-        if (hasUserResizedColumnsRef.current && previous !== null) {
-          return clampChatColumnWidth(previous, containerWidth);
-        }
-
-        return getDefaultChatColumnWidth(containerWidth);
-      });
+      setChatColumnWidth((prev) =>
+        prev > 0 ? clampChatColumnWidth(prev, containerWidth) : 0,
+      );
     };
 
     if (typeof ResizeObserver === "undefined") {
@@ -365,23 +273,7 @@ export const WorkflowBottomDrawer = () => {
     return () => {
       observer.disconnect();
     };
-  }, [clampChatColumnWidth, getDefaultChatColumnWidth]);
-
-  useEffect(() => {
-    return () => {
-      document.removeEventListener("mousemove", handleResizeMove);
-      document.removeEventListener("mouseup", handleResizeEnd);
-    };
-  }, [handleResizeMove, handleResizeEnd]);
-
-  useEffect(() => {
-    return () => {
-      document.removeEventListener("mousemove", handleColumnResizeMove);
-      document.removeEventListener("mouseup", handleColumnResizeEnd);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [handleColumnResizeMove, handleColumnResizeEnd]);
+  }, [clampChatColumnWidth]);
 
   return (
     <BottomDrawer
