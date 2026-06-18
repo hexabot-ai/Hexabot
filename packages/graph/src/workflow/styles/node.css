@@ -182,10 +182,7 @@
 
 .workflow-node-see-code-button:hover,
 .workflow-node-see-code-button:focus-visible,
-.workflow-node-see-code-button--active,
-.workflow-graph.dark .workflow-node-see-code-button:hover,
-.workflow-graph.dark .workflow-node-see-code-button:focus-visible,
-.workflow-graph.dark .workflow-node-see-code-button--active {
+.workflow-node-see-code-button--active {
   background-color: color-mix(
     in srgb,
     var(--template-palette-primary-main) 20%,
@@ -195,8 +192,7 @@
   outline: none;
 }
 
-.workflow-node-see-code-button--active,
-.workflow-graph.dark .workflow-node-see-code-button--active {
+.workflow-node-see-code-button--active {
   background-color: color-mix(
     in srgb,
     var(--template-palette-primary-main) 30%,

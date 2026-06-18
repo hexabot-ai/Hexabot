@@ -441,9 +441,6 @@ export const FlowsDrawer = ({
     onActiveDefChange?.(); // switching to flows list — deactivate button
     setOpen(true);
   };
-  const setLocalStorageRef = useRef(setLocalStorage);
-
-  setLocalStorageRef.current = setLocalStorage;
 
   // React to externally controlled activeCodeDef
   useEffect(() => {
@@ -452,7 +449,7 @@ export const FlowsDrawer = ({
     setShowVersions(false);
     setOpen((prevOpen) => {
       if (!prevOpen) {
-        setLocalStorageRef.current(drawerIsOpenStorage, "true");
+        setLocalStorage(drawerIsOpenStorage, "true");
       }
 
       return true;

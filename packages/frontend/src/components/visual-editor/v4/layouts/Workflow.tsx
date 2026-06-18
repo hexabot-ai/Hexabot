@@ -67,7 +67,6 @@ import { WorkflowTitleBar } from "../components/main/WorkflowTitleBar";
 import { WorkflowSettingsDialog } from "../components/main/WorkflowTitleBar/WorkflowSettingsDialog";
 import { useWorkflow } from "../hooks/useWorkflow";
 import { useWorkflowExecutionState } from "../hooks/useWorkflowExecutionState";
-import { useWorkflowNodeCode } from "../hooks/useWorkflowNodeCode";
 import { humanizeBindingKind } from "../utils/binding-kind.utils";
 import {
   createUniqueBindingName,
@@ -179,16 +178,27 @@ export const Workflow = () => {
   const graphColorMode: WorkflowGraphColorMode =
     mode === "light" || mode === "dark" ? mode : "system";
   const workflowGraphRef = useRef<WorkflowGraphHandle | null>(null);
-  const { activeCodeDef, setActive } = useWorkflowNodeCode();
+  const [activeCodeDef, setActiveCodeDef] = useState<string | null>(null);
+  const setActive = useCallback((defName?: string | null) => {
+    setActiveCodeDef((prev) =>
+      !defName ? null : prev === defName ? null : defName,
+    );
+  }, []);
+  const activeCodeDefRef = useRef(activeCodeDef);
+
+  activeCodeDefRef.current = activeCodeDef;
   const executionStates = useWorkflowExecutionState(selectedFlowId);
 
-  // Clear YAML highlight whenever the definition content changes
+  activeCodeDefRef.current = activeCodeDef;
+
+  // Clear YAML highlight whenever the definition content changes.
+  // Intentionally depends only on `yaml` — activeCodeDef is read via ref
+  // to avoid the effect firing when the highlight is first activated.
   useEffect(() => {
-    if (activeCodeDef) {
+    if (activeCodeDefRef.current) {
       setActive(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yaml]);
+  }, [yaml, setActive]);
   const focusNodeIds = useMemo(
     () =>
       typeof nodeIds === "string"
