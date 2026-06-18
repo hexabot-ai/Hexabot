@@ -189,8 +189,6 @@ export const Workflow = () => {
   activeCodeDefRef.current = activeCodeDef;
   const executionStates = useWorkflowExecutionState(selectedFlowId);
 
-  activeCodeDefRef.current = activeCodeDef;
-
   // Clear YAML highlight whenever the definition content changes.
   // Intentionally depends only on `yaml` — activeCodeDef is read via ref
   // to avoid the effect firing when the highlight is first activated.
@@ -880,6 +878,7 @@ export const Workflow = () => {
       bindingCatalog: bindingsByName,
       executionStates,
       layoutDirection: direction,
+      activeCodeDefName: activeCodeDef ?? undefined,
     }),
     [
       actionsByName,
@@ -888,6 +887,7 @@ export const Workflow = () => {
       direction,
       executionStates,
       flow,
+      activeCodeDef,
     ],
   );
   const workflowGraphSelection = useMemo(
@@ -929,7 +929,6 @@ export const Workflow = () => {
       onNodeClick: handleGraphNodeClick,
       onRotate: handleRotate,
       onViewNodeCode: setActive,
-      activeCodeDefName: activeCodeDef ?? undefined,
     }),
     [
       handleAddBinding,
@@ -938,7 +937,6 @@ export const Workflow = () => {
       handleRotate,
       removeStepAtPath,
       setActive,
-      activeCodeDef,
     ],
   );
 

@@ -569,7 +569,7 @@ export const FlowsDrawer = ({
               <Divider />
               <YamlEditorContainer>
                 <YamlEditor
-                  onHighlightClear={() => onActiveDefChange?.()}
+                  onHighlightClear={onActiveDefChange}
                   highlightDef={activeCodeDef ?? undefined}
                 />
               </YamlEditorContainer>

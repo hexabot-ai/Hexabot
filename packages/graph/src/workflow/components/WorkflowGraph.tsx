@@ -83,6 +83,7 @@ export type WorkflowGraphModel = {
   bindingCatalog: WorkflowBindingCatalog;
   executionStates: WorkflowExecutionStateMap;
   layoutDirection?: ResizeControlDirection;
+  activeCodeDefName?: string;
 };
 
 export type WorkflowGraphSelection = {
@@ -109,7 +110,6 @@ export type WorkflowGraphCallbacks = {
   onRemoveBinding?: (payload: WorkflowBindingRemovePayload) => void;
   onRotate: (nextDirection: "horizontal" | "vertical") => Promise<boolean>;
   onViewNodeCode?: (defName: string) => void;
-  activeCodeDefName?: string;
 };
 
 export type WorkflowGraphColorMode = "light" | "dark" | "system";
@@ -194,6 +194,7 @@ const areWorkflowGraphPropsEqual = (
   previous.model.bindingCatalog === next.model.bindingCatalog &&
   previous.model.executionStates === next.model.executionStates &&
   previous.model.layoutDirection === next.model.layoutDirection &&
+  previous.model.activeCodeDefName === next.model.activeCodeDefName &&
   areStringArraysEqual(
     previous.selection.selectedNodeIds,
     next.selection.selectedNodeIds,
@@ -213,8 +214,7 @@ const areWorkflowGraphPropsEqual = (
   previous.callbacks.onAddBinding === next.callbacks.onAddBinding &&
   previous.callbacks.onRemoveBinding === next.callbacks.onRemoveBinding &&
   previous.callbacks.onRotate === next.callbacks.onRotate &&
-  previous.callbacks.onViewNodeCode === next.callbacks.onViewNodeCode &&
-  previous.callbacks.activeCodeDefName === next.callbacks.activeCodeDefName;
+  previous.callbacks.onViewNodeCode === next.callbacks.onViewNodeCode;
 const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
   (
     {
@@ -305,14 +305,14 @@ const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
         onAddBinding: callbacks.onAddBinding,
         onRemoveBinding: callbacks.onRemoveBinding,
         onViewNodeCode: callbacks.onViewNodeCode,
-        activeCodeDefName: callbacks.activeCodeDefName,
+        activeCodeDefName: model.activeCodeDefName,
       }),
       [
         callbacks.onAddBinding,
         callbacks.onRemoveBinding,
         callbacks.onRemoveStep,
         callbacks.onViewNodeCode,
-        callbacks.activeCodeDefName,
+        model.activeCodeDefName,
         model.actionCatalog,
         model.layoutDirection,
         resolvedColorMode,
