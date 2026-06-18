@@ -1,4 +1,4 @@
-name: Publish Hexabot (API Typescript) NPM Package
+name: "V2: Publish Hexabot (API Typescript) NPM Package"
 
 on:
   push:
@@ -12,9 +12,33 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate V2 release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF" != refs/tags/v2.* ]]; then
+            echo "This workflow only publishes from v2.* tags. Current ref: $GITHUB_REF"
+            exit 1
+          fi
+
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v2\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported v2 tag '$GITHUB_REF_NAME'. Expected format v2.X.Y."
+            exit 1
+          fi
+
+          git fetch --no-tags origin +refs/heads/v2-dev:refs/remotes/origin/v2-dev
+
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/v2-dev; then
+            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not reachable from origin/v2-dev."
+            exit 1
+          fi
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: "20" # Ensure it matches your project requirements
           cache: "npm"
@@ -30,29 +54,24 @@ jobs:
       - name: Determine release type
         id: determine-release
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "tag=${{ github.ref_name }}" >> $GITHUB_ENV
-            if [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.0$ ]]; then
-              echo "release=minor" >> $GITHUB_ENV
-            elif [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "release=patch" >> $GITHUB_ENV
-            else
-              echo "release=none" >> $GITHUB_ENV
-            fi
+          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF_NAME" =~ ^v2\.[0-9]+\.0$ ]]; then
+            echo "release=minor" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF_NAME" =~ ^v2\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release=patch" >> "$GITHUB_ENV"
           else
-            echo "release=none" >> $GITHUB_ENV
+            echo "Unsupported v2 tag '$GITHUB_REF_NAME'."
+            exit 1
           fi
 
       - name: Login to npm
-        if: env.release != 'none'
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           registry-url: "https://registry.npmjs.org/"
           node-version: "20"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.V2_NPM_TOKEN }}
 
       - name: Publish to npm
         working-directory: api
-        if: env.release != 'none'
         run: npm publish
