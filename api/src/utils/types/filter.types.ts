@@ -21,7 +21,6 @@ export type TFilterKeysOfNeverType<T> = Omit<T, TFilterKeysOfType<T, []>>;
 
 export type NestedKeys<T> = T extends object
   ? {
-      // eslint-disable-next-line @typescript-eslint/ban-types
       [K in keyof T]: T[K] extends Function
         ? never
         : Array<any> extends T[K]

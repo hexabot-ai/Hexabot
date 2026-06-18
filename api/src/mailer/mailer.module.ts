@@ -14,7 +14,7 @@ import {
   MAILER_OPTIONS,
   MailerModule as NestjsMailerModule,
 } from '@nestjs-modules/mailer';
-import { MjmlAdapter } from '@nestjs-modules/mailer/dist/adapters/mjml.adapter';
+import { MjmlAdapter } from '@nestjs-modules/mailer/adapters/mjml.adapter';
 import SMTPTransport from 'nodemailer/lib/smtp-transport';
 
 import { config } from '@/config';

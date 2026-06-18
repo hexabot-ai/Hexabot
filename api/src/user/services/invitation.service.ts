@@ -11,13 +11,14 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { JwtService, JwtSignOptions } from '@nestjs/jwt';
+import { JwtService, JwtSignOptions, JwtVerifyOptions } from '@nestjs/jwt';
 
 import { config } from '@/config';
 import { I18nService } from '@/i18n/services/i18n.service';
 import { LanguageService } from '@/i18n/services/language.service';
 import { MailerService } from '@/mailer/mailer.service';
 import { BaseService } from '@/utils/generics/base-service';
+import { jwtExpiresIn, jwtVerifyOptions } from '@/utils/helpers/jwt-options';
 
 import { InvitationCreateDto } from '../dto/invitation.dto';
 import { InvitationRepository } from '../repositories/invitation.repository';
@@ -46,9 +47,13 @@ export class InvitationService extends BaseService<
 
   public readonly jwtSignOptions: JwtSignOptions = {
     secret: config.invitation.jwtOptions.secret,
-    expiresIn: config.invitation.jwtOptions.expiresIn,
+    expiresIn: jwtExpiresIn(config.invitation.jwtOptions.expiresIn),
     encoding: 'utf-8',
   };
+
+  public readonly jwtVerifyOptions: JwtVerifyOptions = jwtVerifyOptions(
+    this.jwtSignOptions,
+  );
 
   /**
    * Creates a new invitation, generates a JWT token, and sends an invitation email to the recipient.
@@ -105,7 +110,7 @@ export class InvitationService extends BaseService<
    * @returns The decoded invitation data.
    */
   async verify(token: string): Promise<InvitationCreateDto> {
-    return this.jwtService.verifyAsync(token, this.jwtSignOptions);
+    return this.jwtService.verifyAsync(token, this.jwtVerifyOptions);
   }
 
   /**

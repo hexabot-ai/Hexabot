@@ -4,6 +4,4 @@ WORKDIR /app
 
 COPY package*.json ./
 
-COPY patches ./patches
-
 COPY . .

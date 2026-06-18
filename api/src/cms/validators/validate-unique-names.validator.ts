@@ -16,9 +16,7 @@ import { ContentField } from '../dto/contentType.dto';
 import { validateUniqueFields } from '../utilities/field-validation.utils';
 
 @ValidatorConstraint({ async: false })
-export class UniqueFieldNamesConstraint
-  implements ValidatorConstraintInterface
-{
+export class UniqueFieldNamesConstraint implements ValidatorConstraintInterface {
   validate(fields: ContentField[], _args: ValidationArguments) {
     return validateUniqueFields(fields, 'label');
   }

@@ -20,7 +20,7 @@ module.exports = {
     '@typescript-eslint/interface-name-prefix': 'off',
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',
-    '@typescript-eslint/lines-between-class-members': [
+    'lines-between-class-members': [
       1,
       {
         enforce: [
@@ -31,22 +31,24 @@ module.exports = {
       },
     ],
     '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-empty-object-type': 'off',
+    '@typescript-eslint/no-require-imports': 'off',
     '@typescript-eslint/no-this-alias': 'off',
+    '@typescript-eslint/no-unsafe-function-type': 'off',
     '@typescript-eslint/no-unused-vars': [
       'error',
       {
         argsIgnorePattern: '^_',
+        caughtErrors: 'none',
         varsIgnorePattern: '^_',
-        caughtErrorsIgnorePattern: '^_',
       },
     ],
     '@typescript-eslint/no-namespace': 'off',
-    '@typescript-eslint/padding-line-between-statements': [
+    'padding-line-between-statements': [
       2,
       { blankLine: 'always', prev: '*', next: 'export' },
       { blankLine: 'always', prev: '*', next: 'function' },
     ],
-    'lines-between-class-members': 'off',
     'no-console': 2,
     'no-duplicate-imports': 2,
     'object-shorthand': 1,

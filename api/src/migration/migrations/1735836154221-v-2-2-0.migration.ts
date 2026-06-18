@@ -725,7 +725,7 @@ const migrateAndPopulateAttachmentMessages = async ({
             const attachment = await attachmentService.store(fileBuffer, {
               name: uuidv4(),
               size: fileBuffer.length,
-              type: response.headers['content-type'],
+              type: response.headers['content-type'] as string,
               channel: {},
               resourceRef: AttachmentResourceRef.MessageAttachment,
               access: msg.sender

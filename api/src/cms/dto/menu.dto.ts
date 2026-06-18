@@ -35,7 +35,11 @@ export class MenuCreateDto {
   })
   parent?: string;
 
-  @ApiProperty({ description: 'Menu type', enum: MenuType, type: MenuType })
+  @ApiProperty({
+    description: 'Menu type',
+    enum: MenuType,
+    enumName: 'MenuType',
+  })
   @IsEnum(MenuType)
   @IsNotEmpty()
   type: MenuType;

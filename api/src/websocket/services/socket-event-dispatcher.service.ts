@@ -107,6 +107,7 @@ export class SocketEventDispatcherService implements OnModuleInit {
   }
 
   onModuleInit() {
+    const visitedEventProviders = new Set<object>();
     const allProviders = Array.from(this.modulesContainer.values())
       .map(
         (module) =>
@@ -121,6 +122,16 @@ export class SocketEventDispatcherService implements OnModuleInit {
     for (const provider of allProviders) {
       const instance = provider.instance;
       const events = SocketEventMetadataStorage.getMetadataFor(instance);
+      if (events.length === 0) {
+        continue;
+      }
+
+      const providerPrototype = Object.getPrototypeOf(instance);
+      if (visitedEventProviders.has(providerPrototype)) {
+        continue;
+      }
+      visitedEventProviders.add(providerPrototype);
+
       events.forEach((event) => {
         // Error Handling
         if (this.routeHandlers[event.socketMethod] === undefined) {

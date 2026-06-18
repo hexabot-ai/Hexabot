@@ -25,22 +25,32 @@ type SocketEventMetadata = {
 };
 
 export class SocketEventMetadataStorage {
-  private static metadata = new Map<string, SocketEventMetadata[]>();
+  private static metadata = new WeakMap<object, SocketEventMetadata[]>();
 
   static addEventMetadata(
     target: object,
     propertyKey: SocketEventMetadata['propertyKey'],
     metadata: Omit<SocketEventMetadata, 'propertyKey'>,
   ) {
-    const key = target.constructor.name;
-    if (!this.metadata.has(key)) {
-      this.metadata.set(key, []);
+    if (!this.metadata.has(target)) {
+      this.metadata.set(target, []);
     }
 
-    this.metadata.get(key)?.push({ propertyKey, ...metadata });
+    this.metadata.get(target)?.push({ propertyKey, ...metadata });
   }
 
   static getMetadataFor(target: object) {
-    return this.metadata.get(target.constructor.name) || [];
+    const metadata: SocketEventMetadata[] = [];
+    let prototype =
+      typeof target === 'function'
+        ? target.prototype
+        : Object.getPrototypeOf(target);
+
+    while (prototype && prototype !== Object.prototype) {
+      metadata.push(...(this.metadata.get(prototype) || []));
+      prototype = Object.getPrototypeOf(prototype);
+    }
+
+    return metadata;
   }
 }

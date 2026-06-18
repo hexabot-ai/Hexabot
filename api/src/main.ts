@@ -10,7 +10,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import bodyParser from 'body-parser';
-import moduleAlias from 'module-alias';
+import moduleAlias = require('module-alias');
 import { resolveDynamicProviders } from 'nestjs-dynamic-providers';
 import passport from 'passport';
 

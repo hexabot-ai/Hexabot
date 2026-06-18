@@ -1391,16 +1391,21 @@ export default abstract class BaseWebChannelHandler<
    * @param res Express Response
    * @param next Callback function
    */
-  async middleware(req: Request, res: Response, next: NextFunction) {
+  async middleware(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     if (!this.isSocketRequest(req)) {
       if (req.headers['content-type']?.includes('multipart/form-data')) {
         // Handle multipart uploads (Long Pooling only)
-        return upload(req, res, next);
+        upload(req, res, next);
+        return;
       } else if (req.headers['content-type']?.includes('text/plain')) {
         // Handle plain text payloads as JSON (retro-compatibility)
         const textParser = bodyParser.text({ type: 'text/plain' });
 
-        return textParser(req, res, () => {
+        textParser(req, res, () => {
           try {
             req.body =
               typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -1409,6 +1414,7 @@ export default abstract class BaseWebChannelHandler<
             next(err);
           }
         });
+        return;
       }
     }
 
