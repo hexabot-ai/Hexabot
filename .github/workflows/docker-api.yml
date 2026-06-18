@@ -1,9 +1,7 @@
-name: Build and Push Docker API Image
+name: "V2: Build and Push Docker API Image"
 
 on:
   push:
-    branches:
-      - 'main'
     tags:
       - 'v2.*'
 
@@ -13,6 +11,30 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate V2 release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF" != refs/tags/v2.* ]]; then
+            echo "This workflow only publishes from v2.* tags. Current ref: $GITHUB_REF"
+            exit 1
+          fi
+
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v2\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported v2 tag '$GITHUB_REF_NAME'. Expected format v2.X.Y."
+            exit 1
+          fi
+
+          git fetch --no-tags origin +refs/heads/v2-dev:refs/remotes/origin/v2-dev
+
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/v2-dev; then
+            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not reachable from origin/v2-dev."
+            exit 1
+          fi
 
       - name: Docker meta
         id: meta
@@ -20,8 +42,6 @@ jobs:
         with:
           images: hexastack/hexabot-api
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
@@ -32,9 +52,8 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
         id: docker_login
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -46,6 +65,6 @@ jobs:
           target: production
           file: ./api/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

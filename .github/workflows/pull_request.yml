@@ -1,7 +1,10 @@
-name: running unit tests on pull request
+name: "V2: Pull Request CI"
 run-name: workflow ${{github.run_number}} of branch ${{github.head_ref}}
 
-on: [pull_request]
+on:
+  pull_request:
+    branches:
+      - v2-dev
 
 jobs:
   Frontend-Tests:

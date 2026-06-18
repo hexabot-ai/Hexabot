@@ -12,7 +12,7 @@ fi
 
 RELEASE_TYPE=$1
 ROOT_DIR=$(pwd)
-TARGET_BRANCH="main"
+TARGET_BRANCH="v2-dev"
 
 if [[ "$RELEASE_TYPE" != "patch" && "$RELEASE_TYPE" != "minor" ]]; then
   echo "Invalid release type. Use 'patch' or 'minor'."
@@ -62,6 +62,6 @@ git commit -m "build: v$NEW_VERSION"
 # Add git tag
 echo "Tagging version v$NEW_VERSION"
 git tag "v$NEW_VERSION"
-git push --no-verify origin main --tags
+git push --no-verify origin "$TARGET_BRANCH" --tags
 
 echo "Release ($RELEASE_TYPE) completed successfully."
