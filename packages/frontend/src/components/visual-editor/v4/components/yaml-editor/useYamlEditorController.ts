@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
 
 import { useWorkflow } from "../../hooks/useWorkflow";
+import { useYamlHighlight } from "../../hooks/useYamlHighlight";
 
 import { registerYamlCompletionProvider } from "./completion";
 import {
@@ -22,7 +23,10 @@ import { applyYamlMarkers } from "./markers";
 import { useDebouncedEffect } from "./useDebouncedEffect";
 import { applyWorkflowValidationMarkers } from "./validation/validation";
 
-export function useYamlEditorController() {
+export function useYamlEditorController(
+  onHighlightClear?: () => void,
+  highlightDef?: string,
+) {
   const { yaml, definitionErrors, updateDefinitionState, taskIds } =
     useWorkflow();
   const {
@@ -34,19 +38,23 @@ export function useYamlEditorController() {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const completionDisposableRef = useRef<IDisposable | null>(null);
+  const { setupHighlightOnMount } = useYamlHighlight(
+    editorRef,
+    monacoRef,
+    highlightDef,
+    onHighlightClear,
+  );
   const onChange = useCallback(
     (nextValue?: string) => {
       updateDefinitionState(nextValue || "", { persist: "debounced" });
     },
     [updateDefinitionState],
   );
-  // Consolidated marker + validation application
   const applyAllMarkers = useCallback(() => {
     applyYamlMarkers({
       editorInstance: editorRef.current,
       monacoInstance: monacoRef.current,
     });
-
     applyWorkflowValidationMarkers({
       editorInstance: editorRef.current,
       monacoInstance: monacoRef.current,
@@ -62,8 +70,9 @@ export function useYamlEditorController() {
       editorRef.current = editorInstance;
       monacoRef.current = monacoInstance;
       applyAllMarkers();
+      setupHighlightOnMount(editorInstance);
     },
-    [applyAllMarkers],
+    [applyAllMarkers, setupHighlightOnMount],
   );
 
   useEffect(() => {
@@ -101,6 +110,7 @@ export function useYamlEditorController() {
   useEffect(() => {
     return () => {
       if (!editorRef.current || !monacoRef.current) return;
+
       const model = editorRef.current.getModel();
 
       if (!model) return;
@@ -113,11 +123,5 @@ export function useYamlEditorController() {
     };
   }, []);
 
-  return {
-    value: yaml,
-    definitionErrors,
-    onChange,
-    beforeMount,
-    onMount,
-  };
+  return { value: yaml, definitionErrors, onChange, beforeMount, onMount };
 }

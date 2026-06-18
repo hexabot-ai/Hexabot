@@ -27,6 +27,8 @@ export type WorkflowGraphHostContextValue = {
   onRemoveStep: (stepPath: FlowStepPath, nodeId?: string) => void;
   onAddBinding?: (payload: WorkflowBindingAddPayload) => void;
   onRemoveBinding?: (payload: WorkflowBindingRemovePayload) => void;
+  onViewNodeCode?: (defName: string) => void;
+  activeCodeDefName?: string;
 };
 
 export const WorkflowGraphHostContext =

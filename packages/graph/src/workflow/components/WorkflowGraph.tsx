@@ -108,6 +108,8 @@ export type WorkflowGraphCallbacks = {
   onAddBinding?: (payload: WorkflowBindingAddPayload) => void;
   onRemoveBinding?: (payload: WorkflowBindingRemovePayload) => void;
   onRotate: (nextDirection: "horizontal" | "vertical") => Promise<boolean>;
+  onViewNodeCode?: (defName: string) => void;
+  activeCodeDefName?: string;
 };
 
 export type WorkflowGraphColorMode = "light" | "dark" | "system";
@@ -210,7 +212,9 @@ const areWorkflowGraphPropsEqual = (
   previous.callbacks.onRemoveStep === next.callbacks.onRemoveStep &&
   previous.callbacks.onAddBinding === next.callbacks.onAddBinding &&
   previous.callbacks.onRemoveBinding === next.callbacks.onRemoveBinding &&
-  previous.callbacks.onRotate === next.callbacks.onRotate;
+  previous.callbacks.onRotate === next.callbacks.onRotate &&
+  previous.callbacks.onViewNodeCode === next.callbacks.onViewNodeCode &&
+  previous.callbacks.activeCodeDefName === next.callbacks.activeCodeDefName;
 const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
   (
     {
@@ -300,11 +304,15 @@ const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
         onRemoveStep: callbacks.onRemoveStep,
         onAddBinding: callbacks.onAddBinding,
         onRemoveBinding: callbacks.onRemoveBinding,
+        onViewNodeCode: callbacks.onViewNodeCode,
+        activeCodeDefName: callbacks.activeCodeDefName,
       }),
       [
         callbacks.onAddBinding,
         callbacks.onRemoveBinding,
         callbacks.onRemoveStep,
+        callbacks.onViewNodeCode,
+        callbacks.activeCodeDefName,
         model.actionCatalog,
         model.layoutDirection,
         resolvedColorMode,

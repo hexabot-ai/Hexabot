@@ -67,6 +67,7 @@ import { WorkflowTitleBar } from "../components/main/WorkflowTitleBar";
 import { WorkflowSettingsDialog } from "../components/main/WorkflowTitleBar/WorkflowSettingsDialog";
 import { useWorkflow } from "../hooks/useWorkflow";
 import { useWorkflowExecutionState } from "../hooks/useWorkflowExecutionState";
+import { useWorkflowNodeCode } from "../hooks/useWorkflowNodeCode";
 import { humanizeBindingKind } from "../utils/binding-kind.utils";
 import {
   createUniqueBindingName,
@@ -177,6 +178,13 @@ export const Workflow = () => {
   const graphColorMode: WorkflowGraphColorMode =
     mode === "light" || mode === "dark" ? mode : "system";
   const workflowGraphRef = useRef<WorkflowGraphHandle | null>(null);
+  const {
+    activeCodeDef,
+    activeCodeDefName,
+    onViewNodeCode,
+    onActiveDefChange,
+    clearActiveCodeDef,
+  } = useWorkflowNodeCode();
   const executionStates = useWorkflowExecutionState(selectedFlowId);
   const focusNodeIds = useMemo(
     () =>
@@ -239,18 +247,21 @@ export const Workflow = () => {
       if (insertType === StepType.Conditional) {
         setPendingInsertPath(null);
         addConditionalStep(insertPath);
+        clearActiveCodeDef();
 
         return;
       }
       if (insertType === StepType.Loop) {
         setPendingInsertPath(null);
         addLoopStep(insertPath);
+        clearActiveCodeDef();
 
         return;
       }
       if (insertType === StepType.Parallel) {
         setPendingInsertPath(null);
         addParallelStep(insertPath);
+        clearActiveCodeDef();
 
         return;
       }
@@ -262,13 +273,7 @@ export const Workflow = () => {
       setPendingInsertPath(insertPath ?? null);
       setActionsDrawerOpen(true);
     },
-    [
-      addConditionalStep,
-      addLoopStep,
-      addParallelStep,
-      definition,
-      setGraphSelection,
-    ],
+    [addConditionalStep, addLoopStep, addParallelStep, clearActiveCodeDef],
   );
   const handleRootInsert = useCallback(
     (insertType: EdgeInsertType = "step") => {
@@ -590,10 +595,17 @@ export const Workflow = () => {
       };
 
       updateDefinitionState(nextDefinition);
+      clearActiveCodeDef();
       setPendingBindingAdd(null);
       setEditingBindingTarget(null);
     },
-    [bindingsByName, definition, pendingBindingAdd, updateDefinitionState],
+    [
+      bindingsByName,
+      clearActiveCodeDef,
+      definition,
+      pendingBindingAdd,
+      updateDefinitionState,
+    ],
   );
   const handleCreateBindingDefinition = useCallback(
     (
@@ -654,10 +666,17 @@ export const Workflow = () => {
       };
 
       updateDefinitionState(nextDefinition);
+      clearActiveCodeDef();
       setPendingBindingAdd(null);
       setEditingBindingTarget(null);
     },
-    [bindingsByName, definition, pendingBindingAdd, updateDefinitionState],
+    [
+      bindingsByName,
+      clearActiveCodeDef,
+      definition,
+      pendingBindingAdd,
+      updateDefinitionState,
+    ],
   );
   const handleUpdateBindingDefinition = useCallback(
     (
@@ -854,8 +873,9 @@ export const Workflow = () => {
       };
 
       updateDefinitionState(nextDefinition);
+      clearActiveCodeDef();
     },
-    [bindingsByName, definition, updateDefinitionState],
+    [bindingsByName, clearActiveCodeDef, definition, updateDefinitionState],
   );
   const workflowGraphModel = useMemo(
     () => ({
@@ -908,11 +928,16 @@ export const Workflow = () => {
   );
   const workflowGraphCallbacks = useMemo(
     () => ({
-      onRemoveStep: removeStepAtPath,
+      onRemoveStep: (stepPath: FlowStepPath, nodeId?: string) => {
+        removeStepAtPath(stepPath, nodeId);
+        clearActiveCodeDef();
+      },
       onAddBinding: handleAddBinding,
       onRemoveBinding: handleRemoveBinding,
       onNodeClick: handleGraphNodeClick,
       onRotate: handleRotate,
+      onViewNodeCode,
+      activeCodeDefName,
     }),
     [
       handleAddBinding,
@@ -920,12 +945,20 @@ export const Workflow = () => {
       handleRemoveBinding,
       handleRotate,
       removeStepAtPath,
+      clearActiveCodeDef,
+      onViewNodeCode,
+      activeCodeDefName,
     ],
   );
 
   return (
     <div className="visual-editor-v4">
-      <FlowsDrawer onNew={handleNewWorkflow} onEdit={handleEditWorkflow} />
+      <FlowsDrawer
+        onNew={handleNewWorkflow}
+        onEdit={handleEditWorkflow}
+        activeCodeDef={activeCodeDef}
+        onActiveDefChange={onActiveDefChange}
+      />
       <StyledBox>
         <WorkflowGraph
           ref={workflowGraphRef}
@@ -1035,6 +1068,8 @@ export const Workflow = () => {
           setPendingActionCreateTarget(null);
           if (reason === "cancel" && isCreateFlow) {
             workflowGraphRef.current?.clearCenterAfterFirstInsert();
+          } else if (reason === "save") {
+            clearActiveCodeDef();
           }
         }}
       />

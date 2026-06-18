@@ -17,8 +17,8 @@ import {
 import {
   EIndicatorType,
   ELinkType,
-  type BindingOutPort,
   ENodeType,
+  type BindingOutPort,
   type ConditionalOperatorOutPort,
   type EOperatorType,
   type INodeConfig,
@@ -889,6 +889,7 @@ const walkStep = ({
         description: getTaskDescription(step.taskName, state.defs),
         actionName,
         stepId: step.id,
+        taskName: step.taskName,
         level,
         groupName,
         stepPath,

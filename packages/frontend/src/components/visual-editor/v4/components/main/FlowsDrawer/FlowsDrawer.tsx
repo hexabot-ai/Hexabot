@@ -4,8 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
-import { WorkflowType } from "@hexabot-ai/types";
 import type { Workflow } from "@hexabot-ai/types";
+import { WorkflowType } from "@hexabot-ai/types";
 import {
   Box,
   Button,
@@ -17,12 +17,12 @@ import {
 } from "@mui/material";
 import { Plus, Upload } from "lucide-react";
 import {
-  type ChangeEvent,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
@@ -85,7 +85,12 @@ const openPricing = () => {
 };
 const flowActionButtonSx = { minWidth: 108 };
 
-export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
+export const FlowsDrawer = ({
+  onNew,
+  onEdit,
+  activeCodeDef,
+  onActiveDefChange,
+}: FlowsDrawerProps) => {
   const { t } = useTranslate();
   const formatCron = useCronFormatter();
   const dialogs = useDialogs();
@@ -393,6 +398,7 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
   const handleToggleDrawer = () => {
     setOpen((prev) => {
       setLocalStorage(drawerIsOpenStorage, !prev ? "true" : "");
+      if (prev) onActiveDefChange?.(null); // drawer closing — deactivate button
 
       return !prev;
     });
@@ -411,7 +417,11 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
     [drawerWidth, open],
   );
   const handleToggleYaml = () => {
-    setShowYaml((prev) => !prev);
+    setShowYaml((prev) => {
+      if (prev) onActiveDefChange?.(null); // switching away from YAML — deactivate button
+
+      return !prev;
+    });
     setShowVersions(false);
     if (!open) {
       setOpen(true);
@@ -420,6 +430,7 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
   const handleToggleVersions = () => {
     setShowVersions((prev) => !prev);
     setShowYaml(false);
+    onActiveDefChange?.(null); // switching to versions view — deactivate button
     if (!open) {
       setOpen(true);
     }
@@ -427,8 +438,30 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
   const handleOpenDrawer = () => {
     setShowYaml(false);
     setShowVersions(false);
+    onActiveDefChange?.(null); // switching to flows list — deactivate button
     setOpen(true);
   };
+  // Refs to read latest state inside the effect without adding them as deps
+  const showYamlRef = useRef(showYaml);
+
+  showYamlRef.current = showYaml;
+  const openRef = useRef(open);
+
+  openRef.current = open;
+
+  // React to externally controlled activeCodeDef
+  useEffect(() => {
+    if (!activeCodeDef) return;
+
+    setShowVersions(false);
+    if (!openRef.current) {
+      setOpen(true);
+      setLocalStorage(drawerIsOpenStorage, "true");
+    }
+    if (!showYamlRef.current) setShowYaml(true);
+    // highlight/reveal handled entirely via the highlightDef prop on YamlEditor
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCodeDef]);
   const handleToggleType = (key: string) =>
     setOpenTypeKeys((prev) =>
       prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
@@ -540,7 +573,10 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
             <>
               <Divider />
               <YamlEditorContainer>
-                <YamlEditor />
+                <YamlEditor
+                  onHighlightClear={() => onActiveDefChange?.(null)}
+                  highlightDef={activeCodeDef ?? undefined}
+                />
               </YamlEditorContainer>
             </>
           ) : showVersions ? (
