@@ -12,13 +12,14 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService, JwtSignOptions } from '@nestjs/jwt';
+import { JwtService, JwtSignOptions, JwtVerifyOptions } from '@nestjs/jwt';
 
 import { config } from '@/config';
 import { I18nService } from '@/i18n/services/i18n.service';
 import { LanguageService } from '@/i18n/services/language.service';
 import { LoggerService } from '@/logger/logger.service';
 import { MailerService } from '@/mailer/mailer.service';
+import { jwtExpiresIn, jwtVerifyOptions } from '@/utils/helpers/jwt-options';
 
 import { UserCreateDto } from '../dto/user.dto';
 
@@ -28,9 +29,13 @@ import { UserService } from './user.service';
 export class ValidateAccountService {
   public readonly jwtSignOptions: JwtSignOptions = {
     secret: config.confirm_account.jwtOptions.secret,
-    expiresIn: config.confirm_account.jwtOptions.expiresIn,
+    expiresIn: jwtExpiresIn(config.confirm_account.jwtOptions.expiresIn),
     encoding: 'utf-8',
   };
+
+  public readonly jwtVerifyOptions: JwtVerifyOptions = jwtVerifyOptions(
+    this.jwtSignOptions,
+  );
 
   constructor(
     @Inject(JwtService) private readonly jwtService: JwtService,
@@ -60,7 +65,7 @@ export class ValidateAccountService {
    * @returns A promise that resolves to an object containing the user's email.
    */
   async verify(token: string): Promise<{ email: string }> {
-    return await this.jwtService.verifyAsync(token, this.jwtSignOptions);
+    return await this.jwtService.verifyAsync(token, this.jwtVerifyOptions);
   }
 
   /**

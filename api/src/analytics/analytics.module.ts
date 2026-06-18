@@ -7,7 +7,6 @@
  */
 
 import { Module } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
 
 import { BotStatsController } from './controllers/bot-stats.controller';
@@ -16,7 +15,7 @@ import { BotStatsModel } from './schemas/bot-stats.schema';
 import { BotStatsService } from './services/bot-stats.service';
 
 @Module({
-  imports: [MongooseModule.forFeature([BotStatsModel]), EventEmitter2],
+  imports: [MongooseModule.forFeature([BotStatsModel])],
   controllers: [BotStatsController],
   providers: [BotStatsService, BotStatsRepository],
 })

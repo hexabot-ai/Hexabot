@@ -16,9 +16,10 @@ const sortTypes = ['asc', 'desc'];
 
 export type PageQueryParams = { skip?: string; limit?: string; sort?: string };
 
-export class PageQueryPipe<T>
-  implements PipeTransform<PageQueryParams, PageQueryDto<T>>
-{
+export class PageQueryPipe<T> implements PipeTransform<
+  PageQueryParams,
+  PageQueryDto<T>
+> {
   transform(value: PageQueryParams) {
     let skip: number | undefined = undefined;
     let limit: number | undefined = undefined;

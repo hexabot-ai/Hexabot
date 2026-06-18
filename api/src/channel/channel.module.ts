@@ -8,6 +8,7 @@
 
 import { HttpModule } from '@nestjs/axios';
 import {
+  forwardRef,
   Global,
   MiddlewareConsumer,
   Module,
@@ -39,7 +40,13 @@ export interface ChannelModuleOptions {
   'dist/.hexabot/custom/extensions/channels/**/*.channel.js',
 )
 @Module({
-  imports: [ChatModule, AttachmentModule, CmsModule, HttpModule, JwtModule],
+  imports: [
+    forwardRef(() => ChatModule),
+    AttachmentModule,
+    CmsModule,
+    HttpModule,
+    JwtModule,
+  ],
   controllers: [WebhookController, ChannelController],
   providers: [ChannelService],
   exports: [ChannelService],
@@ -48,6 +55,6 @@ export class ChannelModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(ChannelMiddleware)
-      .forRoutes({ path: 'webhook/*', method: RequestMethod.ALL });
+      .forRoutes({ path: 'webhook/*path', method: RequestMethod.ALL });
   }
 }

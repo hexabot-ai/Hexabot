@@ -7,7 +7,6 @@
  */
 
 import { forwardRef, Module } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
 
 import { AttachmentModule } from '@/attachment/attachment.module';
@@ -68,7 +67,6 @@ import { SubscriberService } from './services/subscriber.service';
     forwardRef(() => ChannelModule),
     CmsModule,
     AttachmentModule,
-    EventEmitter2,
     UserModule,
     NlpModule,
   ],

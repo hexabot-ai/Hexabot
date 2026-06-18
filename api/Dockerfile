@@ -4,8 +4,6 @@ WORKDIR /app
 
 COPY package*.json ./
 
-COPY patches ./patches
-
 RUN npm ci
 
 COPY . .
@@ -22,8 +20,6 @@ COPY --from=builder /app/node_modules ./node_modules
 
 COPY --from=builder /app/src/extensions ./src/extensions
 
-COPY --from=builder /app/patches ./patches
-
 COPY . .
 
 ENV NODE_ENV=development
@@ -39,8 +35,6 @@ WORKDIR /app
 COPY package*.json ./
 
 COPY --from=builder /app/src/extensions ./src/extensions
-
-COPY --from=builder /app/patches ./patches
 
 RUN npm ci --only=production
 

@@ -14,7 +14,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService, JwtSignOptions } from '@nestjs/jwt';
+import { JwtService, JwtSignOptions, JwtVerifyOptions } from '@nestjs/jwt';
 import { compareSync } from 'bcryptjs';
 
 import { config } from '@/config';
@@ -22,6 +22,7 @@ import { I18nService } from '@/i18n/services/i18n.service';
 import { LanguageService } from '@/i18n/services/language.service';
 import { LoggerService } from '@/logger/logger.service';
 import { MailerService } from '@/mailer/mailer.service';
+import { jwtExpiresIn, jwtVerifyOptions } from '@/utils/helpers/jwt-options';
 
 import { UserRequestResetDto, UserResetPasswordDto } from '../dto/user.dto';
 
@@ -40,9 +41,13 @@ export class PasswordResetService {
 
   public readonly jwtSignOptions: JwtSignOptions = {
     secret: config.password_reset.jwtOptions.secret,
-    expiresIn: config.password_reset.jwtOptions.expiresIn,
+    expiresIn: jwtExpiresIn(config.password_reset.jwtOptions.expiresIn),
     encoding: 'utf-8',
   };
+
+  public readonly jwtVerifyOptions: JwtVerifyOptions = jwtVerifyOptions(
+    this.jwtSignOptions,
+  );
 
   /**
    * Handles the request for password reset.
@@ -136,6 +141,6 @@ export class PasswordResetService {
    * @returns The decoded payload of the token.
    */
   async verify(token: string): Promise<UserRequestResetDto> {
-    return await this.jwtService.verifyAsync(token, this.jwtSignOptions);
+    return await this.jwtService.verifyAsync(token, this.jwtVerifyOptions);
   }
 }

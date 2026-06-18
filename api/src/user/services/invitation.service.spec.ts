@@ -96,7 +96,7 @@ describe('InvitationService', () => {
       expect(jwt).toBeDefined();
       expect(decodedJwt).toEqualPayload(test, IGNORED_FIELDS);
       expect(
-        jwtService.verify(jwt, invitationService.jwtSignOptions),
+        jwtService.verify(jwt, invitationService.jwtVerifyOptions),
       ).toBeDefined();
     });
 

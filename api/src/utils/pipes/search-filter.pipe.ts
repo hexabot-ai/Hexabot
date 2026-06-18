@@ -24,9 +24,10 @@ import {
 } from '../types/filter.types';
 
 @Injectable()
-export class SearchFilterPipe<T>
-  implements PipeTransform<TSearchFilterValue<T>, Promise<TFilterQuery<T>>>
-{
+export class SearchFilterPipe<T> implements PipeTransform<
+  TSearchFilterValue<T>,
+  Promise<TFilterQuery<T>>
+> {
   constructor(
     private readonly props: {
       allowedFields: TFilterNestedKeysOfType<

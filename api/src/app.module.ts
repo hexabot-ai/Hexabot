@@ -8,18 +8,19 @@
 
 import path from 'path';
 
+import KeyvRedis from '@keyv/redis';
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
-import { redisStore } from 'cache-manager-redis-yet';
+import { KeyvCacheableMemory } from 'cacheable';
+import { Keyv } from 'keyv';
 import {
   AcceptLanguageResolver,
   I18nOptions,
   QueryResolver,
 } from 'nestjs-i18n';
-import { RedisClientOptions } from 'redis';
 
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AppController } from './app.controller';
@@ -55,6 +56,18 @@ const i18nOptions: I18nOptions = {
     AcceptLanguageResolver,
   ],
 };
+
+const cacheStores =
+  config.cache.type === 'redis'
+    ? [new KeyvRedis(`redis://${config.cache.host}:${config.cache.port}`)]
+    : [
+        new Keyv({
+          store: new KeyvCacheableMemory({
+            ttl: config.cache.ttl,
+            lruSize: config.cache.max,
+          }),
+        }),
+      ];
 
 @Module({
   imports: [
@@ -102,22 +115,11 @@ const i18nOptions: I18nOptions = {
       ignoreErrors: false,
     }),
     I18nModule.forRoot(i18nOptions),
-    config.cache.type === 'redis'
-      ? CacheModule.register<RedisClientOptions>({
-          isGlobal: true,
-          store: redisStore,
-          socket: {
-            host: config.cache.host,
-            port: config.cache.port,
-          },
-          ttl: config.cache.ttl,
-          max: config.cache.max,
-        })
-      : CacheModule.register({
-          isGlobal: true,
-          ttl: config.cache.ttl,
-          max: config.cache.max,
-        }),
+    CacheModule.register({
+      isGlobal: true,
+      stores: cacheStores,
+      ttl: config.cache.ttl,
+    }),
     MigrationModule,
     ExtensionModule,
     ...extraModules,

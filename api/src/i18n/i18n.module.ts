@@ -8,7 +8,6 @@
 
 import {
   DynamicModule,
-  forwardRef,
   Global,
   Inject,
   InternalServerErrorException,
@@ -19,6 +18,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import {
   I18N_OPTIONS,
   I18N_TRANSLATIONS,
+  I18nMiddleware,
   I18nOptions,
   I18nTranslation,
   I18nModule as NativeI18nModule,
@@ -49,8 +49,9 @@ export class I18nModule extends NativeI18nModule {
     translations: Observable<I18nTranslation>,
     @Inject(I18N_OPTIONS) i18nOptions: I18nOptions,
     adapter: HttpAdapterHost,
+    middleware: I18nMiddleware,
   ) {
-    super(i18n, translations, i18nOptions, adapter);
+    super(i18n, translations, i18nOptions, adapter, middleware);
   }
 
   static forRoot(options: I18nOptions): DynamicModule {
@@ -64,7 +65,7 @@ export class I18nModule extends NativeI18nModule {
       module: I18nModule,
       imports: (imports || []).concat([
         MongooseModule.forFeature([LanguageModel, TranslationModel]),
-        forwardRef(() => ChatModule),
+        ChatModule,
       ]),
       controllers: (controllers || []).concat([
         LanguageController,

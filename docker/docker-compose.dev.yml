@@ -40,3 +40,7 @@ services:
     pull_policy: build
     volumes:
       - ../frontend/:/app/frontend/
+      - frontend-node-modules:/app/frontend/node_modules
+
+volumes:
+  frontend-node-modules:

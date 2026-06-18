@@ -15,7 +15,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import { JwtService, JwtSignOptions } from '@nestjs/jwt';
+import { JwtService, JwtSignOptions, JwtVerifyOptions } from '@nestjs/jwt';
 import { plainToClass } from 'class-transformer';
 import { NextFunction, Request, Response } from 'express';
 import mime from 'mime';
@@ -41,6 +41,7 @@ import { config } from '@/config';
 import { LoggerService } from '@/logger/logger.service';
 import { SettingService } from '@/setting/services/setting.service';
 import { Extension } from '@/utils/generics/extension';
+import { jwtExpiresIn, jwtVerifyOptions } from '@/utils/helpers/jwt-options';
 import { buildURL } from '@/utils/helpers/URL';
 import { HyphenToUnderscore } from '@/utils/types/extension';
 import { SocketRequest } from '@/websocket/utils/socket-request';
@@ -53,8 +54,8 @@ import EventWrapper from './EventWrapper';
 
 @Injectable()
 export default abstract class ChannelHandler<
-    N extends ChannelName = ChannelName,
-  >
+  N extends ChannelName = ChannelName,
+>
   extends Extension
   implements OnModuleInit
 {
@@ -68,10 +69,14 @@ export default abstract class ChannelHandler<
 
   protected readonly jwtSignOptions: JwtSignOptions = {
     secret: config.parameters.signedUrl.secret,
-    expiresIn: config.parameters.signedUrl.expiresIn,
+    expiresIn: jwtExpiresIn(config.parameters.signedUrl.expiresIn),
     algorithm: 'HS256',
     encoding: 'utf-8',
   };
+
+  protected readonly jwtVerifyOptions: JwtVerifyOptions = jwtVerifyOptions(
+    this.jwtSignOptions,
+  );
 
   constructor(
     name: N,
@@ -369,7 +374,7 @@ export default abstract class ChannelHandler<
         exp: _exp,
         iat: _iat,
         ...result
-      } = this.jwtService.verify(token, this.jwtSignOptions);
+      } = this.jwtService.verify(token, this.jwtVerifyOptions);
       const attachment = plainToClass(Attachment, result);
 
       // Check access

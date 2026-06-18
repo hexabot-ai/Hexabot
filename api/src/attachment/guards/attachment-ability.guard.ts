@@ -210,8 +210,12 @@ export class AttachmentGuard implements CanActivate {
     switch (method) {
       // count(), find() and findOne() endpoints
       case 'GET': {
-        if (params && 'id' in params && Types.ObjectId.isValid(params.id)) {
-          const attachment = await this.attachmentService.findOne(params.id);
+        const attachmentId = params?.id;
+        if (
+          typeof attachmentId === 'string' &&
+          Types.ObjectId.isValid(attachmentId)
+        ) {
+          const attachment = await this.attachmentService.findOne(attachmentId);
 
           if (!attachment) {
             throw new NotFoundException('Attachment not found!');
@@ -249,8 +253,12 @@ export class AttachmentGuard implements CanActivate {
       }
       // deleteOne() endpoint
       case 'DELETE': {
-        if (params && 'id' in params && Types.ObjectId.isValid(params.id)) {
-          const attachment = await this.attachmentService.findOne(params.id);
+        const attachmentId = params?.id;
+        if (
+          typeof attachmentId === 'string' &&
+          Types.ObjectId.isValid(attachmentId)
+        ) {
+          const attachment = await this.attachmentService.findOne(attachmentId);
 
           if (!attachment) {
             throw new NotFoundException('Invalid attachment ID');
