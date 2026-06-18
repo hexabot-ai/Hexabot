@@ -193,8 +193,13 @@ describe('NlpEntityService', () => {
       // Act
       const result = await nlpEntityService.getNlpMap();
 
-      expect(result).toBeInstanceOf(Map);
-      expect(result.get('firstname')).toEqualPayload(
+      expect(result).toEqual(
+        expect.objectContaining({
+          firstname: expect.any(Object),
+          subject: expect.any(Object),
+        }),
+      );
+      expect(result.firstname).toEqualPayload(
         {
           name: 'firstname',
           lookups: ['keywords'],
@@ -212,7 +217,7 @@ describe('NlpEntityService', () => {
         },
         ['id', 'createdAt', 'updatedAt', 'metadata', 'entity'],
       );
-      expect(result.get('subject')).toEqualPayload(
+      expect(result.subject).toEqualPayload(
         {
           name: 'subject',
           lookups: ['trait'],

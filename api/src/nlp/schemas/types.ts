@@ -35,7 +35,7 @@ export enum NlpSampleState {
   inbox = 'inbox',
 }
 
-export type NlpCacheMap = Map<string, NlpEntityFull>;
+export type NlpCacheMap = Record<string, NlpEntityFull>;
 
 export type NlpMetadata = {
   // Required when lookups is "pattern"

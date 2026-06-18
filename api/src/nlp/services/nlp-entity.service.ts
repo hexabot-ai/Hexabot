@@ -161,19 +161,22 @@ export class NlpEntityService extends BaseService<
    * Retrieves NLP entity lookup information for the given list of entity names.
    *
    * This method queries the database for nlp entities,
-   * transforms the result into a map structure where each key is
+   * transforms the result into a plain object where each key is
    * the entity name and each value contains metadata (id, weight, and list of values),
    * and caches the result using the configured cache key.
    *
-   * @returns A Promise that resolves to a map of entity name to its corresponding lookup metadata.
+   * @returns A Promise that resolves to an object of entity name to its corresponding lookup metadata.
    */
   @Cacheable(NLP_MAP_CACHE_KEY)
   async getNlpMap(): Promise<NlpCacheMap> {
     const entities = await this.findAllAndPopulate();
-    return entities.reduce((acc, curr) => {
-      acc.set(curr.name, curr);
-      return acc;
-    }, new Map());
+    return entities.reduce<NlpCacheMap>(
+      (acc, curr) => {
+        acc[curr.name] = curr;
+        return acc;
+      },
+      Object.create(null) as NlpCacheMap,
+    );
   }
 
   /**
@@ -189,7 +192,7 @@ export class NlpEntityService extends BaseService<
    * collection of matching entities.
    */
   async getNlpEntitiesByLookup(lookups: Lookup[]): Promise<NlpEntityFull[]> {
-    const entities = [...(await this.getNlpMap()).values()];
+    const entities = Object.values(await this.getNlpMap());
     return entities.filter((e) => {
       return lookups.filter((l) => e.lookups.includes(l)).length > 0;
     });

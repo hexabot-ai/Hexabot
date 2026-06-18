@@ -52,9 +52,11 @@ export class NlpService {
     const nlpMap = await this.nlpEntityService.getNlpMap();
 
     const scoredEntities = entities
-      .filter(({ entity }) => nlpMap.has(entity))
+      .filter(({ entity }) =>
+        Object.prototype.hasOwnProperty.call(nlpMap, entity),
+      )
       .map((e) => {
-        const entity = nlpMap.get(e.entity)!;
+        const entity = nlpMap[e.entity]!;
 
         return {
           ...e,
