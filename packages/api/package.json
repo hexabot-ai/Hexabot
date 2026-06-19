@@ -142,6 +142,7 @@
     "@types/json-schema": "^7.0.15",
     "@types/lodash": "^4.17.20",
     "@types/mjml": "^5.0.0",
+    "@types/mjml-core": "^5.0.0",
     "@types/module-alias": "^2.0.4",
     "@types/multer": "^2.0.0",
     "@types/node": "^20.3.1",

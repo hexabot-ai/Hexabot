@@ -19,9 +19,17 @@ import SMTPTransport from 'nodemailer/lib/smtp-transport';
 
 import { config } from '@/config';
 
+interface SendMailOptionsContext {
+  appName: string;
+  appUrl: string;
+  token: string;
+  first_name: string;
+  t: (key: string) => void;
+}
+
 export type SendMailOptions = NodemailerSendMailOptions & {
   template?: string;
-  context?: Record<string, unknown>;
+  context?: SendMailOptionsContext;
 };
 
 @Injectable()
@@ -68,7 +76,7 @@ export class MailerService {
 
   private async renderTemplate(
     template: string,
-    context: Record<string, unknown> = {},
+    context?: SendMailOptionsContext,
   ): Promise<string> {
     const templatePath = path.join(
       process.cwd(),
@@ -77,12 +85,8 @@ export class MailerService {
       template,
     );
     const content = await readFile(templatePath, 'utf-8');
-    const compiledHandlebars = Handlebars.compile(content)({
-      appName: config.parameters.appName,
-      appUrl: config.uiBaseUrl,
-      ...context,
-    });
-    const { errors, html } = mjml2html(compiledHandlebars);
+    const compiledHandlebars = Handlebars.compile(content)(context);
+    const { errors, html } = await mjml2html(compiledHandlebars);
 
     if (errors.length) {
       throw new Error('Unable to compile mjml template');
