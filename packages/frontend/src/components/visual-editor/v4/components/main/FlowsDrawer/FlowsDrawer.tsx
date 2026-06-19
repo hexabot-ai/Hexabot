@@ -86,7 +86,12 @@ const openPricing = () => {
 };
 const flowActionButtonSx = { minWidth: 108 };
 
-export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
+export const FlowsDrawer = ({
+  onNew,
+  onEdit,
+  activeCodeDef,
+  onActiveDefChange,
+}: FlowsDrawerProps) => {
   const { t } = useTranslate();
   const formatCron = useCronFormatter();
   const dialogs = useDialogs();
@@ -348,15 +353,38 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
   }, [isSearching, selectedFlowTypeKey, typeGroups]);
 
   const handleToggleYaml = () => {
-    setShowYaml((prev) => !prev);
+    setShowYaml((prev) => {
+      if (prev) onActiveDefChange?.(); // switching away from YAML — deactivate button
+
+      return !prev;
+    });
     setShowVersions(false);
     if (!open) setOpen(true);
   };
   const handleToggleVersions = () => {
     setShowVersions((prev) => !prev);
     setShowYaml(false);
-    if (!open) setOpen(true);
+    onActiveDefChange?.(); // switching to versions view — deactivate button
+    if (!open) {
+      setOpen(true);
+    }
   };
+
+  // React to externally controlled activeCodeDef
+  useEffect(() => {
+    if (!activeCodeDef) return;
+
+    setShowVersions(false);
+    setOpen((prevOpen) => {
+      if (!prevOpen) {
+        setLocalStorage(drawerIsOpenStorage, "true");
+      }
+
+      return true;
+    });
+    setShowYaml(true);
+    // highlight/reveal handled entirely via the highlightDef prop on YamlEditor
+  }, [activeCodeDef]);
   const handleToggleType = (key: string) =>
     setOpenTypeKeys((prev) =>
       prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
@@ -468,7 +496,10 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
             <>
               <Divider />
               <YamlEditorContainer>
-                <YamlEditor />
+                <YamlEditor
+                  onHighlightClear={onActiveDefChange}
+                  highlightDef={activeCodeDef}
+                />
               </YamlEditorContainer>
             </>
           ) : showVersions ? (

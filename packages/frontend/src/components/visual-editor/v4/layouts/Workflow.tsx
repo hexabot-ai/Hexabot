@@ -148,6 +148,7 @@ export const Workflow = () => {
     addConditionalStep,
     addLoopStep,
     addParallelStep,
+    yaml,
   } = useWorkflow();
   const { actions, actionsByName } = useWorkflowActionsCatalog();
   const { bindingsByName } = useWorkflowBindingsCatalog();
@@ -177,7 +178,22 @@ export const Workflow = () => {
   const graphColorMode: WorkflowGraphColorMode =
     mode === "light" || mode === "dark" ? mode : "system";
   const workflowGraphRef = useRef<WorkflowGraphHandle | null>(null);
+  const [activeCodeDef, setActiveCodeDef] = useState<string>();
+  const setActive = useCallback((defName?: string | null) => {
+    setActiveCodeDef((prev) =>
+      !defName ? undefined : prev === defName ? undefined : defName,
+    );
+  }, []);
+  const activeCodeDefRef = useRef(activeCodeDef);
+
+  activeCodeDefRef.current = activeCodeDef;
   const executionStates = useWorkflowExecutionState(selectedFlowId);
+
+  // Clear YAML highlight whenever the YAML content changes.
+  // activeCodeDef is read via ref to avoid re-firing when the highlight is first set.
+  useEffect(() => {
+    if (activeCodeDefRef.current) setActiveCodeDef(undefined);
+  }, [yaml]);
   const focusNodeIds = useMemo(
     () =>
       typeof nodeIds === "string"
@@ -262,13 +278,7 @@ export const Workflow = () => {
       setPendingInsertPath(insertPath ?? null);
       setActionsDrawerOpen(true);
     },
-    [
-      addConditionalStep,
-      addLoopStep,
-      addParallelStep,
-      definition,
-      setGraphSelection,
-    ],
+    [addConditionalStep, addLoopStep, addParallelStep],
   );
   const handleRootInsert = useCallback(
     (insertType: EdgeInsertType = "step") => {
@@ -865,6 +875,7 @@ export const Workflow = () => {
       bindingCatalog: bindingsByName,
       executionStates,
       layoutDirection: direction,
+      activeCodeDefName: activeCodeDef,
     }),
     [
       actionsByName,
@@ -873,6 +884,7 @@ export const Workflow = () => {
       direction,
       executionStates,
       flow,
+      activeCodeDef,
     ],
   );
   const workflowGraphSelection = useMemo(
@@ -913,6 +925,7 @@ export const Workflow = () => {
       onRemoveBinding: handleRemoveBinding,
       onNodeClick: handleGraphNodeClick,
       onRotate: handleRotate,
+      onViewNodeCode: setActive,
     }),
     [
       handleAddBinding,
@@ -920,12 +933,18 @@ export const Workflow = () => {
       handleRemoveBinding,
       handleRotate,
       removeStepAtPath,
+      setActive,
     ],
   );
 
   return (
     <div className="visual-editor-v4">
-      <FlowsDrawer onNew={handleNewWorkflow} onEdit={handleEditWorkflow} />
+      <FlowsDrawer
+        onNew={handleNewWorkflow}
+        onEdit={handleEditWorkflow}
+        activeCodeDef={activeCodeDef}
+        onActiveDefChange={setActive}
+      />
       <StyledBox>
         <WorkflowGraph
           ref={workflowGraphRef}

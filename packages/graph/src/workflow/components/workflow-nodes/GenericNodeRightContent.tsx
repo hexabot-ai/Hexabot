@@ -14,6 +14,7 @@ import {
 } from "../../types/workflow-node.types";
 
 import { GenericNodeDeleteButton } from "./GenericNodeDeleteButton";
+import { GenericNodeSeeCodeButton } from "./GenericNodeSeeCodeButton";
 
 const ANIMATED_EXECUTION_BORDER_STATES = new Set<NodeExecutionState>([
   "running",
@@ -46,6 +47,7 @@ export const GenericNodeRightContent = <T extends ENodeType = ENodeType>({
 
   return (
     <div className={className} style={style}>
+      <GenericNodeSeeCodeButton />
       <GenericNodeDeleteButton />
       {children}
     </div>

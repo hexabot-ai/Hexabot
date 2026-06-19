@@ -15,9 +15,17 @@ import { useYamlEditorController } from "./useYamlEditorController";
 
 import "./yaml.worker";
 
-export function YamlEditor() {
+type YamlEditorProps = {
+  onHighlightClear?: () => void;
+  highlightDef?: string;
+};
+
+export function YamlEditor({
+  onHighlightClear,
+  highlightDef,
+}: YamlEditorProps) {
   const { value, definitionErrors, onChange, beforeMount, onMount } =
-    useYamlEditorController();
+    useYamlEditorController(onHighlightClear, highlightDef);
   const { mode } = useColorScheme();
   const { t } = useTranslate();
 
