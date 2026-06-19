@@ -83,7 +83,7 @@ export class ValidateAccountService {
           appName: config.parameters.appName,
           appUrl: config.uiBaseUrl,
           token: confirmationToken,
-          first_Name: dto.firstName,
+          first_name: dto.firstName,
           t: (key: string) => this.i18n.t(key, { lang: defaultLanguage.code }),
         },
         subject: this.i18n.t('account_confirmation_subject'),

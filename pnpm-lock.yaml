@@ -401,6 +401,9 @@ importers:
       '@types/mjml':
         specifier: ^5.0.0
         version: 5.0.0
+      '@types/mjml-core':
+        specifier: ^5.0.0
+        version: 5.0.0
       '@types/module-alias':
         specifier: ^2.0.4
         version: 2.0.4
@@ -4549,8 +4552,8 @@ packages:
   '@types/mime@1.3.5':
     resolution: {integrity: sha512-/pyBZWSLD2n0dcHE3hq8s8ZvcETHtEuF+3E7XVt0Ig2nvsVQXdghHVcEkIWjy9A0wKfTn97a/PSDYohKIlnP/w==}
 
-  '@types/mjml-core@4.15.2':
-    resolution: {integrity: sha512-Q7SxFXgoX979HP57DEVsRI50TV8x1V4lfCA4Up9AvfINDM5oD/X9ARgfoyX1qS987JCnDLv85JjkqAjt3hZSiQ==}
+  '@types/mjml-core@5.0.0':
+    resolution: {integrity: sha512-E1Rho2ZfVEqZekQoESDuPAw7C3MrzdUvS6YAiEPGdhQQqAchMXfdChXlSi6ly9YhZgUP026ujrRlEGJn9o/zAg==}
 
   '@types/mjml@5.0.0':
     resolution: {integrity: sha512-z6P0yjEOVOz6cZVyD3vkPSifzVH0fa9M8BFM8Jl9HtpeFkBJyCZHRLPx1uFnkZijgAYmtO/JfSbp4EF1fNwsXQ==}
@@ -14878,11 +14881,11 @@ snapshots:
 
   '@types/mime@1.3.5': {}
 
-  '@types/mjml-core@4.15.2': {}
+  '@types/mjml-core@5.0.0': {}
 
   '@types/mjml@5.0.0':
     dependencies:
-      '@types/mjml-core': 4.15.2
+      '@types/mjml-core': 5.0.0
 
   '@types/module-alias@2.0.4': {}
 

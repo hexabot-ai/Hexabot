@@ -77,7 +77,7 @@ export const config: Config = {
       /^\/auth\/logout$/, // logout
       /^\/mcp$/, // MCP Streamable HTTP endpoint
       /^\/webhook\//, // Any webhook channel
-      /^\/reset(\/[^\/]+)?$/, // Reset request / Change password
+      /^\/user\/reset(\/[^\/]+)?$/, // Reset request / Change password
     ],
   },
   sockets: {
