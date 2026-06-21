@@ -13,6 +13,8 @@ import type { TTranslationKeys } from "@/i18n/i18n.types";
 export type FlowsDrawerProps = {
   onNew?: () => void;
   onEdit?: (workflow: Workflow) => void;
+  activeCodeDef?: string;
+  onActiveDefChange?: () => void;
 };
 
 export type FlowTypeKey = WorkflowType | string;

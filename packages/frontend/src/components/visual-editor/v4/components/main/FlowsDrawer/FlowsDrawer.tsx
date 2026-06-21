@@ -4,8 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
-import { WorkflowType } from "@hexabot-ai/types";
 import type { Workflow } from "@hexabot-ai/types";
+import { WorkflowType } from "@hexabot-ai/types";
 import {
   Box,
   Button,
@@ -17,12 +17,12 @@ import {
 } from "@mui/material";
 import { Plus, Upload } from "lucide-react";
 import {
-  type ChangeEvent,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
@@ -47,6 +47,7 @@ import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 
+import { useResizableDrawerSize } from "../../../../../../hooks/useResizableDrawerSize";
 import { useWorkflow } from "../../../hooks/useWorkflow";
 import { YamlEditor } from "../../yaml-editor";
 import { WorkflowMenu } from "../WorkflowMenu";
@@ -85,12 +86,16 @@ const openPricing = () => {
 };
 const flowActionButtonSx = { minWidth: 108 };
 
-export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
+export const FlowsDrawer = ({
+  onNew,
+  onEdit,
+  activeCodeDef,
+  onActiveDefChange,
+}: FlowsDrawerProps) => {
   const { t } = useTranslate();
   const formatCron = useCronFormatter();
   const dialogs = useDialogs();
   const { user, refetchUser } = useAuth();
-  const { getLocalStorage, setLocalStorage } = useLocalStorage();
   const {
     workflows,
     selectedFlowId,
@@ -105,18 +110,36 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down("lg"));
   const isSmall = useMediaQuery(theme.breakpoints.down("md"));
-  const [open, setOpen] = useState(false);
+  const minAllowedWidth = isSmall ? 240 : minDrawerWidth;
+  const maxAllowedWidth = isSmall ? 280 : maxDrawerWidth;
+  const collapsedSize = isSmall ? 56 : collapsedWidth;
+  const { getLocalStorage, setLocalStorage } = useLocalStorage();
+  const { size: drawerWidth, handleResizeStart } = useResizableDrawerSize({
+    sizeStorageKey: drawerWidthStorageKey,
+    defaultSize: defaultDrawerWidth,
+    minSize: minAllowedWidth,
+    maxSize: maxAllowedWidth,
+    axis: "horizontal",
+  });
+  const [open, setOpen] = useState(
+    () => !isCompact && Boolean(getLocalStorage(drawerIsOpenStorage)),
+  );
+
+  useEffect(() => {
+    if (isCompact) setOpen(false);
+  }, [isCompact]);
+
+  const toggleOpen = useCallback(() => {
+    setOpen((prev) => {
+      setLocalStorage(drawerIsOpenStorage, prev ? "" : "true");
+
+      return !prev;
+    });
+  }, [setLocalStorage]);
   const [showYaml, setShowYaml] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
-  const [drawerWidth, setDrawerWidth] = useState(() =>
-    Number(getLocalStorage(drawerWidthStorageKey, defaultDrawerWidth)),
-  );
-  const [query, setQuery] = useState("");
-  const resizeStartXRef = useRef(0);
-  const resizeStartWidthRef = useRef(defaultDrawerWidth);
-  const isResizingRef = useRef(false);
-  const latestDrawerWidthRef = useRef(drawerWidth);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [query, setQuery] = useState("");
   const trimmedQuery = query.trim();
   const normalizedQuery = normalizeQuery(trimmedQuery);
   const isSearching = trimmedQuery.length > 0;
@@ -168,73 +191,12 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
       });
   const canCreateWorkflow = Boolean(onNew) && !workflowQuotaReached;
   const workflowsList = isSearching ? searchedWorkflows : workflows;
-  const minAllowedWidth = isSmall ? 240 : minDrawerWidth;
-  const maxAllowedWidth = isSmall ? 280 : maxDrawerWidth;
-  const collapsedSize = isSmall ? 56 : collapsedWidth;
-  const clampDrawerWidth = useCallback(
-    (value: number) =>
-      Math.min(Math.max(value, minAllowedWidth), maxAllowedWidth),
-    [maxAllowedWidth, minAllowedWidth],
-  );
   const yamlToggleLabel = showYaml
     ? t("visual_editor.yaml_editor.hide")
     : t("visual_editor.yaml_editor.show");
   const versionsToggleLabel = showVersions
     ? t("visual_editor.workflow_versions.hide")
     : t("visual_editor.workflow_versions.show");
-
-  useEffect(() => {
-    if (isCompact) {
-      setOpen(false);
-    } else if (getLocalStorage(drawerIsOpenStorage)) {
-      setOpen(true);
-    }
-  }, [isCompact]);
-
-  useEffect(() => {
-    latestDrawerWidthRef.current = drawerWidth;
-  }, [drawerWidth]);
-
-  useEffect(() => {
-    setDrawerWidth((prev) => clampDrawerWidth(prev));
-  }, [clampDrawerWidth]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const handleMouseMove = (event: MouseEvent) => {
-      if (!isResizingRef.current) return;
-
-      const delta = event.clientX - resizeStartXRef.current;
-      const nextWidth = clampDrawerWidth(resizeStartWidthRef.current + delta);
-
-      latestDrawerWidthRef.current = nextWidth;
-      setDrawerWidth(nextWidth);
-    };
-    const handleMouseUp = () => {
-      if (!isResizingRef.current) return;
-
-      isResizingRef.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-
-      setLocalStorage(
-        drawerWidthStorageKey,
-        String(latestDrawerWidthRef.current),
-      );
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [clampDrawerWidth]);
-
   const hasUnsaved = Boolean(selectedFlowId && (isDefinitionDirty || isSaving));
   const matches = useMemo<FlowMatch[]>(() => {
     const list = workflowsList ?? [];
@@ -390,45 +352,39 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
     });
   }, [isSearching, selectedFlowTypeKey, typeGroups]);
 
-  const handleToggleDrawer = () => {
-    setOpen((prev) => {
-      setLocalStorage(drawerIsOpenStorage, !prev ? "true" : "");
+  const handleToggleYaml = () => {
+    setShowYaml((prev) => {
+      if (prev) onActiveDefChange?.(); // switching away from YAML — deactivate button
 
       return !prev;
     });
-  };
-  const handleResizeStart = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (!open) return;
-
-      isResizingRef.current = true;
-      resizeStartXRef.current = event.clientX;
-      resizeStartWidthRef.current = drawerWidth;
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      event.preventDefault();
-    },
-    [drawerWidth, open],
-  );
-  const handleToggleYaml = () => {
-    setShowYaml((prev) => !prev);
     setShowVersions(false);
-    if (!open) {
-      setOpen(true);
-    }
+    if (!open) setOpen(true);
   };
   const handleToggleVersions = () => {
     setShowVersions((prev) => !prev);
     setShowYaml(false);
+    onActiveDefChange?.(); // switching to versions view — deactivate button
     if (!open) {
       setOpen(true);
     }
   };
-  const handleOpenDrawer = () => {
-    setShowYaml(false);
+
+  // React to externally controlled activeCodeDef
+  useEffect(() => {
+    if (!activeCodeDef) return;
+
     setShowVersions(false);
-    setOpen(true);
-  };
+    setOpen((prevOpen) => {
+      if (!prevOpen) {
+        setLocalStorage(drawerIsOpenStorage, "true");
+      }
+
+      return true;
+    });
+    setShowYaml(true);
+    // highlight/reveal handled entirely via the highlightDef prop on YamlEditor
+  }, [activeCodeDef]);
   const handleToggleType = (key: string) =>
     setOpenTypeKeys((prev) =>
       prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
@@ -526,7 +482,7 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
       <FlowsDrawerHeader
         open={open}
         title={t("visual_editor.flows_drawer.title")}
-        onToggle={handleToggleDrawer}
+        onToggle={toggleOpen}
         yamlLabel={yamlToggleLabel}
         onToggleYaml={handleToggleYaml}
         isYamlOpen={showYaml}
@@ -540,7 +496,10 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
             <>
               <Divider />
               <YamlEditorContainer>
-                <YamlEditor />
+                <YamlEditor
+                  onHighlightClear={onActiveDefChange}
+                  highlightDef={activeCodeDef}
+                />
               </YamlEditorContainer>
             </>
           ) : showVersions ? (
@@ -664,7 +623,7 @@ export const FlowsDrawer = ({ onNew, onEdit }: FlowsDrawerProps) => {
             ) : undefined
           }
           yamlLabel={yamlToggleLabel}
-          onOpen={handleOpenDrawer}
+          onOpen={() => setOpen(true)}
           onImport={handleOpenImportPicker}
           onNew={onNew}
           onToggleYaml={handleToggleYaml}

@@ -114,19 +114,29 @@
   margin-top: auto;
 }
 
-.workflow-graph .workflow-node-delete {
+.workflow-graph .workflow-node-delete,
+.workflow-graph .workflow-node-see-code {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease-in-out;
 }
 
 .workflow-graph .react-flow__node:hover .workflow-node-delete,
-.workflow-graph .react-flow__node:focus-within .workflow-node-delete {
+.workflow-graph .react-flow__node:focus-within .workflow-node-delete,
+.workflow-graph .react-flow__node:hover .workflow-node-see-code,
+.workflow-graph .react-flow__node:focus-within .workflow-node-see-code,
+.workflow-graph
+  .react-flow__node:has(.workflow-node-see-code-button--active)
+  .workflow-node-delete,
+.workflow-graph
+  .react-flow__node:has(.workflow-node-see-code-button--active)
+  .workflow-node-see-code {
   opacity: 1;
   pointer-events: auto;
 }
 
-.workflow-node-delete-button {
+.workflow-node-delete-button,
+.workflow-node-see-code-button {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -145,14 +155,8 @@
   cursor: pointer;
 }
 
-.workflow-node-delete-button:hover,
-.workflow-node-delete-button:focus-visible {
-  background-color: #ffffff;
-  border-color: #f87171;
-  outline: none;
-}
-
-.workflow-graph.dark .workflow-node-delete-button {
+.workflow-graph.dark .workflow-node-delete-button,
+.workflow-graph.dark .workflow-node-see-code-button {
   background-color: #0f172a;
   border-color: #334155;
   box-shadow: 0 2px 6px #0000008a;
@@ -161,6 +165,41 @@
 .workflow-graph.dark .workflow-node-delete-button:hover,
 .workflow-graph.dark .workflow-node-delete-button:focus-visible {
   border-color: #f87171;
+}
+
+.workflow-node-delete-button:hover,
+.workflow-node-delete-button:focus-visible {
+  background-color: #ffffff;
+  border-color: #f87171;
+  outline: none;
+}
+
+.workflow-node-see-code-button {
+  top: 6px;
+  right: 36px;
+  color: var(--template-palette-primary-main);
+}
+
+.workflow-node-see-code-button:hover:not(
+    .workflow-node-see-code-button--active
+  ),
+.workflow-node-see-code-button:focus-visible {
+  background-color: color-mix(
+    in srgb,
+    currentColor 20%,
+    transparent
+  ) !important;
+  border-color: currentColor !important;
+  outline: none;
+}
+
+.workflow-node-see-code-button--active {
+  background-color: color-mix(
+    in srgb,
+    currentColor 30%,
+    transparent
+  ) !important;
+  border-color: currentColor !important;
 }
 
 .workflow-branch-placeholder {

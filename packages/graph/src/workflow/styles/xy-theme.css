@@ -1,5 +1,5 @@
 .workflow-graph {
-  --workflow-accent: #1dc7fc;
+  --workflow-accent: var(--template-palette-primary-main, #29998e);
   --workflow-hover-surface: #cbd5e1;
   --workflow-focus-ring: #e2e8f0;
   --workflow-controls-radius: 10px;
@@ -12,7 +12,8 @@
   --workflow-pulse-hover-mix: #000000;
   --workflow-node-selection-border: var(--workflow-accent);
   --workflow-node-selection-scale: 1.03;
-  --workflow-node-selected-outline: 0 0 0 1px #1dc7fc66;
+  --workflow-node-selected-outline: 0 0 0 1px
+    color-mix(in srgb, var(--workflow-accent) 40%, transparent);
 
   --xy-node-border-default: 1px solid #e2e8f0;
   --xy-node-border-radius-default: 8px;
@@ -40,8 +41,8 @@
   --workflow-pulse-ring-color: #38bdf8;
   --workflow-pulse-shadow: 0 4px 8px #00000052;
   --workflow-pulse-hover-mix: #ffffff;
-  --workflow-node-selected-outline: 0 0 0 1px #1dc7fc8c;
-
+  --workflow-node-selected-outline: 0 0 0 1px
+    color-mix(in srgb, var(--workflow-accent) 55%, transparent);
   --xy-edge-stroke-default: #475569;
   --xy-edge-stroke-width-default: 1;
   --xy-edge-stroke-selected-default: #94a3b8;
@@ -125,4 +126,12 @@
 
 .workflow-rotate-icon--vertical {
   transform: rotate(140deg);
+}
+
+.workflow-yaml-node-def-highlight {
+  background: color-mix(
+    in srgb,
+    var(--template-palette-primary-main) 20%,
+    transparent
+  ) !important;
 }

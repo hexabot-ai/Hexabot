@@ -683,7 +683,8 @@
     "manage_users": "Gérer les utilisateurs",
     "next": "Suivant",
     "skip": "Ignorer",
-    "done": "Terminé"
+    "done": "Terminé",
+    "see_definition": "Voir définition"
   },
   "input": {
     "search": "Recherche",

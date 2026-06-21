@@ -1,7 +1,7 @@
 {
   "name": "@hexabot-ai/monorepo",
   "private": true,
-  "version": "3.2.4",
+  "version": "3.2.5",
   "description": "Hexabot is a solution for creating and managing chatbots across multiple channels, leveraging AI for advanced conversational capabilities. It provides a user-friendly interface for building, training, and deploying chatbots with integrated support for various messaging platforms.",
   "author": "Hexastack",
   "license": "FCL-1.0-ALv2",
