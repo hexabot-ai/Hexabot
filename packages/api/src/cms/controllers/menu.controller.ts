@@ -13,14 +13,10 @@ import {
   HttpCode,
   Patch,
   Post,
-  Query,
 } from '@nestjs/common';
-import { FindManyOptions } from 'typeorm';
 
-import { UuidParam } from '@/utils';
+import { UuidParam } from '@/utils/decorators/uuid-param.decorator';
 import { BaseOrmController } from '@/utils/generics/base-orm.controller';
-import { FindAllOptions } from '@/utils/generics/base-orm.repository';
-import { TypeOrmSearchFilterPipe } from '@/utils/pipes/typeorm-search-filter.pipe';
 
 import { MenuCreateDto, MenuUpdateDto } from '../dto/menu.dto';
 import { MenuOrmEntity } from '../entities/menu.entity';
@@ -30,44 +26,6 @@ import { MenuService } from '../services/menu.service';
 export class MenuController extends BaseOrmController<MenuOrmEntity> {
   constructor(protected readonly menuService: MenuService) {
     super(menuService);
-  }
-
-  /**
-   * Counts the filtered number of menu items.
-   *
-   * Applies filtering based on the allowed fields and returns the number of matching menus.
-   *
-   * @returns A promise that resolves to the count of filtered menu items.
-   */
-  @Get('count')
-  async filterCount(
-    @Query(
-      new TypeOrmSearchFilterPipe<MenuOrmEntity>({
-        allowedFields: ['parent.id', 'type', 'title', 'payload', 'url'],
-      }),
-    )
-    options: FindManyOptions<MenuOrmEntity> = {},
-  ) {
-    return this.count(options);
-  }
-
-  /**
-   * Retrieves menu items.
-   *
-   * If pagination parameters are provided, returns a paginated list.
-   * Otherwise, applies filters when present or returns the whole collection.
-   */
-  @Get()
-  async findPage(
-    @Query(
-      new TypeOrmSearchFilterPipe<MenuOrmEntity>({
-        allowedFields: ['parent.id', 'type', 'title', 'payload', 'url'],
-        defaultSort: ['createdAt', 'desc'],
-      }),
-    )
-    options: FindManyOptions<MenuOrmEntity>,
-  ) {
-    return await this.menuService.find(options);
   }
 
   /**
@@ -85,28 +43,6 @@ export class MenuController extends BaseOrmController<MenuOrmEntity> {
   }
 
   /**
-   * Retrieves all menu items or filters menus based on query parameters.
-   *
-   * If query parameters are provided, it applies filters and returns matching menus.
-   *
-   * @param query - Optional DTO for filtering menus.
-   *
-   * @returns A promise that resolves to an array of menu items.
-   */
-  @Get()
-  async findAll(
-    @Query(
-      new TypeOrmSearchFilterPipe<MenuOrmEntity>({
-        allowedFields: [],
-        defaultSort: ['createdAt', 'desc'],
-      }),
-    )
-    options: FindAllOptions<MenuOrmEntity>,
-  ) {
-    return await this.menuService.findAll(options);
-  }
-
-  /**
    * Retrieves a tree-structured list of menu items.
    *
    * This endpoint returns menus arranged in a hierarchical tree structure.
@@ -116,20 +52,6 @@ export class MenuController extends BaseOrmController<MenuOrmEntity> {
   @Get('tree')
   async getTree() {
     return await this.menuService.getTree();
-  }
-
-  /**
-   * Retrieves a single menu item by its ID.
-   *
-   * Fetches a menu item based on its ID and handles not found or error scenarios.
-   *
-   * @param id - The ID of the menu item to retrieve.
-   *
-   * @returns A promise that resolves to the menu item if found, or throws a `NotFoundException`.
-   */
-  @Get(':id')
-  async findMenuItem(@UuidParam('id') id: string): Promise<Menu> {
-    return this.findOne(id) as Promise<Menu>;
   }
 
   /**
