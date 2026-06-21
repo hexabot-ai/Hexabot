@@ -75,6 +75,7 @@ import { applyWorkflowExecutionStatesToNodes } from "../utils/workflow-runtime-n
 import { WorkflowControls } from "./WorkflowControls";
 import { WorkflowEmptyState } from "./WorkflowEmptyState";
 import { WorkflowInsertContextMenu } from "./WorkflowInsertContextMenu";
+import { WorkflowLoadingState } from "./WorkflowLoadingState";
 
 export type WorkflowGraphModel = {
   definition?: WorkflowDefinition;
@@ -235,7 +236,7 @@ const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
     const [isGraphMoving, setIsGraphMoving] = useState(false);
     const [currentZoom, setCurrentZoom] = useState(1);
     const lastViewportRef = useRef<Viewport>({ x: 0, y: 0, zoom: 1 });
-    const { graphData, isEmptyWorkflow } = useWorkflowGraphLayout({
+    const { graphData, isEmptyWorkflow, isLoading } = useWorkflowGraphLayout({
       compiledFlow: model.compiledFlow,
       defs: model.definition?.defs,
       layoutDirection: model.layoutDirection,
@@ -434,6 +435,7 @@ const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
             {isEmptyWorkflow && insertion?.onInsertAtRoot ? (
               <WorkflowEmptyState onInsert={insertion.onInsertAtRoot} />
             ) : null}
+            {isLoading ? <WorkflowLoadingState /> : null}
             {children}
             <WorkflowInsertContextMenu
               id="workflow-insert-menu"
