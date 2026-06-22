@@ -22,7 +22,7 @@ This file defines repository-wide instructions for AI coding agents working in t
 - Deployment/dev infra is under `docker/`.
 
 ## Environment prerequisites
-- Node.js version: `^20.19.0` (required by the workspace).
+- Node.js version: `^24.17.0` (required by the workspace).
 - Package manager: PNPM via Corepack.
 - Run commands from the repository root unless a package-level `AGENTS.md` says otherwise.
 

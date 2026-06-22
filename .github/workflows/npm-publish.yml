@@ -55,7 +55,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.19"
+          node-version: "24.17"
           cache: pnpm
           registry-url: "https://registry.npmjs.org/"
         env:
@@ -93,7 +93,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.19"
+          node-version: "24.17"
           cache: pnpm
           registry-url: "https://registry.npmjs.org/"
         env:
@@ -143,7 +143,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.19"
+          node-version: "24.17"
           cache: pnpm
           registry-url: "https://registry.npmjs.org/"
         env:

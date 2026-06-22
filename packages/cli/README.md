@@ -8,7 +8,7 @@ Not yet familiar with [Hexabot](https://hexabot.ai/)? Hexabot v3 is an agentic A
 
 ### Prerequisites
 
-- Node.js >= 20.19.0
+- Node.js >= 24.17.0
 - One package manager (`npm`, `pnpm`, `yarn`, or `bun`)
 - Docker Desktop/Engine (only required when you pass `--docker` or use `hexabot docker ...`)
 

@@ -36,7 +36,7 @@ Hexabot v3 is an automation platform with first-class AI capabilities, combining
 
 ### Prerequisites
 
-- Node.js `^20.19.0`
+- Node.js `^24.17.0`
 - One package manager (`npm`, `pnpm`, `yarn`, or `bun`)
 - Docker (optional, for Docker-based services)
 

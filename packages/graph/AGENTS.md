@@ -17,7 +17,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot work
 - Tests: `packages/graph/src/**/*.test.ts` and `packages/graph/src/**/*.test.tsx`.
 
 ## Tooling and commands
-- Node.js requirement: `^20.19.0`.
+- Node.js requirement: `^24.17.0`.
 - Run commands from repo root with PNPM workspace filters.
 - Dev watch build: `pnpm --filter @hexabot-ai/graph run dev`.
 - Build: `pnpm --filter @hexabot-ai/graph run build`.

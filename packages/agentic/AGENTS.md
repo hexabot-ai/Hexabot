@@ -11,7 +11,7 @@ Use this file as the predictable entrypoint for AI coding agents working on the 
 - Tests: `packages/agentic/src/__tests__` (Jest).
 
 ## Tooling and commands
-- Node.js >= 20.19.0; PNPM workspace (run commands from repo root).
+- Node.js >= 24.17.0; PNPM workspace (run commands from repo root).
 - Build: `pnpm --filter @hexabot-ai/agentic build`
 - Type-check: `pnpm --filter @hexabot-ai/agentic typecheck`
 - Tests: `pnpm --filter @hexabot-ai/agentic test`

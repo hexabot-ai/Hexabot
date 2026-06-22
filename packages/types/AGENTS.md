@@ -16,7 +16,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot shar
 - Package tests: `packages/types/src/**/*.test.ts` (currently centered in `packages/types/src/index.test.ts`).
 
 ## Tooling and commands
-- Node.js requirement: `>=20.19.0`.
+- Node.js requirement: `>=24.17.0`.
 - Use PNPM workspace commands from repo root.
 - Dev watch: `pnpm --filter @hexabot-ai/types run dev`.
 - Build (CJS + ESM): `pnpm --filter @hexabot-ai/types run build`.

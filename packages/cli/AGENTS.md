@@ -6,7 +6,7 @@ This file is the authoritative cheat-sheet for the Hexabot CLI. It summarizes th
 
 - **Entry point**: `src/index.ts` prints the banner (`printBanner()`) and calls `checkPrerequisites({ silent: true })` before instantiating the Commander program. That pre-flight verifies Node.js (see below) so user-facing commands can assume a supported runtime.
 - **CLI factory**: `createCliProgram()` (`src/cli.ts`) builds the `Command` instance, configures name/description/version (`getCliVersion()`), and registers `check`, `create`, `config`, `dev`, `docker`, `env`, `start`, and `migrate` commands.
-- **Prerequisite gate**: `checkPrerequisites()` / `checkNodeVersion()` / `checkDocker()` (`src/core/prerequisites.ts`) centralize system checks. The top-level bootstrap validates Node (>= 20.19.0) while Docker checks are performed by commands that actually need Docker.
+- **Prerequisite gate**: `checkPrerequisites()` / `checkNodeVersion()` / `checkDocker()` (`src/core/prerequisites.ts`) centralize system checks. The top-level bootstrap validates Node (>= 24.17.0) while Docker checks are performed by commands that actually need Docker.
 - **Project guard**: `assertHexabotProject()` / `isHexabotProject()` (`src/core/project.ts`) enforce that commands run inside a workspace whose `package.json` depends on `@hexabot-ai/api`. Docker-aware commands also call `ensureDockerFolder()` which ensures `<projectRoot>/docker/` exists before touching compose files.
 - **Service parsing**: `parseServices()` (`src/utils/services.ts`) normalizes the shared `--services` flag to a de-duped string array so Docker helpers can safely compose per-service overlays.
 

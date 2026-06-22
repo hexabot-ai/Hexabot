@@ -1,4 +1,4 @@
-FROM node:20.19-alpine AS base
+FROM node:24.17-alpine AS base
 
 ENV PNPM_HOME=/pnpm
 ENV PATH="${PNPM_HOME}:${PATH}"
@@ -45,7 +45,7 @@ COPY packages/widget ./packages/widget
 
 RUN pnpm --filter @hexabot-ai/widget... run build
 
-FROM node:20.19-alpine AS production
+FROM node:24.17-alpine AS production
 
 ENV PNPM_HOME=/pnpm
 ENV PATH="${PNPM_HOME}:${PATH}"

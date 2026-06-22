@@ -17,7 +17,7 @@ pnpm add @hexabot-ai/agentic
 npm install @hexabot-ai/agentic
 ```
 
-Requires Node.js >= 20.19.0.
+Requires Node.js >= 24.17.0.
 
 The package ships both ESM (`import`) and CommonJS (`require`) entrypoints plus browser-safe internals, so you can run workflows in Node.js or bundle them for the client.
 

@@ -53,7 +53,7 @@
     "*.{ts}": "eslint --fix --config eslint.config-staged.cjs"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24.17.0"
   },
   "license": "FCL-1.0-ALv2"
 }

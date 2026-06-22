@@ -17,7 +17,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot admi
 - Theme: `packages/frontend/src/layout/theme/index.ts`, `packages/frontend/src/layout/theme/AppTheme.tsx`
 
 ## Tooling and commands
-- Node.js >= 20.19.0; PNPM workspace (run commands from repo root).
+- Node.js >= 24.17.0; PNPM workspace (run commands from repo root).
 - Dev server: `pnpm --filter @hexabot-ai/frontend dev` (Vite on :8080).
 - Build: `pnpm --filter @hexabot-ai/frontend build` (typecheck + Vite build).
 - Typecheck: `pnpm --filter @hexabot-ai/frontend typecheck`.

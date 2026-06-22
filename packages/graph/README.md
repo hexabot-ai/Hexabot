@@ -14,7 +14,7 @@ Internal React + xyflow package for rendering and interacting with Hexabot workf
 
 `@hexabot-ai/graph` is currently an internal workspace package (`"private": true`).
 
-- Node.js: `^20.19.0`
+- Node.js: `^24.17.0`
 - Peer dependencies: `react@^18`, `react-dom@^18`, `@xyflow/react@^12.10.0`
 
 If you work inside this monorepo, dependencies are already managed through PNPM workspaces.

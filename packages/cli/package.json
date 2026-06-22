@@ -8,7 +8,7 @@
     "hexabot": "dist/index.js"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24.17.0"
   },
   "scripts": {
     "build": "tsc",
@@ -37,6 +37,7 @@
     "figlet": "^1.7.0"
   },
   "devDependencies": {
+    "@jest/globals": "^30.4.1",
     "@types/chalk": "^2.2.0",
     "@types/commander": "^2.12.2",
     "@types/decompress": "^4.2.7",

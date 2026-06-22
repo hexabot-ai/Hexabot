@@ -34,7 +34,7 @@ Key paths in `packages/widget`:
 
 ## Setup & Dev Environment
 Prerequisites:
-- Node.js `^20.19.0` (see `engines`).
+- Node.js `^24.17.0` (see `engines`).
 - PNPM workspace (`pnpm@9.12.0` at repo root).
 
 Recommended setup from repo root:
