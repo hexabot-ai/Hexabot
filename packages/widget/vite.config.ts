@@ -27,7 +27,7 @@ export default defineConfig(({ mode }) => {
         fileName: (format) => `hexabot-widget.${format}.js`,
         cssFileName: "style",
       },
-      rollupOptions: {
+      rolldownOptions: {
         external: ["react", "react-dom"],
         output: {
           globals: {

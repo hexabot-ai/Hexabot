@@ -50,7 +50,7 @@
     "prettier": "^3.6.2",
     "jest": "^30.2.0",
     "ts-jest": "^29.4.5",
-    "typescript": "^5.6.2"
+    "typescript": "^5.8.3"
   },
   "lint-staged": {
     "*.{ts}": "eslint --fix --config eslint.config-staged.cjs"
