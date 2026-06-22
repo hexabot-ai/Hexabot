@@ -10,8 +10,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { EMPTY_WORKFLOW_GRAPH } from "../constants/workflow.constants";
 import type {
-  WorkflowBindingCatalog,
   WorkflowAction,
+  WorkflowBindingCatalog,
   WorkflowGraphData,
 } from "../types/workflow-node.types";
 import {
@@ -37,7 +37,9 @@ export const useWorkflowGraphLayout = ({
   const [graphData, setGraphData] =
     useState<WorkflowGraphData>(EMPTY_WORKFLOW_GRAPH);
   const requestTokenRef = useRef(0);
-  const isEmptyWorkflow = !compiledFlow?.length;
+  const isEmptyWorkflow =
+    Array.isArray(compiledFlow) && compiledFlow.length === 0;
+  const isLoading = compiledFlow === undefined;
 
   useEffect(() => {
     const requestToken = requestTokenRef.current + 1;
@@ -87,5 +89,6 @@ export const useWorkflowGraphLayout = ({
   return {
     graphData,
     isEmptyWorkflow,
+    isLoading,
   };
 };

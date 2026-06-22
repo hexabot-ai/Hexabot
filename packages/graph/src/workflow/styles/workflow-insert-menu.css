@@ -8,6 +8,22 @@
   z-index: 4;
 }
 
+.workflow-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.workflow-loading-icon {
+  color: var(--workflow-accent);
+  height: 64px;
+  width: 100%;
+}
+
 .workflow-empty-state-action {
   display: inline-flex;
   pointer-events: all;
@@ -60,7 +76,8 @@
   color: #0288d1;
 }
 
-.workflow-insert-menu__item[data-item-id="conditional"] .workflow-insert-menu__icon {
+.workflow-insert-menu__item[data-item-id="conditional"]
+  .workflow-insert-menu__icon {
   color: #2162fb;
 }
 
@@ -68,7 +85,8 @@
   color: #0c9ba0;
 }
 
-.workflow-insert-menu__item[data-item-id="parallel"] .workflow-insert-menu__icon {
+.workflow-insert-menu__item[data-item-id="parallel"]
+  .workflow-insert-menu__icon {
   color: #0c9ba0;
 }
 

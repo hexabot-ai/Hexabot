@@ -5,6 +5,7 @@
  */
 
 import {
+  type CompiledStep,
   validateWorkflow,
   type WorkflowCompileOptions,
   type WorkflowDefinition,
@@ -191,8 +192,13 @@ export const useWorkflowDefinitionState = ({
     flow,
     error: definitionError,
   } = useMemo(() => {
-    if (!yaml || actionsByName.size === 0) {
+    if (actionsByName.size === 0) {
+      // Actions not yet loaded — remain in loading limbo, not an empty workflow
       return { definition: undefined, error: null };
+    }
+    if (!yaml) {
+      // Actions ready but yaml is empty → workflow has no steps yet
+      return { definition: undefined, error: null, flow: [] as CompiledStep[] };
     }
 
     try {
@@ -362,6 +368,13 @@ export const useWorkflowDefinitionState = ({
   );
 
   useEffect(() => {
+    // currentVersion is `null` when workflow genuinely has no version.
+    // It is `undefined` when the version entity reference exists but hasn't been
+    // written into the TanStack Query cache yet (transient during normalization).
+    // Skipping the `undefined` case prevents a spurious yaml → "" reset that
+    // would briefly clear the compiled flow and flash the empty-workflow overlay.
+    if (currentVersion === undefined) return;
+
     const nextYaml = currentVersion?.definitionYml ?? "";
 
     definitionSignatureRef.current = nextYaml;
