@@ -7,8 +7,7 @@
       ],
       "outputs": [
         "dist/**",
-        "build/**",
-        "coverage/**"
+        "build/**"
       ],
       "outputLogs": "new-only"
     },
@@ -23,9 +22,7 @@
       "dependsOn": [
         "^build"
       ],
-      "outputs": [
-        "coverage/**"
-      ],
+      "outputs": [],
       "outputLogs": "new-only"
     },
     "typecheck": {
