@@ -26,6 +26,7 @@ export const checkPrerequisites = (options: PrerequisiteOptions = {}) => {
   checkNodeVersion(options);
   if (options.docker) {
     checkDocker(options);
+    checkDockerCompose(options);
   }
 };
 
@@ -73,6 +74,26 @@ export const checkDocker = (
   } catch (error) {
     const message =
       'Docker is required for this command. Please install Docker.';
+    handleFailure(message, options, error);
+
+    return { ok: false, message, details: (error as Error).message };
+  }
+};
+
+export const checkDockerCompose = (
+  options: PrerequisiteOptions = {},
+): PrerequisiteCheckResult => {
+  try {
+    const composeVersion = execSync('docker compose version', {
+      encoding: 'utf-8',
+    }).trim();
+    const message = `Docker Compose is installed: ${composeVersion}`;
+    logSuccess(message, options);
+
+    return { ok: true, message };
+  } catch (error) {
+    const message =
+      'Docker Compose (v2) is required for this command. Please install or update Docker Desktop / the Compose plugin.';
     handleFailure(message, options, error);
 
     return { ok: false, message, details: (error as Error).message };

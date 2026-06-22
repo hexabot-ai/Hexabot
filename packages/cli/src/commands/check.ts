@@ -9,7 +9,11 @@ import { Command } from 'commander';
 
 import { loadProjectConfig } from '../core/config.js';
 import { listEnvStatus } from '../core/env.js';
-import { checkDocker, checkNodeVersion } from '../core/prerequisites.js';
+import {
+  checkDocker,
+  checkDockerCompose,
+  checkNodeVersion,
+} from '../core/prerequisites.js';
 import { isHexabotProject } from '../core/project.js';
 
 interface CheckCommandOptions {
@@ -77,6 +81,16 @@ const runDiagnostics = (options: {
       label: 'Docker',
       ok: dockerResult.ok,
       message: dockerResult.message,
+    });
+
+    const dockerComposeResult = checkDockerCompose({
+      fatal: false,
+      silent: true,
+    });
+    results.push({
+      label: 'Docker Compose',
+      ok: dockerComposeResult.ok,
+      message: dockerComposeResult.message,
     });
   }
 
