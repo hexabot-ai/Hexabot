@@ -1,6 +1,6 @@
 {
   "name": "@hexabot-ai/agentic",
-  "version": "3.1.6",
+  "version": "3.1.7-beta.0",
   "description": "Schemas and utilities for the Hexabot agentic workflow DSL.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
