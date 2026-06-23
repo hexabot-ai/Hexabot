@@ -43,6 +43,9 @@ async function bootstrap() {
   // Disable Express "X-Powered-By" header for all environments
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 
+  // Enable extended query parsing for nested query parameters (e.g., where[entity]=value)
+  app.getHttpAdapter().getInstance().set('query parser', 'extended');
+
   const rawBodyBuffer = (req, res, buf, encoding) => {
     if (buf?.length) {
       req.rawBody = buf.toString(encoding || 'utf8');
