@@ -9,17 +9,25 @@ WORKDIR /app
 
 FROM base AS deps
 
-COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml .npmrc ./
+COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml ./
 COPY packages/api/package.json packages/api/package.json
 COPY packages/frontend/package.json packages/frontend/package.json
 COPY packages/widget/package.json packages/widget/package.json
+COPY packages/agentic/package.json packages/agentic/package.json
+COPY packages/types/package.json packages/types/package.json
+COPY packages/graph/package.json packages/graph/package.json
 
-RUN pnpm install --filter @hexabot-ai/frontend... --prod=false
+RUN pnpm install --filter @hexabot-ai/frontend... --prod=false --network-concurrency 4
 
 FROM deps AS builder
 
+ENV NODE_ENV=production
+
 COPY packages/frontend ./packages/frontend
 COPY packages/widget ./packages/widget
+COPY packages/graph ./packages/graph
+COPY packages/types ./packages/types
+COPY packages/agentic ./packages/agentic
 
 RUN pnpm --filter @hexabot-ai/frontend... run build
 
@@ -27,9 +35,14 @@ FROM base AS development
 
 ENV NODE_ENV=development
 
+COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY packages/frontend ./packages/frontend
 COPY packages/widget ./packages/widget
+COPY packages/agentic ./packages/agentic
+COPY packages/graph ./packages/graph
+COPY packages/types ./packages/types
+COPY packages/api/package.json packages/api/package.json
 
 WORKDIR /app/packages/frontend
 EXPOSE 8080

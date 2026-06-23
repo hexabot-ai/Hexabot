@@ -5,19 +5,22 @@ ENV PATH="${PNPM_HOME}:${PATH}"
 
 RUN corepack enable
 
+RUN apk add --no-cache python3 make g++ linux-headers
+
 WORKDIR /app
 
 FROM base AS deps
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml .npmrc ./
+COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml ./
 COPY packages/api/package.json packages/api/package.json
 COPY packages/types/package.json packages/types/package.json
 COPY packages/frontend/package.json packages/frontend/package.json
 COPY packages/widget/package.json packages/widget/package.json
+COPY packages/agentic/package.json packages/agentic/package.json
 
-RUN pnpm install --filter @hexabot-ai/api... --prod=false
+RUN pnpm install --filter @hexabot-ai/api... --prod=false --network-concurrency 4
 
 FROM deps AS build
 
@@ -33,9 +36,13 @@ FROM base AS development
 
 ENV NODE_ENV=development
 
-COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml .npmrc ./
+COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY packages/api ./packages/api
+COPY packages/agentic ./packages/agentic
+COPY packages/types ./packages/types
+COPY packages/frontend/package.json packages/frontend/package.json
+COPY packages/widget/package.json packages/widget/package.json
 
 EXPOSE 3000
 
@@ -45,13 +52,13 @@ FROM base AS production-deps
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml .npmrc ./
+COPY package.json pnpm-workspace.yaml turbo.json pnpm-lock.yaml ./
 COPY packages/api/package.json packages/api/package.json
 COPY packages/types/package.json packages/types/package.json
 COPY packages/frontend/package.json packages/frontend/package.json
 COPY packages/widget/package.json packages/widget/package.json
 
-RUN pnpm install --filter @hexabot-ai/api... --prod
+RUN pnpm install --filter @hexabot-ai/api... --prod --network-concurrency 4
 
 FROM base AS production
 

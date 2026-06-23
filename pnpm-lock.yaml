@@ -99,7 +99,7 @@ importers:
         version: 3.6.2
       ts-jest:
         specifier: ^29.4.5
-        version: 29.4.5(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.2.0(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.2.0(@types/node@22.19.1)(babel-plugin-macros@3.1.0)(ts-node@10.9.2(@swc/core@1.15.32)(@types/node@22.19.1)(typescript@5.9.3)))(typescript@5.9.3)
+        version: 29.4.5(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.2.0(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.2.0(@types/node@22.19.1)(babel-plugin-macros@3.1.0))(typescript@5.9.3)
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
@@ -468,6 +468,9 @@ importers:
       '@css-inline/css-inline-linux-arm64-musl':
         specifier: ^0.14.1
         version: 0.14.3
+      '@css-inline/css-inline-linux-x64-musl':
+        specifier: ^0.14.1
+        version: 0.14.3
       '@resvg/resvg-js-darwin-arm64':
         specifier: ^2.6.2
         version: 2.6.2
@@ -476,6 +479,9 @@ importers:
         version: 2.6.2
       '@resvg/resvg-js-linux-x64-gnu':
         specifier: 2.6.2
+        version: 2.6.2
+      '@resvg/resvg-js-linux-x64-musl':
+        specifier: ^2.6.2
         version: 2.6.2
       '@resvg/resvg-js-win32-x64-msvc':
         specifier: 2.6.2
@@ -567,7 +573,7 @@ importers:
         version: 3.6.2
       ts-jest:
         specifier: ^29.4.5
-        version: 29.4.5(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.2.0(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.2.0(@types/node@22.19.1)(babel-plugin-macros@3.1.0)(ts-node@10.9.2(@swc/core@1.15.32)(@types/node@22.19.1)(typescript@5.9.3)))(typescript@5.9.3)
+        version: 29.4.5(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.2.0(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.2.0(@types/node@22.19.1)(babel-plugin-macros@3.1.0))(typescript@5.9.3)
       tsx:
         specifier: ^4.22.4
         version: 4.22.4
@@ -867,7 +873,7 @@ importers:
         version: 3.6.2
       ts-jest:
         specifier: ^29.4.5
-        version: 29.4.5(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.2.0(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.2.0(@types/node@22.19.1)(babel-plugin-macros@3.1.0)(ts-node@10.9.2(@swc/core@1.15.32)(@types/node@22.19.1)(typescript@5.9.3)))(typescript@5.9.3)
+        version: 29.4.5(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.2.0(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.2.0(@types/node@22.19.1)(babel-plugin-macros@3.1.0))(typescript@5.9.3)
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
@@ -1865,6 +1871,13 @@ packages:
     resolution: {integrity: sha512-3NmFdFI8szGFg6LQRWT+yOIWEy0egvsMHe1XWATbBKOfXg70UZO1Fv8ulb4mlC1F8vTfeo36jgVt1gcD1yx63A==}
     engines: {node: '>= 10'}
     cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@css-inline/css-inline-linux-x64-musl@0.14.3':
+    resolution: {integrity: sha512-xUP5lAPEj5FdJurG2whVC0+cnLiEpPdacj6yqrbpIbScrimMRopEfb84AvfYQnplKXXtqUB1apEjwLREbyfRGA==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
     os: [linux]
     libc: [musl]
 
@@ -12043,6 +12056,9 @@ snapshots:
   '@css-inline/css-inline-linux-arm64-musl@0.14.3':
     optional: true
 
+  '@css-inline/css-inline-linux-x64-musl@0.14.3':
+    optional: true
+
   '@csstools/color-helpers@6.0.1': {}
 
   '@csstools/css-calc@3.0.0(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)':
@@ -21523,7 +21539,7 @@ snapshots:
     dependencies:
       typescript: 5.9.3
 
-  ts-jest@29.4.5(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.2.0(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.2.0(@types/node@22.19.1)(babel-plugin-macros@3.1.0)(ts-node@10.9.2(@swc/core@1.15.32)(@types/node@22.19.1)(typescript@5.9.3)))(typescript@5.9.3):
+  ts-jest@29.4.5(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.2.0(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.2.0(@types/node@22.19.1)(babel-plugin-macros@3.1.0))(typescript@5.9.3):
     dependencies:
       bs-logger: 0.2.6
       fast-json-stable-stringify: 2.1.0
