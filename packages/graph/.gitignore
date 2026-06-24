@@ -3,3 +3,6 @@ dist
 coverage
 .turbo
 *.tsbuildinfo
+vitest.config.mjs
+vitest.config.d.mts
+vitest.config.d.mts.map

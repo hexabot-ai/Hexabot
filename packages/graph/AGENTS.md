@@ -71,7 +71,7 @@ Related runtime hooks:
   - `"./workflow.css": "./src/workflow/styles/index.css"`
 
 ## Testing workflows
-- Test runner: Vitest (`jsdom`) configured in `packages/graph/vitest.config.mts`.
+- Test runner: Vitest (`node`) configured in `packages/graph/vite.config.mts`.
 - Package tests command: `pnpm --filter @hexabot-ai/graph run test`.
 - High-value suites:
   - `packages/graph/src/workflow/utils/workflow-node.utils.test.ts` (graph-building and branch/group wiring behavior).
