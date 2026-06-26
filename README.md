@@ -1,3 +1,11 @@
+
+
+https://github.com/user-attachments/assets/2db471cb-c303-4149-9ba8-6cf6a7f9cb6e
+
+
+
+
+
 <p align="center">
   <a href="https://hexabot.ai" target="_blank">
     <picture>
@@ -27,9 +35,7 @@ Hexabot v3 is an automation platform with first-class AI capabilities, combining
 ## Demo Video
 
 <p align="center">
-  <a href="https://youtu.be/wR9nnKgog2U" target="_blank">
-    <img src="https://markdown-videos-api.jorgenkh.no/youtube/wR9nnKgog2U?width=960&amp;height=540" alt="Watch the Hexabot demo video on YouTube" width="960" />
-  </a>
+  <video src="https://github.com/user-attachments/assets/4b0e4ca4-dc51-4fe9-a7d6-c9f397076a85" width="100%" />
 </p>
 
 ## Quick Start
