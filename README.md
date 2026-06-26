@@ -1,8 +1,7 @@
 
-
-https://github.com/user-attachments/assets/2db471cb-c303-4149-9ba8-6cf6a7f9cb6e
-
-
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/4b0e4ca4-dc51-4fe9-a7d6-c9f397076a85" width="100%" />
+</p>
 
 
 
@@ -31,12 +30,6 @@ https://github.com/user-attachments/assets/2db471cb-c303-4149-9ba8-6cf6a7f9cb6e
 </p>
 
 Hexabot v3 is an automation platform with first-class AI capabilities, combining workflows, actions, and conversational channels in one runtime.
-
-## Demo Video
-
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/4b0e4ca4-dc51-4fe9-a7d6-c9f397076a85" width="100%" />
-</p>
 
 ## Quick Start
 
