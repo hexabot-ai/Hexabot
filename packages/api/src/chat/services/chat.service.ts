@@ -6,7 +6,7 @@
 
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
-import { In } from 'typeorm';
+import { Between, In } from 'typeorm';
 
 import { StatsType } from '@/analytics/entities/stats.entity';
 import { MessageInboundEvent } from '@/channel/lib/inbound-events';
@@ -183,9 +183,10 @@ export class ChatService {
       try {
         await this.messageService.updateMany(
           {
-            // @ts-expect-error Invesstigate why this is causing a ts error
-            recipient: subscriber.id,
-            createdAt: { $lte: watermark, $gte: start },
+            where: {
+              recipient: { id: subscriber.id },
+              createdAt: Between(start, watermark),
+            },
           },
           {
             delivery: true,
