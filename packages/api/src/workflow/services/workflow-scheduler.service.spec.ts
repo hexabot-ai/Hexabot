@@ -16,10 +16,7 @@ import { EHook } from '@/utils/generics/base-orm.repository';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
 import { installScheduledWorkflowFixturesTypeOrm } from '@/utils/test/fixtures/workflow';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
-import {
-  closeTypeOrmConnections,
-  getLastTypeOrmDataSource,
-} from '@/utils/test/test';
+import { getLastTypeOrmDataSource } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import type { InferActionsDto } from '@/utils/types/dto.types';
 import {
@@ -142,12 +139,8 @@ describe('WorkflowSchedulerService (TypeORM)', () => {
     clearCronJobs();
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     clearCronJobs();
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   it('registers cron jobs for scheduled workflows and triggers the agent handler', async () => {

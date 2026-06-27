@@ -4,14 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import { TestingModule } from '@nestjs/testing';
-
 import { LoggerService } from '@/logger/logger.service';
 import {
   installMenuFixturesTypeOrm,
   offerMenuFixture,
 } from '@/utils/test/fixtures/menu';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MenuType } from '../entities/menu.entity';
@@ -20,32 +17,22 @@ import { MenuService } from '../services/menu.service';
 import { MenuController } from './menu.controller';
 
 describe('MenuController (TypeORM)', () => {
-  let module: TestingModule;
   let controller: MenuController;
   let menuService: MenuService;
   let logger: LoggerService;
   const createdMenuIds = new Set<string>();
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [MenuController],
       typeorm: {
         fixtures: installMenuFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [controller, menuService] = await getMocks([MenuController, MenuService]);
     logger = controller.logger;
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(async () => {
     jest.clearAllMocks();
     for (const id of Array.from(createdMenuIds)) {

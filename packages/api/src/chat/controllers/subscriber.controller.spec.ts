@@ -5,7 +5,6 @@
  */
 
 import { Subscriber, SubscriberFull } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import { AttachmentService } from '@/attachment/services/attachment.service';
 import { SubscriberService } from '@/chat/services/subscriber.service';
@@ -13,13 +12,11 @@ import {
   installSubscriberFixturesTypeOrm,
   subscriberFixtures,
 } from '@/utils/test/fixtures/subscriber';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { SubscriberController } from './subscriber.controller';
 
 describe('SubscriberController (TypeORM)', () => {
-  let module: TestingModule;
   let subscriberController: SubscriberController;
   let subscriberService: SubscriberService;
 
@@ -51,8 +48,6 @@ describe('SubscriberController (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
-
     [subscriberController, subscriberService] = await testing.getMocks([
       SubscriberController,
       SubscriberService,
@@ -82,14 +77,6 @@ describe('SubscriberController (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOne', () => {
     it('should find subscriber by id with populated relations', async () => {
       const populateSpy = jest.spyOn(subscriberService, 'findOneAndPopulate');

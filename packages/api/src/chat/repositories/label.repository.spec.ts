@@ -4,13 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import { TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 
 import { IGNORED_TEST_FIELDS } from '@/utils/test/constants';
 import { labelFixtures } from '@/utils/test/fixtures/label';
 import { installSubscriberFixturesTypeOrm } from '@/utils/test/fixtures/subscriber';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelRepository } from './label.repository';
@@ -20,7 +18,6 @@ const sortById = <T extends { id?: string }>(row1: T, row2: T) =>
   (row1.id ?? '').localeCompare(row2.id ?? '');
 
 describe('LabelRepository (TypeORM)', () => {
-  let module: TestingModule;
   let labelRepository: LabelRepository;
   let subscriberRepository: SubscriberRepository;
 
@@ -33,7 +30,6 @@ describe('LabelRepository (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [labelRepository, subscriberRepository] = await testing.getMocks([
       LabelRepository,
       SubscriberRepository,
@@ -43,14 +39,6 @@ describe('LabelRepository (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOneAndPopulate', () => {
     it('should load a label and populate its users', async () => {
       const label = await labelRepository.findOne({

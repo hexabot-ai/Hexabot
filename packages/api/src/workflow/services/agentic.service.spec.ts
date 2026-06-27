@@ -14,7 +14,6 @@ import {
 } from '@hexabot-ai/agentic';
 import type { User, WorkflowRunFull, WorkflowFull } from '@hexabot-ai/types';
 import { ModuleRef } from '@nestjs/core';
-import { TestingModule } from '@nestjs/testing';
 
 import { ActionService } from '@/actions/actions.service';
 import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
@@ -23,7 +22,6 @@ import {
   installMessagingWorkflowFixturesTypeOrm,
   messagingWorkflowDefinition,
 } from '@/utils/test/fixtures/workflow';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import { WorkflowContextFactory } from '@/workflow/contexts/workflow-context-factory';
@@ -108,7 +106,6 @@ const buildWorkflowInstance = (runner: jest.Mocked<WorkflowRunner>) =>
   }) as unknown as AgenticWorkflow;
 
 describe('AgenticService (TypeORM)', () => {
-  let module: TestingModule;
   let agenticService: AgenticService;
   let workflowService: WorkflowService;
   let workflowVersionService: WorkflowVersionService;
@@ -197,7 +194,6 @@ describe('AgenticService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [
       agenticService,
       workflowService,
@@ -228,14 +224,6 @@ describe('AgenticService (TypeORM)', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('handleEvent', () => {
     it('starts a new workflow run and persists a finished result', async () => {
       const event = createEvent({ text: 'hello' });

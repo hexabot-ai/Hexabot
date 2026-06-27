@@ -5,7 +5,6 @@
  */
 
 import { Setting } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 import { z } from 'zod';
 
 import {
@@ -13,7 +12,6 @@ import {
   settingFixtures,
 } from '@/utils/test/fixtures/setting';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
@@ -29,7 +27,6 @@ describe('SettingService', () => {
   let settingService: SettingService;
   let settingRepository: SettingRepository;
   let runtimeSettingsService: RuntimeSettingsService;
-  let module: TestingModule;
   const createdIds: string[] = [];
   const makeSetting = (overrides: Partial<Setting>): Setting => {
     return {
@@ -45,14 +42,13 @@ describe('SettingService', () => {
   };
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['providers'],
       providers: [SettingService, I18nServiceProvider],
       typeorm: {
         fixtures: installSettingFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [settingService, settingRepository, runtimeSettingsService] =
       await getMocks([
         SettingService,
@@ -60,14 +56,6 @@ describe('SettingService', () => {
         RuntimeSettingsService,
       ]);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   beforeEach(() => {
     runtimeSettingsService.reset();
     runtimeSettingsService.register({

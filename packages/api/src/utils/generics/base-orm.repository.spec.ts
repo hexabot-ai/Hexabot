@@ -8,7 +8,6 @@ import { randomUUID } from 'crypto';
 
 import { NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { TestingModule } from '@nestjs/testing';
 import { In, InsertEvent, RemoveEvent, Repository, UpdateEvent } from 'typeorm';
 
 import { DummyOrmEntity } from '@/utils/test/dummy/entities/dummy.entity';
@@ -17,22 +16,18 @@ import {
   dummyFixtures,
   installDummyFixturesTypeOrm,
 } from '@/utils/test/fixtures/dummy';
-import {
-  closeTypeOrmConnections,
-  getLastTypeOrmDataSource,
-} from '@/utils/test/test';
+import { getLastTypeOrmDataSource } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { EHook } from './base-orm.repository';
 
 describe('BaseOrmRepository', () => {
   let dummyRepository: DummyRepository;
-  let module: TestingModule;
   let ormRepository: Repository<DummyOrmEntity>;
   let baselineEntities: DummyOrmEntity[];
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['providers'],
       providers: [DummyRepository],
       typeorm: {
@@ -41,7 +36,6 @@ describe('BaseOrmRepository', () => {
       },
     });
 
-    module = testingModule;
     [dummyRepository] = await getMocks([DummyRepository]);
 
     const dataSource = getLastTypeOrmDataSource();
@@ -54,14 +48,6 @@ describe('BaseOrmRepository', () => {
       ormRepository.create(dummyFixtures),
     );
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('utility methods', () => {
     it('should expose the configured populate relations', () => {
       expect(dummyRepository.getPopulateRelations()).toEqual([]);

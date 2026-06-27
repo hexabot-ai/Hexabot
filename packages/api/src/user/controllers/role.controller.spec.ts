@@ -6,12 +6,10 @@
 
 import { Role, RoleFull } from '@hexabot-ai/types';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 import { Request } from 'express';
 
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { roleFixtureIds, roleOrmFixtures } from '@/utils/test/fixtures/role';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { RoleCreateDto, RoleUpdateDto } from '../dto/role.dto';
@@ -22,7 +20,6 @@ import { UserService } from '../services/user.service';
 import { RoleController } from './role.controller';
 
 describe('RoleController (TypeORM)', () => {
-  let module: TestingModule;
   let roleController: RoleController;
   let roleService: RoleService;
   let permissionService: PermissionService;
@@ -39,8 +36,6 @@ describe('RoleController (TypeORM)', () => {
         fixtures: installPermissionFixturesTypeOrm,
       },
     });
-
-    module = testing.module;
 
     [roleController, roleService, permissionService, userService] =
       await testing.getMocks([
@@ -62,14 +57,6 @@ describe('RoleController (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findPage', () => {
     it('should find roles', async () => {
       jest.spyOn(roleService, 'find');

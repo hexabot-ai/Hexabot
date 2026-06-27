@@ -11,17 +11,13 @@ import {
   DEFAULT_TIMEOUT_MS,
   validateWorkflow,
 } from '@hexabot-ai/agentic';
-import { TestingModule } from '@nestjs/testing';
 import { Repository } from 'typeorm';
 
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
-import {
-  closeTypeOrmConnections,
-  getLastTypeOrmDataSource,
-} from '@/utils/test/test';
+import { getLastTypeOrmDataSource } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
@@ -32,7 +28,6 @@ import { WorkflowType, WorkflowVersionAction } from '../types';
 import { WorkflowVersionService } from './workflow-version.service';
 
 describe('WorkflowVersionService (TypeORM)', () => {
-  let module: TestingModule;
   let workflowVersionService: WorkflowVersionService;
   let workflowRepository: Repository<WorkflowOrmEntity>;
   const websocketGatewayMock = {
@@ -65,7 +60,6 @@ describe('WorkflowVersionService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [workflowVersionService] = await testing.getMocks([WorkflowVersionService]);
     const dataSource = getLastTypeOrmDataSource();
     workflowRepository = dataSource.getRepository(WorkflowOrmEntity);
@@ -75,14 +69,6 @@ describe('WorkflowVersionService (TypeORM)', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('createSnapshot', () => {
     it('creates a blank version with global defaults when workflow is created', async () => {
       const workflow = await createWorkflow();

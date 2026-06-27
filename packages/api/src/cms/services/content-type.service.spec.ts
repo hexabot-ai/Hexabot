@@ -4,13 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
-import { TestingModule } from '@nestjs/testing';
-
 import {
   contentTypeOrmFixtures,
   installContentTypeFixturesTypeOrm,
 } from '@/utils/test/fixtures/contenttype';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeDto } from '../dto/contentType.dto';
@@ -18,29 +15,19 @@ import { ContentTypeDto } from '../dto/contentType.dto';
 import { ContentTypeService } from './content-type.service';
 
 describe('ContentTypeService (TypeORM)', () => {
-  let module: TestingModule;
   let service: ContentTypeService;
   const createdIds: string[] = [];
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['providers'],
       providers: [ContentTypeService],
       typeorm: {
         fixtures: installContentTypeFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [service] = await getMocks([ContentTypeService]);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(async () => {
     jest.clearAllMocks();
     if (createdIds.length > 0) {

@@ -11,13 +11,11 @@ import {
   WorkflowSnapshot,
 } from '@hexabot-ai/agentic';
 import { Workflow, WorkflowRun, WorkflowRunFull } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
@@ -33,7 +31,6 @@ import { WorkflowVersionService } from './workflow-version.service';
 import { WorkflowService } from './workflow.service';
 
 describe('WorkflowRunService (TypeORM)', () => {
-  let module: TestingModule;
   let workflowService: WorkflowService;
   let workflowRepository: WorkflowRepository;
   let workflowRunService: WorkflowRunService;
@@ -87,7 +84,6 @@ describe('WorkflowRunService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [
       workflowService,
       workflowRepository,
@@ -139,14 +135,6 @@ describe('WorkflowRunService (TypeORM)', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('state transitions', () => {
     it('marks a run as running and forwards state', async () => {
       const payload = {

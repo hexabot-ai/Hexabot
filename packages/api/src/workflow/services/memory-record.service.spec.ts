@@ -6,8 +6,6 @@
 
 import { randomUUID } from 'crypto';
 
-import { TestingModule } from '@nestjs/testing';
-
 import {
   installMemoryDefinitionFixturesTypeOrm,
   memoryDefinitionFixtureIds,
@@ -21,10 +19,7 @@ import {
   memoryWorkflowFixtureId,
 } from '@/utils/test/fixtures/memory-record';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
-import {
-  closeTypeOrmConnections,
-  getLastTypeOrmDataSource,
-} from '@/utils/test/test';
+import { getLastTypeOrmDataSource } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MemoryDefinitionOrmEntity } from '../entities/memory-definition.entity';
@@ -46,7 +41,6 @@ const runRecord = memoryRecordOrmFixtures.find(
 )!;
 
 describe('MemoryRecordService (TypeORM)', () => {
-  let module: TestingModule;
   let memoryRecordService: MemoryRecordService;
 
   beforeAll(async () => {
@@ -61,7 +55,6 @@ describe('MemoryRecordService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [memoryRecordService] = await testing.getMocks([MemoryRecordService]);
   });
 
@@ -69,14 +62,6 @@ describe('MemoryRecordService (TypeORM)', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findActiveByScope', () => {
     it('throws when ownerId is missing', async () => {
       await expect(

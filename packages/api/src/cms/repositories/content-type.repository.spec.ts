@@ -6,16 +6,12 @@
 
 import { randomUUID } from 'crypto';
 
-import { TestingModule } from '@nestjs/testing';
-
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeRepository } from './content-type.repository';
 import { ContentRepository } from './content.repository';
 
 describe('ContentTypeRepository (TypeORM)', () => {
-  let module: TestingModule;
   let repository: ContentTypeRepository;
   let contentRepository: ContentRepository;
 
@@ -24,20 +20,11 @@ describe('ContentTypeRepository (TypeORM)', () => {
       providers: [ContentRepository, ContentTypeRepository],
     });
 
-    module = testing.module;
     [repository, contentRepository] = await testing.getMocks([
       ContentTypeRepository,
       ContentRepository,
     ]);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('deleteOne cascade', () => {
     it('removes related contents when deleting a content type', async () => {
       const created = await repository.create({

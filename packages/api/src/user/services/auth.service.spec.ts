@@ -5,10 +5,8 @@
  */
 
 import type { User } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { UserRepository } from '../repositories/user.repository';
@@ -16,7 +14,6 @@ import { UserRepository } from '../repositories/user.repository';
 import { AuthService } from './auth.service';
 
 describe('AuthService (TypeORM)', () => {
-  let module: TestingModule;
   let authService: AuthService;
   let userRepository: UserRepository;
   let adminUser: User | null;
@@ -30,8 +27,6 @@ describe('AuthService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
-
     [authService, userRepository] = await testing.getMocks([
       AuthService,
       UserRepository,
@@ -42,14 +37,6 @@ describe('AuthService (TypeORM)', () => {
   });
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('validateUser', () => {
     const adminEmail = 'admin@admin.admin';
 

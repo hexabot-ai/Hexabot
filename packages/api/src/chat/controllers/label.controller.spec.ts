@@ -8,12 +8,10 @@ import { randomUUID } from 'crypto';
 
 import { Label } from '@hexabot-ai/types';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 
 import { installLabelFixturesTypeOrm } from '@/utils/test/fixtures/label';
 import { installSubscriberFixturesTypeOrm } from '@/utils/test/fixtures/subscriber';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelCreateDto, LabelUpdateDto } from '../dto/label.dto';
@@ -26,7 +24,6 @@ const createUniqueLabelName = () => `LABEL_${randomString().toUpperCase()}`;
 const createUniqueLabelTitle = () => `Label ${randomString()}`;
 
 describe('LabelController (TypeORM)', () => {
-  let module: TestingModule;
   let labelController: LabelController;
   let labelService: LabelService;
 
@@ -42,8 +39,6 @@ describe('LabelController (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
-
     [labelController, labelService] = await testing.getMocks([
       LabelController,
       LabelService,
@@ -54,14 +49,6 @@ describe('LabelController (TypeORM)', () => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findPage', () => {
     it('should find labels without population', async () => {
       const expected = await labelService.find({});

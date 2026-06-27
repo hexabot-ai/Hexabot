@@ -5,10 +5,8 @@
  */
 
 import { ModelFull } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ModelService } from '../services/model.service';
@@ -17,7 +15,6 @@ import { PermissionService } from '../services/permission.service';
 import { ModelController } from './model.controller';
 
 describe('ModelController (TypeORM)', () => {
-  let module: TestingModule;
   let modelController: ModelController;
   let modelService: ModelService;
   let permissionService: PermissionService;
@@ -32,22 +29,12 @@ describe('ModelController (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
-
     [modelController, modelService, permissionService] = await testing.getMocks(
       [ModelController, ModelService, PermissionService],
     );
   });
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('find', () => {
     it('should find models', async () => {
       jest.spyOn(modelService, 'findAndPopulate');

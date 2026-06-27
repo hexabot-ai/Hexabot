@@ -11,7 +11,6 @@ import {
   installStatsFixturesTypeOrm,
   statsFixtures,
 } from '@/utils/test/fixtures/stats';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { StatsType } from '../entities/stats.entity';
@@ -36,14 +35,6 @@ describe('StatsRepository (TypeORM)', () => {
   });
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findMessages', () => {
     it('should return messages', async () => {
       const from = new Date('2023-11-01T23:00:00.000Z');

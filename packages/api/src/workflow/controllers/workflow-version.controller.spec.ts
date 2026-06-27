@@ -8,7 +8,6 @@ import { randomUUID } from 'crypto';
 
 import { Workflow as WorkflowHelper } from '@hexabot-ai/agentic';
 import { INestApplication, NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
 import { LoggerService } from '@/logger/logger.service';
@@ -17,7 +16,6 @@ import {
   installMessagingWorkflowFixturesTypeOrm,
   installScheduledWorkflowFixturesTypeOrm,
 } from '@/utils/test/fixtures/workflow';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
@@ -28,7 +26,6 @@ import { DirectionType, WorkflowType, WorkflowVersionAction } from '../types';
 import { WorkflowVersionController } from './workflow-version.controller';
 
 describe('WorkflowVersionController (TypeORM)', () => {
-  let module: TestingModule;
   let controller: WorkflowVersionController;
   let workflowService: WorkflowService;
   let workflowVersionService: WorkflowVersionService;
@@ -67,7 +64,7 @@ describe('WorkflowVersionController (TypeORM)', () => {
   };
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [WorkflowVersionController],
       providers: [
@@ -83,7 +80,6 @@ describe('WorkflowVersionController (TypeORM)', () => {
         ],
       },
     });
-    module = testingModule;
     [controller, workflowService, workflowVersionService] = await getMocks([
       WorkflowVersionController,
       WorkflowService,
@@ -101,14 +97,6 @@ describe('WorkflowVersionController (TypeORM)', () => {
       createdWorkflowIds.delete(id);
     }
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findMany', () => {
     it('returns version history for a workflow', async () => {
       const payload = buildWorkflowPayload();

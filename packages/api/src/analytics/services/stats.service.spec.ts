@@ -12,7 +12,6 @@ import {
   installStatsFixturesTypeOrm,
   statsFixtures,
 } from '@/utils/test/fixtures/stats';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
@@ -70,14 +69,6 @@ describe('StatsService', () => {
     ]);
     eventEmitter = module.get(EventEmitter2);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(() => {
     jest.clearAllMocks();
   });

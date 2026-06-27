@@ -5,19 +5,16 @@
  */
 
 import { Setting } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import LocalStorageHelper from '@/extensions/helpers/local-storage/index.helper';
 import { HelperService } from '@/helper/helper.service';
 import { SettingService } from '@/setting/services/setting.service';
 import { installSettingFixturesTypeOrm } from '@/utils/test/fixtures/setting';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { CleanupService } from './cleanup.service';
 
 describe('CleanupService', () => {
-  let module: TestingModule;
   let initialSettings: Setting[];
   let helperService: HelperService;
   let cleanupService: CleanupService;
@@ -42,8 +39,6 @@ describe('CleanupService', () => {
       },
     });
 
-    module = testing.module;
-
     [cleanupService, settingService, helperService] = await testing.getMocks([
       CleanupService,
       SettingService,
@@ -54,14 +49,6 @@ describe('CleanupService', () => {
 
     helperService.register(new LocalStorageHelper());
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(async () => {
     jest.clearAllMocks();
     if (settingService) {

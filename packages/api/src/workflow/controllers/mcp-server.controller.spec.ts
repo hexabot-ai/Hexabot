@@ -7,7 +7,6 @@
 import { randomUUID } from 'crypto';
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 
 import { LoggerService } from '@/logger/logger.service';
@@ -17,7 +16,6 @@ import {
   mcpServerFixtureIds,
   mcpServerOrmFixtures,
 } from '@/utils/test/fixtures/mcp-server';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { McpClientPoolService } from '../services/mcp-client-pool.service';
@@ -27,7 +25,6 @@ import { McpServerTransport } from '../types';
 import { McpServerController } from './mcp-server.controller';
 
 describe('McpServerController (TypeORM)', () => {
-  let module: TestingModule;
   let controller: McpServerController;
   let service: McpServerService;
   let mcpClientPoolService: McpClientPoolService;
@@ -51,7 +48,7 @@ describe('McpServerController (TypeORM)', () => {
   };
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [McpServerController],
       providers: [
@@ -67,7 +64,6 @@ describe('McpServerController (TypeORM)', () => {
         fixtures: installMcpServerFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [controller, service, mcpClientPoolService] = await getMocks([
       McpServerController,
       McpServerService,
@@ -83,14 +79,6 @@ describe('McpServerController (TypeORM)', () => {
       createdIds.delete(id);
     }
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('create', () => {
     it('creates an MCP server', async () => {
       const payload = buildPayload();

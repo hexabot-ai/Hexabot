@@ -6,21 +6,17 @@
 
 import { randomUUID } from 'crypto';
 
-import { TestingModule } from '@nestjs/testing';
-
 import {
   groupedLabelFixtures,
   installLabelGroupFixturesTypeOrm,
   labelGroupFixtures,
 } from '@/utils/test/fixtures/label-group';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelGroupRepository } from './label-group.repository';
 import { LabelRepository } from './label.repository';
 
 describe('LabelGroupRepository (TypeORM)', () => {
-  let module: TestingModule;
   let labelRepository: LabelRepository;
   let labelGroupRepository: LabelGroupRepository;
   const createdLabelIds: string[] = [];
@@ -34,8 +30,6 @@ describe('LabelGroupRepository (TypeORM)', () => {
         fixtures: installLabelGroupFixturesTypeOrm,
       },
     });
-
-    module = testing.module;
 
     [labelRepository, labelGroupRepository] = await testing.getMocks([
       LabelRepository,
@@ -56,14 +50,6 @@ describe('LabelGroupRepository (TypeORM)', () => {
       await Promise.all(ids.map((id) => labelGroupRepository.deleteOne(id)));
     }
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('populate helpers', () => {
     it('exposes supported relations', () => {
       expect(labelGroupRepository.getPopulateRelations()).toEqual(['labels']);

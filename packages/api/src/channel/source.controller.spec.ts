@@ -12,7 +12,6 @@ import { DataSource, Repository } from 'typeorm';
 import { MessageOrmEntity } from '@/chat/entities/message.entity';
 import { ThreadOrmEntity } from '@/chat/entities/thread.entity';
 import { installMessageFixturesTypeOrm } from '@/utils/test/fixtures/message';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import type { WebsocketGateway } from '@/websocket/websocket.gateway';
@@ -149,15 +148,6 @@ describe('SourceController (TypeORM cascade)', () => {
     threadRepository = dataSource.getRepository(ThreadOrmEntity);
     messageRepository = dataSource.getRepository(MessageOrmEntity);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-
-    await closeTypeOrmConnections();
-  });
-
   it('prevents deleting a source and preserves linked threads and messages', async () => {
     const source = await sourceRepository.findOne({
       where: { channel: 'web' },

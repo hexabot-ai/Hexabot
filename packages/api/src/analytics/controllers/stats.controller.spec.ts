@@ -5,14 +5,12 @@
  */
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { TestingModule } from '@nestjs/testing';
 
 import { MessageService } from '@/chat/services/message.service';
 import {
   installStatsFixturesTypeOrm,
   statsFixtures,
 } from '@/utils/test/fixtures/stats';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
@@ -23,7 +21,6 @@ import { StatsController } from './stats.controller';
 
 describe('StatsController', () => {
   let statsController: StatsController;
-  let module: TestingModule;
   const workflowService = {
     count: jest.fn(),
   } as jest.Mocked<Pick<WorkflowService, 'count'>>;
@@ -36,7 +33,7 @@ describe('StatsController', () => {
   } as jest.Mocked<Pick<MessageService, 'count'>>;
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [StatsController],
       providers: [
@@ -49,17 +46,8 @@ describe('StatsController', () => {
         fixtures: installStatsFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [statsController] = await getMocks([StatsController]);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(() => {
     jest.clearAllMocks();
   });

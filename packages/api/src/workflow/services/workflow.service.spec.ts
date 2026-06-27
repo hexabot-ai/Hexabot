@@ -12,14 +12,12 @@ import {
 } from '@hexabot-ai/agentic';
 import { Workflow } from '@hexabot-ai/types';
 import { BadRequestException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
 
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import {
@@ -37,7 +35,6 @@ import { WorkflowVersionService } from './workflow-version.service';
 import { WorkflowService } from './workflow.service';
 
 describe('WorkflowService (TypeORM)', () => {
-  let module: TestingModule;
   let workflowService: WorkflowService;
   let workflowVersionService: WorkflowVersionService;
   let workflowRunService: WorkflowRunService;
@@ -114,7 +111,6 @@ describe('WorkflowService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [
       workflowService,
       workflowVersionService,
@@ -158,14 +154,6 @@ describe('WorkflowService (TypeORM)', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   it('creates workflows and returns stored definitions', async () => {
     const stored = await workflowService.findOne(workflow.id);
 

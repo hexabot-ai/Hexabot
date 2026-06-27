@@ -4,13 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
-import { TestingModule } from '@nestjs/testing';
-
 import {
   installMenuFixturesTypeOrm,
   rootMenuFixtures,
 } from '@/utils/test/fixtures/menu';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MenuType } from '../entities/menu.entity';
@@ -18,29 +15,19 @@ import { MenuType } from '../entities/menu.entity';
 import { MenuRepository } from './menu.repository';
 
 describe('MenuRepository (TypeORM)', () => {
-  let module: TestingModule;
   let repository: MenuRepository;
   const createdMenuIds = new Set<string>();
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['providers'],
       providers: [MenuRepository],
       typeorm: {
         fixtures: installMenuFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [repository] = await getMocks([MenuRepository]);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(async () => {
     jest.clearAllMocks();
     for (const id of Array.from(createdMenuIds)) {

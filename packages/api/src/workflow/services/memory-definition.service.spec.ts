@@ -4,15 +4,12 @@
  * Full terms: see LICENSE.md.
  */
 
-import { TestingModule } from '@nestjs/testing';
-
 import {
   installMemoryDefinitionFixturesTypeOrm,
   memoryDefinitionFixtureIds,
   memoryDefinitionOrmFixtures,
 } from '@/utils/test/fixtures/memory-definition';
 import { installMemoryRecordFixturesTypeOrm } from '@/utils/test/fixtures/memory-record';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MemoryScope } from '../types';
@@ -30,7 +27,6 @@ const runDefinition = memoryDefinitionOrmFixtures.find(
 )!;
 
 describe('MemoryDefinitionService (TypeORM)', () => {
-  let module: TestingModule;
   let memoryDefinitionService: MemoryDefinitionService;
 
   beforeAll(async () => {
@@ -45,7 +41,6 @@ describe('MemoryDefinitionService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [memoryDefinitionService] = await testing.getMocks([
       MemoryDefinitionService,
     ]);
@@ -55,14 +50,6 @@ describe('MemoryDefinitionService (TypeORM)', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findBySlug', () => {
     it('returns the matching definition', async () => {
       const result = await memoryDefinitionService.findBySlug(

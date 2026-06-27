@@ -7,7 +7,6 @@
 import { randomUUID } from 'crypto';
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 
 import { LoggerService } from '@/logger/logger.service';
@@ -17,13 +16,11 @@ import {
   dummyFixtures,
   installDummyFixturesTypeOrm,
 } from '@/utils/test/fixtures/dummy';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { DummyController } from '../test/dummy/controllers/dummy.controller';
 
 describe('BaseOrmController', () => {
-  let module: TestingModule;
   let controller: DummyController;
   let dummyService: DummyService;
   let logger: LoggerService;
@@ -39,7 +36,6 @@ describe('BaseOrmController', () => {
       },
     });
 
-    module = testing.module;
     [controller, dummyService] = await testing.getMocks([
       DummyController,
       DummyService,
@@ -54,14 +50,6 @@ describe('BaseOrmController', () => {
       createdIds.delete(id);
     }
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('count', () => {
     it('should count all records', async () => {
       const countSpy = jest.spyOn(dummyService, 'count');
