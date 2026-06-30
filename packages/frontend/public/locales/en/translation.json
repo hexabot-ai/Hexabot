@@ -247,7 +247,8 @@
     "mcp_tokens": "MCP Tokens",
     "new_mcp_token": "New MCP Token",
     "mcp_token_created": "MCP Token Created",
-    "revoke_mcp_token": "Revoke MCP Token"
+    "revoke_mcp_token": "Revoke MCP Token",
+    "assign_conversation": "Assign Conversation"
   },
   "dashboard": {
     "kpi": {
@@ -368,8 +369,9 @@
     "seconds": "Seconds",
     "assign_labels": "Assign labels",
     "permanent": "Permanent",
-    "assign_to": "Takeover By",
+    "assign_to": "Assign To",
     "assigned_to": "Assigned To",
+    "me": "me",
     "user_first_name": "First Name",
     "button": "Button",
     "buttons": "Buttons",
@@ -671,6 +673,7 @@
     "revoke": "Revoke",
     "permissions": "Permissions",
     "content": "Content",
+    "assign": "Assign",
     "takeover": "Take over",
     "handback": "Hand back",
     "close_thread": "Close Thread",

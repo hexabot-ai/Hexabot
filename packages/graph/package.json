@@ -40,7 +40,7 @@
     "@hexabot-ai/agentic": "workspace:*",
     "chroma-js": "^3.2.0",
     "elkjs": "^0.11.0",
-    "lucide-react": "^0.562.0"
+    "lucide-react": "^1.22.0"
   },
   "devDependencies": {
     "@types/node": "20.12.12",

@@ -4,45 +4,52 @@
  * Full terms: see LICENSE.md.
  */
 
-import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
-import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
-import Typography from "@mui/material/Typography";
-import { Hand, Lock } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Lock, UserRoundArrowLeft } from "lucide-react";
 
-import { Avatar } from "@/app-components/displays/Avatar";
 import { useFind } from "@/hooks/crud/useFind";
 import { useUpdate } from "@/hooks/crud/useUpdate";
 import { useAuth } from "@/hooks/useAuth";
+import { useDialogs } from "@/hooks/useDialogs";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 
 import { useChat } from "../hooks/ChatContext";
 
+import { ChatHandoverDialog } from "./ChatHandoverDialog";
+
 export const ChatActions = () => {
   const { t } = useTranslate();
   const { thread, subscriber: activeChat } = useChat();
-  const [takeoverBy, setTakeoverBy] = useState<string>(
-    activeChat?.assignedTo ?? "",
-  );
   const { mutate } = useUpdate(EntityType.SUBSCRIBER);
   const { mutate: updateThread } = useUpdate(EntityType.THREAD);
   const { user } = useAuth();
+  const dialogs = useDialogs();
   const { toast } = useToast();
   const { data: users } = useFind({
     entity: EntityType.USER,
   });
+  const handleOpenHandoverDialog = async () => {
+    const subscriber = activeChat;
 
-  useEffect(() => {
-    setTakeoverBy(activeChat?.assignedTo ?? "");
-  }, [activeChat?.assignedTo]);
+    if (!subscriber || users.length === 0) return;
 
+    const assignedTo = await dialogs.open(ChatHandoverDialog, {
+      assignedTo: subscriber.assignedTo,
+      currentUserId: user?.id,
+      users,
+    });
+
+    if (!assignedTo || assignedTo === subscriber.assignedTo) return;
+
+    mutate({
+      id: subscriber.id,
+      params: { assignedTo },
+    });
+  };
   const handleCloseThread = () => {
     if (!thread) return;
 
@@ -76,80 +83,19 @@ export const ChatActions = () => {
       flexWrap="wrap"
       marginLeft="auto"
     >
-      {users.length > 0 && (
-        <Box minWidth={180}>
-          <TextField
-            fullWidth
-            size="small"
-            onChange={(e) => setTakeoverBy(e.target.value)}
-            value={takeoverBy}
-            disabled={!activeChat}
-            label={t("label.assign_to")}
-            select
+      <Tooltip title={t("button.assign")}>
+        <span>
+          <IconButton
+            aria-label={t("button.assign")}
+            disabled={!activeChat || users.length === 0}
+            onClick={() => {
+              void handleOpenHandoverDialog();
+            }}
           >
-            {(users || []).map((chatUser) => {
-              const displayName =
-                `${chatUser.firstName} ${chatUser.lastName}`.trim() ||
-                chatUser.email ||
-                chatUser.id;
-
-              return (
-                <MenuItem key={chatUser.id} value={chatUser.id}>
-                  <Stack direction="row" alignItems="center" spacing={1}>
-                    <Avatar
-                      alt={displayName}
-                      size={24}
-                      subscriberId={chatUser.id}
-                    />
-                    <Typography
-                      variant="body2"
-                      sx={{ textTransform: "capitalize" }}
-                    >
-                      {displayName}
-                    </Typography>
-                  </Stack>
-                </MenuItem>
-              );
-            })}
-          </TextField>
-        </Box>
-      )}
-      <IconButton
-        disabled={!activeChat}
-        onClick={() =>
-          activeChat &&
-          takeoverBy &&
-          mutate({
-            id: activeChat.id,
-            params: { assignedTo: takeoverBy },
-          })
-        }
-        color="default"
-        sx={{
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 1.5,
-        }}
-      >
-        <Hand size={18} />
-      </IconButton>
-      <Button
-        disabled={!activeChat}
-        onClick={() =>
-          activeChat &&
-          mutate({
-            id: activeChat.id,
-            params: {
-              assignedTo:
-                user && user.id === activeChat.assignedTo ? null : user?.id,
-            },
-          })
-        }
-      >
-        {user && user.id === activeChat?.assignedTo
-          ? t("button.handback")
-          : t("button.takeover")}
-      </Button>
+            <UserRoundArrowLeft size={18} />
+          </IconButton>
+        </span>
+      </Tooltip>
       <Tooltip title={t("button.close_thread")}>
         <span>
           <IconButton

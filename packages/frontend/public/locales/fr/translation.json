@@ -247,7 +247,8 @@
     "mcp_tokens": "Jetons MCP",
     "new_mcp_token": "Nouveau jeton MCP",
     "mcp_token_created": "Jeton MCP créé",
-    "revoke_mcp_token": "Révoquer le jeton MCP"
+    "revoke_mcp_token": "Révoquer le jeton MCP",
+    "assign_conversation": "Assigner la conversation"
   },
   "dashboard": {
     "kpi": {
@@ -370,6 +371,7 @@
     "permanent": "Permanent",
     "assign_to": "Assigner à",
     "assigned_to": "Assigné(e) à",
+    "me": "moi",
     "user_first_name": "Prénom",
     "button": "Boutton",
     "buttons": "Boutons",
@@ -671,6 +673,7 @@
     "revoke": "Révoquer",
     "permissions": "Permissions",
     "content": "Contenu",
+    "assign": "Assigner",
     "takeover": "Prendre la main",
     "handback": "Remettre le bot",
     "close_thread": "Fermer la conversation",
