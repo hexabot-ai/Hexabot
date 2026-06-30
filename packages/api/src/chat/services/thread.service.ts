@@ -218,7 +218,7 @@ export class ThreadService extends BaseOrmService<ThreadOrmEntity> {
       }
 
       if (explicit.status === 'closed') {
-        return await this.reopenThread(explicit.id, now);
+        return await this.createThread(subscriberId, null, sourceId);
       }
 
       await this.touchThread(explicit.id, now);

@@ -10,14 +10,16 @@ import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { Hand } from "lucide-react";
+import { Hand, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Avatar } from "@/app-components/displays/Avatar";
 import { useFind } from "@/hooks/crud/useFind";
 import { useUpdate } from "@/hooks/crud/useUpdate";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 
@@ -25,12 +27,14 @@ import { useChat } from "../hooks/ChatContext";
 
 export const ChatActions = () => {
   const { t } = useTranslate();
-  const { subscriber: activeChat } = useChat();
+  const { thread, subscriber: activeChat } = useChat();
   const [takeoverBy, setTakeoverBy] = useState<string>(
     activeChat?.assignedTo ?? "",
   );
   const { mutate } = useUpdate(EntityType.SUBSCRIBER);
+  const { mutate: updateThread } = useUpdate(EntityType.THREAD);
   const { user } = useAuth();
+  const { toast } = useToast();
   const { data: users } = useFind({
     entity: EntityType.USER,
   });
@@ -38,6 +42,30 @@ export const ChatActions = () => {
   useEffect(() => {
     setTakeoverBy(activeChat?.assignedTo ?? "");
   }, [activeChat?.assignedTo]);
+
+  const handleCloseThread = () => {
+    if (!thread) return;
+
+    updateThread(
+      {
+        id: thread.id,
+        params: {
+          status: "closed",
+          closeReason: "manual",
+          closedAt: new Date(),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success(t("message.thread_closed_success"));
+        },
+        onError: (error) => {
+          toast.error(error);
+        },
+      },
+    );
+  };
+  const isThreadClosed = thread?.status === "closed";
 
   return (
     <Stack
@@ -105,7 +133,6 @@ export const ChatActions = () => {
       >
         <Hand size={18} />
       </IconButton>
-
       <Button
         disabled={!activeChat}
         onClick={() =>
@@ -123,6 +150,17 @@ export const ChatActions = () => {
           ? t("button.handback")
           : t("button.takeover")}
       </Button>
+      <Tooltip title={t("button.close_thread")}>
+        <span>
+          <IconButton
+            aria-label={t("button.close_thread")}
+            disabled={!activeChat || isThreadClosed}
+            onClick={handleCloseThread}
+          >
+            <Lock size={18} />
+          </IconButton>
+        </span>
+      </Tooltip>
     </Stack>
   );
 };

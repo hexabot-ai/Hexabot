@@ -46,6 +46,7 @@ const createDeferred = () => {
 describe('WebChannelHandler', () => {
   let module: TestingModule;
   let subscriberService: SubscriberService;
+  let threadService: ThreadService;
   let handler: WebChannelHandler;
   let webSource: Source;
 
@@ -129,8 +130,9 @@ describe('WebChannelHandler', () => {
 
     module = testing.module;
 
-    [subscriberService, handler] = await testing.getMocks([
+    [subscriberService, threadService, handler] = await testing.getMocks([
       SubscriberService,
+      ThreadService,
       WebChannelHandler,
     ]);
 
@@ -509,6 +511,96 @@ describe('WebChannelHandler', () => {
     await Promise.resolve();
     expect(emitMessageSpy).toHaveBeenCalledWith(expect.anything());
     expect(req.session.web?.threadId).toBe(responseThreadId);
+    clearMock.mockRestore();
+    emitMessageSpy.mockRestore();
+  });
+
+  it('creates a new thread when the web session points to a closed thread', async () => {
+    const req = {
+      isSocket: true,
+      query: { first_name: 'Closed', last_name: 'Thread' },
+      session: {},
+      headers: { 'user-agent': 'browser' },
+      socket: {
+        handshake: { address: '127.0.0.1' },
+      },
+      user: {},
+    } as any as SocketRequest;
+    const generatedId = `web-closed-thread-${Date.now()}`;
+    const clearMock = jest
+      .spyOn(handler, 'generateId')
+      .mockImplementation(() => generatedId);
+    const profile = await handler['getOrCreateSession'](req as any, webSource);
+    const closedAt = new Date('2026-03-01T06:00:00.000Z');
+    const closedThread = await threadService.create({
+      subscriber: profile.id,
+      source: webSource.id,
+      status: 'closed',
+      closeReason: 'manual',
+      closedAt,
+      lastMessageAt: closedAt,
+    });
+
+    req.body = {
+      type: 'text',
+      data: {
+        text: 'Start a new thread',
+      },
+    };
+    req.query = {};
+    req.session.web = {
+      ...req.session.web,
+      profile,
+      threadId: closedThread.id,
+    };
+
+    let responseThreadId: string | undefined;
+    let dispatchedEvent: { getThreadId: () => string | undefined } | undefined;
+    const emitMessageSpy = jest
+      .spyOn(handler['channelEventBus'], 'emitMessage')
+      .mockImplementation((event: any) => {
+        dispatchedEvent = event;
+
+        return Promise.resolve();
+      });
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Timed out waiting for closed-thread response'));
+      }, 2000);
+      const res = {
+        status: (code: number) => {
+          expect(code).toEqual(200);
+
+          return res;
+        },
+        json: (payload: any) => {
+          clearTimeout(timeout);
+          expect(typeof payload.thread_id).toBe('string');
+          responseThreadId = payload.thread_id;
+          resolve();
+        },
+      } as any as SocketResponse;
+
+      handler['handleEvent'](req as any, res, webSource);
+    });
+
+    await Promise.resolve();
+
+    expect(responseThreadId).toBeDefined();
+    expect(responseThreadId).not.toBe(closedThread.id);
+    expect(req.session.web?.threadId).toBe(responseThreadId);
+    expect(dispatchedEvent?.getThreadId()).toBe(responseThreadId);
+
+    const storedClosedThread = await threadService.findOne(closedThread.id);
+    const storedNewThread = await threadService.findOne(responseThreadId!);
+
+    expect(storedClosedThread?.status).toBe('closed');
+    expect(storedClosedThread?.closeReason).toBe('manual');
+    expect(storedClosedThread?.closedAt).toEqual(closedAt);
+    expect(storedNewThread?.status).toBe('open');
+    expect(emitMessageSpy).toHaveBeenCalledWith(expect.anything());
+
     clearMock.mockRestore();
     emitMessageSpy.mockRestore();
   });
