@@ -13,6 +13,7 @@ import {
 } from '@hexabot-ai/agentic';
 import { WorkflowFull, WorkflowRunFull } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 
 import { ActionService } from '@/actions/actions.service';
 import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
@@ -760,5 +761,21 @@ export class AgenticService implements WorkflowCallService {
     }
 
     return typeof error === 'string' ? error : JSON.stringify(error);
+  }
+
+  /**
+   * Abort all active workflow runs linked to a thread when that thread is closed.
+   */
+  @OnEvent('hook:thread:postUpdate')
+  async handleThreadClosed({
+    entity,
+    databaseEntity,
+  }: {
+    entity: { id: string; status: string };
+    databaseEntity: { id: string; status: string };
+  }): Promise<void> {
+    if (entity.status === 'closed' && databaseEntity.status !== 'closed') {
+      await this.workflowRunService.abortActiveRunsForThread(entity.id);
+    }
   }
 }

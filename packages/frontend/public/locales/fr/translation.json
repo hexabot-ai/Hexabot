@@ -743,6 +743,10 @@
         "section": "Aucun workflow dans cette section."
       }
     },
+    "chat_widget": {
+      "new_thread": "Nouveau fil",
+      "preview_conversation": "Aperçu du chat"
+    },
     "actions_drawer": {
       "title": "Actions",
       "empty": "Aucune action disponible.",
