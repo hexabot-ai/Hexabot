@@ -9,7 +9,6 @@ import {
   BadRequestException,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   MethodNotAllowedException,
@@ -29,6 +28,7 @@ import { diskStorage, memoryStorage } from 'multer';
 import { FindManyOptions } from 'typeorm';
 
 import { config } from '@/config';
+import { requireAuthenticatedUserId } from '@/user/utils/authenticated-user';
 import { PopulatePipe, UuidParam } from '@/utils';
 import { Roles } from '@/utils/decorators/roles.decorator';
 import { BaseOrmController } from '@/utils/generics/base-orm.controller';
@@ -131,13 +131,10 @@ export class AttachmentController extends BaseOrmController<AttachmentOrmEntity>
       throw new BadRequestException('No file was selected');
     }
 
-    const userId = req.session.passport?.user?.id;
-    if (!userId) {
-      throw new ForbiddenException(
-        'Unexpected Error: Only authenticated users are allowed to upload',
-      );
-    }
-
+    const userId = requireAuthenticatedUserId(
+      req,
+      'Unexpected Error: Only authenticated users are allowed to upload',
+    );
     const attachments: Attachment[] = [];
     for (const file of files.file) {
       const attachment = await this.attachmentService.store(file, {

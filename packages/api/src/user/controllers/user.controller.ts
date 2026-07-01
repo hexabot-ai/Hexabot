@@ -55,6 +55,7 @@ import { PermissionService } from '../services/permission.service';
 import { RoleService } from '../services/role.service';
 import { UserService } from '../services/user.service';
 import { ValidateAccountService } from '../services/validate-account.service';
+import { getAuthenticatedUserId } from '../utils/authenticated-user';
 
 @Controller('user')
 export class ReadOnlyUserController extends BaseOrmController<UserOrmEntity> {
@@ -384,13 +385,14 @@ export class ReadWriteUserController extends ReadOnlyUserController {
       where: { name: 'admin' },
     });
     const adminRoleId = adminRole?.id;
+    const currentUserId = getAuthenticatedUserId(req);
 
-    if (id === req.session.passport?.user?.id && body.state === false) {
+    if (id === currentUserId && body.state === false) {
       throw new ForbiddenException('Your account state is protected');
     }
     if (
       adminRoleId &&
-      req.session.passport?.user?.id === id &&
+      currentUserId === id &&
       oldRoleIds.includes(adminRoleId) &&
       newRoles &&
       !newRoles.includes(adminRoleId)

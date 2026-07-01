@@ -4,24 +4,16 @@
  * Full terms: see LICENSE.md.
  */
 
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Post,
-  Req,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
 import { Request } from 'express';
 
+import { requireSessionUserId } from '@/user/utils/authenticated-user';
 import { UuidParam } from '@/utils';
 
 import { McpTokenCreateDto } from '../dto/mcp-token.dto';
 import { McpTokenService } from '../services/mcp-token.service';
 
 type AuthenticatedRequest = Request & {
-  user?: { id?: string };
   session?: Request['session'] & {
     passport?: { user?: { id?: string } };
   };
@@ -54,11 +46,6 @@ export class McpTokenController {
   }
 
   private getUserId(req: AuthenticatedRequest): string {
-    const userId = req.user?.id ?? req.session?.passport?.user?.id;
-    if (!userId) {
-      throw new UnauthorizedException('Authenticated user is required');
-    }
-
-    return userId;
+    return requireSessionUserId(req, 'Authenticated session is required');
   }
 }

@@ -17,6 +17,7 @@ import { Request } from 'express';
 
 import LocalStorageHelper from '@/extensions/helpers/local-storage/index.helper';
 import { HelperService } from '@/helper/helper.service';
+import { ApiTokenService } from '@/user/services/api-token.service';
 import { ModelService } from '@/user/services/model.service';
 import { PermissionService } from '@/user/services/permission.service';
 import { NOT_FOUND_ID } from '@/utils/constants/mock';
@@ -58,6 +59,10 @@ describe('AttachmentController', () => {
         {
           provide: ModelService,
           useValue: { findOne: jest.fn() },
+        },
+        {
+          provide: ApiTokenService,
+          useValue: { hasTokenScope: jest.fn().mockResolvedValue(true) },
         },
       ],
       typeorm: {

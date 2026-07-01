@@ -33,6 +33,7 @@ import {
 } from '@/channel/lib/inbound-events';
 import { ChannelName } from '@/channel/types';
 import { BaseOrmEntity } from '@/database/entities/base.entity';
+import { getAuthenticatedUserId } from '@/user/utils/authenticated-user';
 import { UuidParam } from '@/utils';
 import { BaseOrmController } from '@/utils/generics/base-orm.controller';
 import { PopulatePipe } from '@/utils/pipes/populate.pipe';
@@ -197,7 +198,7 @@ export class MessageController extends BaseOrmController<MessageOrmEntity> {
         recipient: subscriber.id,
         thread: thread.id,
         message: messageDto.message,
-        sentBy: req.session.passport?.user?.id,
+        sentBy: getAuthenticatedUserId(req),
         read: false,
         delivery: false,
         handover: false,
