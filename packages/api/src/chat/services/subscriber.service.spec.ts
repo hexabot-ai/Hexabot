@@ -26,7 +26,6 @@ import { UserService } from '@/user/services/user.service';
 import { installLabelGroupFixturesTypeOrm } from '@/utils/test/fixtures/label-group';
 import { installSubscriberFixturesTypeOrm } from '@/utils/test/fixtures/subscriber';
 import { sortRowsBy } from '@/utils/test/sort';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WebsocketGateway } from '@/websocket/websocket.gateway';
 
@@ -139,14 +138,6 @@ describe('SubscriberService (TypeORM)', () => {
     jest.clearAllMocks();
     jest.restoreAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOneAndPopulate', () => {
     it('should find one subscriber and populate related data', async () => {
       const subscriber = await subscriberRepository.findOne({

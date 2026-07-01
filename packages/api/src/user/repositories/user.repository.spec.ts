@@ -7,20 +7,17 @@
 import { randomUUID } from 'crypto';
 
 import type { User } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import { IGNORED_TEST_FIELDS } from '@/utils/test/constants';
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { roleFixtureIds } from '@/utils/test/fixtures/role';
 import { userFixtures } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { RoleRepository } from './role.repository';
 import { UserRepository } from './user.repository';
 
 describe('UserRepository (TypeORM)', () => {
-  let module: TestingModule;
   let userRepository: UserRepository;
   let user: User | null;
 
@@ -45,8 +42,6 @@ describe('UserRepository (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
-
     [userRepository] = await testing.getMocks([UserRepository]);
 
     user = await userRepository.findOne({ where: { username: 'admin' } });
@@ -55,14 +50,6 @@ describe('UserRepository (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOneAndPopulate', () => {
     it('should find one user and populate roles', async () => {
       const result = await userRepository.findOneAndPopulate(user!.id);

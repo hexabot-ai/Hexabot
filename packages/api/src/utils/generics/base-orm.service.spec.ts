@@ -7,7 +7,6 @@
 import { randomUUID } from 'crypto';
 
 import { Dummy } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 
 import { DummyOrmEntity } from '@/utils/test/dummy/entities/dummy.entity';
@@ -17,18 +16,16 @@ import {
   dummyFixtures,
   installDummyFixturesTypeOrm,
 } from '@/utils/test/fixtures/dummy';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 describe('BaseOrmService', () => {
-  let module: TestingModule;
   let dummyRepository: DummyRepository;
   let dummyService: DummyService;
   let baseline: Dummy[];
   let firstEntity: Dummy;
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['providers'],
       providers: [DummyService],
       typeorm: {
@@ -37,7 +34,6 @@ describe('BaseOrmService', () => {
       },
     });
 
-    module = testingModule;
     [dummyRepository, dummyService] = await getMocks([
       DummyRepository,
       DummyService,
@@ -53,14 +49,6 @@ describe('BaseOrmService', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('utilities', () => {
     it('exposes the configured repository', () => {
       expect(dummyService.getRepository()).toBe(dummyRepository);

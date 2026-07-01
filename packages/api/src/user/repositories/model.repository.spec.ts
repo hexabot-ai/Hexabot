@@ -4,14 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import { TestingModule } from '@nestjs/testing';
-
 import { modelFixtureIds } from '@/utils/test/fixtures/model';
 import {
   installPermissionFixturesTypeOrm,
   permissionOrmFixtures,
 } from '@/utils/test/fixtures/permission';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ModelOrmEntity as ModelEntity } from '../entities/model.entity';
@@ -20,7 +17,6 @@ import { ModelRepository } from './model.repository';
 import { PermissionRepository } from './permission.repository';
 
 describe('ModelRepository (TypeORM)', () => {
-  let module: TestingModule;
   let modelRepository: ModelRepository;
   let permissionRepository: PermissionRepository;
   let contentTypeModel: ModelEntity;
@@ -33,8 +29,6 @@ describe('ModelRepository (TypeORM)', () => {
         fixtures: installPermissionFixturesTypeOrm,
       },
     });
-
-    module = testing.module;
 
     [modelRepository, permissionRepository] = await testing.getMocks([
       ModelRepository,
@@ -49,14 +43,6 @@ describe('ModelRepository (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOneAndPopulate', () => {
     it('should find a model and populate its permissions', async () => {
       const expectedPermissions = permissionOrmFixtures.filter(

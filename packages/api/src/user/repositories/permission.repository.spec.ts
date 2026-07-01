@@ -5,13 +5,11 @@
  */
 
 import { Permission } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import {
   installPermissionFixturesTypeOrm,
   permissionOrmFixtures,
 } from '@/utils/test/fixtures/permission';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { Action } from '../types/action.type';
@@ -21,7 +19,6 @@ import { PermissionRepository } from './permission.repository';
 import { RoleRepository } from './role.repository';
 
 describe('PermissionRepository (TypeORM)', () => {
-  let module: TestingModule;
   let modelRepository: ModelRepository;
   let roleRepository: RoleRepository;
   let permissionRepository: PermissionRepository;
@@ -36,8 +33,6 @@ describe('PermissionRepository (TypeORM)', () => {
         fixtures: installPermissionFixturesTypeOrm,
       },
     });
-
-    module = testing.module;
 
     [modelRepository, roleRepository, permissionRepository] =
       await testing.getMocks([
@@ -60,14 +55,6 @@ describe('PermissionRepository (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOneAndPopulate', () => {
     it('should find a permission and populate its role and model', async () => {
       const role = await roleRepository.findOne(createPermission.role);

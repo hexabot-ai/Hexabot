@@ -5,7 +5,6 @@
  */
 
 import { OutgoingMessageType, ContentOptions } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import { LoggerService } from '@/logger/logger.service';
 import {
@@ -13,21 +12,19 @@ import {
   installContentFixturesTypeOrm,
 } from '@/utils/test/fixtures/content';
 import { installContentTypeFixturesTypeOrm } from '@/utils/test/fixtures/contenttype';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeService } from './content-type.service';
 import { ContentService } from './content.service';
 
 describe('ContentService (TypeORM)', () => {
-  let module: TestingModule;
   let contentService: ContentService;
   let contentTypeService: ContentTypeService;
   let logger: LoggerService;
   const createdContentIds: string[] = [];
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['providers'],
       providers: [ContentService, ContentTypeService],
       typeorm: [
@@ -39,21 +36,12 @@ describe('ContentService (TypeORM)', () => {
         },
       ],
     });
-    module = testingModule;
     [contentService, contentTypeService] = await getMocks([
       ContentService,
       ContentTypeService,
     ]);
     logger = contentService.logger;
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(async () => {
     jest.clearAllMocks();
     if (createdContentIds.length > 0) {

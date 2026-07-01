@@ -4,8 +4,6 @@
  * Full terms: see LICENSE.md.
  */
 
-import { TestingModule } from '@nestjs/testing';
-
 import {
   installMemoryDefinitionFixturesTypeOrm,
   memoryDefinitionFixtureIds,
@@ -19,7 +17,6 @@ import {
   memoryWorkflowFixtureId,
 } from '@/utils/test/fixtures/memory-record';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import type { WorkflowRuntimeContext } from '../contexts/workflow-runtime.context';
@@ -53,7 +50,6 @@ const createContext = (): WorkflowRuntimeContext =>
   ({ state: {} as any }) as WorkflowRuntimeContext;
 
 describe('MemoryService (TypeORM)', () => {
-  let module: TestingModule;
   let memoryService: MemoryService;
   let memoryRecordService: MemoryRecordService;
 
@@ -69,7 +65,6 @@ describe('MemoryService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [memoryService, memoryRecordService] = await testing.getMocks([
       MemoryService,
       MemoryRecordService,
@@ -80,14 +75,6 @@ describe('MemoryService (TypeORM)', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   it('throws when ownerId is missing', async () => {
     const findSpy = jest.spyOn(memoryRecordService, 'findAndPopulate');
     const context = createContext();

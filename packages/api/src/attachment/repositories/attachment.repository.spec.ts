@@ -6,8 +6,6 @@
 
 import { randomUUID } from 'crypto';
 
-import { TestingModule } from '@nestjs/testing';
-
 import { config } from '@/config';
 import { IGNORED_TEST_FIELDS } from '@/utils/test/constants';
 import {
@@ -15,7 +13,6 @@ import {
   installAttachmentFixturesTypeOrm,
 } from '@/utils/test/fixtures/attachment';
 import { installUserFixturesTypeOrm } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
@@ -27,7 +24,6 @@ import {
 import { AttachmentRepository } from './attachment.repository';
 
 describe('AttachmentRepository (TypeORM)', () => {
-  let module: TestingModule;
   let repository: AttachmentRepository;
   const createdAttachmentIds = new Set<string>();
   const CREATOR_UUID = '66666666-6666-6666-6666-666666666666';
@@ -44,7 +40,6 @@ describe('AttachmentRepository (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [repository] = await testing.getMocks([AttachmentRepository]);
   });
 
@@ -55,14 +50,6 @@ describe('AttachmentRepository (TypeORM)', () => {
       createdAttachmentIds.delete(id);
     }
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('configuration', () => {
     it('exposes createdBy as the only populatable relation', () => {
       expect(repository.getPopulateRelations()).toEqual(['createdBy']);

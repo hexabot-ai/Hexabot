@@ -6,13 +6,11 @@
 
 import { Thread, ThreadFull } from '@hexabot-ai/types';
 import { BadRequestException, ArgumentMetadata } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 
 import { ThreadOrmEntity } from '@/chat/entities/thread.entity';
 import { ThreadService } from '@/chat/services/thread.service';
 import { TypeOrmSearchFilterPipe } from '@/utils/pipes/typeorm-search-filter.pipe';
 import { installMessageFixturesTypeOrm } from '@/utils/test/fixtures/message';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
@@ -21,7 +19,6 @@ import {
 } from './thread.controller';
 
 describe('ThreadController (TypeORM)', () => {
-  let module: TestingModule;
   let threadController: ThreadController;
   let threadService: ThreadService;
 
@@ -42,7 +39,6 @@ describe('ThreadController (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [threadController, threadService] = await testing.getMocks([
       ThreadController,
       ThreadService,
@@ -64,14 +60,6 @@ describe('ThreadController (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('count', () => {
     it('counts threads', async () => {
       const countSpy = jest.spyOn(threadService, 'count');

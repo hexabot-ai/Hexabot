@@ -4,13 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import { TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 
 import { IGNORED_TEST_FIELDS } from '@/utils/test/constants';
 import { labelFixtures } from '@/utils/test/fixtures/label';
 import { installSubscriberFixturesTypeOrm } from '@/utils/test/fixtures/subscriber';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelRepository } from '../repositories/label.repository';
@@ -22,7 +20,6 @@ const sortById = <T extends { id?: string }>(row1: T, row2: T) =>
   (row1.id ?? '').localeCompare(row2.id ?? '');
 
 describe('LabelService (TypeORM)', () => {
-  let module: TestingModule;
   let labelService: LabelService;
   let labelRepository: LabelRepository;
   let subscriberRepository: SubscriberRepository;
@@ -36,7 +33,6 @@ describe('LabelService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
     [labelService, labelRepository, subscriberRepository] =
       await testing.getMocks([
         LabelService,
@@ -48,14 +44,6 @@ describe('LabelService (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findAllAndPopulate', () => {
     it('should find all labels and populate users', async () => {
       jest.spyOn(labelRepository, 'findAllAndPopulate');

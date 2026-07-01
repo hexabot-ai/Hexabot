@@ -17,7 +17,6 @@ import { ModelService } from '@/user/services/model.service';
 import { PermissionService } from '@/user/services/permission.service';
 import { Action } from '@/user/types/action.type';
 import { TModel } from '@/user/types/model.type';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { attachment } from '../mocks/attachment.mock';
@@ -99,7 +98,6 @@ describe('AttachmentGuard', () => {
     if (module) {
       await module.close();
     }
-    await closeTypeOrmConnections();
   });
 
   describe('canActivate', () => {

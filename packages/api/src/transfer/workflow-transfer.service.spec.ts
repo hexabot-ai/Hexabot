@@ -34,7 +34,6 @@ import {
   installUserFixturesTypeOrm,
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import type { WebsocketGateway } from '@/websocket/websocket.gateway';
@@ -289,14 +288,6 @@ describe('WorkflowTransferService', () => {
     jest.clearAllMocks();
     jest.restoreAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   const createDefinitionYml = (
     memoryId: string,
     mcpServerId: string,

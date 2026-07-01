@@ -13,7 +13,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { TestingModule } from '@nestjs/testing';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
 import { I18nContext } from 'nestjs-i18n';
 import { z } from 'zod';
@@ -36,7 +35,6 @@ import {
   messagingWorkflowFixtures,
 } from '@/utils/test/fixtures/workflow';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import type { WebsocketGateway } from '@/websocket/websocket.gateway';
@@ -90,7 +88,6 @@ class ManualOnlyAction extends BaseAction<
 }
 
 describe('WorkflowController (TypeORM)', () => {
-  let module: TestingModule;
   let workflowController: WorkflowController;
   let workflowService: WorkflowService;
   let agenticService: AgenticService;
@@ -131,7 +128,7 @@ describe('WorkflowController (TypeORM)', () => {
   };
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [WorkflowController],
       providers: [
@@ -163,7 +160,6 @@ describe('WorkflowController (TypeORM)', () => {
         ],
       },
     });
-    module = testingModule;
     [
       agenticService,
       workflowController,
@@ -228,14 +224,6 @@ describe('WorkflowController (TypeORM)', () => {
       createdWorkflowIds.delete(id);
     }
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findMany', () => {
     it('returns workflows matching the provided filters', async () => {
       const options = {

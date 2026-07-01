@@ -8,7 +8,6 @@ import fs from 'fs';
 
 import { HttpService } from '@nestjs/axios';
 import { ModuleRef } from '@nestjs/core';
-import { TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 
 import { AttachmentService } from '@/attachment/services/attachment.service';
@@ -16,7 +15,6 @@ import { config } from '@/config';
 import { LoggerService } from '@/logger/logger.service';
 import { MetadataOrmEntity } from '@/setting/entities/metadata.entity';
 import { MetadataService } from '@/setting/services/metadata.service';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MigrationOrmEntity } from './migration.entity';
@@ -28,7 +26,6 @@ describe('MigrationService', () => {
   let loggerService: LoggerService;
   let metadataService: MetadataService;
   let dataSource: DataSource;
-  let testingModule: TestingModule;
   let httpService: HttpService;
   let attachmentService: AttachmentService;
 
@@ -86,7 +83,6 @@ describe('MigrationService', () => {
       ],
     });
 
-    testingModule = mocks.module;
     [service, metadataService] = await mocks.getMocks([
       MigrationService,
       MetadataService,
@@ -105,12 +101,8 @@ describe('MigrationService', () => {
     metadataService = serviceInternals.metadataService;
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     config.database.autoMigrate = originalAutoMigrate;
-    if (testingModule) {
-      await testingModule.close();
-    }
-    await closeTypeOrmConnections();
   });
 
   afterEach(() => {

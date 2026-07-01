@@ -7,7 +7,6 @@
 import { randomUUID } from 'crypto';
 
 import { NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 
 import { LoggerService } from '@/logger/logger.service';
 import { IGNORED_TEST_FIELDS } from '@/utils/test/constants';
@@ -16,7 +15,6 @@ import {
   workflowRunFixtureIds,
   workflowRunOrmFixtures,
 } from '@/utils/test/fixtures/workflow-run';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { WorkflowRunService } from '../services/workflow-run.service';
@@ -24,20 +22,18 @@ import { WorkflowRunService } from '../services/workflow-run.service';
 import { WorkflowRunController } from './workflow-run.controller';
 
 describe('WorkflowRunController (TypeORM)', () => {
-  let module: TestingModule;
   let controller: WorkflowRunController;
   let service: WorkflowRunService;
   let logger: LoggerService;
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [WorkflowRunController],
       typeorm: {
         fixtures: installWorkflowRunFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [controller, service] = await getMocks([
       WorkflowRunController,
       WorkflowRunService,
@@ -48,14 +44,6 @@ describe('WorkflowRunController (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findMany', () => {
     it('returns workflow runs matching the provided filters', async () => {
       const options = { where: { status: 'running' as const } };

@@ -5,11 +5,9 @@
  */
 
 import { Role, Permission } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { roleFixtureIds, roleOrmFixtures } from '@/utils/test/fixtures/role';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { PermissionRepository } from '../repositories/permission.repository';
@@ -19,7 +17,6 @@ import { UserRepository } from '../repositories/user.repository';
 import { RoleService } from './role.service';
 
 describe('RoleService (TypeORM)', () => {
-  let module: TestingModule;
   let roleService: RoleService;
   let roleRepository: RoleRepository;
   let permissionRepository: PermissionRepository;
@@ -35,8 +32,6 @@ describe('RoleService (TypeORM)', () => {
         fixtures: installPermissionFixturesTypeOrm,
       },
     });
-
-    module = testing.module;
 
     [roleService, roleRepository, userRepository, permissionRepository] =
       await testing.getMocks([
@@ -56,14 +51,6 @@ describe('RoleService (TypeORM)', () => {
       where: { role: { id: roleFixtureIds.admin } },
     });
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(jest.clearAllMocks);
 
   describe('findOneAndPopulate', () => {

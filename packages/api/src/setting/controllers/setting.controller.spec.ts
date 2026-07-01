@@ -5,7 +5,6 @@
  */
 
 import { Setting } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 import { I18nContext } from 'nestjs-i18n';
 
 import { I18nService } from '@/i18n/services/i18n.service';
@@ -14,7 +13,6 @@ import {
   settingFixtures,
 } from '@/utils/test/fixtures/setting';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
@@ -36,10 +34,9 @@ describe('SettingController', () => {
   let settingService: SettingService;
   let runtimeSettingsService: RuntimeSettingsService;
   let i18nService: I18nService<unknown>;
-  let module: TestingModule;
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [SettingController],
       providers: [I18nServiceProvider],
@@ -47,7 +44,6 @@ describe('SettingController', () => {
         fixtures: installSettingFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [settingController, settingService, runtimeSettingsService, i18nService] =
       await getMocks([
         SettingController,
@@ -56,14 +52,6 @@ describe('SettingController', () => {
         I18nService,
       ]);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   beforeEach(() => {
     runtimeSettingsService.reset();
     runtimeSettingsService.register({

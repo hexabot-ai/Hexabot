@@ -5,12 +5,10 @@
  */
 
 import type { User as UserDto } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import { IGNORED_TEST_FIELDS } from '@/utils/test/constants';
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { userFixtures } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { UserRepository } from '../repositories/user.repository';
@@ -18,7 +16,6 @@ import { UserRepository } from '../repositories/user.repository';
 import { UserService } from './user.service';
 
 describe('UserService (TypeORM)', () => {
-  let module: TestingModule;
   let userService: UserService;
   let userRepository: UserRepository;
   let user: UserDto | null;
@@ -44,8 +41,6 @@ describe('UserService (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
-
     [userService, userRepository] = await testing.getMocks([
       UserService,
       UserRepository,
@@ -55,14 +50,6 @@ describe('UserService (TypeORM)', () => {
   }, 30000);
 
   afterEach(jest.clearAllMocks);
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOneAndPopulate', () => {
     it('should find one user and populate its roles', async () => {
       jest.spyOn(userRepository, 'findOneAndPopulate');

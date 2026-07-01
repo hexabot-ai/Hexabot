@@ -7,7 +7,6 @@
 import { randomUUID } from 'crypto';
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
 import { In } from 'typeorm';
 
@@ -18,7 +17,6 @@ import {
   memoryDefinitionFixtureIds,
   memoryDefinitionOrmFixtures,
 } from '@/utils/test/fixtures/memory-definition';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MemoryDefinitionService } from '../services/memory-definition.service';
@@ -27,7 +25,6 @@ import { MemoryScope } from '../types';
 import { MemoryDefinitionController } from './memory-definition.controller';
 
 describe('MemoryDefinitionController (TypeORM)', () => {
-  let module: TestingModule;
   let controller: MemoryDefinitionController;
   let service: MemoryDefinitionService;
   let logger: LoggerService;
@@ -54,14 +51,13 @@ describe('MemoryDefinitionController (TypeORM)', () => {
   };
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [MemoryDefinitionController],
       typeorm: {
         fixtures: installMemoryDefinitionFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [controller, service] = await getMocks([
       MemoryDefinitionController,
       MemoryDefinitionService,
@@ -76,14 +72,6 @@ describe('MemoryDefinitionController (TypeORM)', () => {
       createdIds.delete(id);
     }
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('create', () => {
     it('creates a memory definition', async () => {
       const payload = buildPayload();

@@ -5,7 +5,6 @@
  */
 
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 
 import { NOT_FOUND_ID } from '@/utils/constants/mock';
@@ -13,7 +12,6 @@ import {
   installLabelGroupFixturesTypeOrm,
   labelGroupFixtures,
 } from '@/utils/test/fixtures/label-group';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { LabelGroupCreateDto } from '../dto/label-group.dto';
@@ -24,7 +22,6 @@ import { LabelGroupController } from './label-group.controller';
 describe('LabelGroupController', () => {
   let labelGroupController: LabelGroupController;
   let labelGroupService: LabelGroupService;
-  let module: TestingModule;
 
   beforeAll(async () => {
     const testing = await buildTestingMocks({
@@ -34,8 +31,6 @@ describe('LabelGroupController', () => {
         fixtures: installLabelGroupFixturesTypeOrm,
       },
     });
-
-    module = testing.module;
 
     [labelGroupController, labelGroupService] = await testing.getMocks([
       LabelGroupController,
@@ -47,14 +42,6 @@ describe('LabelGroupController', () => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findPage', () => {
     it('should find label groups', async () => {
       const expected = await labelGroupService.find({});

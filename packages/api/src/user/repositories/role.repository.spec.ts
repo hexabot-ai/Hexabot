@@ -5,7 +5,6 @@
  */
 
 import { Role } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import {
   installPermissionFixturesTypeOrm,
@@ -13,7 +12,6 @@ import {
 } from '@/utils/test/fixtures/permission';
 import { roleFixtureIds } from '@/utils/test/fixtures/role';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { PermissionRepository } from './permission.repository';
@@ -21,7 +19,6 @@ import { RoleRepository } from './role.repository';
 import { UserRepository } from './user.repository';
 
 describe('RoleRepository (TypeORM)', () => {
-  let module: TestingModule;
   let roleRepository: RoleRepository;
   let permissionRepository: PermissionRepository;
   let userRepository: UserRepository;
@@ -37,8 +34,6 @@ describe('RoleRepository (TypeORM)', () => {
         fixtures: installPermissionFixturesTypeOrm,
       },
     });
-
-    module = testing.module;
 
     [roleRepository, userRepository, permissionRepository] =
       await testing.getMocks([
@@ -58,14 +53,6 @@ describe('RoleRepository (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOneAndPopulate', () => {
     it('should find one role and populate its permissions and users', async () => {
       const permissions = await permissionRepository.find({

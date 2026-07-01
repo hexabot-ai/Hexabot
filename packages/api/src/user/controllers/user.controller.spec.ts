@@ -7,7 +7,6 @@
 import { Role, User } from '@hexabot-ai/types';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtModule, JwtService } from '@nestjs/jwt';
-import { TestingModule } from '@nestjs/testing';
 import { Request } from 'express';
 
 import { AttachmentService } from '@/attachment/services/attachment.service';
@@ -16,7 +15,6 @@ import { installLanguageFixturesTypeOrm } from '@/utils/test/fixtures/language';
 import { installPermissionFixturesTypeOrm } from '@/utils/test/fixtures/permission';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
 import { MailerServiceProvider } from '@/utils/test/providers/mailer-service.provider';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
@@ -32,7 +30,6 @@ import { ValidateAccountService } from '../services/validate-account.service';
 import { ReadWriteUserController } from './user.controller';
 
 describe('UserController (TypeORM)', () => {
-  let module: TestingModule;
   let userController: ReadWriteUserController;
   let userService: UserService;
   let roleService: RoleService;
@@ -76,8 +73,6 @@ describe('UserController (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
-
     [
       userController,
       userService,
@@ -100,14 +95,6 @@ describe('UserController (TypeORM)', () => {
     roles = await roleService.findAll();
     user = await userService.findOne({ where: { username: 'admin' } });
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(jest.clearAllMocks);
 
   describe('findOne', () => {

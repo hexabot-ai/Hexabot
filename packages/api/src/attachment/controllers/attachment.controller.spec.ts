@@ -27,7 +27,6 @@ import {
 } from '@/utils/test/fixtures/attachment';
 import { installSettingFixturesTypeOrm } from '@/utils/test/fixtures/setting';
 import { installUserFixturesTypeOrm } from '@/utils/test/fixtures/user';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { attachment, attachmentFile } from '../mocks/attachment.mock';
@@ -83,11 +82,6 @@ describe('AttachmentController', () => {
 
     helperService.register(new LocalStorageHelper());
   });
-
-  afterAll(async () => {
-    await closeTypeOrmConnections();
-  });
-
   afterEach(() => {
     jest.clearAllMocks();
     jest.restoreAllMocks();

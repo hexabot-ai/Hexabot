@@ -18,7 +18,6 @@ import {
   installSubscriberFixturesTypeOrm,
   subscriberFixtures,
 } from '@/utils/test/fixtures/subscriber';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { SubscriberRepository } from './subscriber.repository';
@@ -87,14 +86,6 @@ describe('SubscriberRepository (TypeORM)', () => {
       createdLabelIds.length = 0;
     }
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   const createPersistedSubscriber = async (
     overrides: Partial<SubscriberOrmEntity> = {},
   ): Promise<SubscriberOrmEntity> => {

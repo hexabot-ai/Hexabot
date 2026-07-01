@@ -5,7 +5,6 @@
  */
 
 import { Message, MessageFull } from '@hexabot-ai/types';
-import { TestingModule } from '@nestjs/testing';
 
 import { ChannelService } from '@/channel/channel.service';
 import { MessageService } from '@/chat/services/message.service';
@@ -14,14 +13,12 @@ import {
   installMessageFixturesTypeOrm,
   messageFixtures,
 } from '@/utils/test/fixtures/message';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
 import { MessageController } from './message.controller';
 
 describe('MessageController (TypeORM)', () => {
-  let module: TestingModule;
   let messageController: MessageController;
   let messageService: MessageService;
 
@@ -67,8 +64,6 @@ describe('MessageController (TypeORM)', () => {
       },
     });
 
-    module = testing.module;
-
     [messageController, messageService] = await testing.getMocks([
       MessageController,
       MessageService,
@@ -95,14 +90,6 @@ describe('MessageController (TypeORM)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   describe('findOne', () => {
     it('should find message by id with populated relations', async () => {
       const populateSpy = jest.spyOn(messageService, 'findOneAndPopulate');

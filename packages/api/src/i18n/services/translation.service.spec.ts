@@ -8,7 +8,6 @@ import { Workflow } from '@hexabot-ai/types';
 import { TestingModule } from '@nestjs/testing';
 
 import { I18nService } from '@/i18n/services/i18n.service';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowType } from '@/workflow/types';
@@ -116,7 +115,6 @@ describe('TranslationService', () => {
     if (module) {
       await module.close();
     }
-    await closeTypeOrmConnections();
   });
 
   it('should call refreshDynamicTranslations with translations from findAll', async () => {

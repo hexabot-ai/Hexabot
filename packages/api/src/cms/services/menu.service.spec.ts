@@ -7,7 +7,6 @@
 import { randomUUID } from 'crypto';
 
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { TestingModule } from '@nestjs/testing';
 import { Cache } from 'cache-manager';
 
 import { MENU_CACHE_KEY } from '@/utils/constants/cache';
@@ -17,7 +16,6 @@ import {
   offersMenuFixtures,
   rootMenuFixtures,
 } from '@/utils/test/fixtures/menu';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { MenuType } from '../entities/menu.entity';
@@ -25,30 +23,20 @@ import { MenuType } from '../entities/menu.entity';
 import { MenuService } from './menu.service';
 
 describe('MenuService (TypeORM)', () => {
-  let module: TestingModule;
   let menuService: MenuService;
   let cacheManager: Cache;
   const createdIds = new Set<string>();
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['providers'],
       providers: [MenuService],
       typeorm: {
         fixtures: installMenuFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [menuService, cacheManager] = await getMocks([MenuService, CACHE_MANAGER]);
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(async () => {
     jest.clearAllMocks();
     for (const id of Array.from(createdIds)) {

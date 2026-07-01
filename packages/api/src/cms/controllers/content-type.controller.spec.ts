@@ -5,14 +5,12 @@
  */
 
 import { NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 
 import { LoggerService } from '@/logger/logger.service';
 import {
   contentTypeOrmFixtures,
   installContentTypeFixturesTypeOrm,
 } from '@/utils/test/fixtures/contenttype';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeCreateDto } from '../dto/contentType.dto';
@@ -21,14 +19,13 @@ import { ContentTypeService } from '../services/content-type.service';
 import { ContentTypeController } from './content-type.controller';
 
 describe('ContentTypeController (TypeORM)', () => {
-  let module: TestingModule;
   let controller: ContentTypeController;
   let service: ContentTypeService;
   let logger: LoggerService;
   const createdIds = new Set<string>();
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [ContentTypeController],
       providers: [],
@@ -36,21 +33,12 @@ describe('ContentTypeController (TypeORM)', () => {
         fixtures: installContentTypeFixturesTypeOrm,
       },
     });
-    module = testingModule;
     [controller, service] = await getMocks([
       ContentTypeController,
       ContentTypeService,
     ]);
     logger = controller.logger;
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(async () => {
     jest.clearAllMocks();
     for (const id of Array.from(createdIds)) {

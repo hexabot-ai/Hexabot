@@ -7,7 +7,6 @@
 import { randomUUID } from 'crypto';
 
 import { NotFoundException } from '@nestjs/common';
-import { TestingModule } from '@nestjs/testing';
 
 import { LoggerService } from '@/logger/logger.service';
 import {
@@ -15,7 +14,6 @@ import {
   installContentFixturesTypeOrm,
 } from '@/utils/test/fixtures/content';
 import { installContentTypeFixturesTypeOrm } from '@/utils/test/fixtures/contenttype';
-import { closeTypeOrmConnections } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 
 import { ContentTypeService } from '../services/content-type.service';
@@ -25,7 +23,6 @@ import { RagService } from '../services/rag.service';
 import { ContentController } from './content.controller';
 
 describe('ContentController (TypeORM)', () => {
-  let module: TestingModule;
   let controller: ContentController;
   let contentService: ContentService;
   let contentTypeService: ContentTypeService;
@@ -34,7 +31,7 @@ describe('ContentController (TypeORM)', () => {
   const createdContentIds = new Set<string>();
 
   beforeAll(async () => {
-    const { module: testingModule, getMocks } = await buildTestingMocks({
+    const { getMocks } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [ContentController],
       providers: [],
@@ -47,7 +44,6 @@ describe('ContentController (TypeORM)', () => {
         },
       ],
     });
-    module = testingModule;
     [controller, contentService, contentTypeService, contentRagService] =
       await getMocks([
         ContentController,
@@ -57,14 +53,6 @@ describe('ContentController (TypeORM)', () => {
       ]);
     logger = controller.logger;
   });
-
-  afterAll(async () => {
-    if (module) {
-      await module.close();
-    }
-    await closeTypeOrmConnections();
-  });
-
   afterEach(async () => {
     jest.clearAllMocks();
     for (const id of Array.from(createdContentIds)) {
