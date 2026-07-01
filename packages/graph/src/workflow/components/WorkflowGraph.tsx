@@ -27,8 +27,6 @@ import {
   useState,
 } from "react";
 
-import "@xyflow/react/dist/style.css";
-
 import {
   WORKFLOW_VIEWPORT_MAX_ZOOM,
   WORKFLOW_VIEWPORT_MIN_ZOOM,

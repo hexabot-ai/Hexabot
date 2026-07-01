@@ -4,6 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
+import "@xyflow/react/dist/style.css";
+
 import "@hexabot-ai/graph/workflow.css";
 import { loader } from "@monaco-editor/react";
 import { CssBaseline } from "@mui/material";

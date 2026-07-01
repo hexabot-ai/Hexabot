@@ -1,5 +1,7 @@
 .workflow-graph {
   --workflow-accent: var(--template-palette-primary-main, #29998e);
+  --workflow-edge-color: #444444;
+  --workflow-edge-shadow: drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
   --workflow-hover-surface: #cbd5e1;
   --workflow-focus-ring: #e2e8f0;
   --workflow-controls-radius: 10px;
@@ -32,6 +34,8 @@
 }
 
 .workflow-graph.dark {
+  --workflow-edge-color: #bbbbbb;
+  --workflow-edge-shadow: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
   --workflow-hover-surface: #475569;
   --workflow-focus-ring: #334155;
   --workflow-controls-shadow: 0 16px 32px #0206178f;
@@ -126,6 +130,16 @@
 
 .workflow-rotate-icon--vertical {
   transform: rotate(140deg);
+}
+
+.workflow-graph .react-flow__edge path {
+  stroke: var(--workflow-edge-color) !important;
+  filter: var(--workflow-edge-shadow) !important;
+}
+
+.workflow-graph .react-flow__marker .arrowclosed {
+  fill: var(--workflow-edge-color) !important;
+  stroke: var(--workflow-edge-color) !important;
 }
 
 .workflow-yaml-node-def-highlight {
