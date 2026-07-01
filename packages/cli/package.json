@@ -38,8 +38,6 @@
   },
   "devDependencies": {
     "@jest/globals": "^30.4.1",
-    "@types/chalk": "^2.2.0",
-    "@types/commander": "^2.12.2",
     "@types/decompress": "^4.2.7",
     "@types/degit": "^2.8.6",
     "@types/figlet": "^1.5.8",
