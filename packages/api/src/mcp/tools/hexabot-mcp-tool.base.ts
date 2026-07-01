@@ -49,16 +49,6 @@ export abstract class HexabotMcpToolBase {
     return Like(`%${value}%`);
   }
 
-  protected resolveRelationId(
-    relation: string | { id?: string | null } | null | undefined,
-  ): string | null {
-    if (typeof relation === 'string') {
-      return relation;
-    }
-
-    return relation?.id ?? null;
-  }
-
   protected getActor(request?: HexabotMcpRequest): User {
     const actor = request?.hexabotUser ?? request?.user;
     if (!actor?.id) {

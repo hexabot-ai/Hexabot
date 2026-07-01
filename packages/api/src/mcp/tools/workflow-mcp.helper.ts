@@ -21,6 +21,8 @@ import { WorkflowVersionService } from '@/workflow/services/workflow-version.ser
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowVersionAction } from '@/workflow/types';
 
+import { resolveRelationId } from './hexabot-mcp.utils';
+
 type WorkflowVersionLike = WorkflowVersion | WorkflowVersionFull;
 
 type WorkflowVersionSummary = Pick<
@@ -85,7 +87,7 @@ export class HexabotWorkflowMcpHelper {
     }
     const parentVersion =
       params.parentVersion === undefined
-        ? this.resolveRelationId(workflow.currentVersion)
+        ? resolveRelationId(workflow.currentVersion)
         : params.parentVersion;
     const payload: WorkflowNewVersionDto = {
       workflow: params.workflowId,
@@ -205,15 +207,5 @@ export class HexabotWorkflowMcpHelper {
     return Object.fromEntries(
       Object.entries(summary).filter(([, value]) => value !== undefined),
     ) as WorkflowVersionSummary;
-  }
-
-  private resolveRelationId(
-    relation: string | { id?: string | null } | null | undefined,
-  ): string | null {
-    if (typeof relation === 'string') {
-      return relation;
-    }
-
-    return relation?.id ?? null;
   }
 }

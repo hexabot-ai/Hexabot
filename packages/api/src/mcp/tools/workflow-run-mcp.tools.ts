@@ -39,7 +39,7 @@ import {
   paginationSchema,
   uuidSchema,
 } from './hexabot-mcp.schemas';
-import { omitKeysDeep } from './hexabot-mcp.utils';
+import { omitKeysDeep, resolveRelationId } from './hexabot-mcp.utils';
 
 const WORKFLOW_DEFINITION_RESPONSE_KEYS = ['definitionYml'] as const;
 
@@ -175,7 +175,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
 
     const includeRelatedRuns = args.includeRelatedRuns ?? true;
     const childRunsLimit = args.childRunsLimit ?? 10;
-    const parentRunId = this.resolveRelationId(run.parentRun);
+    const parentRunId = resolveRelationId(run.parentRun);
     const childWhere = { parentRun: { id: run.id } } as any;
     const [parentRun, childRuns, childRunTotal] = includeRelatedRuns
       ? await Promise.all([

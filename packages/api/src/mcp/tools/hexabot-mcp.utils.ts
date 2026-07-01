@@ -27,3 +27,13 @@ export const omitKeysDeep = <T>(value: T, keys: readonly string[]): T => {
       .map(([key, nestedValue]) => [key, omitKeysDeep(nestedValue, keys)]),
   ) as T;
 };
+
+export const resolveRelationId = (
+  relation: string | { id?: string | null } | null | undefined,
+): string | null => {
+  if (typeof relation === 'string') {
+    return relation;
+  }
+
+  return relation?.id ?? null;
+};

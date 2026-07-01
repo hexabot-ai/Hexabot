@@ -34,6 +34,7 @@ import {
   paginationSchema,
   uuidSchema,
 } from './hexabot-mcp.schemas';
+import { resolveRelationId } from './hexabot-mcp.utils';
 import { HexabotWorkflowMcpHelper } from './workflow-mcp.helper';
 
 @Injectable()
@@ -199,7 +200,7 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
     const limit = args.limit ?? 16000;
     const { chunk, chunkByteLength, endOffset, totalByteLength } =
       this.sliceUtf8Chunk(definitionYml, offset, limit);
-    const workflowId = this.resolveRelationId(version.workflow);
+    const workflowId = resolveRelationId(version.workflow);
 
     return {
       workflowId,
@@ -342,7 +343,7 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
       );
     }
     const workflow = await this.workflowHelper.requireWorkflow(workflowId);
-    const currentVersionId = this.resolveRelationId(workflow.currentVersion);
+    const currentVersionId = resolveRelationId(workflow.currentVersion);
     if (!currentVersionId) {
       throw new NotFoundException(
         `Workflow ${workflowId} has no current version`,
