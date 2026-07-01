@@ -56,4 +56,8 @@ export default defineConfig({
     host: true,
     port: 8080,
   },
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  },
 });

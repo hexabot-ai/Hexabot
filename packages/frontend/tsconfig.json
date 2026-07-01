@@ -16,18 +16,11 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@hexabot-ai/types": ["../types/src"],
-      "@hexabot-ai/types/*": ["../types/src/*"]
+      "@/*": ["./src/*"]
     },
     "target": "ES2017",
     "types": ["vite/client", "node"]
   },
-  "include": [
-    "vite-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    "global.d.ts"
-  ],
+  "include": ["vite-env.d.ts", "**/*.ts", "**/*.tsx", "global.d.ts"],
   "exclude": ["node_modules", "vite.config.mts", "../widget"]
 }
