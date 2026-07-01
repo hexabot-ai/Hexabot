@@ -160,8 +160,7 @@ Workflow YAML is validated with `parseWorkflowDefinition()` before a version is
 created. Coding agents can call `hexabot_workflow_yaml_validate` first to get
 structured validation errors without mutating workflow state. Commits inherit
 the workflow's current version as their parent unless `parentVersion` is
-explicitly supplied. `hexabot_workflow_rollback` and
-`hexabot_workflow_version_restore` both create a new current restore snapshot;
+explicitly supplied. `hexabot_workflow_rollback` creates a new current restore snapshot;
 publish that snapshot with `hexabot_workflow_publish` when it should become the
 published version.
 
@@ -178,7 +177,7 @@ version checksum and total byte length so clients can verify reconstruction.
 | `hexabot_workflow_version_search`  | `workflowversion:read`   | List compact version metadata for a workflow.                                                   |
 | `hexabot_workflow_version_get`     | `workflowversion:read`   | Read compact version metadata.                                                                  |
 | `hexabot_workflow_version_update`  | `workflowversion:update` | Update workflow version metadata.                                                               |
-| `hexabot_workflow_version_restore` | `workflowversion:create` | Restore a previous version by creating a new snapshot.                                          |
+| `hexabot_workflow_rollback`        | `workflowversion:create` | Restore a previous version by creating a new snapshot.                                          |
 | `hexabot_workflow_run_search`      | `workflowrun:read`       | Search workflow runs by workflow and status.                                                    |
 | `hexabot_workflow_run_get`         | `workflowrun:read`       | Read one workflow run with populated workflow metadata but no nested YAML body.                 |
 | `hexabot_workflow_run_debug`       | `workflowrun:read`       | Inspect one workflow run with execution state and parent/child run context for troubleshooting. |
