@@ -6,6 +6,8 @@
 
 export * from './controllers/auth.controller';
 
+export * from './controllers/api-token.controller';
+
 export * from './controllers/model.controller';
 
 export * from './controllers/permission.controller';
@@ -24,7 +26,11 @@ export * from './dto/role.dto';
 
 export * from './dto/credential.dto';
 
+export * from './dto/api-token.dto';
+
 export * from './dto/user.dto';
+
+export * from './entities/api-token.entity';
 
 export * from './entities/model.entity';
 
@@ -40,7 +46,11 @@ export * from './entities/user.entity';
 
 export * from './guards/ability.guard';
 
+export * from './guards/authentication.guard';
+
 export * from './guards/local-auth.guard';
+
+export * from './passport/auth-strategy/api-bearer.strategy';
 
 export * from './passport/auth-strategy/local.strategy';
 
@@ -53,6 +63,8 @@ export * from './repositories/permission.repository';
 export * from './repositories/role.repository';
 
 export * from './repositories/credential.repository';
+
+export * from './repositories/api-token.repository';
 
 export * from './repositories/user.repository';
 
@@ -74,6 +86,8 @@ export * from './seeds/user.seed';
 
 export * from './services/auth.service';
 
+export * from './services/api-token.service';
+
 export * from './services/model.service';
 
 export * from './services/passwordReset.service';
@@ -90,6 +104,8 @@ export * from './services/validate-account.service';
 
 export * from './types/action.type';
 
+export * from './types/api-token.type';
+
 export * from './types/index.type';
 
 export * from './types/model.type';
@@ -97,6 +113,8 @@ export * from './types/model.type';
 export * from './types/permission.type';
 
 export * from './types/user-provider.type';
+
+export * from './utils/authenticated-user';
 
 export * from './user.module';
 

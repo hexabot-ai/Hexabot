@@ -6,7 +6,7 @@
 
 import { UnauthorizedException } from '@nestjs/common';
 
-import { McpTokenRepository } from '../repositories/mcp-token.repository';
+import { ApiTokenService } from '@/user/services/api-token.service';
 
 import {
   MCP_PERSONAL_TOKEN_PREFIX,
@@ -21,108 +21,71 @@ describe('McpTokenService', () => {
     roles: ['role-id'],
     state: true,
   };
-  const buildService = (overrides: Partial<McpTokenRepository> = {}) => {
-    const repository = {
-      create: jest.fn(),
-      find: jest.fn(),
-      findOne: jest.fn(),
-      findOneByHash: jest.fn(),
-      touchLastUsedAt: jest.fn(),
-      updateOne: jest.fn(),
+  const buildService = (overrides: Partial<ApiTokenService> = {}) => {
+    const apiTokenService = {
+      authenticateMcpBearerToken: jest.fn(),
+      createMcpToken: jest.fn(),
+      findOwnedMcpTokens: jest.fn(),
+      revokeOwnedMcpToken: jest.fn(),
       ...overrides,
-    } as unknown as jest.Mocked<McpTokenRepository>;
+    } as unknown as jest.Mocked<ApiTokenService>;
 
     return {
-      repository,
-      service: new McpTokenService(repository),
+      apiTokenService,
+      service: new McpTokenService(apiTokenService),
     };
   };
 
-  it('creates a personal token and stores only a hash', async () => {
-    const { repository, service } = buildService({
-      create: jest.fn().mockImplementation((payload) => ({
-        id: 'token-id',
-        name: payload.name,
-        tokenPrefix: payload.tokenPrefix,
-        owner: payload.owner,
-        expiresAt: payload.expiresAt,
-        lastUsedAt: null,
-        revokedAt: null,
-      })),
+  it('creates MCP tokens through the shared token service', async () => {
+    const { apiTokenService, service } = buildService({
+      createMcpToken: jest.fn().mockResolvedValue({
+        token: `${MCP_PERSONAL_TOKEN_PREFIX}secret`,
+        record: {
+          id: 'token-id',
+          name: 'Codex',
+          tokenPrefix: `${MCP_PERSONAL_TOKEN_PREFIX}abcd`,
+          owner: 'user-id',
+          expiresAt: null,
+          lastUsedAt: null,
+          revokedAt: null,
+        },
+      }),
     });
     const result = await service.createPersonalToken('user-id', {
       name: 'Codex',
     });
 
     expect(result.token).toMatch(new RegExp(`^${MCP_PERSONAL_TOKEN_PREFIX}`));
-    expect(repository.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Codex',
-        owner: 'user-id',
-        tokenHash: expect.any(String),
-        tokenPrefix: expect.stringMatching(/^hbt_mcp_/),
-      }),
+    expect(apiTokenService.createMcpToken).toHaveBeenCalledWith(
+      'user-id',
+      expect.objectContaining({ name: 'Codex' }),
     );
-    expect(repository.create).not.toHaveBeenCalledWith(
-      expect.objectContaining({ token: result.token }),
-    );
-    expect(JSON.stringify(result.record)).not.toContain('tokenHash');
   });
 
   it('authenticates an active token owner', async () => {
-    const owner = {
-      state: true,
-      toPlainCls: jest.fn().mockReturnValue(user),
-    };
-    const { repository, service } = buildService({
-      findOneByHash: jest.fn().mockResolvedValue({
-        id: 'token-id',
-        owner,
-        expiresAt: null,
-        revokedAt: null,
-      } as any),
-      touchLastUsedAt: jest.fn().mockResolvedValue(undefined),
+    const { apiTokenService, service } = buildService({
+      authenticateMcpBearerToken: jest.fn().mockResolvedValue({
+        user,
+        tokenId: 'token-id',
+      }),
     });
 
     await expect(
       service.authenticateBearerToken(`${MCP_PERSONAL_TOKEN_PREFIX}secret`),
     ).resolves.toEqual({ user, tokenId: 'token-id' });
 
-    expect(repository.touchLastUsedAt).toHaveBeenCalledWith('token-id');
+    expect(apiTokenService.authenticateMcpBearerToken).toHaveBeenCalledWith(
+      `${MCP_PERSONAL_TOKEN_PREFIX}secret`,
+    );
   });
 
   it('rejects revoked, expired, unknown, or inactive tokens', async () => {
-    const { service, repository } = buildService();
+    const { service } = buildService({
+      authenticateMcpBearerToken: jest
+        .fn()
+        .mockRejectedValue(new UnauthorizedException()),
+    });
 
-    await expect(
-      service.authenticateBearerToken('not-a-hexabot-token'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-
-    repository.findOneByHash.mockResolvedValueOnce(null);
-    await expect(
-      service.authenticateBearerToken(`${MCP_PERSONAL_TOKEN_PREFIX}unknown`),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-
-    repository.findOneByHash.mockResolvedValueOnce({
-      revokedAt: new Date(),
-    } as any);
-    await expect(
-      service.authenticateBearerToken(`${MCP_PERSONAL_TOKEN_PREFIX}revoked`),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-
-    repository.findOneByHash.mockResolvedValueOnce({
-      revokedAt: null,
-      expiresAt: new Date(Date.now() - 1000),
-    } as any);
-    await expect(
-      service.authenticateBearerToken(`${MCP_PERSONAL_TOKEN_PREFIX}expired`),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-
-    repository.findOneByHash.mockResolvedValueOnce({
-      revokedAt: null,
-      expiresAt: null,
-      owner: { state: false },
-    } as any);
     await expect(
       service.authenticateBearerToken(`${MCP_PERSONAL_TOKEN_PREFIX}inactive`),
     ).rejects.toBeInstanceOf(UnauthorizedException);

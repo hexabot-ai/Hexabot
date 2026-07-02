@@ -22,45 +22,7 @@ export enum MethodToAction {
 
 export type TRelation = "role" | "createdBy";
 
-export type TModel =
-  | "contenttype"
-  | "content"
-  | "nlpentity"
-  | "nlpsampleentity"
-  | "nlpsample"
-  | "nlpvalue"
-  | "setting"
-  | "attachment"
-  | "auditlog"
-  | "user"
-  | "role"
-  | "permission"
-  | "label"
-  | "labelgroup"
-  | "message"
-  | "thread"
-  | "subscriber"
-  | "source"
-  | "language"
-  | "translation"
-  | "stats"
-  | "menu"
-  | "workflow"
-  | "workflowversion"
-  | "workflowrun"
-  | "memorydefinition"
-  | "memoryrecord"
-  | "mcpserver"
-  | "model"
-  | "credential";
-
-export type ModelPermissionsPerRole = Record<TModel, Action[]>;
-
-export type PermissionsTree = Record<string, ModelPermissionsPerRole>;
-
-export const relationSchema = z.enum(["role", "createdBy"]);
-
-export const modelIdentitySchema = z.enum([
+export const modelIdentities = [
   "contenttype",
   "content",
   "nlpentity",
@@ -91,4 +53,14 @@ export const modelIdentitySchema = z.enum([
   "mcpserver",
   "model",
   "credential",
-]);
+] as const;
+
+export type TModel = (typeof modelIdentities)[number];
+
+export type ModelPermissionsPerRole = Record<TModel, Action[]>;
+
+export type PermissionsTree = Record<string, ModelPermissionsPerRole>;
+
+export const relationSchema = z.enum(["role", "createdBy"]);
+
+export const modelIdentitySchema = z.enum(modelIdentities);

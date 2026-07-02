@@ -56,6 +56,9 @@ export class McpPermissionGuard implements CanActivate {
       );
     }
 
+    // Note: MCP bearer tokens (`hbt_mcp_…`) are intentionally unscoped — they
+    // inherit the owner's full role permissions checked above — so there is no
+    // per-token scope to enforce here (unlike API tokens on the REST surface).
     return true;
   }
 }

@@ -9,6 +9,10 @@ import { Request } from 'express';
 
 import { config } from '.';
 
+const hasApiBearerToken = (req: Request): boolean =>
+  typeof req.headers.authorization === 'string' &&
+  /^Bearer\s+hbt_api_\S+$/i.test(req.headers.authorization.trim());
+
 export const csrf = csrfSync({
   ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
   getTokenFromRequest: (req: Request) =>
@@ -19,6 +23,9 @@ export const csrf = csrfSync({
   skipCsrfProtection: (req) => {
     const path = req.path.replace(`/api`, '');
 
-    return config.security.csrfExclude.some((re) => re.test(path));
+    return (
+      hasApiBearerToken(req) ||
+      config.security.csrfExclude.some((re) => re.test(path))
+    );
   },
 });

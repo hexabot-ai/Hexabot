@@ -8,6 +8,8 @@ import {
   AttachmentAccess,
   AttachmentCreatedByRef,
   AttachmentResourceRef,
+  Action,
+  ApiTokenType,
   FieldType,
   MemoryScope,
   McpServerTransport,
@@ -19,6 +21,7 @@ import {
   auditLogSchema,
   attachmentFullSchema,
   attachmentSchema,
+  apiTokenSchema,
   channelMetadataSchema,
   contentFullSchema,
   contentSchema,
@@ -711,6 +714,28 @@ describe("@hexabot-ai/types schemas", () => {
 
     expect(token.name).toBe("Codex");
     expect(token.owner).toBe("u_1");
+    expect("tokenHash" in token).toBe(false);
+  });
+
+  it("keeps API token outputs free of token hashes and preserves scopes", () => {
+    const token = apiTokenSchema.parse({
+      id: "at_1",
+      createdAt: now,
+      updatedAt: now,
+      name: "Automation",
+      tokenPrefix: "hbt_api_abcd",
+      tokenHash: "secret-hash",
+      tokenType: ApiTokenType.API,
+      ownerId: "u_1",
+      scopes: [{ model: "workflow", action: Action.READ }],
+      expiresAt: null,
+      lastUsedAt: null,
+      revokedAt: null,
+    });
+
+    expect(token.name).toBe("Automation");
+    expect(token.owner).toBe("u_1");
+    expect(token.scopes).toEqual([{ model: "workflow", action: Action.READ }]);
     expect("tokenHash" in token).toBe(false);
   });
 

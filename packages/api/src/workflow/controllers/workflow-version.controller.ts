@@ -19,6 +19,7 @@ import {
 import { Request } from 'express';
 import { FindManyOptions } from 'typeorm';
 
+import { requireAuthenticatedUserId } from '@/user/utils/authenticated-user';
 import { TypeOrmSearchFilterPipe, UuidParam } from '@/utils';
 import { BaseOrmController } from '@/utils/generics/base-orm.controller';
 import { PopulatePipe } from '@/utils/pipes/populate.pipe';
@@ -75,13 +76,10 @@ export class WorkflowVersionController extends BaseOrmController<WorkflowVersion
       this.logger.warn(`Unable to find Workflow by id ${id}`);
       throw new NotFoundException(`Workflow with ID ${id} not found`);
     }
-    const userId = req.session?.passport?.user?.id;
-
-    if (!userId) {
-      throw new UnauthorizedException(
-        'Only authenticated users can create workflows',
-      );
-    }
+    const userId = requireAuthenticatedUserId(
+      req,
+      'Only authenticated users can create workflows',
+    );
 
     if (dto.action === WorkflowVersionAction.restore) {
       if (!dto.parentVersion) {

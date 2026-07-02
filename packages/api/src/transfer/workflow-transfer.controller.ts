@@ -12,13 +12,13 @@ import {
   Post,
   Req,
   Res,
-  UnauthorizedException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 
+import { requireAuthenticatedUserId } from '@/user/utils/authenticated-user';
 import { UuidParam } from '@/utils/decorators/uuid-param.decorator';
 
 import { WorkflowTransferService } from './workflow-transfer.service';
@@ -43,12 +43,10 @@ export class WorkflowTransferController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,
   ): Promise<WorkflowImportResult> {
-    const userId = req.session?.passport?.user?.id;
-    if (!userId) {
-      throw new UnauthorizedException(
-        'Only authenticated users can import workflows',
-      );
-    }
+    const userId = requireAuthenticatedUserId(
+      req,
+      'Only authenticated users can import workflows',
+    );
 
     if (!file?.buffer) {
       throw new BadRequestException('No workflow bundle file was selected');

@@ -5,30 +5,8 @@
  */
 
 import type { McpToken } from "@hexabot-ai/types";
-import {
-  Alert,
-  Button,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
-  Paper,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  Tooltip,
-  Typography,
-} from "@mui/material";
-import type { ChipProps } from "@mui/material";
-import { AlertTriangle, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import { CircularProgress, Stack, Typography } from "@mui/material";
+import { AlertTriangle, Bot, Plus } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTanstackQueryClient } from "@/hooks/crud/useTanstack";
@@ -40,21 +18,19 @@ import {
 import { useDialogs } from "@/hooks/useDialogs";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
-import type { McpTokenCreateResponse } from "@/services/api.class";
-import { writeToClipboard } from "@/utils/clipboard";
 
 import {
-  formatOptionalDate,
-  getMcpTokenStatus,
-  McpTokenStatus,
+  toDateTimeLocalValue,
   toMcpTokenCreatePayload,
-} from "./mcp-tokens.utils";
+} from "./api-tokens.utils";
+import {
+  CreatedTokenDialog,
+  CreateTokenDialog,
+  TokenEmptyState,
+  TokenPanelHeader,
+} from "./TokenDialogs";
+import { TokenTable } from "./TokenTable";
 
-const statusColorByStatus: Record<McpTokenStatus, ChipProps["color"]> = {
-  active: "success",
-  expired: "warning",
-  revoked: "default",
-};
 const McpTokenRevokeConfirmDialogBody = () => {
   const { t } = useTranslate();
 
@@ -67,7 +43,7 @@ const McpTokenRevokeConfirmDialogBody = () => {
 };
 
 export const McpTokensPanel = () => {
-  const { t, i18n } = useTranslate();
+  const { t } = useTranslate();
   const { toast } = useToast();
   const dialogs = useDialogs();
   const queryClient = useTanstackQueryClient();
@@ -76,10 +52,9 @@ export const McpTokensPanel = () => {
   const [name, setName] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [nameError, setNameError] = useState("");
-  const [createdToken, setCreatedToken] =
-    useState<McpTokenCreateResponse | null>(null);
+  const [createdToken, setCreatedToken] = useState<string | null>(null);
   const hasShownListError = useRef(false);
-  const locale = i18n.resolvedLanguage || i18n.language;
+  const minExpiresAt = useMemo(() => toDateTimeLocalValue(new Date()), []);
   const {
     data: tokens = [],
     isError,
@@ -92,11 +67,9 @@ export const McpTokensPanel = () => {
         toast.error(t("message.internal_server_error"));
       },
       onSuccess: (response) => {
+        resetCreateForm();
         setCreateDialogOpen(false);
-        setName("");
-        setExpiresAt("");
-        setNameError("");
-        setCreatedToken(response);
+        setCreatedToken(response.token);
         void queryClient.invalidateQueries({ queryKey: tokenQueryKey });
         toast.success(t("message.mcp_token_create_success"));
       },
@@ -111,14 +84,6 @@ export const McpTokensPanel = () => {
         toast.success(t("message.mcp_token_revoke_success"));
       },
     });
-  const rows = useMemo(
-    () =>
-      tokens.map((token) => ({
-        token,
-        status: getMcpTokenStatus(token),
-      })),
-    [tokens],
-  );
 
   useEffect(() => {
     if (isError && !hasShownListError.current) {
@@ -131,8 +96,19 @@ export const McpTokensPanel = () => {
     }
   }, [isError, t, toast]);
 
-  const formatDate = (date: McpToken["createdAt"] | null | undefined) =>
-    formatOptionalDate(date, locale) ?? t("label.never");
+  function resetCreateForm() {
+    setName("");
+    setExpiresAt("");
+    setNameError("");
+  }
+  const closeCreateDialog = () => {
+    if (isCreating) {
+      return;
+    }
+
+    setCreateDialogOpen(false);
+    resetCreateForm();
+  };
   const submitCreate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -144,19 +120,7 @@ export const McpTokensPanel = () => {
 
     createMcpToken([toMcpTokenCreatePayload({ name, expiresAt })]);
   };
-  const copyCreatedToken = async () => {
-    if (!createdToken?.token) {
-      return;
-    }
-
-    try {
-      await writeToClipboard(createdToken.token);
-      toast.success(t("message.mcp_token_copied"));
-    } catch {
-      toast.error(t("message.mcp_token_copy_failed"));
-    }
-  };
-  const confirmRevoke = async (token: McpToken) => {
+  const confirmRevoke = async (token: Pick<McpToken, "id">) => {
     const isConfirmed = await dialogs.confirm(McpTokenRevokeConfirmDialogBody, {
       title: t("title.revoke_mcp_token"),
       okText: t("button.revoke"),
@@ -170,196 +134,68 @@ export const McpTokensPanel = () => {
   };
 
   return (
-    <Paper sx={{ padding: 4 }}>
+    <>
       <Stack gap={3}>
-        <Stack
-          alignItems={{ xs: "stretch", sm: "center" }}
-          direction={{ xs: "column", sm: "row" }}
-          justifyContent="space-between"
-          gap={2}
-        >
-          <Stack direction="row" alignItems="center" gap={1.5}>
-            <KeyRound size={24} />
-            <Typography variant="h6">{t("title.mcp_tokens")}</Typography>
-          </Stack>
-          <Button
-            variant="contained"
-            startIcon={<Plus size={18} />}
-            onClick={() => setCreateDialogOpen(true)}
-          >
-            {t("button.create_mcp_token")}
-          </Button>
-        </Stack>
+        <TokenPanelHeader
+          icon={<Bot size={24} />}
+          title={t("title.mcp_tokens")}
+          createLabel={t("button.create_mcp_token")}
+          createIcon={<Plus size={18} />}
+          onCreate={() => setCreateDialogOpen(true)}
+        />
 
         {isLoading ? (
           <Stack alignItems="center" py={4}>
             <CircularProgress size={28} />
           </Stack>
-        ) : rows.length === 0 ? (
-          <Typography color="text.secondary">
-            {t("message.mcp_token_empty")}
-          </Typography>
+        ) : tokens.length === 0 ? (
+          <TokenEmptyState
+            icon={<Bot size={32} />}
+            message={t("message.mcp_token_empty")}
+            createLabel={t("button.create_mcp_token")}
+            createIcon={<Plus size={18} />}
+            onCreate={() => setCreateDialogOpen(true)}
+          />
         ) : (
-          <TableContainer>
-            <Table size="small" aria-label={t("title.mcp_tokens")}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>{t("label.name")}</TableCell>
-                  <TableCell>{t("label.token_prefix")}</TableCell>
-                  <TableCell>{t("label.createdAt")}</TableCell>
-                  <TableCell>{t("label.expires_at")}</TableCell>
-                  <TableCell>{t("label.last_used_at")}</TableCell>
-                  <TableCell>{t("label.status")}</TableCell>
-                  <TableCell align="right">{t("label.operations")}</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {rows.map(({ token, status }) => (
-                  <TableRow key={token.id}>
-                    <TableCell>{token.name}</TableCell>
-                    <TableCell>
-                      <Typography
-                        component="span"
-                        fontFamily="monospace"
-                        variant="body2"
-                      >
-                        {token.tokenPrefix}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{formatDate(token.createdAt)}</TableCell>
-                    <TableCell>{formatDate(token.expiresAt)}</TableCell>
-                    <TableCell>{formatDate(token.lastUsedAt)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        color={statusColorByStatus[status]}
-                        label={t(`label.mcp_token_status_${status}`)}
-                        size="small"
-                        variant={status === "active" ? "filled" : "outlined"}
-                      />
-                    </TableCell>
-                    <TableCell align="right">
-                      <Tooltip title={t("button.revoke")}>
-                        <span>
-                          <IconButton
-                            aria-label={t("button.revoke")}
-                            color="error"
-                            disabled={
-                              status !== "active" || isRevoking || isFetching
-                            }
-                            onClick={() => void confirmRevoke(token)}
-                            size="small"
-                          >
-                            <Trash2 size={18} />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <TokenTable
+            ariaLabel={t("title.mcp_tokens")}
+            tokens={tokens}
+            showScopes={false}
+            isFetching={isFetching}
+            isRevoking={isRevoking}
+            onRevoke={(token) => void confirmRevoke(token)}
+          />
         )}
       </Stack>
 
-      <Dialog
-        fullWidth
-        maxWidth="sm"
+      <CreateTokenDialog
         open={isCreateDialogOpen}
-        onClose={() => {
-          if (!isCreating) {
-            setCreateDialogOpen(false);
-          }
+        title={t("title.new_mcp_token")}
+        submitLabel={t("button.create_mcp_token")}
+        isCreating={isCreating}
+        name={name}
+        onNameChange={(value) => {
+          setName(value);
+          setNameError("");
         }}
-      >
-        <form onSubmit={submitCreate}>
-          <DialogTitle>{t("title.new_mcp_token")}</DialogTitle>
-          <DialogContent>
-            <Stack gap={2} pt={1}>
-              <TextField
-                autoFocus
-                required
-                label={t("label.name")}
-                value={name}
-                error={!!nameError}
-                helperText={nameError || null}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  setNameError("");
-                }}
-              />
-              <TextField
-                label={t("label.expires_at")}
-                type="datetime-local"
-                value={expiresAt}
-                onChange={(event) => setExpiresAt(event.target.value)}
-                slotProps={{
-                  inputLabel: {
-                    shrink: true,
-                  },
-                }}
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions sx={{ p: 2 }}>
-            <Button
-              variant="outlined"
-              onClick={() => setCreateDialogOpen(false)}
-              disabled={isCreating}
-            >
-              {t("button.cancel")}
-            </Button>
-            <Button type="submit" variant="contained" disabled={isCreating}>
-              {t("button.create_mcp_token")}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
+        nameError={nameError}
+        expiresAt={expiresAt}
+        onExpiresAtChange={setExpiresAt}
+        minExpiresAt={minExpiresAt}
+        expiryHint={t("message.mcp_token_expiry_hint")}
+        onClose={closeCreateDialog}
+        onSubmit={submitCreate}
+      />
 
-      <Dialog
-        fullWidth
-        maxWidth="md"
-        open={!!createdToken}
+      <CreatedTokenDialog
+        title={t("title.mcp_token_created")}
+        tokenLabel={t("label.mcp_token")}
+        token={createdToken}
+        copyOnceMessage={t("message.mcp_token_copy_once")}
+        copiedMessage={t("message.mcp_token_copied")}
+        copyFailedMessage={t("message.mcp_token_copy_failed")}
         onClose={() => setCreatedToken(null)}
-      >
-        <DialogTitle>{t("title.mcp_token_created")}</DialogTitle>
-        <DialogContent>
-          <Stack gap={2} pt={1}>
-            <Alert severity="warning">{t("message.mcp_token_copy_once")}</Alert>
-            <TextField
-              label={t("label.mcp_token")}
-              value={createdToken?.token ?? ""}
-              fullWidth
-              multiline
-              minRows={2}
-              slotProps={{
-                input: {
-                  readOnly: true,
-                  sx: {
-                    fontFamily: "monospace",
-                    fontSize: "0.875rem",
-                  },
-                },
-                inputLabel: {
-                  shrink: true,
-                },
-              }}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button variant="outlined" onClick={() => setCreatedToken(null)}>
-            {t("button.close")}
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<Copy size={18} />}
-            onClick={() => void copyCreatedToken()}
-          >
-            {t("button.copy_token")}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Paper>
+      />
+    </>
   );
 };

@@ -5,6 +5,8 @@
  */
 
 import {
+  type ApiToken,
+  type ApiTokenScope,
   AttachmentResourceRef,
   type IntegrationHealthResponse,
   type McpToken,
@@ -51,6 +53,17 @@ export type McpTokenCreateResponse = {
   record: McpToken;
 };
 
+export type ApiTokenCreatePayload = {
+  name: string;
+  expiresAt?: string | null;
+  scopes: ApiTokenScope[];
+};
+
+export type ApiTokenCreateResponse = {
+  token: string;
+  record: ApiToken;
+};
+
 export type WorkflowExportFile = {
   blob: Blob;
   filename: string;
@@ -95,6 +108,7 @@ export const ROUTES = {
   WORKFLOW_ACTIONS: "/workflow/actions/:type",
   MCP_SERVER_TEST: "/mcpserver/:id/test",
   MCP_TOOLS: "/mcpserver/:id/tools",
+  API_TOKEN: "/api-token",
   MCP_TOKEN: "/mcp-token",
   INTEGRATION_HEALTH: "/stats/integration-health",
   SETTING_SCHEMAS: "setting/schemas",
@@ -327,6 +341,44 @@ export class ApiClient extends TranslatableMethods {
   async getMcpTools(id: string) {
     const route = resolveRoute(ROUTES.MCP_TOOLS, { id });
     const { data } = await this.request.get<IMcpToolSummary[]>(route);
+
+    return data;
+  }
+
+  async listApiTokens() {
+    const { data } = await this.request.get<ApiToken[]>(ROUTES.API_TOKEN);
+
+    return data;
+  }
+
+  async listApiTokenScopes() {
+    const { data } = await this.request.get<ApiTokenScope[]>(
+      `${ROUTES.API_TOKEN}/scopes`,
+    );
+
+    return data;
+  }
+
+  async createApiToken(payload: ApiTokenCreatePayload) {
+    const { _csrf } = await this.getCsrf();
+    const { data } = await this.request.post<
+      ApiTokenCreateResponse,
+      AxiosResponse<ApiTokenCreateResponse>,
+      ApiTokenCreatePayload & ICsrf
+    >(ROUTES.API_TOKEN, {
+      ...payload,
+      _csrf,
+    });
+
+    return data;
+  }
+
+  async revokeApiToken(id: string) {
+    const { _csrf } = await this.getCsrf();
+    const { data } = await this.request.post<ApiToken>(
+      `${ROUTES.API_TOKEN}/${encodeURIComponent(id)}/revoke`,
+      { _csrf },
+    );
 
     return data;
   }

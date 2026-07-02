@@ -18,7 +18,6 @@ import {
   Post,
   Query,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { I18nContext } from 'nestjs-i18n';
@@ -28,6 +27,7 @@ import { DeleteResult } from 'typeorm/driver/mongodb/typings';
 import { ActionService } from '@/actions/actions.service';
 import { I18nService } from '@/i18n/services/i18n.service';
 import { UserService } from '@/user/services/user.service';
+import { requireAuthenticatedUserId } from '@/user/utils/authenticated-user';
 import { UuidParam } from '@/utils/decorators/uuid-param.decorator';
 import { BaseOrmController } from '@/utils/generics/base-orm.controller';
 import { PopulatePipe } from '@/utils/pipes/populate.pipe';
@@ -69,13 +69,10 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
     @Body() workflowCreateDto: WorkflowCreateDto,
     @Req() req: Request,
   ): Promise<Workflow> {
-    const userId = req.session?.passport?.user?.id;
-
-    if (!userId) {
-      throw new UnauthorizedException(
-        'Only authenticated users can create workflows',
-      );
-    }
+    const userId = requireAuthenticatedUserId(
+      req,
+      'Only authenticated users can create workflows',
+    );
 
     return await this.workflowService.create({
       ...workflowCreateDto,
@@ -216,13 +213,10 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
     @UuidParam('id') id: string,
     @Req() req: Request,
   ): Promise<Workflow> {
-    const userId = req.session?.passport?.user?.id;
-    if (!userId) {
-      throw new UnauthorizedException(
-        'Only authenticated users can publish workflows',
-      );
-    }
-
+    requireAuthenticatedUserId(
+      req,
+      'Only authenticated users can publish workflows',
+    );
     const workflow = await this.workflowService.findOne(id);
     if (!workflow) {
       this.logger.warn(`Unable to publish Workflow by id ${id}`);
@@ -253,13 +247,10 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
     @UuidParam('id') id: string,
     @Req() req: Request,
   ): Promise<Workflow> {
-    const userId = req.session?.passport?.user?.id;
-    if (!userId) {
-      throw new UnauthorizedException(
-        'Only authenticated users can unpublish workflows',
-      );
-    }
-
+    requireAuthenticatedUserId(
+      req,
+      'Only authenticated users can unpublish workflows',
+    );
     const workflow = await this.workflowService.findOne(id);
     if (!workflow) {
       this.logger.warn(`Unable to unpublish Workflow by id ${id}`);
@@ -291,13 +282,10 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
     @Body('input') input: unknown = {},
     @Req() req: Request,
   ): Promise<{ accepted: true }> {
-    const userId = req.session?.passport?.user?.id;
-    if (!userId) {
-      throw new UnauthorizedException(
-        'Only authenticated users can run workflows manually',
-      );
-    }
-
+    const userId = requireAuthenticatedUserId(
+      req,
+      'Only authenticated users can run workflows manually',
+    );
     const workflow = await this.workflowService.findOne(id);
     if (!workflow) {
       this.logger.warn(`Unable to run Workflow by id ${id}`);

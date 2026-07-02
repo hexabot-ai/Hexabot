@@ -5,9 +5,9 @@ This module exposes Hexabot API capabilities through the Model Context Protocol
 definitions, actions, credentials, MCP servers, and CMS content.
 
 The implementation uses `@rekog/mcp-nest` with Streamable HTTP transport.
-Authentication is Hexabot-native: users create personal MCP bearer tokens from
-their Hexabot account and paste those tokens into MCP clients such as Codex or
-Claude Code.
+Authentication is Hexabot-native. MCP clients use legacy MCP bearer tokens, and
+REST API clients can use scoped personal API tokens generated from the Hexabot
+profile screen.
 
 ## Runtime endpoints
 
@@ -18,6 +18,9 @@ All routes are mounted under the existing API prefix.
 | `/api/mcp`                  | Streamable HTTP MCP endpoint.                                            |
 | `/api/mcp-token`            | List and create MCP personal access tokens for the current Hexabot user. |
 | `/api/mcp-token/:id/revoke` | Revoke one MCP personal access token owned by the current Hexabot user.  |
+| `/api/api-token`            | List and create scoped REST API tokens for the current Hexabot user.     |
+| `/api/api-token/scopes`     | List model/action scopes the current user can grant to an API token.     |
+| `/api/api-token/:id/revoke` | Revoke one REST API token owned by the current Hexabot user.             |
 
 The MCP endpoint is stateful and uses `mcp-session-id` headers for sessions.
 
@@ -34,8 +37,20 @@ MCP_SERVER_VERSION=1.0.0
 
 ## Authentication and authorization
 
-MCP requests use Hexabot-issued bearer tokens. Tokens are prefixed with
-`hbt_mcp_` and are shown only once when created.
+MCP requests use Hexabot-issued bearer tokens. Legacy MCP tokens are prefixed
+with `hbt_mcp_`, remain MCP-only, and are shown only once when created.
+
+REST API requests can use personal API tokens prefixed with `hbt_api_`:
+
+```http
+Authorization: Bearer hbt_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+API token authorization is capped by both token scopes and the owner's current
+role permissions. A token with `workflow:read` cannot create workflows, and a
+token stops working for a scope as soon as the owner loses the matching role
+permission. API tokens do not authenticate session, auth, token-management,
+webhook, public, or websocket endpoints.
 
 The guard chain is:
 
@@ -104,6 +119,42 @@ Revoke a token:
 
 ```http
 POST /api/mcp-token/{id}/revoke
+```
+
+## Creating a REST API token
+
+List scopes the current session user can grant:
+
+```http
+GET /api/api-token/scopes
+```
+
+Create a scoped token:
+
+```http
+POST /api/api-token
+Content-Type: application/json
+
+{
+  "name": "Build automation",
+  "expiresAt": "2026-12-31T23:59:59.000Z",
+  "scopes": [
+    { "model": "workflow", "action": "read" },
+    { "model": "workflowrun", "action": "create" }
+  ]
+}
+```
+
+The response includes the raw `hbt_api_...` bearer token once, plus metadata
+such as `tokenPrefix`, `scopes`, expiry, last-use time, and revoke state. Raw
+token values are never stored and cannot be shown again.
+
+Use the token on REST endpoints whose model/action is covered by both the token
+scope and the owner's live permissions:
+
+```http
+GET /api/workflow
+Authorization: Bearer hbt_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ## Connecting an MCP client

@@ -13,6 +13,7 @@ import {
 import { TestingModule } from '@nestjs/testing';
 import { Request } from 'express';
 
+import { ApiTokenService } from '@/user/services/api-token.service';
 import { ModelService } from '@/user/services/model.service';
 import { PermissionService } from '@/user/services/permission.service';
 import { Action } from '@/user/types/action.type';
@@ -31,6 +32,7 @@ describe('AttachmentGuard', () => {
   let permissionService: PermissionService;
   let modelService: ModelService;
   let attachmentService: AttachmentService;
+  let apiTokenService: ApiTokenService;
 
   const modelIdByIdentity: Partial<Record<TModel, string>> = {
     attachment: 'attachment-model-id',
@@ -40,7 +42,7 @@ describe('AttachmentGuard', () => {
     subscriber: 'subscriber-model-id',
     user: 'user-model-id',
   };
-  const buildContext = (request: Partial<Request>) =>
+  const buildContext = (request: Partial<Request> & { apiToken?: unknown }) =>
     ({
       switchToHttp: jest.fn().mockReturnValue({
         getRequest: jest.fn().mockReturnValue(request),
@@ -80,18 +82,28 @@ describe('AttachmentGuard', () => {
           provide: AttachmentService,
           useValue: { findOne: jest.fn() },
         },
+        {
+          provide: ApiTokenService,
+          useValue: { hasTokenScope: jest.fn().mockResolvedValue(true) },
+        },
       ],
     });
 
     module = testing.module;
 
-    [guard, permissionService, modelService, attachmentService] =
-      await testing.getMocks([
-        AttachmentGuard,
-        PermissionService,
-        ModelService,
-        AttachmentService,
-      ]);
+    [
+      guard,
+      permissionService,
+      modelService,
+      attachmentService,
+      apiTokenService,
+    ] = await testing.getMocks([
+      AttachmentGuard,
+      PermissionService,
+      ModelService,
+      AttachmentService,
+      ApiTokenService,
+    ]);
   });
 
   afterEach(async () => {
@@ -222,6 +234,39 @@ describe('AttachmentGuard', () => {
         expect(roleOperator?._type).toBe('in');
         expect(roleOperator?._value).toEqual(mockUser.roles);
       });
+    });
+
+    it('should deny POST requests when API token scope is missing', async () => {
+      const mockUser = { roles: ['editor-id'] } as any;
+      const apiToken = { id: 'token-id' } as any;
+      mockModelFindOne();
+      jest
+        .spyOn(permissionService, 'findOne')
+        .mockResolvedValue({} as Permission);
+      const tokenScope = jest
+        .spyOn(apiTokenService, 'hasTokenScope')
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+      const mockExecutionContext = buildContext({
+        query: { resourceRef: AttachmentResourceRef.MessageAttachment },
+        method: 'POST',
+        user: mockUser,
+        apiToken,
+      });
+
+      await expect(guard.canActivate(mockExecutionContext)).resolves.toBe(
+        false,
+      );
+      expect(tokenScope).toHaveBeenCalledWith(
+        apiToken,
+        'message',
+        Action.CREATE,
+      );
+      expect(tokenScope).toHaveBeenCalledWith(
+        apiToken,
+        'attachment',
+        Action.CREATE,
+      );
     });
 
     it('should throw NotFoundException for DELETE requests with invalid attachment ID', async () => {

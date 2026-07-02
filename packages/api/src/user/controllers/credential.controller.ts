@@ -16,7 +16,6 @@ import {
   Post,
   Query,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { FindManyOptions } from 'typeorm';
@@ -32,6 +31,7 @@ import {
 } from '../dto/credential.dto';
 import { CredentialOrmEntity } from '../entities/credential.entity';
 import { CredentialService } from '../services/credential.service';
+import { requireAuthenticatedUserId } from '../utils/authenticated-user';
 
 @Controller('credential')
 export class CredentialController extends BaseOrmController<CredentialOrmEntity> {
@@ -44,15 +44,14 @@ export class CredentialController extends BaseOrmController<CredentialOrmEntity>
     @Body() credentialDto: CredentialCreateDto,
     @Req() req: Request,
   ): Promise<Credential> {
-    if (!req.session.passport?.user?.id) {
-      throw new UnauthorizedException(
-        'Only authenticated users are allowed to use this channel',
-      );
-    }
+    const userId = requireAuthenticatedUserId(
+      req,
+      'Only authenticated users are allowed to use this channel',
+    );
 
     return await this.credentialService.create({
       ...credentialDto,
-      owner: req.session.passport.user.id,
+      owner: userId,
     });
   }
 

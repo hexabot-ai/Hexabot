@@ -4,25 +4,29 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { McpToken } from "@hexabot-ai/types";
+import { Action, type ApiToken, type ApiTokenScope } from "@hexabot-ai/types";
 import { describe, expect, it } from "vitest";
 
 import {
   formatOptionalDate,
-  getMcpTokenStatus,
-  toMcpTokenCreatePayload,
-} from "./mcp-tokens.utils";
+  formatScopeLabel,
+  getApiTokenStatus,
+  getScopeKey,
+  groupScopesByModel,
+  toApiTokenCreatePayload,
+} from "./api-tokens.utils";
 
 const baseToken = {
   expiresAt: null,
   revokedAt: null,
-} as Pick<McpToken, "expiresAt" | "revokedAt">;
+} as Pick<ApiToken, "expiresAt" | "revokedAt">;
+const scopes: ApiTokenScope[] = [{ model: "workflow", action: Action.READ }];
 
-describe("mcp token utils", () => {
-  describe("getMcpTokenStatus", () => {
+describe("api token utils", () => {
+  describe("getApiTokenStatus", () => {
     it("returns revoked before evaluating expiry", () => {
       expect(
-        getMcpTokenStatus(
+        getApiTokenStatus(
           {
             ...baseToken,
             expiresAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -35,7 +39,7 @@ describe("mcp token utils", () => {
 
     it("returns expired when the expiry is in the past", () => {
       expect(
-        getMcpTokenStatus(
+        getApiTokenStatus(
           {
             ...baseToken,
             expiresAt: new Date("2025-01-01T00:00:00.000Z"),
@@ -47,7 +51,7 @@ describe("mcp token utils", () => {
 
     it("returns active for non-revoked, non-expired tokens", () => {
       expect(
-        getMcpTokenStatus(
+        getApiTokenStatus(
           {
             ...baseToken,
             expiresAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -55,26 +59,56 @@ describe("mcp token utils", () => {
           new Date("2025-06-01T00:00:00.000Z"),
         ),
       ).toBe("active");
-      expect(getMcpTokenStatus(baseToken)).toBe("active");
+      expect(getApiTokenStatus(baseToken)).toBe("active");
     });
   });
 
   it("trims token names and converts datetime-local values to ISO", () => {
     expect(
-      toMcpTokenCreatePayload({
+      toApiTokenCreatePayload({
         name: "  Codex  ",
         expiresAt: "2026-05-05T12:30",
+        scopes,
       }),
     ).toEqual({
       name: "Codex",
       expiresAt: new Date("2026-05-05T12:30").toISOString(),
+      scopes,
     });
   });
 
   it("uses null expiry when no datetime-local value is provided", () => {
-    expect(toMcpTokenCreatePayload({ name: "Codex" })).toEqual({
+    expect(toApiTokenCreatePayload({ name: "Codex", scopes })).toEqual({
       name: "Codex",
       expiresAt: null,
+      scopes,
+    });
+  });
+
+  describe("scope helpers", () => {
+    it("derives a stable key and label from a scope", () => {
+      const scope: ApiTokenScope = { model: "workflow", action: Action.READ };
+
+      expect(getScopeKey(scope)).toBe("workflow:read");
+      expect(formatScopeLabel(scope)).toBe("workflow:read");
+    });
+
+    it("groups scopes by model, sorted with actions in canonical order", () => {
+      const grouped = groupScopesByModel([
+        { model: "workflow", action: Action.READ },
+        { model: "content", action: Action.DELETE },
+        { model: "content", action: Action.CREATE },
+        { model: "workflow", action: Action.CREATE },
+      ]);
+
+      expect(grouped).toEqual([
+        { model: "content", actions: [Action.CREATE, Action.DELETE] },
+        { model: "workflow", actions: [Action.CREATE, Action.READ] },
+      ]);
+    });
+
+    it("returns an empty list when there are no grantable scopes", () => {
+      expect(groupScopesByModel([])).toEqual([]);
     });
   });
 

@@ -11,7 +11,7 @@ Shared zod-first runtime contracts for Hexabot API entity outputs.
 - `cms`: `ContentType*`, `Content*`, `Menu*`
 - `i18n`: `Language*`, `Translation*`
 - `setting`: `Setting*`, `Metadata*`
-- `user`: `UserProfile*`, `Model*`, `Permission*`, `Role*`, `Credential*`, `McpToken*`, `User*`
+- `user`: `UserProfile*`, `Model*`, `Permission*`, `Role*`, `Credential*`, `McpToken*`, `ApiToken*`, `ApiTokenScope`, `User*`
 - `workflow`: `Workflow*`, `WorkflowVersion*`, `WorkflowRun*`, `MemoryDefinition*`, `MemoryRecord*`, `McpServer*`
 - `utils/test/dummy`: `Dummy*`
 - `attachment`: `Attachment*`
@@ -191,7 +191,7 @@ Unknown keys are stripped by default.
 - Legacy API enum/type paths can re-export from this package without value changes.
 - Schema parsing preserves nullable/optional normalization used by API entity outputs.
 - Mixed owner/triggeredBy contracts (`Subscriber | User`) are supported in workflow full contracts.
-- Sensitive output parity is preserved for credentials and MCP tokens (`value` and token hashes are not part of output contracts).
+- Sensitive output parity is preserved for credentials, MCP tokens, and API tokens (`value` and token hashes are not part of output contracts). API token contracts include flat `{ model, action }` scopes for REST bearer authorization.
 - Workflow run contracts include `parentRun` for call-and-return workflow stacks.
 - Sensitive output parity is preserved for credentials (`value` is not part of output contracts).
 
