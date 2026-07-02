@@ -4,37 +4,58 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Paper } from "@mui/material";
+import { Box, Paper, Tab, Tabs } from "@mui/material";
 import Grid from "@mui/material/Grid";
 import { User } from "lucide-react";
+import { useState } from "react";
 
 import { useAuth } from "@/hooks/useAuth";
-import { useConfig } from "@/hooks/useConfig";
 import { useTranslate } from "@/hooks/useTranslate";
 import { PageHeader } from "@/layout/content/PageHeader";
 
+import { ApiTokensPanel } from "./ApiTokensPanel";
 import { McpTokensPanel } from "./McpTokensPanel";
 import { ProfileForm } from "./profile";
+
+type TokenTab = "api" | "mcp";
+
+const TokensPanel = () => {
+  const { t } = useTranslate();
+  const [activeTab, setActiveTab] = useState<TokenTab>("mcp");
+
+  return (
+    <Paper sx={{ p: { xs: 3, md: 4 } }}>
+      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(_event, value: TokenTab) => setActiveTab(value)}
+          aria-label={t("title.api_tokens")}
+        >
+          <Tab value="mcp" label={t("title.mcp_tokens")} />
+          <Tab value="api" label={t("title.api_tokens")} />
+        </Tabs>
+      </Box>
+      {activeTab === "api" ? <ApiTokensPanel /> : <McpTokensPanel />}
+    </Paper>
+  );
+};
 
 export const Profile = () => {
   const { t } = useTranslate();
   const { user } = useAuth();
-  const { mcpEnabled } = useConfig();
 
   return (
     <Grid container gap={3} flexDirection="column">
       <PageHeader icon={User} title={t("title.edit_my_account")} />
       <Grid size={12} container spacing={3} alignItems="flex-start">
-        <Grid size={{ xs: 12, lg: mcpEnabled ? 4 : 12 }} sx={{ minWidth: 0 }}>
+        <Grid size={{ xs: 12, lg: 4 }} sx={{ minWidth: 0 }}>
           <Paper sx={{ p: { xs: 3, md: 4 }, width: "100%" }}>
-            {user ? <ProfileForm compact={mcpEnabled} user={user} /> : null}
+            {user ? <ProfileForm compact user={user} /> : null}
           </Paper>
         </Grid>
-        {mcpEnabled ? (
-          <Grid size={{ xs: 12, lg: 8 }} sx={{ minWidth: 0 }}>
-            <McpTokensPanel />
-          </Grid>
-        ) : null}
+        <Grid size={{ xs: 12, lg: 8 }} sx={{ minWidth: 0 }}>
+          <TokensPanel />
+        </Grid>
       </Grid>
     </Grid>
   );
