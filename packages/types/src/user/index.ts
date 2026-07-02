@@ -7,6 +7,8 @@
 export {
   Action,
   MethodToAction,
+  modelIdentities,
+  modelIdentitySchema,
   type ModelPermissionsPerRole,
   type PermissionsTree,
   type TModel,
@@ -76,6 +78,18 @@ export {
   type CredentialFull,
   type CredentialStub,
 } from "./credential";
+
+export {
+  ApiTokenType,
+  apiTokenFullSchema,
+  apiTokenSchema,
+  apiTokenScopeSchema,
+  apiTokenStubSchema,
+  type ApiToken,
+  type ApiTokenFull,
+  type ApiTokenScope,
+  type ApiTokenStub,
+} from "./api-token";
 
 export {
   mcpTokenFullSchema,

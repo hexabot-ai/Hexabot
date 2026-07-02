@@ -48,6 +48,7 @@ import { MigrationModule } from './migration/migration.module';
 import { SettingModule } from './setting/setting.module';
 import { WorkflowTransferModule } from './transfer/workflow-transfer.module';
 import { Ability } from './user/guards/ability.guard';
+import { AuthenticationGuard } from './user/guards/authentication.guard';
 import { UserModule } from './user/user.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { WorkflowModule } from './workflow/workflow.module';
@@ -168,6 +169,9 @@ export const HEXABOT_MODULE_IMPORTS: ModuleImports = [
 export const HEXABOT_MODULE_CONTROLLERS: ModuleControllers = [AppController];
 
 export const HEXABOT_MODULE_PROVIDERS: ModuleProviders = [
+  // AuthenticationGuard must run before Ability: it establishes the identity
+  // (API bearer token or session), then Ability authorizes it.
+  { provide: APP_GUARD, useClass: AuthenticationGuard },
   { provide: APP_GUARD, useClass: Ability },
   TypeormConfigService,
   HealthService,

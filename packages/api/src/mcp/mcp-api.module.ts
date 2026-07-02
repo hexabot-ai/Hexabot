@@ -7,7 +7,6 @@
 import { randomUUID } from 'crypto';
 
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { McpModule, McpTransportType } from '@rekog/mcp-nest';
 
 import { ActionsModule } from '@/actions/actions.module';
@@ -18,16 +17,13 @@ import { UserModule } from '@/user/user.module';
 import { WorkflowModule } from '@/workflow/workflow.module';
 
 import { McpTokenController } from './controllers/mcp-token.controller';
-import { McpTokenOrmEntity } from './entities/mcp-token.entity';
 import { HexabotMcpTokenGuard } from './guards/hexabot-mcp-token.guard';
 import { McpPermissionGuard } from './guards/mcp-permission.guard';
-import { McpTokenRepository } from './repositories/mcp-token.repository';
 import { McpTokenService } from './services/mcp-token.service';
 import { HEXABOT_MCP_TOOL_PROVIDERS } from './tools';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([McpTokenOrmEntity]),
     McpModule.forRoot({
       name: config.mcp.serverName,
       title: config.mcp.serverTitle,
@@ -52,7 +48,6 @@ import { HEXABOT_MCP_TOOL_PROVIDERS } from './tools';
   providers: [
     HexabotMcpTokenGuard,
     McpPermissionGuard,
-    McpTokenRepository,
     McpTokenService,
     ...HEXABOT_MCP_TOOL_PROVIDERS,
   ],

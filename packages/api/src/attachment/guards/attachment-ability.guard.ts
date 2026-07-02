@@ -15,14 +15,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
-import { Request } from 'express';
 import qs from 'qs';
 import { FindOneOptions, In } from 'typeorm';
 
 import { PermissionOrmEntity } from '@/user/entities/permission.entity';
+import { ApiTokenService } from '@/user/services/api-token.service';
 import { ModelService } from '@/user/services/model.service';
 import { PermissionService } from '@/user/services/permission.service';
 import { Action } from '@/user/types/action.type';
+import { ApiTokenAuthenticatedRequest } from '@/user/types/api-token.type';
 import { TModel } from '@/user/types/model.type';
 
 import { AttachmentService } from '../services/attachment.service';
@@ -38,6 +39,7 @@ export class AttachmentGuard implements CanActivate {
     private readonly permissionService: PermissionService,
     private readonly modelService: ModelService,
     private readonly attachmentService: AttachmentService,
+    private readonly apiTokenService: ApiTokenService,
   ) {}
 
   private permissionMap: Record<
@@ -164,6 +166,7 @@ export class AttachmentGuard implements CanActivate {
     action: Action,
     user: Express.User & User,
     resourceRef: AttachmentResourceRef,
+    apiToken?: ApiTokenAuthenticatedRequest['apiToken'],
   ): Promise<boolean> {
     if (!action) {
       throw new TypeError('Invalid action');
@@ -179,13 +182,24 @@ export class AttachmentGuard implements CanActivate {
       return false;
     }
 
-    return (
-      await Promise.all(
-        permissions.map(([identity, action]) =>
-          this.hasPermission(user, identity, action),
-        ),
-      )
-    ).every(Boolean);
+    const checks = await Promise.all(
+      permissions.map(async ([identity, action]) => {
+        const hasRolePermission = await this.hasPermission(
+          user,
+          identity,
+          action,
+        );
+        const hasTokenScope = await this.apiTokenService.hasTokenScope(
+          apiToken,
+          identity,
+          action,
+        );
+
+        return hasRolePermission && hasTokenScope;
+      }),
+    );
+
+    return checks.every(Boolean);
   }
 
   /**
@@ -218,9 +232,11 @@ export class AttachmentGuard implements CanActivate {
    * @returns Returns `true` if the user is authorized, otherwise throws an exception.
    */
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const { query, _parsedUrl, method, user, params } = ctx
+    const { query, _parsedUrl, method, user, params, apiToken } = ctx
       .switchToHttp()
-      .getRequest<Request & { user: User; _parsedUrl: Url }>();
+      .getRequest<
+        ApiTokenAuthenticatedRequest & { user: User; _parsedUrl: Url }
+      >();
 
     switch (method) {
       // count(), find() and findOne() endpoints
@@ -236,6 +252,7 @@ export class AttachmentGuard implements CanActivate {
             Action.READ,
             user,
             attachment.resourceRef,
+            apiToken,
           );
         } else if (query.where) {
           const { resourceRef = [] } = query.where as qs.ParsedQs;
@@ -246,7 +263,9 @@ export class AttachmentGuard implements CanActivate {
 
           return (
             await Promise.all(
-              resourceRef.map((c) => this.isAuthorized(Action.READ, user, c)),
+              resourceRef.map((c) =>
+                this.isAuthorized(Action.READ, user, c, apiToken),
+              ),
             )
           ).every(Boolean);
         } else {
@@ -260,7 +279,12 @@ export class AttachmentGuard implements CanActivate {
           throw new BadRequestException('Invalid resource ref');
         }
 
-        return await this.isAuthorized(Action.CREATE, user, resourceRef);
+        return await this.isAuthorized(
+          Action.CREATE,
+          user,
+          resourceRef,
+          apiToken,
+        );
       }
       // deleteOne() endpoint
       case 'DELETE': {
@@ -275,6 +299,7 @@ export class AttachmentGuard implements CanActivate {
             Action.DELETE,
             user,
             attachment.resourceRef,
+            apiToken,
           );
         } else {
           throw new BadRequestException('Invalid params');

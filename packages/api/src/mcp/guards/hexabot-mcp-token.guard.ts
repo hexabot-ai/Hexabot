@@ -11,7 +11,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { Request } from 'express';
+
+import { extractBearerToken } from '@/user/utils/authenticated-user';
 
 import { McpTokenService } from '../services/mcp-token.service';
 import { HexabotMcpRequest } from '../types';
@@ -22,7 +23,7 @@ export class HexabotMcpTokenGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<HexabotMcpRequest>();
-    const token = this.extractTokenFromHeader(request);
+    const token = extractBearerToken(request);
 
     if (!token) {
       throw new UnauthorizedException('MCP bearer token is required');
@@ -31,22 +32,16 @@ export class HexabotMcpTokenGuard implements CanActivate {
     const { user, tokenId } =
       await this.getMcpTokenService().authenticateBearerToken(token);
 
+    // `user` is the slot `@rekog/mcp-nest` owns: it reads `request.user` for
+    // tool visibility and its own JWT/OAuth flows overwrite it, so we set it to
+    // stay "authenticated" to the library. `hexabotUser` is our own namespaced,
+    // type-stable copy that the library never touches; consumers read
+    // `hexabotUser ?? user` so they always get a proper Hexabot `User`.
     request.hexabotUser = user;
     request.user = user;
     request.mcpTokenId = tokenId;
 
     return true;
-  }
-
-  private extractTokenFromHeader(request: Request): string | undefined {
-    const authHeader = request.headers.authorization;
-    if (!authHeader) {
-      return undefined;
-    }
-
-    const match = authHeader.trim().match(/^Bearer\s+(\S+)$/i);
-
-    return match?.[1];
   }
 
   private getMcpTokenService(): McpTokenService {
