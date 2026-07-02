@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { getNodesBounds, type Edge } from "@xyflow/react";
+import type { Edge } from "@xyflow/react";
 
 import { DEFAULT_NODE_PROPS } from "../../constants/workflow.constants";
 import {
@@ -15,11 +15,40 @@ import {
 import { withAlpha } from "../color.utils";
 import type { GroupMeta } from "../graph-builder/types";
 
-import { getGroupBackgroundAlpha, getGroupPadding } from "./constants";
+import { getGroupBackgroundAlpha } from "./constants";
+import { getGraphNodeDimensions } from "./geometry";
 import {
   buildAttachmentMaps,
   collectAttachmentDescendants,
 } from "./graph-maps";
+
+const getBounds = (nodes: GraphNode[], config: INodeConfig) => {
+  const bounds = nodes.reduce(
+    (acc, node) => {
+      const dimensions = getGraphNodeDimensions(node, { config });
+
+      return {
+        left: Math.min(acc.left, node.position.x),
+        top: Math.min(acc.top, node.position.y),
+        right: Math.max(acc.right, node.position.x + dimensions.width),
+        bottom: Math.max(acc.bottom, node.position.y + dimensions.height),
+      };
+    },
+    {
+      left: Infinity,
+      top: Infinity,
+      right: -Infinity,
+      bottom: -Infinity,
+    },
+  );
+
+  return {
+    x: bounds.left,
+    y: bounds.top,
+    width: bounds.right - bounds.left,
+    height: bounds.bottom - bounds.top,
+  };
+};
 
 export const getGroupNodes = (
   nodes: GraphNode[],
@@ -33,8 +62,10 @@ export const getGroupNodes = (
     nodesById,
   );
   const groupNodes: GraphNode<ENodeType.GROUP>[] = [];
+  const groupNodesById = new Map<string, GraphNode<ENodeType.GROUP>>();
+  const groupsByDepth = [...groups.values()].sort((a, b) => b.level - a.level);
 
-  groups.forEach((group) => {
+  groupsByDepth.forEach((group) => {
     const groupMemberIds = [...group.memberNodeIds].filter((nodeId) =>
       nodesById.has(nodeId),
     );
@@ -53,20 +84,30 @@ export const getGroupNodes = (
         ),
       ),
     ];
+    const nestedGroupNodes = groupsByDepth
+      .filter(
+        (candidate) =>
+          candidate.id !== group.id &&
+          candidate.level > group.level &&
+          [...candidate.memberNodeIds].some((memberId) =>
+            group.memberNodeIds.has(memberId),
+          ),
+      )
+      .map((candidate) => groupNodesById.get(candidate.id))
+      .filter((node): node is GraphNode<ENodeType.GROUP> => Boolean(node));
     const boundsMembers = boundsMemberIds
       .map((nodeId) => nodesById.get(nodeId))
       .filter((node): node is GraphNode => Boolean(node));
     const color = config.highlights?.[group.operatorType]?.color;
-    const basePadding = config.highlights?.[group.operatorType]?.padding || 0;
-    const padding = getGroupPadding(basePadding, group.level);
+    const padding = config.highlights?.[group.operatorType]?.padding ?? 0;
+    const radius = config.highlights?.[group.operatorType]?.radius;
     const backgroundAlpha = getGroupBackgroundAlpha(group.level);
-    const bounds = getNodesBounds(boundsMembers);
+    const bounds = getBounds([...boundsMembers, ...nestedGroupNodes], config);
     const groupX = bounds.x - padding / 2;
     const groupY = bounds.y - padding / 2;
     const groupWidth = bounds.width + padding;
     const groupHeight = bounds.height + padding;
-
-    groupNodes.push({
+    const groupNode: GraphNode<ENodeType.GROUP> = {
       ...DEFAULT_NODE_PROPS,
       id: group.id,
       type: ENodeType.GROUP,
@@ -76,14 +117,19 @@ export const getGroupNodes = (
       style: {
         width: groupWidth,
         height: groupHeight,
-        borderRadius: "1rem",
+        borderRadius: radius,
         backgroundColor: color ? withAlpha(color, backgroundAlpha) : undefined,
         border: `2px solid color-mix(in srgb, ${withAlpha(color || "", backgroundAlpha)} 85%, currentColor)`,
       },
-    });
+    };
+
+    groupNodesById.set(group.id, groupNode);
+    groupNodes.push(groupNode);
   });
 
-  return groupNodes;
+  return groupNodes.sort(
+    (a, b) => (groups.get(a.id)?.level ?? 0) - (groups.get(b.id)?.level ?? 0),
+  );
 };
 export const withFreshGroupNodes = (
   nodes: GraphNode[],

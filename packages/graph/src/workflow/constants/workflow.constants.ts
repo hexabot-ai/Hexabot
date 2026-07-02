@@ -166,9 +166,9 @@ export const NODE_DIMENSIONS = Object.fromEntries(
 ) as Exclude<INodeConfig["dimensions"], undefined>;
 
 export const OPERATOR_HIGHLIGHTS = {
-  [StepType.Loop]: { color: "#faf4d0", padding: 48 },
-  [StepType.Parallel]: { color: "#faf4d0", padding: 48 },
-  [StepType.Conditional]: { color: "#faf4d0", padding: 48 },
+  [StepType.Loop]: { color: "#faf4d0", padding: 48, radius: "1rem" },
+  [StepType.Parallel]: { color: "#faf4d0", padding: 48, radius: "1rem" },
+  [StepType.Conditional]: { color: "#faf4d0", padding: 48, radius: "1rem" },
 } satisfies INodeConfig["highlights"];
 
 export const EDGE_STYLES = {

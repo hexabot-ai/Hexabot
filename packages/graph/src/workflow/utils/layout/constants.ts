@@ -4,8 +4,6 @@
  * Full terms: see LICENSE.md.
  */
 
-export const GROUP_MIN_PADDING = 32;
-export const GROUP_PADDING_DECAY_PER_LEVEL = 16;
 export const GROUP_BASE_ALPHA = 0.22;
 export const GROUP_ALPHA_DECAY_PER_LEVEL = 0.05;
 export const GROUP_MIN_ALPHA = 0.08;
@@ -18,11 +16,6 @@ export const ELK_NODE_NODE_SPACING = 64;
 // real branch content) get the same flow-axis gap ELK uses everywhere else.
 export const FLOW_LAYER_GAP = 186;
 
-export const getGroupPadding = (basePadding: number, level: number) =>
-  Math.max(
-    GROUP_MIN_PADDING,
-    basePadding - level * GROUP_PADDING_DECAY_PER_LEVEL,
-  );
 export const getGroupBackgroundAlpha = (level: number) =>
   Math.max(
     GROUP_MIN_ALPHA,

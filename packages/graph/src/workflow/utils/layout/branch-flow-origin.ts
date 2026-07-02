@@ -12,7 +12,11 @@ import type { GroupMeta } from "../graph-builder/types";
 import { runBranchGroupPass } from "./branch-group-pass";
 import { FLOW_LAYER_GAP } from "./constants";
 import type { AxisBounds, LayoutContext } from "./geometry";
-import { collectAttachmentDescendants, countNodeIds } from "./graph-maps";
+import {
+  collectAttachmentDescendants,
+  countNodeIds,
+  getGroupOperatorNode,
+} from "./graph-maps";
 
 /**
  * ELK's layered algorithm ranks nodes by global edge-length optimization, not
@@ -30,8 +34,32 @@ export const alignBranchFlowOrigins = (
   edges: Edge[],
   groups: Map<string, GroupMeta>,
   ctx: LayoutContext,
-): GraphNode[] =>
-  runBranchGroupPass(
+): GraphNode[] => {
+  // A branch that starts with a group (e.g. a Loop) renders its box with
+  // extra padding on its leading edge — the group node itself doesn't exist
+  // yet at this stage of the pipeline (getGroupNodes runs after this pass),
+  // so the leading-edge bound computed below would otherwise ignore that
+  // padding and leave the eventual box's visible top edge sitting ahead of a
+  // sibling branch that starts with a plain node, even once their operator
+  // nodes share the same flow coordinate.
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const groupEntryLeadingInset = new Map<string, number>();
+
+  groups.forEach((group) => {
+    const padding = ctx.config?.highlights?.[group.operatorType]?.padding;
+
+    if (!padding) {
+      return;
+    }
+
+    const operatorNode = getGroupOperatorNode(group, nodesById);
+
+    if (operatorNode) {
+      groupEntryLeadingInset.set(operatorNode.id, padding / 2);
+    }
+  });
+
+  return runBranchGroupPass(
     nodes,
     edges,
     groups,
@@ -53,7 +81,15 @@ export const alignBranchFlowOrigins = (
             group,
           );
           const leadings = [...mainFlowNodeIds]
-            .map((nodeId) => getNodeBounds(nodeId, "flow")?.leading)
+            .map((nodeId) => {
+              const bounds = getNodeBounds(nodeId, "flow");
+
+              if (!bounds) {
+                return undefined;
+              }
+
+              return bounds.leading - (groupEntryLeadingInset.get(nodeId) ?? 0);
+            })
             .filter((value): value is number => value !== undefined);
 
           if (!leadings.length) {
@@ -192,3 +228,4 @@ export const alignBranchFlowOrigins = (
       });
     },
   );
+};

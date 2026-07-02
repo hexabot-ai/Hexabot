@@ -117,7 +117,17 @@ export const buildNodesAndEdges = async ({
   // padding and attachment-shifted positions).  This ensures groups, top-level
   // nodes, and Start/Stop all land on the same perpendicular-axis line.
   const finalNodes = alignAllNodesToStartAxis(
-    symmetricNodes,
+    withFreshGroupNodes(
+      symmetrizeBranchSiblings(
+        symmetricNodes,
+        projected.edges,
+        traversal.groups,
+        { config },
+      ),
+      traversal.groups,
+      config,
+      attachmentEdges,
+    ),
     projected.edges,
     traversal.groups,
     { config },
