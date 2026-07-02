@@ -1531,6 +1531,292 @@ const alignAllNodesToStartAxis = (
     };
   });
 };
+const alignGroupBoundaryNodesToGroupAxis = (
+  nodes: GraphNode[],
+  groups: Map<string, GroupMeta>,
+  ctx: LayoutContext,
+) => {
+  const isVertical = !isHorizontalDirection(ctx);
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const deltas = new Map<string, number>();
+
+  groups.forEach((group) => {
+    const groupNode = nodesById.get(group.id);
+
+    if (!groupNode) {
+      return;
+    }
+
+    const groupAxis = getAxisCenter(
+      groupNode.position,
+      getGraphNodeDimensions(groupNode, ctx),
+      isVertical,
+      "spread",
+    );
+    const groupNodes = [...group.memberNodeIds]
+      .map((nodeId) => nodesById.get(nodeId))
+      .filter((node): node is GraphNode => {
+        if (!node) {
+          return false;
+        }
+
+        return (node.data as { groupName?: string }).groupName === group.id;
+      });
+    const placeholders = groupNodes.filter(
+      (node) => node.type === ENodeType.BRANCH_PLACEHOLDER,
+    );
+
+    if (placeholders.length !== 1) {
+      return;
+    }
+
+    const boundaryNodes = [
+      ...groupNodes.filter((node) => node.type === ENodeType.OPERATOR),
+      ...placeholders,
+    ];
+
+    boundaryNodes.forEach((node) => {
+      const delta =
+        groupAxis -
+        getAxisCenter(
+          node.position,
+          getGraphNodeDimensions(node, ctx),
+          isVertical,
+          "spread",
+        );
+
+      if (Math.abs(delta) >= 1) {
+        deltas.set(node.id, delta);
+      }
+    });
+  });
+
+  return nodes.map((node) => {
+    const delta = deltas.get(node.id);
+
+    if (delta === undefined) {
+      return node;
+    }
+
+    return {
+      ...node,
+      position: translateSpread(node.position, isVertical, delta),
+    };
+  });
+};
+/**
+ * A single branch can hold a *sequence* of operator groups (e.g. Parallel →
+ * Conditional → Conditional). ELK lays each group out independently, so their
+ * box centers — where GROUP_IN/GROUP_OUT ports sit, and where the group→group
+ * overlay edges attach — can land on slightly different spread positions,
+ * making the chain (and the operators inside it) zig-zag instead of sharing one
+ * axis. `alignAllNodesToStartAxis` only unifies the top-level groups; this pass
+ * does the same for every linear chain of sibling groups deeper in the tree:
+ * it walks each group→group overlay chain and shifts every following group's
+ * whole subtree so its center matches the chain's first group. The empty
+ * placeholder a chain finally flows into (a branch's trailing "+" continuation)
+ * is pulled onto the same axis too, so the exit edge leaves the last group
+ * head-on. Because a group moves as a unit, the branch symmetry established
+ * inside it is preserved.
+ */
+const alignGroupChainAxes = (
+  nodes: GraphNode[],
+  edges: Edge[],
+  groups: Map<string, GroupMeta>,
+  ctx: LayoutContext,
+): GraphNode[] => {
+  const isVertical = !isHorizontalDirection(ctx);
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const positions = new Map(nodes.map((node) => [node.id, node.position]));
+  const { childrenByParent: attachmentChildrenByParent } = buildAttachmentMaps(
+    edges,
+    nodesById,
+  );
+  const isGroupNode = (id: string) =>
+    nodesById.get(id)?.type === ENodeType.GROUP;
+  const isPlaceholderNode = (id: string) =>
+    nodesById.get(id)?.type === ENodeType.BRANCH_PLACEHOLDER;
+  // Overlay links leaving a group: to the next sibling group sequenced within
+  // the same branch, or to the branch's trailing placeholder that ends it.
+  const overlaySuccessors = new Map<string, string[]>();
+  const overlayPredecessorCount = new Map<string, number>();
+
+  edges.forEach((edge) => {
+    if (
+      isAttachmentEdge(edge) ||
+      !isGroupNode(edge.source) ||
+      (!isGroupNode(edge.target) && !isPlaceholderNode(edge.target))
+    ) {
+      return;
+    }
+
+    appendMapValue(overlaySuccessors, edge.source, edge.target);
+    overlayPredecessorCount.set(
+      edge.target,
+      (overlayPredecessorCount.get(edge.target) ?? 0) + 1,
+    );
+  });
+  // Every node that moves when this group moves: its members (which already
+  // include nested groups' members) plus their attachment descendants, its own
+  // overlay box, and any nested group overlays.
+  const collectSubtreeIds = (group: GroupMeta): Set<string> => {
+    const ids = collectNodeIdsWithAttachmentDescendants(
+      group.memberNodeIds,
+      attachmentChildrenByParent,
+      nodesById,
+    );
+
+    if (nodesById.has(group.id)) {
+      ids.add(group.id);
+    }
+
+    groups.forEach((candidate, candidateId) => {
+      if (
+        candidateId === group.id ||
+        candidate.level <= group.level ||
+        !nodesById.has(candidateId)
+      ) {
+        return;
+      }
+
+      const isNested = [...candidate.memberNodeIds].some((memberId) =>
+        group.memberNodeIds.has(memberId),
+      );
+
+      if (isNested) {
+        ids.add(candidateId);
+      }
+    });
+
+    return ids;
+  };
+  const groupCenter = (groupId: string): number | undefined => {
+    const overlay = nodesById.get(groupId);
+
+    if (!overlay) {
+      return;
+    }
+
+    return getAxisCenter(
+      positions.get(groupId) ?? overlay.position,
+      getGraphNodeDimensions(overlay, ctx),
+      isVertical,
+      "spread",
+    );
+  };
+  const moveGroup = (group: GroupMeta, delta: number) => {
+    collectSubtreeIds(group).forEach((id) => {
+      const node = nodesById.get(id);
+
+      if (!node) {
+        return;
+      }
+
+      positions.set(
+        id,
+        translateSpread(positions.get(id) ?? node.position, isVertical, delta),
+      );
+    });
+  };
+  const moveNodeSpread = (nodeId: string, delta: number) => {
+    const node = nodesById.get(nodeId);
+
+    if (!node) {
+      return;
+    }
+
+    positions.set(
+      nodeId,
+      translateSpread(
+        positions.get(nodeId) ?? node.position,
+        isVertical,
+        delta,
+      ),
+    );
+  };
+  const visited = new Set<string>();
+
+  overlaySuccessors.forEach((_successors, rootId) => {
+    // A chain root is a group fed by a non-group (an operator branch handle or
+    // the start indicator), so nothing pulls it — align the rest of the chain
+    // onto its axis.
+    if (
+      !isGroupNode(rootId) ||
+      (overlayPredecessorCount.get(rootId) ?? 0) > 0
+    ) {
+      return;
+    }
+
+    const anchorAxis = groupCenter(rootId);
+
+    if (anchorAxis === undefined) {
+      return;
+    }
+
+    let currentId = rootId;
+
+    while (true) {
+      const successors = overlaySuccessors.get(currentId) ?? [];
+
+      // Only follow a strict 1-to-1 spine — stop at a fan-out or a join, which
+      // the branch-symmetry passes already position.
+      if (
+        successors.length !== 1 ||
+        (overlayPredecessorCount.get(successors[0]) ?? 0) !== 1 ||
+        visited.has(successors[0])
+      ) {
+        break;
+      }
+
+      const nextId = successors[0];
+
+      visited.add(nextId);
+
+      const nextGroup = groups.get(nextId);
+
+      if (nextGroup) {
+        const nextCenter = groupCenter(nextId);
+
+        if (nextCenter !== undefined) {
+          const delta = anchorAxis - nextCenter;
+
+          if (Math.abs(delta) >= 1) {
+            moveGroup(nextGroup, delta);
+          }
+        }
+
+        currentId = nextId;
+
+        continue;
+      }
+
+      // A trailing placeholder ends the chain: align it and stop.
+      const placeholder = nodesById.get(nextId);
+
+      if (placeholder) {
+        const delta =
+          anchorAxis -
+          getAxisCenter(
+            positions.get(nextId) ?? placeholder.position,
+            getGraphNodeDimensions(placeholder, ctx),
+            isVertical,
+            "spread",
+          );
+
+        if (Math.abs(delta) >= 1) {
+          moveNodeSpread(nextId, delta);
+        }
+      }
+
+      break;
+    }
+  });
+
+  return nodes.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
+  }));
+};
 const getGroupNodes = (
   nodes: GraphNode[],
   groups: Map<string, GroupMeta>,
@@ -1611,195 +1897,239 @@ const withFreshGroupNodes = (
 
   return [...groupNodes, ...contentNodes];
 };
-const symmetrizeBranchSiblings = (
+
+type BranchTargetRef = { targetId: string; branchIndex: number };
+type BranchLayoutPass = {
+  isVertical: boolean;
+  nodesById: Map<string, GraphNode>;
+  positions: Map<string, NodePosition>;
+  outgoingBySource: Map<string, OutgoingTarget[]>;
+  attachmentChildrenByParent: Map<string, string[]>;
+  moveNode: (nodeId: string, delta: number) => void;
+  collectBranch: (startId: string, group: GroupMeta) => BranchTraversal;
+  getNodeBounds: (nodeId: string, axis: Axis) => AxisBounds | undefined;
+};
+/**
+ * Shared scaffold for the branch-alignment passes below (spread-axis symmetry
+ * and flow-axis origin alignment). Both index the nodes/positions, build the
+ * main-flow adjacency, walk operator groups deepest-first, and resolve each
+ * operator's in-group branch targets: a Conditional's branches carry an indexed
+ * "operatorOut-N-M" handle (reliable spread order); a Parallel's share a single
+ * "operatorOut" handle so we fall back to edge-emission order (matching the
+ * step array); a Loop has a single branch that the `< 2` guard skips. `axis`
+ * selects which coordinate `moveNode` shifts; accumulated moves are applied to
+ * the returned nodes once every group has been handled.
+ */
+const runBranchGroupPass = (
   nodes: GraphNode[],
   edges: Edge[],
   groups: Map<string, GroupMeta>,
   ctx: LayoutContext,
+  axis: Axis,
+  handleGroup: (args: {
+    group: GroupMeta;
+    operatorNode: GraphNode;
+    branchTargets: BranchTargetRef[];
+    pass: BranchLayoutPass;
+  }) => void,
 ): GraphNode[] => {
   const isVertical = !isHorizontalDirection(ctx);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const positions = new Map(nodes.map((node) => [node.id, node.position]));
   const { outgoingBySource, attachmentChildrenByParent } =
     buildMainFlowMaps(edges);
-  const getNodeSpreadBounds = (nodeId: string): AxisBounds | undefined =>
-    getPositionedNodeAxisBounds(
-      nodeId,
-      positions,
-      nodesById,
-      ctx,
-      isVertical,
-      "spread",
-    );
-  const moveNode = (nodeId: string, delta: number) => {
-    const node = nodesById.get(nodeId);
+  const translate = axis === "spread" ? translateSpread : translateFlow;
+  const pass: BranchLayoutPass = {
+    isVertical,
+    nodesById,
+    positions,
+    outgoingBySource,
+    attachmentChildrenByParent,
+    moveNode: (nodeId, delta) => {
+      const node = nodesById.get(nodeId);
 
-    if (!node) {
-      return;
-    }
+      if (!node) {
+        return;
+      }
 
-    const position = positions.get(nodeId) ?? node.position;
-
-    positions.set(nodeId, translateSpread(position, isVertical, delta));
-  };
-  const sortedGroups = [...groups.values()].sort((a, b) => b.level - a.level);
-
-  sortedGroups.forEach((group) => {
-    const operatorNode = getGroupOperatorNode(group, nodesById);
-
-    if (!operatorNode) {
-      return;
-    }
-
-    // A Conditional's branches each have their own indexed "operatorOut-N-M"
-    // handle, which gives a reliable spread order. A Parallel's branches all
-    // share a single "operatorOut" handle, so there's no index to parse —
-    // fall back to the order the branch edges were emitted in (which matches
-    // the step array order), so Parallel branches still get spread apart
-    // with the same gap as Conditional branches instead of relying solely on
-    // ELK's default spacing.
-    const branchTargets = (outgoingBySource.get(operatorNode.id) ?? [])
-      .filter(({ targetId }) => group.memberNodeIds.has(targetId))
-      .map(({ targetId, sourceHandle }, index) => {
-        const parsedBranchIndex = parseConditionalBranchIndex(sourceHandle);
-
-        return {
-          targetId,
-          branchIndex: parsedBranchIndex >= 0 ? parsedBranchIndex : index,
-        };
-      })
-      .sort((a, b) => a.branchIndex - b.branchIndex);
-
-    if (branchTargets.length < 2) {
-      return;
-    }
-
-    const rawBranches = branchTargets.map(({ branchIndex, targetId }) => ({
-      branchIndex,
-      ...collectBranchNodeIds({
-        startId: targetId,
+      positions.set(
+        nodeId,
+        translate(positions.get(nodeId) ?? node.position, isVertical, delta),
+      );
+    },
+    collectBranch: (startId, group) =>
+      collectBranchNodeIds({
+        startId,
         group,
         groups,
         nodesById,
         outgoingBySource,
         attachmentChildrenByParent,
       }),
-    }));
-    // A Parallel's branches all reconverge on one shared join node inside
-    // the group (unlike a Conditional's branches, which each keep their own
-    // separate trailing placeholder). That shared node sits centrally among
-    // every branch, so folding it into any one branch's bounds would blow up
-    // that branch's apparent size to span all the way to the shared point —
-    // exclude it from both the bounds calculation and the move (it can't be
-    // assigned to any single branch's lane; ELK already placed it to clear
-    // every branch).
-    const mainFlowBranchCountByNodeId = countNodeIds(
-      rawBranches.map((branch) => branch.mainFlowNodeIds),
-    );
-    const branches = rawBranches
-      .map(({ branchIndex, allNodeIds }) => {
-        const ownNodeIds = [...allNodeIds].filter(
-          (nodeId) => (mainFlowBranchCountByNodeId.get(nodeId) ?? 0) <= 1,
-        );
-        const bounds = ownNodeIds.map(getNodeSpreadBounds).filter(
-          (
-            bounds,
-          ): bounds is {
-            leading: number;
-            trailing: number;
-          } => Boolean(bounds),
-        );
+    getNodeBounds: (nodeId, boundsAxis) =>
+      getPositionedNodeAxisBounds(
+        nodeId,
+        positions,
+        nodesById,
+        ctx,
+        isVertical,
+        boundsAxis,
+      ),
+  };
 
-        if (!bounds.length) {
-          return;
-        }
+  [...groups.values()]
+    .sort((a, b) => b.level - a.level)
+    .forEach((group) => {
+      const operatorNode = getGroupOperatorNode(group, nodesById);
 
-        return {
-          branchIndex,
-          nodeIds: allNodeIds,
-          leading: Math.min(...bounds.map((bounds) => bounds.leading)),
-          trailing: Math.max(...bounds.map((bounds) => bounds.trailing)),
-        };
-      })
-      .filter(
-        (
-          branch,
-        ): branch is {
-          branchIndex: number;
-          nodeIds: Set<string>;
-          leading: number;
-          trailing: number;
-        } => Boolean(branch),
+      if (!operatorNode) {
+        return;
+      }
+
+      const branchTargets: BranchTargetRef[] = (
+        outgoingBySource.get(operatorNode.id) ?? []
       )
-      .sort((a, b) => a.branchIndex - b.branchIndex);
+        .filter(({ targetId }) => group.memberNodeIds.has(targetId))
+        .map(({ targetId, sourceHandle }, index) => {
+          const parsedBranchIndex = parseConditionalBranchIndex(sourceHandle);
 
-    if (branches.length < 2) {
-      return;
-    }
+          return {
+            targetId,
+            branchIndex: parsedBranchIndex >= 0 ? parsedBranchIndex : index,
+          };
+        })
+        .sort((a, b) => a.branchIndex - b.branchIndex);
 
-    const operatorPosition =
-      positions.get(operatorNode.id) ?? operatorNode.position;
-    const operatorDimensions = getWorkflowNodeDimensions(
-      operatorNode.type,
-      ctx.config,
-    );
-    const operatorCenter = getAxisCenter(
-      operatorPosition,
-      operatorDimensions,
-      isVertical,
-      "spread",
-    );
-    const totalSize =
-      branches.reduce(
-        (sum, branch) => sum + branch.trailing - branch.leading,
-        0,
-      ) +
-      BRANCH_SPREAD_GAP * (branches.length - 1);
-    let cursor = operatorCenter - totalSize / 2;
-
-    branches.forEach((branch) => {
-      const delta = cursor - branch.leading;
-
-      if (Math.abs(delta) >= 1) {
-        branch.nodeIds.forEach((nodeId) => {
-          if ((mainFlowBranchCountByNodeId.get(nodeId) ?? 0) <= 1) {
-            moveNode(nodeId, delta);
-          }
-        });
-      }
-
-      cursor += branch.trailing - branch.leading + BRANCH_SPREAD_GAP;
-    });
-
-    // A shared convergence node (e.g. a Parallel's join placeholder) never
-    // gets assigned to any one branch's lane above, so it's left wherever it
-    // started. Center it on the operator instead — that's also where the
-    // group's own in/out ports are drawn — now that every branch has
-    // reached its final spread position.
-    mainFlowBranchCountByNodeId.forEach((count, nodeId) => {
-      if (count <= 1) {
+      if (branchTargets.length < 2) {
         return;
       }
 
-      const bounds = getNodeSpreadBounds(nodeId);
-
-      if (!bounds) {
-        return;
-      }
-
-      const delta = operatorCenter - (bounds.leading + bounds.trailing) / 2;
-
-      if (Math.abs(delta) >= 1) {
-        moveNode(nodeId, delta);
-      }
+      handleGroup({ group, operatorNode, branchTargets, pass });
     });
-  });
 
   return nodes.map((node) => ({
     ...node,
     position: positions.get(node.id) ?? node.position,
   }));
 };
+
+type SpreadBranch = {
+  branchIndex: number;
+  nodeIds: Set<string>;
+  leading: number;
+  trailing: number;
+};
+const symmetrizeBranchSiblings = (
+  nodes: GraphNode[],
+  edges: Edge[],
+  groups: Map<string, GroupMeta>,
+  ctx: LayoutContext,
+): GraphNode[] =>
+  runBranchGroupPass(
+    nodes,
+    edges,
+    groups,
+    ctx,
+    "spread",
+    ({ group, operatorNode, branchTargets, pass }) => {
+      const { isVertical, positions, moveNode, collectBranch, getNodeBounds } =
+        pass;
+      const getNodeSpreadBounds = (nodeId: string) =>
+        getNodeBounds(nodeId, "spread");
+      const rawBranches = branchTargets.map(({ branchIndex, targetId }) => ({
+        branchIndex,
+        ...collectBranch(targetId, group),
+      }));
+      // A Parallel's branches all reconverge on one shared join node inside the
+      // group (unlike a Conditional's branches, which each keep their own
+      // separate trailing placeholder). That shared node sits centrally among
+      // every branch, so folding it into any one branch's bounds would blow up
+      // that branch's apparent size to span all the way to the shared point —
+      // exclude it from both the bounds calculation and the move (it can't be
+      // assigned to any single branch's lane; ELK already placed it to clear
+      // every branch).
+      const mainFlowBranchCountByNodeId = countNodeIds(
+        rawBranches.map((branch) => branch.mainFlowNodeIds),
+      );
+      const branches = rawBranches
+        .map(({ branchIndex, allNodeIds }): SpreadBranch | undefined => {
+          const bounds = [...allNodeIds]
+            .filter(
+              (nodeId) => (mainFlowBranchCountByNodeId.get(nodeId) ?? 0) <= 1,
+            )
+            .map(getNodeSpreadBounds)
+            .filter((bounds): bounds is AxisBounds => Boolean(bounds));
+
+          if (!bounds.length) {
+            return;
+          }
+
+          return {
+            branchIndex,
+            nodeIds: allNodeIds,
+            leading: Math.min(...bounds.map((bounds) => bounds.leading)),
+            trailing: Math.max(...bounds.map((bounds) => bounds.trailing)),
+          };
+        })
+        .filter((branch): branch is SpreadBranch => Boolean(branch))
+        .sort((a, b) => a.branchIndex - b.branchIndex);
+
+      if (branches.length < 2) {
+        return;
+      }
+
+      const operatorCenter = getAxisCenter(
+        positions.get(operatorNode.id) ?? operatorNode.position,
+        getWorkflowNodeDimensions(operatorNode.type, ctx.config),
+        isVertical,
+        "spread",
+      );
+      const totalSize =
+        branches.reduce(
+          (sum, branch) => sum + branch.trailing - branch.leading,
+          0,
+        ) +
+        BRANCH_SPREAD_GAP * (branches.length - 1);
+      let cursor = operatorCenter - totalSize / 2;
+
+      branches.forEach((branch) => {
+        const delta = cursor - branch.leading;
+
+        if (Math.abs(delta) >= 1) {
+          branch.nodeIds.forEach((nodeId) => {
+            if ((mainFlowBranchCountByNodeId.get(nodeId) ?? 0) <= 1) {
+              moveNode(nodeId, delta);
+            }
+          });
+        }
+
+        cursor += branch.trailing - branch.leading + BRANCH_SPREAD_GAP;
+      });
+
+      // A shared convergence node (e.g. a Parallel's join placeholder) never
+      // gets assigned to any one branch's lane above, so it's left wherever it
+      // started. Center it on the operator instead — that's also where the
+      // group's own in/out ports are drawn — now that every branch has
+      // reached its final spread position.
+      mainFlowBranchCountByNodeId.forEach((count, nodeId) => {
+        if (count <= 1) {
+          return;
+        }
+
+        const bounds = getNodeSpreadBounds(nodeId);
+
+        if (!bounds) {
+          return;
+        }
+
+        const delta = operatorCenter - (bounds.leading + bounds.trailing) / 2;
+
+        if (Math.abs(delta) >= 1) {
+          moveNode(nodeId, delta);
+        }
+      });
+    },
+  );
 /**
  * ELK's layered algorithm ranks nodes by global edge-length optimization, not
  * by branch symmetry — so two sibling branches of the same operator (e.g. a
@@ -1816,224 +2146,168 @@ const alignBranchFlowOrigins = (
   edges: Edge[],
   groups: Map<string, GroupMeta>,
   ctx: LayoutContext,
-): GraphNode[] => {
-  const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const positions = new Map(nodes.map((node) => [node.id, node.position]));
-  const { outgoingBySource, attachmentChildrenByParent } =
-    buildMainFlowMaps(edges);
-  const getNodeFlowLeading = (nodeId: string): number | undefined => {
-    const node = nodesById.get(nodeId);
-
-    if (!node) {
-      return;
-    }
-
-    const position = positions.get(nodeId) ?? node.position;
-
-    return getFlowCoordinate(position, isVertical);
-  };
-  const moveNode = (nodeId: string, delta: number) => {
-    const node = nodesById.get(nodeId);
-
-    if (!node) {
-      return;
-    }
-
-    const position = positions.get(nodeId) ?? node.position;
-
-    positions.set(nodeId, translateFlow(position, isVertical, delta));
-  };
-  const sortedGroups = [...groups.values()].sort((a, b) => b.level - a.level);
-
-  sortedGroups.forEach((group) => {
-    const operatorNode = getGroupOperatorNode(group, nodesById);
-
-    if (!operatorNode) {
-      return;
-    }
-
-    // A Conditional's branches each have their own indexed "operatorOut-N-M"
-    // handle; a Parallel's branches all share a single "operatorOut" handle
-    // but still fan out to distinct targets. Either way, every distinct
-    // outgoing target within this group is a branch to reconcile.
-    const branchTargets = [
-      ...new Set(
-        (outgoingBySource.get(operatorNode.id) ?? [])
-          .map(({ targetId }) => targetId)
-          .filter((targetId) => group.memberNodeIds.has(targetId)),
-      ),
-    ];
-
-    if (branchTargets.length < 2) {
-      return;
-    }
-
-    const branches = branchTargets
-      .map((targetId) => {
-        const { mainFlowNodeIds, allNodeIds } = collectBranchNodeIds({
-          startId: targetId,
-          group,
-          groups,
-          nodesById,
-          outgoingBySource,
-          attachmentChildrenByParent,
-        });
-        const leadings = [...mainFlowNodeIds]
-          .map(getNodeFlowLeading)
-          .filter((value): value is number => value !== undefined);
-
-        if (!leadings.length) {
-          return;
-        }
-
-        return { nodeIds: allNodeIds, leading: Math.min(...leadings) };
-      })
-      .filter((branch): branch is { nodeIds: Set<string>; leading: number } =>
-        Boolean(branch),
-      );
-
-    if (branches.length < 2) {
-      return;
-    }
-
-    const targetLeading = Math.max(...branches.map((branch) => branch.leading));
-    // Branches of the same operator (e.g. every Parallel branch) commonly
-    // reconverge on a shared merge/join node. ELK already placed that shared
-    // node to clear the widest original branch, which is by definition at
-    // least as far along as `targetLeading` — so it never needs to move, and
-    // must not: nodes outside this group (e.g. the step after the whole
-    // Parallel) were already positioned relative to its original spot.
-    // Count which branches can reach each node so those shared convergence
-    // nodes can be excluded, then resolve one delta per remaining node — the
-    // largest any (single) branch requires — before moving anything.
-    const branchCountByNodeId = countNodeIds(
-      branches.map((branch) => branch.nodeIds),
-    );
-    const deltaByNodeId = new Map<string, number>();
-
-    branches.forEach((branch) => {
-      const delta = targetLeading - branch.leading;
-
-      if (Math.abs(delta) < 1) {
-        return;
-      }
-
-      branch.nodeIds.forEach((nodeId) => {
-        if ((branchCountByNodeId.get(nodeId) ?? 0) > 1) {
-          return;
-        }
-
-        const existing = deltaByNodeId.get(nodeId);
-
-        deltaByNodeId.set(
-          nodeId,
-          existing === undefined ? delta : Math.max(existing, delta),
-        );
-      });
-    });
-
-    deltaByNodeId.forEach((delta, nodeId) => moveNode(nodeId, delta));
-
-    // A shared convergence node (e.g. a Parallel's join placeholder) is
-    // deliberately left where ELK put it, on the assumption ELK already
-    // placed it to clear every branch. That assumption can be wrong: ELK may
-    // not rank real nested content (e.g. a task buried inside one branch's
-    // own Conditional) as the deepest node, and the shared node must clear
-    // not just individual branch nodes but the group's full padded bounding
-    // box (the visual box drawn around the group) — otherwise it renders
-    // inside the group instead of after it. It should also sit centered on
-    // the group's perpendicular axis, matching where the group's own
-    // in/out ports are drawn. Everything reachable *after* the shared node
-    // (outside this group entirely — e.g. the step following the whole
-    // Parallel) must shift by the same flow-axis amount, or it would end up
-    // positioned before the node that now feeds it.
-    const getNodeBounds = (nodeId: string): AxisBounds | undefined =>
-      getPositionedNodeAxisBounds(
-        nodeId,
-        positions,
+): GraphNode[] =>
+  runBranchGroupPass(
+    nodes,
+    edges,
+    groups,
+    ctx,
+    "flow",
+    ({ group, branchTargets, pass }) => {
+      const {
         nodesById,
-        ctx,
-        isVertical,
-        "flow",
-      );
-    const collectForwardNodeIds = (startId: string): Set<string> => {
-      const forwardNodeIds = new Set<string>();
-      const queue = [startId];
+        moveNode,
+        collectBranch,
+        getNodeBounds,
+        outgoingBySource,
+        attachmentChildrenByParent,
+      } = pass;
+      const branches = branchTargets
+        .map(({ targetId }) => {
+          const { mainFlowNodeIds, allNodeIds } = collectBranch(
+            targetId,
+            group,
+          );
+          const leadings = [...mainFlowNodeIds]
+            .map((nodeId) => getNodeBounds(nodeId, "flow")?.leading)
+            .filter((value): value is number => value !== undefined);
 
-      while (queue.length) {
-        const current = queue.shift()!;
-
-        if (forwardNodeIds.has(current)) {
-          continue;
-        }
-
-        forwardNodeIds.add(current);
-
-        collectAttachmentDescendants(
-          current,
-          attachmentChildrenByParent,
-          nodesById,
-        ).forEach((attachmentId) => forwardNodeIds.add(attachmentId));
-
-        (outgoingBySource.get(current) ?? []).forEach(({ targetId }) => {
-          if (!forwardNodeIds.has(targetId)) {
-            queue.push(targetId);
-          }
-        });
-      }
-
-      return forwardNodeIds;
-    };
-    const sharedNodeIds = [...branchCountByNodeId.entries()]
-      .filter(([, count]) => count > 1)
-      .map(([nodeId]) => nodeId);
-
-    if (sharedNodeIds.length) {
-      // Measure only the group's *other* real content — not the shared
-      // node(s) themselves, which are what we're positioning here. Since a
-      // shared node (e.g. the join placeholder) is itself a member of this
-      // group, including it in its own target bounds would be circular:
-      // the group's rendered box always grows to enclose whichever position
-      // we pick for it, so it can never "clear its own box" — what it must
-      // clear is every other real member.
-      const groupBounds = branches
-        .flatMap((branch) => [...branch.nodeIds])
-        .filter((nodeId) => (branchCountByNodeId.get(nodeId) ?? 0) <= 1)
-        .map(getNodeBounds)
-        .filter((bounds): bounds is NonNullable<typeof bounds> =>
-          Boolean(bounds),
-        );
-
-      if (groupBounds.length) {
-        const groupTrailing =
-          Math.max(...groupBounds.map((bounds) => bounds.trailing)) +
-          FLOW_LAYER_GAP;
-
-        sharedNodeIds.forEach((nodeId) => {
-          const bounds = getNodeBounds(nodeId);
-
-          if (!bounds) {
+          if (!leadings.length) {
             return;
           }
 
-          const delta = groupTrailing - bounds.leading;
+          return { nodeIds: allNodeIds, leading: Math.min(...leadings) };
+        })
+        .filter((branch): branch is { nodeIds: Set<string>; leading: number } =>
+          Boolean(branch),
+        );
 
-          if (delta >= 1) {
-            collectForwardNodeIds(nodeId).forEach((forwardId) =>
-              moveNode(forwardId, delta),
-            );
-          }
-        });
+      if (branches.length < 2) {
+        return;
       }
-    }
-  });
 
-  return nodes.map((node) => ({
-    ...node,
-    position: positions.get(node.id) ?? node.position,
-  }));
-};
+      const targetLeading = Math.max(
+        ...branches.map((branch) => branch.leading),
+      );
+      // Branches of the same operator (e.g. every Parallel branch) commonly
+      // reconverge on a shared merge/join node. ELK already placed that shared
+      // node to clear the widest original branch, which is by definition at
+      // least as far along as `targetLeading` — so it never needs to move, and
+      // must not: nodes outside this group (e.g. the step after the whole
+      // Parallel) were already positioned relative to its original spot.
+      // Count which branches can reach each node so those shared convergence
+      // nodes can be excluded, then resolve one delta per remaining node — the
+      // largest any (single) branch requires — before moving anything.
+      const branchCountByNodeId = countNodeIds(
+        branches.map((branch) => branch.nodeIds),
+      );
+      const deltaByNodeId = new Map<string, number>();
+
+      branches.forEach((branch) => {
+        const delta = targetLeading - branch.leading;
+
+        if (Math.abs(delta) < 1) {
+          return;
+        }
+
+        branch.nodeIds.forEach((nodeId) => {
+          if ((branchCountByNodeId.get(nodeId) ?? 0) > 1) {
+            return;
+          }
+
+          const existing = deltaByNodeId.get(nodeId);
+
+          deltaByNodeId.set(
+            nodeId,
+            existing === undefined ? delta : Math.max(existing, delta),
+          );
+        });
+      });
+
+      deltaByNodeId.forEach((delta, nodeId) => moveNode(nodeId, delta));
+
+      const sharedNodeIds = [...branchCountByNodeId.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([nodeId]) => nodeId);
+
+      if (!sharedNodeIds.length) {
+        return;
+      }
+
+      // A shared convergence node (e.g. a Parallel's join placeholder) is
+      // deliberately left where ELK put it, on the assumption ELK already
+      // placed it to clear every branch. That assumption can be wrong: ELK may
+      // not rank real nested content (e.g. a task buried inside one branch's
+      // own Conditional) as the deepest node, and the shared node must clear
+      // not just individual branch nodes but the group's full padded bounding
+      // box (the visual box drawn around the group) — otherwise it renders
+      // inside the group instead of after it. Everything reachable *after* the
+      // shared node (outside this group entirely — e.g. the step following the
+      // whole Parallel) must shift by the same flow-axis amount, or it would
+      // end up positioned before the node that now feeds it.
+      const collectForwardNodeIds = (startId: string): Set<string> => {
+        const forwardNodeIds = new Set<string>();
+        const queue = [startId];
+
+        while (queue.length) {
+          const current = queue.shift()!;
+
+          if (forwardNodeIds.has(current)) {
+            continue;
+          }
+
+          forwardNodeIds.add(current);
+
+          collectAttachmentDescendants(
+            current,
+            attachmentChildrenByParent,
+            nodesById,
+          ).forEach((attachmentId) => forwardNodeIds.add(attachmentId));
+
+          (outgoingBySource.get(current) ?? []).forEach(({ targetId }) => {
+            if (!forwardNodeIds.has(targetId)) {
+              queue.push(targetId);
+            }
+          });
+        }
+
+        return forwardNodeIds;
+      };
+      // Measure only the group's *other* real content — not the shared node(s)
+      // themselves, which are members of this group; including them would be
+      // circular since the rendered box always grows to enclose wherever we
+      // place them, so what they must clear is every other real member.
+      const groupBounds = branches
+        .flatMap((branch) => [...branch.nodeIds])
+        .filter((nodeId) => (branchCountByNodeId.get(nodeId) ?? 0) <= 1)
+        .map((nodeId) => getNodeBounds(nodeId, "flow"))
+        .filter((bounds): bounds is AxisBounds => Boolean(bounds));
+
+      if (!groupBounds.length) {
+        return;
+      }
+
+      const groupTrailing =
+        Math.max(...groupBounds.map((bounds) => bounds.trailing)) +
+        FLOW_LAYER_GAP;
+
+      sharedNodeIds.forEach((nodeId) => {
+        const bounds = getNodeBounds(nodeId, "flow");
+
+        if (!bounds) {
+          return;
+        }
+
+        const delta = groupTrailing - bounds.leading;
+
+        if (delta >= 1) {
+          collectForwardNodeIds(nodeId).forEach((forwardId) =>
+            moveNode(forwardId, delta),
+          );
+        }
+      });
+    },
+  );
 
 export const buildNodesAndEdges = async ({
   config,
@@ -2122,10 +2396,24 @@ export const buildNodesAndEdges = async ({
     traversal.groups,
     { config },
   );
+  const boundaryAlignedNodes = alignGroupBoundaryNodesToGroupAxis(
+    finalNodes,
+    traversal.groups,
+    { config },
+  );
 
   return {
     edges: projected.edges,
-    nodes: finalNodes,
+    // Finally, straighten any chain of sibling groups sequenced inside a branch
+    // (e.g. Parallel → Conditional → Conditional) onto a single spread axis.
+    nodes: alignGroupChainAxes(
+      boundaryAlignedNodes,
+      projected.edges,
+      traversal.groups,
+      {
+        config,
+      },
+    ),
   };
 };
 

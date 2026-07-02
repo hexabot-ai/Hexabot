@@ -2355,6 +2355,9 @@ describe("buildNodesAndEdges", () => {
     const operatorNode = graph.nodes.find(
       (node) => node.id === createStepNodeId("0:loop", "operator"),
     );
+    const loopPlaceholder = graph.nodes.find(
+      (node) => node.id === createPlaceholderNodeId("0:loop", "loop", 0),
+    );
     const afterNode = graph.nodes.find(
       (node) => node.id === createStepNodeId("1:after_loop", "task"),
     );
@@ -2362,9 +2365,19 @@ describe("buildNodesAndEdges", () => {
     expect(startNode).toBeDefined();
     expect(endNode).toBeDefined();
     expect(operatorNode).toBeDefined();
+    expect(loopPlaceholder).toBeDefined();
     expect(afterNode).toBeDefined();
 
     const indicatorDims = NODE_METRICS[ENodeType.INDICATOR]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const operatorDims = NODE_METRICS[ENodeType.OPERATOR]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const placeholderDims = NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]
+      ?.dimensions ?? {
       width: 0,
       height: 0,
     };
@@ -2382,12 +2395,16 @@ describe("buildNodesAndEdges", () => {
       | { width: number; height: number }
       | undefined;
     const groupCenterY = loopGroup!.position.y + (groupStyle?.height ?? 0) / 2;
+    const operatorCenterY = operatorNode!.position.y + operatorDims.height / 2;
+    const placeholderCenterY =
+      loopPlaceholder!.position.y + placeholderDims.height / 2;
     const afterCenterY = afterNode!.position.y + taskDims.height / 2;
 
-    // Start, Stop, group center and after-loop task must all share the same
-    // horizontal axis. Group ports are at the group's visual center (50%)
-    // so the overlay edge enters/exits at the group center y.
+    // Group ports are at the group's visual center (50%), so the loop boundary
+    // nodes and next task must share that same horizontal axis.
     expect(Math.abs(groupCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(operatorCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(placeholderCenterY - referenceAxis)).toBeLessThan(1);
     expect(Math.abs(afterCenterY - referenceAxis)).toBeLessThan(1);
   });
 
