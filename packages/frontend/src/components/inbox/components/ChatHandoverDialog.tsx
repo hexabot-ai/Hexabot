@@ -4,10 +4,14 @@
  * Full terms: see LICENSE.md.
  */
 
+import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import { X } from "lucide-react";
 import { useState } from "react";
 
 import { FormDialog } from "@/app-components/dialogs";
@@ -22,7 +26,7 @@ export type ChatHandoverDialogPayload = {
   users: User[];
 };
 
-export type ChatHandoverDialogResult = string | null;
+export type ChatHandoverDialogResult = string | null | undefined;
 
 const getDisplayName = (chatUser: User) =>
   `${chatUser.firstName} ${chatUser.lastName}`.trim() ||
@@ -50,12 +54,45 @@ export const ChatHandoverDialog = ({
         ...payload.users.filter((chatUser) => chatUser.id !== currentUser.id),
       ]
     : payload.users;
+  const selectedAssignee = assignedTo || null;
+  const hasChangedAssignee = selectedAssignee !== (payload.assignedTo || null);
+  const confirmButtonValue = selectedAssignee
+    ? "button.assign"
+    : "button.unassign";
   const handleCancel = () => {
-    void onClose(null);
+    void onClose(undefined);
   };
   const handleSubmit = () => {
-    void onClose(assignedTo || null);
+    void onClose(selectedAssignee);
   };
+  const clearAssigneeButton = assignedTo ? (
+    <InputAdornment
+      position="end"
+      sx={{
+        position: "absolute",
+        right: 32,
+      }}
+    >
+      <Tooltip title={t("button.unassign")}>
+        <IconButton
+          aria-label={t("button.unassign")}
+          edge="end"
+          size="small"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setAssignedTo("");
+          }}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          <X size={16} />
+        </IconButton>
+      </Tooltip>
+    </InputAdornment>
+  ) : null;
 
   return (
     <FormDialog
@@ -65,8 +102,8 @@ export const ChatHandoverDialog = ({
       onClose={handleCancel}
       onSubmit={handleSubmit}
       confirmButtonProps={{
-        disabled: !assignedTo,
-        value: "button.assign",
+        disabled: !hasChangedAssignee,
+        value: confirmButtonValue,
       }}
     >
       <TextField
@@ -75,6 +112,16 @@ export const ChatHandoverDialog = ({
         label={t("label.assign_to")}
         onChange={(event) => setAssignedTo(event.target.value)}
         select
+        slotProps={{
+          input: {
+            endAdornment: clearAssigneeButton,
+            sx: {
+              "& .MuiSelect-select": {
+                pr: assignedTo ? 7 : undefined,
+              },
+            },
+          },
+        }}
         value={assignedTo}
       >
         {sortedUsers.map((chatUser) => {
