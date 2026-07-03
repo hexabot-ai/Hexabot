@@ -32,7 +32,7 @@
     "src"
   ],
   "dependencies": {
-    "jsonata": "^2.1.0",
+    "jsonata": "^2.2.0",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },

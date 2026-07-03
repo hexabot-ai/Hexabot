@@ -5,7 +5,6 @@
  */
 
 import type { User } from '@hexabot-ai/types';
-import { NotFoundException } from '@nestjs/common';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { compareSync } from 'bcryptjs';
 
@@ -78,11 +77,18 @@ describe('PasswordResetService (TypeORM)', () => {
       expect(signSpy).toHaveBeenCalled();
     });
 
-    it('should throw a 404 error', async () => {
+    it('should resolve silently for an unknown email (no account enumeration)', async () => {
+      const sendMailSpy = jest.spyOn(mailerService, 'sendMail');
+      const signSpy = jest.spyOn(passwordResetService, 'sign');
       const promise = passwordResetService.requestReset({
         email: 'a@b.ca',
       });
-      await expect(promise).rejects.toThrow(NotFoundException);
+      await expect(promise).resolves.toBeUndefined();
+
+      // No email is sent and no token is generated for a non-existent account,
+      // and the response is indistinguishable from the success case.
+      expect(sendMailSpy).not.toHaveBeenCalled();
+      expect(signSpy).not.toHaveBeenCalled();
     });
 
     it('should update the password and clear the reset token', async () => {

@@ -13,6 +13,7 @@ overrides:
   glob: 13.0.6
   ip-address: 10.1.1
   js-yaml: 4.2.0
+  jsonata: ^2.2.0
   lodash: 4.18.1
   lodash-es: 4.18.1
   minimatch: 10.2.5
@@ -52,8 +53,8 @@ importers:
   packages/agentic:
     dependencies:
       jsonata:
-        specifier: ^2.1.0
-        version: 2.1.0
+        specifier: ^2.2.0
+        version: 2.2.1
       yaml:
         specifier: ^2.8.3
         version: 2.8.3
@@ -1758,6 +1759,7 @@ packages:
 
   '@clickhouse/client-common@1.8.1':
     resolution: {integrity: sha512-Z0R5zKaS3N35Op338WVRHIfoqDh9gotXZwekm0lbHQmwNaj3nY2iJ113dFYKjb1V+ESu+PvLEA//LJUGZyPQOg==}
+    deprecated: 'Deprecated: import from @clickhouse/client or @clickhouse/client-web instead.'
 
   '@clickhouse/client@1.8.1':
     resolution: {integrity: sha512-Ec0pCdwftIPD7hCxhOukHS0Zxr2tDc5mNAHBqkT3c0c6GO2WQdZkME9+EcfGcoF7+foUp82F5a0bPfSDDjfWmg==}
@@ -7720,8 +7722,8 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  jsonata@2.1.0:
-    resolution: {integrity: sha512-OCzaRMK8HobtX8fp37uIVmL8CY1IGc/a6gLsDqz3quExFR09/U78HUzWYr7T31UEB6+Eu0/8dkVD5fFDOl9a8w==}
+  jsonata@2.2.1:
+    resolution: {integrity: sha512-xd1uwUrKeIcJbsWhaoS3qAX4Ea8m0Mw0G5nlnAQvPT7TbZ5qaPdzBVTQia9KfyuyQm+nenfyjvzUDTRYHsC2sw==}
     engines: {node: '>= 8'}
 
   jsonc-parser@3.3.1:
@@ -18719,7 +18721,7 @@ snapshots:
 
   json5@2.2.3: {}
 
-  jsonata@2.1.0: {}
+  jsonata@2.2.1: {}
 
   jsonc-parser@3.3.1: {}
 
