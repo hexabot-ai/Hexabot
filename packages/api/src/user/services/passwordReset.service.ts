@@ -9,7 +9,6 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService, JwtSignOptions, JwtVerifyOptions } from '@nestjs/jwt';
@@ -54,7 +53,15 @@ export class PasswordResetService {
       where: { email: dto.email },
     });
     if (!user) {
-      throw new NotFoundException('User not found');
+      // Do not disclose whether an account exists for the given email.
+      // Returning silently prevents user/account enumeration (CWE-204) via
+      // the public, unauthenticated password-reset endpoint.
+      this.logger.log(
+        `Password reset requested for a non-existent email`,
+        'PasswordResetService',
+      );
+
+      return;
     }
     const jwt = await this.sign({ ...dto });
 
