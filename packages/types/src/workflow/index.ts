@@ -8,15 +8,21 @@ export {
   DirectionType,
   McpServerTransport,
   MemoryScope,
+  WebhookAuthType,
+  WebhookJwtAlgorithm,
+  webhookAuthTypeSchema,
+  webhookJwtAlgorithmSchema,
   WorkflowType,
   WorkflowVersionAction,
 } from "./domain";
 
 export {
   createWorkflowFullSchema,
+  webhookTriggerSchema,
   workflowFullSchema,
   workflowSchema,
   workflowStubSchema,
+  type WebhookTriggerConfig,
   type Workflow,
   type WorkflowDefinitionParser,
   type WorkflowFull,

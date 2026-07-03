@@ -4,12 +4,28 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Controller, Get, Param, Post, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 
 import { LoggerService } from '@/logger/logger.service';
 import { UuidParam } from '@/utils';
 import { Roles } from '@/utils/decorators/roles.decorator';
+import { WebhookTriggerGuard } from '@/workflow/guards/webhook-trigger.guard';
+import {
+  WebhookTriggerService,
+  WorkflowTriggerResult,
+} from '@/workflow/services/webhook-trigger.service';
 
 import { ChannelService } from './channel.service';
 import { ChannelDownloadService } from './services/channel-download.service';
@@ -19,8 +35,37 @@ export class WebhookController {
   constructor(
     private readonly channelService: ChannelService,
     private readonly channelDownloadService: ChannelDownloadService,
+    private readonly webhookTriggerService: WebhookTriggerService,
     private readonly logger: LoggerService,
   ) {}
+
+  /**
+   * Public webhook endpoint that triggers a manual workflow run.
+   *
+   * {@link WebhookTriggerGuard} authenticates the request; this handler only
+   * forwards the workflow ID and payload to the service. The run executes
+   * synchronously and the response carries its final status and output.
+   *
+   * The whole request body is the workflow input, so third-party services
+   * that emit fixed body shapes can call the endpoint directly.
+   *
+   * Declared before the `:sourceRef/:workflowId` catch-all so `POST
+   * /webhook/:id/trigger` is matched first: NestJS registers routes in method
+   * definition order and Express 5 resolves overlapping dynamic routes by
+   * registration order.
+   *
+   * @param input - Optional workflow input payload (the request body).
+   */
+  @Roles('public')
+  @UseGuards(WebhookTriggerGuard)
+  @Post(':id/trigger')
+  @HttpCode(200)
+  async trigger(
+    @UuidParam('id') id: string,
+    @Body() input: unknown = {},
+  ): Promise<WorkflowTriggerResult> {
+    return await this.webhookTriggerService.trigger(id, input);
+  }
 
   @Roles('public')
   @Get(':sourceRef/download/:name')

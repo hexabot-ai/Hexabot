@@ -36,6 +36,19 @@ export enum DirectionType {
   VERTICAL = "vertical",
 }
 
+export enum WebhookAuthType {
+  none = "none",
+  basic = "basic",
+  header = "header",
+  jwt = "jwt",
+}
+
+export enum WebhookJwtAlgorithm {
+  HS256 = "HS256",
+  HS384 = "HS384",
+  HS512 = "HS512",
+}
+
 export const workflowTypeSchema = z.enum(WorkflowType);
 
 export const workflowVersionActionSchema = z.enum(WorkflowVersionAction);
@@ -45,3 +58,7 @@ export const memoryScopeSchema = z.enum(MemoryScope);
 export const mcpServerTransportSchema = z.enum(McpServerTransport);
 
 export const directionTypeSchema = z.enum(DirectionType);
+
+export const webhookAuthTypeSchema = z.enum(WebhookAuthType);
+
+export const webhookJwtAlgorithmSchema = z.enum(WebhookJwtAlgorithm);

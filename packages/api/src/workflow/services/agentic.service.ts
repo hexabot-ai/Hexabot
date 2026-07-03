@@ -57,9 +57,14 @@ export class AgenticService implements WorkflowCallService {
   /**
    * Process an event by resuming a suspended workflow run if it exists,
    * otherwise start a new run using the latest configured workflow.
+   *
+   * Callers that already resolved the target workflow (e.g. the webhook
+   * trigger path) can pass it through `options.workflow` to avoid a redundant
+   * lookup.
    */
   async handleEvent(
     event: TriggerEventWrapper,
+    options: { workflow?: WorkflowFull } = {},
   ): Promise<WorkflowRunFull | null> {
     const initiator = event.getInitiator();
     const requestedWorkflowId = event.getWorkflowId();
@@ -98,9 +103,11 @@ export class AgenticService implements WorkflowCallService {
         return execution.run;
       }
 
-      const workflowToRun = requestedWorkflowId
-        ? await this.workflowService.findOneAndPopulate(requestedWorkflowId)
-        : await this.workflowService.pickWorkflow();
+      const workflowToRun =
+        options.workflow ??
+        (requestedWorkflowId
+          ? await this.workflowService.findOneAndPopulate(requestedWorkflowId)
+          : await this.workflowService.pickWorkflow());
       if (!workflowToRun) {
         this.logger.warn('No workflow available to handle incoming event', {
           requestedWorkflowId: requestedWorkflowId ?? null,

@@ -6,6 +6,8 @@
 
 import {
   createWorkflowFullSchema as createTypesWorkflowFullSchema,
+  WebhookTriggerConfig,
+  webhookTriggerSchema,
   workflowSchema,
 } from '@hexabot-ai/types';
 import {
@@ -79,6 +81,16 @@ export class WorkflowCreateDto {
   @IsOptional()
   @Validate(WorkflowInputSchemaValidator)
   inputSchema?: JsonSchema;
+
+  @ApiPropertyOptional({
+    description:
+      'Webhook trigger configuration (manual workflows only). Enables a public ' +
+      'trigger URL and defines how incoming calls authenticate.',
+    type: Object,
+  })
+  @IsOptional()
+  @Validate(webhookTriggerSchema)
+  webhookTrigger?: WebhookTriggerConfig | null;
 
   @ApiPropertyOptional({
     description: 'Indicates if the workflow is built-in',

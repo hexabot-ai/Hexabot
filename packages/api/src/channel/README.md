@@ -33,12 +33,29 @@ At request time:
 
 `WebhookController` is mounted at `/webhook` (effective path is `/api/webhook/*` because of the global `/api` prefix):
 
+- `POST /api/webhook/:id/trigger`
 - `GET /api/webhook/:sourceRef`
 - `POST /api/webhook/:sourceRef`
 - `GET /api/webhook/:sourceRef/:workflowId`
 - `POST /api/webhook/:sourceRef/:workflowId`
 - `GET /api/webhook/:sourceRef/download/:name?t=<jwt>`
 - `GET /api/webhook/:sourceRef/not-found`
+
+### Manual Workflow Trigger
+
+`POST /api/webhook/:id/trigger` runs a manual workflow from an external caller.
+It is declared before the `:sourceRef/:workflowId` catch-all so it wins route
+resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
+
+- `WebhookTriggerGuard` (workflow module) authorizes the call: the workflow
+  must exist, be `manual`, have `webhookTrigger.enabled`, and the request must
+  satisfy the configured auth (`none`, `basic`, `header`, or `jwt`). Workflows
+  that are not exposed as webhooks respond `404` without disclosing existence.
+- The JSON request body is the workflow input and is validated against the
+  workflow `inputSchema` (`400` on mismatch).
+- The run executes synchronously; the `200` response carries the outcome:
+  `{ runId, status, output, error }`. When no run could be started the endpoint
+  responds `422`.
 
 Also available:
 
