@@ -34,6 +34,7 @@ import { alignGroupChainAxes } from "./layout/group-chain-alignment";
 import { getGroupNodes, withFreshGroupNodes } from "./layout/group-nodes";
 import { alignNextNodesWithPlaceholders } from "./layout/next-node-alignment";
 import { alignAllNodesToStartAxis } from "./layout/start-axis-alignment";
+import { tightenTrailingPlaceholders } from "./layout/trailing-placeholder-flow";
 
 export const buildNodesAndEdges = async ({
   config,
@@ -77,8 +78,14 @@ export const buildNodesAndEdges = async ({
     projected.edges,
     { config },
   );
-  const flowAlignedNodes = alignBranchFlowOrigins(
+  const trailingTightenedNodes = tightenTrailingPlaceholders(
     emptyBranchAlignedNodes,
+    projected.edges,
+    traversal.groups,
+    { config },
+  );
+  const flowAlignedNodes = alignBranchFlowOrigins(
+    trailingTightenedNodes,
     projected.edges,
     traversal.groups,
     { config },

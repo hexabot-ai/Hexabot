@@ -24,19 +24,20 @@ import {
 } from "./graph-maps";
 
 /**
- * A single branch can hold a *sequence* of operator groups (e.g. Parallel →
- * Conditional → Conditional). ELK lays each group out independently, so their
- * box centers — where GROUP_IN/GROUP_OUT ports sit, and where the group→group
- * overlay edges attach — can land on slightly different spread positions,
- * making the chain (and the operators inside it) zig-zag instead of sharing one
- * axis. `alignAllNodesToStartAxis` only unifies the top-level groups; this pass
- * does the same for every linear chain of sibling groups deeper in the tree:
- * it walks each group→group overlay chain and shifts every following group's
- * whole subtree so its center matches the chain's first group. The empty
- * placeholder a chain finally flows into (a branch's trailing "+" continuation)
- * is pulled onto the same axis too, so the exit edge leaves the last group
- * head-on. Because a group moves as a unit, the branch symmetry established
- * inside it is preserved.
+ * A single branch can hold a *sequence* of operator groups, possibly with
+ * plain steps between them (e.g. Parallel → Send Message → Conditional). ELK
+ * lays each element out independently, so their centers — where GROUP_IN/
+ * GROUP_OUT ports sit, and where the sequence's overlay edges attach — can
+ * land on slightly different spread positions, making the chain (and the
+ * operators inside it) zig-zag instead of sharing one axis.
+ * `alignAllNodesToStartAxis` only unifies the top-level groups; this pass does
+ * the same for every linear chain deeper in the tree: it walks each sequence
+ * from its first group and shifts every following group's whole subtree — and
+ * every plain step's node (with its attachments) — so its center matches that
+ * first group. The empty placeholder a chain finally flows into (a branch's
+ * trailing "+" continuation) is pulled onto the same axis too, so the exit
+ * edge leaves the last element head-on. Because a group moves as a unit, the
+ * branch symmetry established inside it is preserved.
  */
 export const alignGroupChainAxes = (
   nodes: GraphNode[],
@@ -55,25 +56,28 @@ export const alignGroupChainAxes = (
     nodesById.get(id)?.type === ENodeType.GROUP;
   const isPlaceholderNode = (id: string) =>
     nodesById.get(id)?.type === ENodeType.BRANCH_PLACEHOLDER;
-  // Overlay links leaving a group: to the next sibling group sequenced within
-  // the same branch, or to the branch's trailing placeholder that ends it.
+  const isTaskNode = (id: string) => nodesById.get(id)?.type === ENodeType.TASK;
+  // Links continuing a branch's sequence: from a group or a plain step to the
+  // next sibling group/step sequenced within the same branch, or to the
+  // branch's trailing placeholder that ends it. Hidden edges are the direct
+  // duplicates of group overlay links — skipping them keeps one link per hop.
   const overlaySuccessors = new Map<string, string[]>();
-  const overlayPredecessorCount = new Map<string, number>();
+  const overlayPredecessors = new Map<string, string[]>();
 
   edges.forEach((edge) => {
     if (
       isAttachmentEdge(edge) ||
-      !isGroupNode(edge.source) ||
-      (!isGroupNode(edge.target) && !isPlaceholderNode(edge.target))
+      edge.hidden ||
+      (!isGroupNode(edge.source) && !isTaskNode(edge.source)) ||
+      (!isGroupNode(edge.target) &&
+        !isPlaceholderNode(edge.target) &&
+        !isTaskNode(edge.target))
     ) {
       return;
     }
 
     appendMapValue(overlaySuccessors, edge.source, edge.target);
-    overlayPredecessorCount.set(
-      edge.target,
-      (overlayPredecessorCount.get(edge.target) ?? 0) + 1,
-    );
+    appendMapValue(overlayPredecessors, edge.target, edge.source);
   });
   // Every node that moves when this group moves: its members (which already
   // include nested groups' members) plus their attachment descendants, its own
@@ -142,16 +146,35 @@ export const alignGroupChainAxes = (
   const moveGroup = (group: GroupMeta, delta: number) => {
     collectSubtreeIds(group).forEach((id) => moveNodeSpread(id, delta));
   };
+  // Whether a spine of 1-to-1 links upstream of `id` (walking back through
+  // plain steps) eventually reaches a group. If it does, `id` is pulled by
+  // that group's chain instead of anchoring its own.
+  const hasUpstreamGroupInSpine = (id: string): boolean => {
+    const seen = new Set<string>([id]);
+    let currentId = id;
+
+    for (;;) {
+      const predecessors = overlayPredecessors.get(currentId) ?? [];
+
+      if (predecessors.length !== 1 || seen.has(predecessors[0])) {
+        return false;
+      }
+
+      if (isGroupNode(predecessors[0])) {
+        return true;
+      }
+
+      seen.add(predecessors[0]);
+      currentId = predecessors[0];
+    }
+  };
   const visited = new Set<string>();
 
   overlaySuccessors.forEach((_successors, rootId) => {
-    // A chain root is a group fed by a non-group (an operator branch handle or
-    // the start indicator), so nothing pulls it — align the rest of the chain
-    // onto its axis.
-    if (
-      !isGroupNode(rootId) ||
-      (overlayPredecessorCount.get(rootId) ?? 0) > 0
-    ) {
+    // A chain root is a group fed by a non-group spine (an operator branch
+    // handle, the start indicator, or leading plain steps), so nothing pulls
+    // it — align the rest of the chain onto its axis.
+    if (!isGroupNode(rootId) || hasUpstreamGroupInSpine(rootId)) {
       return;
     }
 
@@ -170,7 +193,7 @@ export const alignGroupChainAxes = (
       // the branch-symmetry passes already position.
       if (
         successors.length !== 1 ||
-        (overlayPredecessorCount.get(successors[0]) ?? 0) !== 1 ||
+        (overlayPredecessors.get(successors[0])?.length ?? 0) !== 1 ||
         visited.has(successors[0])
       ) {
         break;
@@ -198,25 +221,35 @@ export const alignGroupChainAxes = (
         continue;
       }
 
-      // A trailing placeholder ends the chain: align it and stop.
-      const placeholder = nodesById.get(nextId);
+      // A plain step sequenced between groups, or the trailing placeholder
+      // that ends the chain: center it (and its attachments) on the axis.
+      const nextNode = nodesById.get(nextId);
 
-      if (placeholder) {
+      if (nextNode) {
         const delta =
           anchorAxis -
           getAxisCenter(
-            positions.get(nextId) ?? placeholder.position,
-            getGraphNodeDimensions(placeholder, ctx),
+            positions.get(nextId) ?? nextNode.position,
+            getGraphNodeDimensions(nextNode, ctx),
             isVertical,
             "spread",
           );
 
         if (Math.abs(delta) >= 1) {
-          moveNodeSpread(nextId, delta);
+          collectNodeIdsWithAttachmentDescendants(
+            [nextId],
+            attachmentChildrenByParent,
+            nodesById,
+          ).forEach((id) => moveNodeSpread(id, delta));
         }
       }
 
-      break;
+      // The trailing placeholder is the chain's end; a plain step continues it.
+      if (!nextNode || isPlaceholderNode(nextId)) {
+        break;
+      }
+
+      currentId = nextId;
     }
   });
 

@@ -30,7 +30,7 @@ import {
   createPlaceholderNodeId,
   createStepNodeId,
 } from "./graph-builder/id-factory";
-import { BRANCH_SPREAD_GAP } from "./layout/constants";
+import { BRANCH_SPREAD_GAP, FLOW_LAYER_GAP } from "./layout/constants";
 import {
   buildNodesAndEdges,
   getWorkflowDefaultConfig,
@@ -3034,5 +3034,173 @@ describe("buildNodesAndEdges", () => {
     expect(gapBelow).toBeGreaterThan(0);
     expect(gapAbove).toBeLessThanOrEqual(BRANCH_SPREAD_GAP + 1);
     expect(gapBelow).toBeLessThanOrEqual(BRANCH_SPREAD_GAP + 1);
+  });
+
+  it("aligns a plain step sequenced between two groups inside a branch onto the chain axis", async () => {
+    // Regression: alignGroupChainAxes used to break its chain walk at plain
+    // (non-group) steps, so a task sequenced between a parallel group and a
+    // conditional group inside a branch kept its pre-symmetry position while
+    // the groups' contents moved — leaving the step and the following group
+    // visually off the parallel group's exit axis.
+    const parallelStep: CompiledParallelStep = {
+      id: "1:parallel",
+      label: "parallel",
+      type: StepType.Parallel,
+      strategy: "wait_all",
+      steps: [
+        taskStep("1.parallel.0:msg_one", "msg_one"),
+        taskStep("1.parallel.1:msg_two", "msg_two"),
+        nestedConditionalStep("1.parallel.2:nested"),
+      ],
+    };
+    const chainedConditional = nestedConditionalStep("3:chained");
+    const rootConditional: CompiledConditionalStep = {
+      id: "0:root",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:root:when:0",
+          condition: { kind: "literal", value: "top" },
+          steps: [taskStep("0.root.0:first", "first")],
+        },
+        {
+          id: "0:root:when:1",
+          condition: { kind: "literal", value: "middle" },
+          steps: [
+            parallelStep,
+            taskStep("2:between", "between"),
+            chainedConditional,
+          ],
+        },
+        {
+          id: "0:root:when:2",
+          steps: [taskStep("0.root.2:last", "last")],
+        },
+      ],
+    };
+    const graph = await buildGraph({
+      flow: [rootConditional],
+      tasks: baseTasks(["msg_one", "msg_two", "first", "between", "last"]),
+    });
+    const centerOf = (nodeId: string) => {
+      const span = getNodeSpreadSpan(
+        graph.nodes.find((candidate) => candidate.id === nodeId),
+        "horizontal",
+      );
+
+      return (span.leading + span.trailing) / 2;
+    };
+    const parallelCenter = centerOf(createGroupId(parallelStep.id));
+    const betweenCenter = centerOf(createStepNodeId("2:between", "task"));
+    const chainedCenter = centerOf(createGroupId(chainedConditional.id));
+
+    expect(Math.abs(betweenCenter - parallelCenter)).toBeLessThan(1);
+    expect(Math.abs(chainedCenter - parallelCenter)).toBeLessThan(1);
+  });
+
+  it("pulls each trailing branch placeholder to a uniform flow gap after its content", async () => {
+    // Regression: ELK layers every branch's trailing "+" near the flow's
+    // convergence point, so a short branch ended with a link stretching across
+    // the whole span of its longest sibling instead of a uniform gap.
+    const nestedConditional = nestedConditionalStep("0.root.2:nested");
+    const rootConditional: CompiledConditionalStep = {
+      id: "0:root",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:root:when:0",
+          condition: { kind: "literal", value: "short" },
+          steps: [taskStep("0.root.0:solo", "solo")],
+        },
+        {
+          id: "0:root:when:1",
+          condition: { kind: "literal", value: "long" },
+          steps: [
+            taskStep("0.root.1:one", "one"),
+            taskStep("0.root.1:two", "two"),
+            taskStep("0.root.1:three", "three"),
+          ],
+        },
+        {
+          id: "0:root:when:2",
+          steps: [nestedConditional],
+        },
+      ],
+    };
+    const graph = await buildGraph({
+      flow: [rootConditional],
+      tasks: baseTasks(["solo", "one", "two", "three"]),
+    });
+    const nodeById = (nodeId: string) => {
+      const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+
+      if (!node) {
+        throw new Error(`Expected node ${nodeId} to be defined`);
+      }
+
+      return node;
+    };
+    const taskWidth = NODE_METRICS[ENodeType.TASK]?.dimensions.width ?? 0;
+    const soloNode = nodeById(createStepNodeId("0.root.0:solo", "task"));
+    const lastLongNode = nodeById(createStepNodeId("0.root.1:three", "task"));
+    const nestedGroup = nodeById(createGroupId(nestedConditional.id));
+    const nestedGroupRightEdge =
+      nestedGroup.position.x +
+      ((nestedGroup.style as { width?: number })?.width ?? 0);
+    const placeholderX = (branchIndex: number) =>
+      nodeById(createPlaceholderNodeId("0:root", "conditional", branchIndex))
+        .position.x;
+    const shortGap = placeholderX(0) - (soloNode.position.x + taskWidth);
+    const longGap = placeholderX(1) - (lastLongNode.position.x + taskWidth);
+    const groupGap = placeholderX(2) - nestedGroupRightEdge;
+
+    expect(Math.abs(shortGap - FLOW_LAYER_GAP)).toBeLessThan(1);
+    expect(Math.abs(longGap - FLOW_LAYER_GAP)).toBeLessThan(1);
+    expect(Math.abs(groupGap - FLOW_LAYER_GAP)).toBeLessThan(1);
+  });
+
+  it("keeps a multi-input parallel join placeholder at the convergence point", async () => {
+    const parallelStep: CompiledParallelStep = {
+      id: "0:parallel",
+      label: "parallel",
+      type: StepType.Parallel,
+      strategy: "wait_all",
+      steps: [
+        taskStep("0.parallel.0:short_branch", "short_branch"),
+        taskStep("0.parallel.1:long_one", "long_one"),
+      ],
+    };
+    const flow: CompiledStep[] = [parallelStep];
+    const graph = await buildGraph({
+      flow,
+      tasks: baseTasks(["short_branch", "long_one"]),
+    });
+    const joinPlaceholder = graph.nodes.find(
+      (candidate) =>
+        candidate.id === createPlaceholderNodeId("0:parallel", "parallel", 2),
+    );
+    const branchEnds = ["0.parallel.0:short_branch", "0.parallel.1:long_one"]
+      .map((stepId) =>
+        graph.nodes.find(
+          (candidate) => candidate.id === createStepNodeId(stepId, "task"),
+        ),
+      )
+      .map(
+        (node) =>
+          (node?.position.x ?? 0) +
+          (NODE_METRICS[ENodeType.TASK]?.dimensions.width ?? 0),
+      );
+
+    if (!joinPlaceholder) {
+      throw new Error("Expected join placeholder to be defined");
+    }
+
+    // The join collects every branch exit, so it must stay past all of them
+    // rather than being pulled next to any single branch's end.
+    branchEnds.forEach((branchEnd) => {
+      expect(joinPlaceholder.position.x).toBeGreaterThanOrEqual(branchEnd);
+    });
   });
 });
