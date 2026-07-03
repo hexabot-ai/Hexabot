@@ -27,8 +27,6 @@ import {
   useState,
 } from "react";
 
-import "@xyflow/react/dist/style.css";
-
 import {
   WORKFLOW_VIEWPORT_MAX_ZOOM,
   WORKFLOW_VIEWPORT_MIN_ZOOM,
@@ -149,6 +147,38 @@ const resolveColorMode = (mode: WorkflowGraphColorMode): "light" | "dark" => {
 
   return mode;
 };
+// Resolves "system" against the OS preference and tracks its changes.
+const useResolvedColorMode = (
+  mode: WorkflowGraphColorMode,
+): "light" | "dark" => {
+  const [resolved, setResolved] = useState(() => resolveColorMode(mode));
+
+  useEffect(() => {
+    if (
+      mode !== "system" ||
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      setResolved(resolveColorMode(mode));
+
+      return;
+    }
+
+    const media = window.matchMedia(SYSTEM_DARK_QUERY);
+    const handleChange = () => {
+      setResolved(media.matches ? "dark" : "light");
+    };
+
+    handleChange();
+    media.addEventListener("change", handleChange);
+
+    return () => {
+      media.removeEventListener("change", handleChange);
+    };
+  }, [mode]);
+
+  return resolved;
+};
 const areStringArraysEqual = (
   left: readonly string[] | undefined,
   right: readonly string[] | undefined,
@@ -230,9 +260,7 @@ const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
     },
     ref,
   ) => {
-    const [resolvedColorMode, setResolvedColorMode] = useState<
-      "light" | "dark"
-    >(() => resolveColorMode(colorMode));
+    const resolvedColorMode = useResolvedColorMode(colorMode);
     const [isGraphMoving, setIsGraphMoving] = useState(false);
     const [currentZoom, setCurrentZoom] = useState(1);
     const lastViewportRef = useRef<Viewport>({ x: 0, y: 0, zoom: 1 });
@@ -346,35 +374,6 @@ const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
       lastViewportRef.current = initialViewport;
       setCurrentZoom(initialViewport.zoom);
     }, [initialViewport.x, initialViewport.y, initialViewport.zoom]);
-
-    useEffect(() => {
-      if (colorMode !== "system") {
-        setResolvedColorMode(colorMode);
-
-        return;
-      }
-
-      if (
-        typeof window === "undefined" ||
-        typeof window.matchMedia !== "function"
-      ) {
-        setResolvedColorMode("light");
-
-        return;
-      }
-
-      const media = window.matchMedia(SYSTEM_DARK_QUERY);
-      const handleChange = () => {
-        setResolvedColorMode(media.matches ? "dark" : "light");
-      };
-
-      handleChange();
-      media.addEventListener("change", handleChange);
-
-      return () => {
-        media.removeEventListener("change", handleChange);
-      };
-    }, [colorMode]);
 
     const handleMoveStart = useCallback<OnMove>((_event, nextViewport) => {
       setIsGraphMoving(true);

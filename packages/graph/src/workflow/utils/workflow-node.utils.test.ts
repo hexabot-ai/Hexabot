@@ -30,6 +30,7 @@ import {
   createPlaceholderNodeId,
   createStepNodeId,
 } from "./graph-builder/id-factory";
+import { BRANCH_SPREAD_GAP } from "./layout/constants";
 import {
   buildNodesAndEdges,
   getWorkflowDefaultConfig,
@@ -189,6 +190,101 @@ const getAttachmentInterval = (
   left: Math.min(...nodes.map((node) => node.position.x)),
   right: Math.max(...nodes.map(getNodeRight)),
 });
+const getNodeSpreadSpan = (
+  node:
+    | {
+        position: { x: number; y: number };
+        type?: string;
+        style?: unknown;
+      }
+    | undefined,
+  direction: "horizontal" | "vertical",
+) => {
+  if (!node) {
+    throw new Error("Expected node to be defined");
+  }
+
+  const style = node.style as { width?: number; height?: number } | undefined;
+  const dimensions =
+    node.type === ENodeType.GROUP
+      ? {
+          width: style?.width ?? 0,
+          height: style?.height ?? 0,
+        }
+      : (NODE_METRICS[node.type as ENodeType]?.dimensions ?? {
+          width: 0,
+          height: 0,
+        });
+  const leading = direction === "vertical" ? node.position.x : node.position.y;
+  const size = direction === "vertical" ? dimensions.width : dimensions.height;
+
+  return {
+    leading,
+    trailing: leading + size,
+  };
+};
+const getNodeSpreadCenter = (
+  node: {
+    position: { x: number; y: number };
+    type?: string;
+    style?: unknown;
+  },
+  direction: "horizontal" | "vertical",
+) => {
+  const span = getNodeSpreadSpan(node, direction);
+
+  return (span.leading + span.trailing) / 2;
+};
+const nestedConditionalStep = (id: string): CompiledConditionalStep => ({
+  id,
+  label: "conditional",
+  type: StepType.Conditional,
+  branches: [
+    {
+      id: `${id}:when:0`,
+      condition: { kind: "literal", value: "yes" },
+      steps: [],
+    },
+    {
+      id: `${id}:when:1`,
+      steps: [],
+    },
+  ],
+});
+const expectBranchSpansToBeSeparatedAndSymmetric = ({
+  branchNodes,
+  direction,
+  operatorNode,
+}: {
+  branchNodes: Array<{
+    position: { x: number; y: number };
+    type?: string;
+    style?: unknown;
+  }>;
+  direction: "horizontal" | "vertical";
+  operatorNode: {
+    position: { x: number; y: number };
+    type?: string;
+    style?: unknown;
+  };
+}) => {
+  const spans = branchNodes.map((node) => getNodeSpreadSpan(node, direction));
+
+  spans.forEach((span, index) => {
+    if (index === 0) {
+      return;
+    }
+
+    expect(span.leading).toBeGreaterThanOrEqual(spans[index - 1].trailing);
+  });
+
+  const first = spans[0];
+  const last = spans[spans.length - 1];
+  const branchesCenter = (first.leading + last.trailing) / 2;
+  const operatorCenter = getNodeSpreadCenter(operatorNode, direction);
+
+  expect(Math.abs(branchesCenter - operatorCenter)).toBeLessThan(1);
+};
 
 describe("buildNodesAndEdges", () => {
   it("always renders action steps as task nodes", async () => {
@@ -1495,6 +1591,33 @@ describe("buildNodesAndEdges", () => {
     expect(groupBottom).toBeGreaterThanOrEqual(attachmentBottom);
   });
 
+  it("uses React Flow node z-index for group overlays", async () => {
+    const loopStep: CompiledLoopStep = {
+      id: "0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [taskStep("0.loop.0:loop_task", "loop_task")],
+    };
+    const graph = await buildGraph({
+      flow: [loopStep],
+      tasks: baseTasks(["loop_task"]),
+    });
+    const loopGroup = graph.nodes.find(
+      (node) => node.id === createGroupId(loopStep.id),
+    );
+
+    expect(loopGroup).toBeDefined();
+    expect(loopGroup?.zIndex).toBe(-1);
+    expect((loopGroup?.style as { zIndex?: number } | undefined)?.zIndex).toBe(
+      undefined,
+    );
+  });
+
   it("attaches end-indicator edges with next insert path metadata", async () => {
     const flow: CompiledStep[] = [taskStep("0:single", "single")];
     const graph = await buildGraph({ flow, tasks: baseTasks(["single"]) });
@@ -1566,6 +1689,211 @@ describe("buildNodesAndEdges", () => {
         ?.insertPath,
     ).toBeDefined();
   });
+
+  for (const direction of ["horizontal", "vertical"] as const) {
+    it(`keeps empty branch placeholders separated from a nested group branch in ${direction} mode`, async () => {
+      const nested = nestedConditionalStep("0.conditional.0:nested");
+      const conditionalStep: CompiledConditionalStep = {
+        id: "0:conditional",
+        label: "conditional",
+        type: StepType.Conditional,
+        branches: [
+          {
+            id: "0:conditional:when:0",
+            condition: { kind: "literal", value: "nested" },
+            steps: [nested],
+          },
+          {
+            id: "0:conditional:when:1",
+            condition: { kind: "literal", value: "empty" },
+            steps: [],
+          },
+          {
+            id: "0:conditional:when:2",
+            steps: [],
+          },
+        ],
+      };
+      const graph = await buildGraph({
+        flow: [conditionalStep],
+        tasks: {},
+        direction,
+      });
+      const operator = graph.nodes.find(
+        (node) => node.id === createStepNodeId(conditionalStep.id, "operator"),
+      );
+      const nestedGroup = graph.nodes.find(
+        (node) => node.id === createGroupId(nested.id),
+      );
+      const placeholder1 = graph.nodes.find(
+        (node) =>
+          node.id ===
+          createPlaceholderNodeId(conditionalStep.id, "conditional", 1),
+      );
+      const placeholder2 = graph.nodes.find(
+        (node) =>
+          node.id ===
+          createPlaceholderNodeId(conditionalStep.id, "conditional", 2),
+      );
+
+      expect(operator).toBeDefined();
+      expect(nestedGroup).toBeDefined();
+      expect(placeholder1).toBeDefined();
+      expect(placeholder2).toBeDefined();
+      expectBranchSpansToBeSeparatedAndSymmetric({
+        branchNodes: [nestedGroup!, placeholder1!, placeholder2!],
+        direction,
+        operatorNode: operator!,
+      });
+    });
+
+    it(`keeps an empty branch placeholder between nested group branches in ${direction} mode`, async () => {
+      const nested0 = nestedConditionalStep("0.conditional.0:nested");
+      const nested2 = nestedConditionalStep("0.conditional.2:nested");
+      const conditionalStep: CompiledConditionalStep = {
+        id: "0:conditional",
+        label: "conditional",
+        type: StepType.Conditional,
+        branches: [
+          {
+            id: "0:conditional:when:0",
+            condition: { kind: "literal", value: "nested" },
+            steps: [nested0],
+          },
+          {
+            id: "0:conditional:when:1",
+            condition: { kind: "literal", value: "empty" },
+            steps: [],
+          },
+          {
+            id: "0:conditional:when:2",
+            steps: [nested2],
+          },
+        ],
+      };
+      const graph = await buildGraph({
+        flow: [conditionalStep],
+        tasks: {},
+        direction,
+      });
+      const operator = graph.nodes.find(
+        (node) => node.id === createStepNodeId(conditionalStep.id, "operator"),
+      );
+      const nestedGroup0 = graph.nodes.find(
+        (node) => node.id === createGroupId(nested0.id),
+      );
+      const placeholder = graph.nodes.find(
+        (node) =>
+          node.id ===
+          createPlaceholderNodeId(conditionalStep.id, "conditional", 1),
+      );
+      const nestedGroup2 = graph.nodes.find(
+        (node) => node.id === createGroupId(nested2.id),
+      );
+
+      expect(operator).toBeDefined();
+      expect(nestedGroup0).toBeDefined();
+      expect(placeholder).toBeDefined();
+      expect(nestedGroup2).toBeDefined();
+      expectBranchSpansToBeSeparatedAndSymmetric({
+        branchNodes: [nestedGroup0!, placeholder!, nestedGroup2!],
+        direction,
+        operatorNode: operator!,
+      });
+    });
+
+    for (const nestedPosition of ["before", "after"] as const) {
+      it(`keeps task branches ${nestedPosition} a nested group branch separated in ${direction} mode`, async () => {
+        const nested = nestedConditionalStep(
+          `0.conditional.${nestedPosition}:nested`,
+        );
+        const conditionalStep: CompiledConditionalStep = {
+          id: `0:conditional:${nestedPosition}`,
+          label: "conditional",
+          type: StepType.Conditional,
+          branches:
+            nestedPosition === "after"
+              ? [
+                  {
+                    id: "0:conditional:when:0",
+                    condition: { kind: "literal", value: "task" },
+                    steps: [taskStep("0.conditional.0:task_a", "task_a")],
+                  },
+                  {
+                    id: "0:conditional:when:1",
+                    condition: { kind: "literal", value: "task" },
+                    steps: [taskStep("0.conditional.1:task_b", "task_b")],
+                  },
+                  {
+                    id: "0:conditional:when:2",
+                    steps: [nested],
+                  },
+                ]
+              : [
+                  {
+                    id: "0:conditional:when:0",
+                    condition: { kind: "literal", value: "nested" },
+                    steps: [nested],
+                  },
+                  {
+                    id: "0:conditional:when:1",
+                    condition: { kind: "literal", value: "task" },
+                    steps: [taskStep("0.conditional.1:task_a", "task_a")],
+                  },
+                  {
+                    id: "0:conditional:when:2",
+                    steps: [taskStep("0.conditional.2:task_b", "task_b")],
+                  },
+                ],
+        };
+        const graph = await buildGraph({
+          flow: [conditionalStep],
+          tasks: baseTasks(["task_a", "task_b"]),
+          direction,
+        });
+        const operator = graph.nodes.find(
+          (node) =>
+            node.id === createStepNodeId(conditionalStep.id, "operator"),
+        );
+        const nestedGroup = graph.nodes.find(
+          (node) => node.id === createGroupId(nested.id),
+        );
+        const taskA = graph.nodes.find(
+          (node) =>
+            node.id ===
+            createStepNodeId(
+              nestedPosition === "after"
+                ? "0.conditional.0:task_a"
+                : "0.conditional.1:task_a",
+              "task",
+            ),
+        );
+        const taskB = graph.nodes.find(
+          (node) =>
+            node.id ===
+            createStepNodeId(
+              nestedPosition === "after"
+                ? "0.conditional.1:task_b"
+                : "0.conditional.2:task_b",
+              "task",
+            ),
+        );
+
+        expect(operator).toBeDefined();
+        expect(nestedGroup).toBeDefined();
+        expect(taskA).toBeDefined();
+        expect(taskB).toBeDefined();
+        expectBranchSpansToBeSeparatedAndSymmetric({
+          branchNodes:
+            nestedPosition === "after"
+              ? [taskA!, taskB!, nestedGroup!]
+              : [nestedGroup!, taskA!, taskB!],
+          direction,
+          operatorNode: operator!,
+        });
+      });
+    }
+  }
 
   it("does not create duplicate node or edge IDs", async () => {
     const conditionalStep: CompiledConditionalStep = {
@@ -2028,6 +2356,9 @@ describe("buildNodesAndEdges", () => {
     const operatorNode = graph.nodes.find(
       (node) => node.id === createStepNodeId("0:loop", "operator"),
     );
+    const loopPlaceholder = graph.nodes.find(
+      (node) => node.id === createPlaceholderNodeId("0:loop", "loop", 0),
+    );
     const afterNode = graph.nodes.find(
       (node) => node.id === createStepNodeId("1:after_loop", "task"),
     );
@@ -2035,9 +2366,19 @@ describe("buildNodesAndEdges", () => {
     expect(startNode).toBeDefined();
     expect(endNode).toBeDefined();
     expect(operatorNode).toBeDefined();
+    expect(loopPlaceholder).toBeDefined();
     expect(afterNode).toBeDefined();
 
     const indicatorDims = NODE_METRICS[ENodeType.INDICATOR]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const operatorDims = NODE_METRICS[ENodeType.OPERATOR]?.dimensions ?? {
+      width: 0,
+      height: 0,
+    };
+    const placeholderDims = NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]
+      ?.dimensions ?? {
       width: 0,
       height: 0,
     };
@@ -2055,12 +2396,16 @@ describe("buildNodesAndEdges", () => {
       | { width: number; height: number }
       | undefined;
     const groupCenterY = loopGroup!.position.y + (groupStyle?.height ?? 0) / 2;
+    const operatorCenterY = operatorNode!.position.y + operatorDims.height / 2;
+    const placeholderCenterY =
+      loopPlaceholder!.position.y + placeholderDims.height / 2;
     const afterCenterY = afterNode!.position.y + taskDims.height / 2;
 
-    // Start, Stop, group center and after-loop task must all share the same
-    // horizontal axis. Group ports are at the group's visual center (50%)
-    // so the overlay edge enters/exits at the group center y.
+    // Group ports are at the group's visual center (50%), so the loop boundary
+    // nodes and next task must share that same horizontal axis.
     expect(Math.abs(groupCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(operatorCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(placeholderCenterY - referenceAxis)).toBeLessThan(1);
     expect(Math.abs(afterCenterY - referenceAxis)).toBeLessThan(1);
   });
 
@@ -2610,5 +2955,84 @@ describe("buildNodesAndEdges", () => {
 
     // ph1 (branchIndex=1) must be above ph2 (branchIndex=2).
     expect(ph1!.position.y).toBeLessThan(ph2!.position.y);
+  });
+
+  it("keeps sibling branch gaps uniform when a conditional group follows a parallel inside a branch", async () => {
+    // Regression: branch packing used to run before alignGroupChainAxes pulled
+    // the chained conditional group onto the parallel's axis, permanently
+    // reserving the group's pre-alignment position as an oversized gap between
+    // the outer conditional's sibling branches.
+    const parallelStep: CompiledParallelStep = {
+      id: "1:parallel",
+      label: "parallel",
+      type: StepType.Parallel,
+      strategy: "wait_all",
+      steps: [
+        nestedConditionalStep("1.parallel.0:nested"),
+        taskStep("1.parallel.1:branch_one", "branch_one"),
+        taskStep("1.parallel.2:branch_two", "branch_two"),
+      ],
+    };
+    const chainedConditional: CompiledConditionalStep = {
+      id: "2:chained",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "2:chained:when:0",
+          condition: { kind: "literal", value: "yes" },
+          steps: [],
+        },
+        {
+          id: "2:chained:when:1",
+          steps: [nestedConditionalStep("2.chained.1:nested")],
+        },
+      ],
+    };
+    const rootConditional: CompiledConditionalStep = {
+      id: "0:root",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:root:when:0",
+          condition: { kind: "literal", value: "top" },
+          steps: [nestedConditionalStep("0.root.0:nested")],
+        },
+        {
+          id: "0:root:when:1",
+          condition: { kind: "literal", value: "middle" },
+          steps: [parallelStep, chainedConditional],
+        },
+        {
+          id: "0:root:when:2",
+          steps: [taskStep("0.root.2:last", "last")],
+        },
+      ],
+    };
+    const graph = await buildGraph({
+      flow: [rootConditional],
+      tasks: baseTasks(["branch_one", "branch_two", "last"]),
+    });
+    const spanOf = (nodeId: string) => {
+      const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+
+      return getNodeSpreadSpan(node, "horizontal");
+    };
+    const topSpan = spanOf(createGroupId("0.root.0:nested"));
+    const parallelSpan = spanOf(createGroupId(parallelStep.id));
+    const chainedSpan = spanOf(createGroupId(chainedConditional.id));
+    const middleSpan = {
+      leading: Math.min(parallelSpan.leading, chainedSpan.leading),
+      trailing: Math.max(parallelSpan.trailing, chainedSpan.trailing),
+    };
+    const bottomSpan = spanOf(createStepNodeId("0.root.2:last", "task"));
+    const gapAbove = middleSpan.leading - topSpan.trailing;
+    const gapBelow = bottomSpan.leading - middleSpan.trailing;
+
+    expect(gapAbove).toBeGreaterThan(0);
+    expect(gapBelow).toBeGreaterThan(0);
+    expect(gapAbove).toBeLessThanOrEqual(BRANCH_SPREAD_GAP + 1);
+    expect(gapBelow).toBeLessThanOrEqual(BRANCH_SPREAD_GAP + 1);
   });
 });

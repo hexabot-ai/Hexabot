@@ -10,6 +10,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const monorepoRoot = path.resolve(__dirname, "../..");
+const graphSrc = path.resolve(__dirname, "../graph/src");
 
 export default defineConfig({
   plugins: [react()],
@@ -31,6 +32,12 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
       "@hexabot-ai/types": path.resolve(__dirname, "../types/src"),
+      // Sub-path alias must come before the bare package alias.
+      "@hexabot-ai/graph/workflow.css": path.resolve(
+        graphSrc,
+        "workflow/styles/index.css",
+      ),
+      "@hexabot-ai/graph": path.resolve(graphSrc, "index.ts"),
       "@rjsf/validator-ajv8": path.resolve(
         __dirname,
         "./src/utils/rjsf-zod-validator.ts",
@@ -42,6 +49,17 @@ export default defineConfig({
     port: 8080,
     fs: {
       allow: [monorepoRoot], // allow Vite to serve shared workspace deps like hoisted node_modules
+    },
+    watch: {
+      // Use polling for graph/src so file reverts (atomic writes that swap
+      // inodes) are always detected as a "change" event by chokidar, rather
+      // than an unlink+add pair that can miss triggering hotUpdate.
+      usePolling: true,
+      interval: 100,
+      ignored: (f: string) => {
+        if (f.startsWith(graphSrc)) return false;
+        return true;
+      },
     },
     proxy: {
       "/api": {

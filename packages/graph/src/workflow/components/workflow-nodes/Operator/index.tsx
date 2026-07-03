@@ -19,16 +19,14 @@ export const Operator: FC<NodeProps<GraphNode<ENodeType.OPERATOR>>> = (
 ) => {
   return (
     <WorkflowNodeProvider node={props}>
-      <div>
-        <GenericNodeContainer>
-          <GenericNodeRightContent variant="title-only">
-            <GenericNodeTitle />
-          </GenericNodeRightContent>
-          <GenericNodePorts<ENodeType.OPERATOR>
-            getDisabled={({ idx, node }) => !!node.groupName && idx === 0}
-          />
-        </GenericNodeContainer>
-      </div>
+      <GenericNodeContainer>
+        <GenericNodeRightContent variant="title-only">
+          <GenericNodeTitle />
+        </GenericNodeRightContent>
+        <GenericNodePorts<ENodeType.OPERATOR>
+          getDisabled={({ idx, node }) => !!node.groupName && idx === 0}
+        />
+      </GenericNodeContainer>
     </WorkflowNodeProvider>
   );
 };

@@ -104,21 +104,13 @@ const humanizeBindingKind = (kind: string): string => {
     .replace(/\s+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
-const getBindingPortLabel = (kind: string): string => {
-  if (kind === "tools") {
-    return "visual_editor.port_label.tools";
-  }
-
-  if (kind === "model") {
-    return "visual_editor.port_label.model";
-  }
-
-  if (kind === "memory") {
-    return "visual_editor.port_label.memory";
-  }
-
-  return humanizeBindingKind(kind);
+const BINDING_PORT_LABELS: Record<string, string> = {
+  tools: "visual_editor.port_label.tools",
+  model: "visual_editor.port_label.model",
+  memory: "visual_editor.port_label.memory",
 };
+const getBindingPortLabel = (kind: string): string =>
+  BINDING_PORT_LABELS[kind] ?? humanizeBindingKind(kind);
 const buildBindingOutPort = (
   bindingKind: string,
   index: number,
@@ -146,17 +138,7 @@ const toBindingRefs = (
 ): string[] => {
   const multiple = bindingDefinition?.multiple ?? true;
 
-  if (multiple) {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-
-    return value
-      .filter((entry): entry is string => typeof entry === "string")
-      .filter(Boolean);
-  }
-
-  if (typeof value === "string") {
+  if (!multiple && typeof value === "string") {
     const normalized = value.trim();
 
     return normalized ? [normalized] : [];
@@ -167,32 +149,23 @@ const toBindingRefs = (
     return [];
   }
 
-  return value
-    .filter((entry): entry is string => typeof entry === "string")
-    .filter(Boolean);
+  return value.filter(
+    (entry): entry is string => typeof entry === "string" && Boolean(entry),
+  );
 };
 const resolveCatalogBindingKinds = (
   candidateKinds: readonly string[],
   bindingCatalog: WorkflowBindingCatalog,
-): string[] => {
-  const availableKinds = new Set(bindingCatalog.keys());
-  const resolvedKinds: string[] = [];
-
-  candidateKinds.forEach((bindingKind) => {
-    if (
-      typeof bindingKind !== "string" ||
-      !bindingKind ||
-      !availableKinds.has(bindingKind) ||
-      resolvedKinds.includes(bindingKind)
-    ) {
-      return;
-    }
-
-    resolvedKinds.push(bindingKind);
-  });
-
-  return resolvedKinds;
-};
+): string[] => [
+  ...new Set(
+    candidateKinds.filter(
+      (bindingKind) =>
+        typeof bindingKind === "string" &&
+        bindingKind &&
+        bindingCatalog.has(bindingKind),
+    ),
+  ),
+];
 const resolveActionSupportedBindingKinds = (
   actionName: string,
   actionCatalog: ReadonlyMap<string, WorkflowAction>,
@@ -269,6 +242,61 @@ const getConditionalBranchLabel = (
   } catch {
     return String(branch.condition.value);
   }
+};
+const relabelOperatorOutPorts = (
+  ports: WorkflowNodePort<ENodeType.OPERATOR>[],
+  label: string,
+): WorkflowNodePort<ENodeType.OPERATOR>[] =>
+  ports.map((portDef) => {
+    if (portDef === ELinkType.OPERATOR_OUT) {
+      return { id: ELinkType.OPERATOR_OUT, label };
+    }
+
+    if (typeof portDef !== "string" && portDef.id === ELinkType.OPERATOR_OUT) {
+      return { ...portDef, label };
+    }
+
+    return portDef;
+  });
+const resolveOperatorPorts = (
+  step: CompiledStep,
+  operatorType: EOperatorType,
+  basePorts: WorkflowNodePort<ENodeType.OPERATOR>[],
+): WorkflowNodePort<ENodeType.OPERATOR>[] => {
+  if (operatorType === StepType.Conditional) {
+    const branches = (step as CompiledConditionalStep).branches;
+
+    return [
+      ELinkType.OPERATOR_IN,
+      ...branches.map((branch, branchIndex) => ({
+        id: buildConditionalOperatorOutPort(branchIndex, branches.length),
+        label: getConditionalBranchLabel(branch),
+      })),
+    ];
+  }
+
+  if (
+    operatorType === StepType.Parallel &&
+    (step as CompiledParallelStep).strategy
+  ) {
+    return relabelOperatorOutPorts(
+      basePorts,
+      `visual_editor.parallel_drawer.form.strategy.${
+        (step as CompiledParallelStep).strategy
+      }.label`,
+    );
+  }
+
+  if (operatorType === StepType.Loop) {
+    return relabelOperatorOutPorts(
+      basePorts,
+      `visual_editor.loop_drawer.form.type.${
+        (step as CompiledLoopStep).loopType
+      }.label`,
+    );
+  }
+
+  return basePorts;
 };
 const addSemanticNode = (
   state: TraverseState,
@@ -666,6 +694,76 @@ const addDefAttachments = (
     }
   });
 };
+const connectExitsToPlaceholder = (
+  state: TraverseState,
+  exits: TraversalExit[],
+  placeholderNodeId: string,
+  firstSourceHandle?: string,
+) => {
+  uniqueIds(exits.map((exit) => exit.nodeId)).forEach((exitNodeId, index) => {
+    addDirectEdge(state, {
+      source: exitNodeId,
+      target: placeholderNodeId,
+      sourceHandle: index === 0 ? firstSourceHandle : undefined,
+    });
+  });
+};
+// Walk one operator branch (a conditional branch or a loop body) into its
+// trailing placeholder; empty branches connect the operator straight to it.
+const walkBranchToPlaceholder = ({
+  state,
+  operatorNodeId,
+  stepId,
+  scope,
+  branchIndex,
+  level,
+  steps,
+  stepsPath,
+  groupPath,
+  entryEdgeSourceHandle,
+}: {
+  state: TraverseState;
+  operatorNodeId: string;
+  stepId: string;
+  scope: "conditional" | "loop";
+  branchIndex: number;
+  level: number;
+  steps: CompiledStep[] | undefined;
+  stepsPath: FlowStepPath;
+  groupPath: string[];
+  entryEdgeSourceHandle?: string;
+}): string => {
+  const branchSteps = Array.isArray(steps) ? steps : [];
+  const branchExits =
+    branchSteps.length > 0
+      ? walkSteps({
+          steps: branchSteps,
+          level: level + 1,
+          incoming: [operatorNodeId],
+          path: stepsPath,
+          groupPath,
+          state,
+          entryEdgeSourceHandle,
+        })
+      : [{ nodeId: operatorNodeId }];
+  const placeholderNodeId = addPlaceholderNode(state, {
+    stepId,
+    scope,
+    branchIndex,
+    level: level + 1,
+    groupPath,
+    insertPath: [...stepsPath, branchSteps.length],
+  });
+
+  connectExitsToPlaceholder(
+    state,
+    branchExits,
+    placeholderNodeId,
+    branchSteps.length === 0 ? entryEdgeSourceHandle : undefined,
+  );
+
+  return placeholderNodeId;
+};
 const walkParallelSteps = (
   step: CompiledParallelStep,
   operatorNodeId: string,
@@ -676,17 +774,13 @@ const walkParallelSteps = (
 ): TraversalExit[] => {
   const parallelStepsPath: FlowStepPath = [...stepPath, "parallel", "steps"];
   const parallelSteps = Array.isArray(step.steps) ? step.steps : [];
-  const joinInsertPath: FlowStepPath = [
-    ...parallelStepsPath,
-    parallelSteps.length,
-  ];
   const joinPlaceholderId = addPlaceholderNode(state, {
     stepId: step.id,
     scope: "parallel",
     branchIndex: parallelSteps.length,
     level: level + 1,
     groupPath: operatorGroupPath,
-    insertPath: joinInsertPath,
+    insertPath: [...parallelStepsPath, parallelSteps.length],
   });
 
   if (!parallelSteps.length) {
@@ -709,12 +803,7 @@ const walkParallelSteps = (
       disableEntryInsertPath: true,
     });
 
-    uniqueIds(exits.map((exit) => exit.nodeId)).forEach((exitNodeId) => {
-      addDirectEdge(state, {
-        source: exitNodeId,
-        target: joinPlaceholderId,
-      });
-    });
+    connectExitsToPlaceholder(state, exits, joinPlaceholderId);
   });
 
   return [
@@ -731,67 +820,25 @@ const walkConditionalBranches = (
   stepPath: FlowStepPath,
   operatorGroupPath: string[],
   state: TraverseState,
-): TraversalExit[] => {
-  const branchesCount = step.branches.length;
-  const conditionPortLabels = step.branches.map((branch, branchIndex) => ({
-    handleId: buildConditionalOperatorOutPort(branchIndex, branchesCount),
-    label: getConditionalBranchLabel(branch),
-  }));
-
-  return step.branches.map((branch, branchIndex) => {
-    const branchSourceHandle = conditionPortLabels[branchIndex]?.handleId;
-    const branchSteps = Array.isArray(branch.steps) ? branch.steps : [];
-    const conditionalStepsPath: FlowStepPath = [
-      ...stepPath,
-      "conditional",
-      "when",
-      branchIndex,
-      "steps",
-    ];
-    const insertPath: FlowStepPath = [
-      ...conditionalStepsPath,
-      branchSteps.length,
-    ];
-    const branchExits =
-      branchSteps.length > 0
-        ? walkSteps({
-            steps: branchSteps,
-            level: level + 1,
-            incoming: [operatorNodeId],
-            path: conditionalStepsPath,
-            groupPath: operatorGroupPath,
-            state,
-            entryEdgeSourceHandle: branchSourceHandle,
-          })
-        : [{ nodeId: operatorNodeId }];
-    const placeholderNodeId = addPlaceholderNode(state, {
+): TraversalExit[] =>
+  step.branches.map((branch, branchIndex) => ({
+    nodeId: walkBranchToPlaceholder({
+      state,
+      operatorNodeId,
       stepId: step.id,
       scope: "conditional",
       branchIndex,
-      level: level + 1,
+      level,
+      steps: branch.steps,
+      stepsPath: [...stepPath, "conditional", "when", branchIndex, "steps"],
       groupPath: operatorGroupPath,
-      insertPath,
-    });
-
-    uniqueIds(branchExits.map((exit) => exit.nodeId)).forEach(
-      (branchExitNodeId, exitIndex) => {
-        addDirectEdge(state, {
-          source: branchExitNodeId,
-          target: placeholderNodeId,
-          sourceHandle:
-            branchSteps.length === 0 && exitIndex === 0
-              ? branchSourceHandle
-              : undefined,
-        });
-      },
-    );
-
-    return {
-      nodeId: placeholderNodeId,
-      nextInsertPath: getNextInsertPath(stepPath),
-    };
-  });
-};
+      entryEdgeSourceHandle: buildConditionalOperatorOutPort(
+        branchIndex,
+        step.branches.length,
+      ),
+    }),
+    nextInsertPath: getNextInsertPath(stepPath),
+  }));
 const walkLoopSteps = (
   step: CompiledLoopStep,
   operatorNodeId: string,
@@ -799,44 +846,22 @@ const walkLoopSteps = (
   stepPath: FlowStepPath,
   operatorGroupPath: string[],
   state: TraverseState,
-): TraversalExit[] => {
-  const loopSteps = Array.isArray(step.steps) ? step.steps : [];
-  const loopStepsPath: FlowStepPath = [...stepPath, "loop", "steps"];
-  const insertPath: FlowStepPath = [...loopStepsPath, loopSteps.length];
-  const loopExits =
-    loopSteps.length > 0
-      ? walkSteps({
-          steps: loopSteps,
-          level: level + 1,
-          incoming: [operatorNodeId],
-          path: loopStepsPath,
-          groupPath: operatorGroupPath,
-          state,
-        })
-      : [{ nodeId: operatorNodeId }];
-  const placeholderNodeId = addPlaceholderNode(state, {
-    stepId: step.id,
-    scope: "loop",
-    branchIndex: 0,
-    level: level + 1,
-    groupPath: operatorGroupPath,
-    insertPath,
-  });
-
-  uniqueIds(loopExits.map((exit) => exit.nodeId)).forEach((loopExitNodeId) => {
-    addDirectEdge(state, {
-      source: loopExitNodeId,
-      target: placeholderNodeId,
-    });
-  });
-
-  return [
-    {
-      nodeId: placeholderNodeId,
-      nextInsertPath: getNextInsertPath(stepPath),
-    },
-  ];
-};
+): TraversalExit[] => [
+  {
+    nodeId: walkBranchToPlaceholder({
+      state,
+      operatorNodeId,
+      stepId: step.id,
+      scope: "loop",
+      branchIndex: 0,
+      level,
+      steps: step.steps,
+      stepsPath: [...stepPath, "loop", "steps"],
+      groupPath: operatorGroupPath,
+    }),
+    nextInsertPath: getNextInsertPath(stepPath),
+  },
+];
 const walkStep = ({
   step,
   index,
@@ -937,70 +962,11 @@ const walkStep = ({
     memberNodeIds: new Set(),
   });
 
-  const ports: WorkflowNodePort<ENodeType.OPERATOR>[] =
-    operatorType === StepType.Conditional
-      ? (step as CompiledConditionalStep).branches.map(
-          (branch, branchIndex, branches) => ({
-            id: buildConditionalOperatorOutPort(branchIndex, branches.length),
-            label: getConditionalBranchLabel(branch),
-          }),
-        )
-      : operatorType === StepType.Parallel &&
-          (step as CompiledParallelStep).strategy
-        ? operatorBaseData.ports.map((portDef) => {
-            if (portDef === ELinkType.OPERATOR_OUT) {
-              return {
-                id: ELinkType.OPERATOR_OUT,
-                label: `visual_editor.parallel_drawer.form.strategy.${
-                  (step as CompiledParallelStep).strategy
-                }.label`,
-              };
-            }
-
-            if (
-              typeof portDef !== "string" &&
-              portDef.id === ELinkType.OPERATOR_OUT
-            ) {
-              return {
-                ...portDef,
-                label: `visual_editor.parallel_drawer.form.strategy.${
-                  (step as CompiledParallelStep).strategy
-                }.label`,
-              };
-            }
-
-            return portDef;
-          })
-        : operatorType === StepType.Loop
-          ? operatorBaseData.ports.map((portDef) => {
-              if (portDef === ELinkType.OPERATOR_OUT) {
-                return {
-                  id: ELinkType.OPERATOR_OUT,
-                  label: `visual_editor.loop_drawer.form.type.${
-                    (step as CompiledLoopStep).loopType
-                  }.label`,
-                };
-              }
-
-              if (
-                typeof portDef !== "string" &&
-                portDef.id === ELinkType.OPERATOR_OUT
-              ) {
-                return {
-                  ...portDef,
-                  label: `visual_editor.loop_drawer.form.type.${
-                    (step as CompiledLoopStep).loopType
-                  }.label`,
-                };
-              }
-
-              return portDef;
-            })
-          : operatorBaseData.ports;
-  const resolvedPorts: WorkflowNodePort<ENodeType.OPERATOR>[] =
-    operatorType === StepType.Conditional
-      ? [ELinkType.OPERATOR_IN, ...ports]
-      : ports;
+  const resolvedPorts = resolveOperatorPorts(
+    step,
+    operatorType,
+    operatorBaseData.ports,
+  );
 
   addSemanticNode(state, {
     id: operatorNodeId,

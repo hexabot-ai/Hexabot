@@ -227,7 +227,11 @@ export const getWorkflowPortId = <P extends string>(
 ): Port<P> => (typeof port === "string" ? port : port.id);
 
 export type THighlightGroups = {
-  [K in EOperatorType]?: { padding?: number; color?: string };
+  [K in EOperatorType]?: {
+    padding?: number;
+    color?: string;
+    radius?: string | number;
+  };
 };
 
 export type TNodeCardContentVariant = "title-only" | "title-with-description";
