@@ -5,16 +5,34 @@
  */
 
 import { WorkflowType } from "@hexabot-ai/types";
-import { Divider, Drawer, Paper, Stack, useMediaQuery } from "@mui/material";
+import {
+  Box,
+  CircularProgress,
+  Divider,
+  Drawer,
+  IconButton,
+  Paper,
+  Stack,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
 import { alpha, styled, useTheme } from "@mui/material/styles";
 import { getDefaultFormState, type RJSFSchema } from "@rjsf/utils";
-import { useEffect, useRef, useState } from "react";
+import { MessageSquarePlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ChatWidget } from "@/app-components/widget/ChatWidget";
+import {
+  ChatWidget,
+  CONSOLE_CHANNEL_NAME,
+} from "@/app-components/widget/ChatWidget";
 import { TriggerSimulatorPanel } from "@/components/workflow-run-debugger/components/panels/trigger-simulator-panel/TriggerSimulatorPanel";
 import { WorkflowRunDebugger } from "@/components/workflow-run-debugger/components/WorkflowRunDebugger";
+import { useFind } from "@/hooks/crud/useFind";
+import { useUpdate } from "@/hooks/crud/useUpdate";
 import { useAuth } from "@/hooks/useAuth";
 import { useTranslate } from "@/hooks/useTranslate";
+import { EntityType } from "@/services/types";
 import validator from "@/utils/rjsf-zod-validator";
 
 import { useResizableDrawerSize } from "../../../../../hooks/useResizableDrawerSize";
@@ -78,8 +96,11 @@ const DrawerColumn = styled(Stack)(() => ({
   minWidth: 0,
   overflow: "auto",
 }));
-const ChatWidgetColumn = styled(Paper)(({ theme }) => ({
-  padding: theme.spacing(0.5),
+const ChatWidgetColumn = styled(Paper)(() => ({
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  padding: 0,
   "& .hb-chat-window": {
     position: "relative",
     right: "auto !important",
@@ -93,6 +114,22 @@ const ChatWidgetColumn = styled(Paper)(({ theme }) => ({
     boxShadow: "none !important",
     zIndex: "auto !important",
   },
+}));
+const ChatPreviewHeader = styled(Stack)(({ theme }) => ({
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: theme.spacing(0.5, 0.75, 0.5, 1.5),
+  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.06)",
+  clipPath: "inset(0 0 -4px 0)",
+  flexShrink: 0,
+  zIndex: 1,
+}));
+const ChatWidgetBody = styled(Box)(() => ({
+  flex: 1,
+  minHeight: 0,
+  overflow: "hidden",
+  position: "relative",
 }));
 const ColumnResizer = styled(Divider)(({ theme }) => ({
   width: "100%",
@@ -191,6 +228,70 @@ export const WorkflowBottomDrawer = () => {
     minSize: minDrawerHeight,
     axis: "vertical",
   });
+  const [chatKey, setChatKey] = useState(0);
+  const { data: consoleSources, isLoading: isLoadingConsoleSources } = useFind(
+    { entity: EntityType.SOURCE },
+    {
+      hasCount: false,
+      params: { where: { channel: CONSOLE_CHANNEL_NAME, state: true } },
+    },
+    { enabled: isConversationalWorkflow },
+  );
+  const selectedSourceId = useMemo(() => {
+    if (!consoleSources?.length) return undefined;
+    const match = consoleSources.find(
+      (s) => s.defaultWorkflow === workflow?.id,
+    );
+
+    return (
+      match ??
+      consoleSources.find((s) => !s.defaultWorkflow) ??
+      consoleSources[0]
+    )?.id;
+  }, [consoleSources, workflow?.id]);
+  const { data: latestOpenThreads, isLoading: isLoadingThreads } = useFind(
+    { entity: EntityType.THREAD },
+    {
+      hasCount: false,
+      params: {
+        where: { "source.id": selectedSourceId, status: "open" },
+      },
+      initialSortState: [{ field: "lastMessageAt", sort: "desc" }],
+      initialPaginationState: { page: 0, pageSize: 1 },
+    },
+    { enabled: !!selectedSourceId && isConversationalWorkflow },
+  );
+  const currentThreadIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    currentThreadIdRef.current = latestOpenThreads?.[0]?.id ?? null;
+  }, [latestOpenThreads]);
+
+  const { mutateAsync: closeThread, isPending: isClosingThread } = useUpdate(
+    EntityType.THREAD,
+  );
+  const isNewThreadDisabled =
+    isLoadingConsoleSources || isLoadingThreads || isClosingThread;
+  const handleNewThread = useCallback(async () => {
+    const threadId = currentThreadIdRef.current;
+
+    currentThreadIdRef.current = null;
+    if (threadId) {
+      try {
+        await closeThread({
+          id: threadId,
+          params: {
+            status: "closed",
+            closeReason: "manual",
+            closedAt: new Date(),
+          },
+        });
+      } catch {
+        // proceed with reset even if close fails
+      }
+    }
+    setChatKey((prev) => prev + 1);
+  }, [closeThread]);
   const [workflowInput, setWorkflowInput] = useState<Record<string, unknown>>(
     {},
   );
@@ -304,7 +405,33 @@ export const WorkflowBottomDrawer = () => {
               event.stopPropagation();
             }}
           >
-            <ChatWidget variant="embedded" workflowId={workflow?.id} />
+            <ChatPreviewHeader>
+              <Typography variant="body2" fontWeight={600} noWrap>
+                {t("visual_editor.chat_widget.preview_conversation")}
+              </Typography>
+              <Tooltip title={t("visual_editor.chat_widget.new_thread")}>
+                <span>
+                  <IconButton
+                    onClick={handleNewThread}
+                    disabled={isNewThreadDisabled}
+                    aria-label={t("visual_editor.chat_widget.new_thread")}
+                  >
+                    {isClosingThread ? (
+                      <CircularProgress size={24} thickness={5} />
+                    ) : (
+                      <MessageSquarePlus />
+                    )}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </ChatPreviewHeader>
+            <ChatWidgetBody>
+              <ChatWidget
+                key={chatKey}
+                variant="embedded"
+                workflowId={workflow?.id}
+              />
+            </ChatWidgetBody>
           </ChatWidgetColumn>
         ) : (
           <DrawerColumn

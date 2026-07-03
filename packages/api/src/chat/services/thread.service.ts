@@ -286,7 +286,15 @@ export class ThreadService extends BaseOrmService<ThreadOrmEntity> {
         );
       }
 
-      return explicit;
+      if (explicit.status !== 'closed') {
+        return explicit;
+      }
+      // Explicit thread is closed; fall through to the latest open thread
+      // so callers (subscribe/history flows) don't serve stale history.
+      const latestOpenAfterClose =
+        await this.repository.findLatestOpenThreadForSubscriber(subscriberId);
+
+      return latestOpenAfterClose ?? null;
     }
 
     const latestOpen =

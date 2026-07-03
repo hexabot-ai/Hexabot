@@ -264,4 +264,25 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       );
     })[0];
   }
+
+  /**
+   * Mark all active runs linked to a thread as failed.
+   * Called when a thread is closed to abort any in-flight workflow execution.
+   *
+   * @param threadId - The ID of the closed thread.
+   */
+  async abortActiveRunsForThread(threadId: string): Promise<void> {
+    const activeRuns = await this.find({
+      where: {
+        thread: { id: threadId },
+        status: In(ACTIVE_WORKFLOW_RUN_STATUSES),
+      },
+    });
+
+    await Promise.all(
+      activeRuns.map((run) =>
+        this.markFailed(run.id, { error: 'Thread was closed' }),
+      ),
+    );
+  }
 }

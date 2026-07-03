@@ -17,7 +17,8 @@ import { EntityType, RouterType } from "@/services/types";
 
 const HiddenLauncher = () => <span style={{ display: "none" }} />;
 const HiddenHeader = () => null;
-const CONSOLE_CHANNEL_NAME = "console";
+
+export const CONSOLE_CHANNEL_NAME = "console";
 
 type ChatWidgetVariant = "launcher" | "embedded";
 
