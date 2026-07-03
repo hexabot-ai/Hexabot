@@ -11,7 +11,7 @@ import {
   DEFAULT_RETRY_SETTINGS,
   DEFAULT_TIMEOUT_MS,
 } from '@hexabot-ai/agentic';
-import { workflowSchema } from '@hexabot-ai/types';
+import { WebhookTriggerConfig, workflowSchema } from '@hexabot-ai/types';
 import { CronJob } from 'cron';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
 import {
@@ -89,6 +89,14 @@ export class WorkflowOrmEntity extends BaseOrmEntity<WorkflowDto> {
   /** JSON Schema describing the expected workflow input payload. */
   @JsonColumn({ name: 'input_schema' })
   inputSchema!: JsonSchema;
+
+  /**
+   * Optional webhook trigger configuration for manual workflows. When enabled,
+   * exposes a public URL that authenticates incoming calls before running the
+   * workflow. Stored as JSON; credentials are persisted as-is.
+   */
+  @JsonColumn({ name: 'webhook_trigger', nullable: true })
+  webhookTrigger?: WebhookTriggerConfig | null;
 
   /** Indicates if the workflow is built-in and protected from deletion. */
   @Column({ default: false })

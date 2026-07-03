@@ -103,7 +103,7 @@ export interface IEntityMapTypes {
     EntityPayload<
       Workflow,
       "name" | "description" | "schedule" | "type",
-      "builtin" | "zoom" | "x" | "y",
+      "builtin" | "zoom" | "x" | "y" | "webhookTrigger",
       {
         direction?: ResizeControlDirection;
         inputSchema?: JsonSchema;

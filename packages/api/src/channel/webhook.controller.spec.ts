@@ -4,22 +4,38 @@
  * Full terms: see LICENSE.md.
  */
 
+import { WebhookAuthType } from '@hexabot-ai/types';
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import request from 'supertest';
 
 import { LoggerService } from '@/logger/logger.service';
 import { buildTestingMocks } from '@/utils/test/utils';
+import { WebhookTriggerGuard } from '@/workflow/guards/webhook-trigger.guard';
+import { WebhookTriggerService } from '@/workflow/services/webhook-trigger.service';
+import { WorkflowService } from '@/workflow/services/workflow.service';
+import { WorkflowType } from '@/workflow/types';
 
 import { ChannelService } from './channel.service';
 import { ChannelDownloadService } from './services/channel-download.service';
 import { WebhookController } from './webhook.controller';
+
+const triggerResult = {
+  runId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  status: 'finished' as const,
+  output: { result: 'ok' },
+  error: null,
+};
 
 describe('WebhookController', () => {
   let controller: WebhookController;
   let channelService: jest.Mocked<Pick<ChannelService, 'handle'>>;
   let channelDownloadService: jest.Mocked<
     Pick<ChannelDownloadService, 'download'>
+  >;
+  let webhookTriggerService: jest.Mocked<
+    Pick<WebhookTriggerService, 'trigger'>
   >;
   let logger: jest.Mocked<Pick<LoggerService, 'log'>>;
 
@@ -30,6 +46,9 @@ describe('WebhookController', () => {
     channelDownloadService = {
       download: jest.fn(),
     };
+    webhookTriggerService = {
+      trigger: jest.fn().mockResolvedValue(triggerResult),
+    };
     logger = {
       log: jest.fn(),
     };
@@ -37,6 +56,7 @@ describe('WebhookController', () => {
     controller = new WebhookController(
       channelService as unknown as ChannelService,
       channelDownloadService as unknown as ChannelDownloadService,
+      webhookTriggerService as unknown as WebhookTriggerService,
       logger as unknown as LoggerService,
     );
   });
@@ -76,6 +96,15 @@ describe('WebhookController', () => {
     );
   });
 
+  it('forwards the workflow id and the raw body to the trigger service', async () => {
+    const id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const input = { foo: 'bar' };
+    const result = await controller.trigger(id, input);
+
+    expect(webhookTriggerService.trigger).toHaveBeenCalledWith(id, input);
+    expect(result).toEqual(triggerResult);
+  });
+
   it('delegates download requests to channel download service', async () => {
     const sourceRef = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
     const req = {} as Request;
@@ -103,6 +132,9 @@ describe('WebhookController (HTTP pipes)', () => {
   let channelDownloadService: jest.Mocked<
     Pick<ChannelDownloadService, 'download'>
   >;
+  let webhookTriggerService: jest.Mocked<
+    Pick<WebhookTriggerService, 'trigger'>
+  >;
   let logger: jest.Mocked<Pick<LoggerService, 'log'>>;
 
   beforeAll(async () => {
@@ -114,15 +146,34 @@ describe('WebhookController (HTTP pipes)', () => {
     channelDownloadService = {
       download: jest.fn(),
     };
+    webhookTriggerService = {
+      trigger: jest.fn().mockResolvedValue(triggerResult),
+    };
     logger = {
       log: jest.fn(),
     };
 
+    // Drive the real guard with a mocked WorkflowService so the trigger route
+    // is exercised end-to-end (guard resolution + attachment) without a DB.
+    const workflowServiceMock = {
+      findOne: jest.fn(async (id: string) => ({
+        id,
+        type: WorkflowType.manual,
+        webhookTrigger: { enabled: true, authType: WebhookAuthType.none },
+      })),
+    };
     const { module } = await buildTestingMocks({
       controllers: [WebhookController],
       providers: [
         { provide: ChannelService, useValue: channelService },
         { provide: ChannelDownloadService, useValue: channelDownloadService },
+        {
+          provide: WebhookTriggerService,
+          useValue: webhookTriggerService,
+        },
+        WebhookTriggerGuard,
+        { provide: WorkflowService, useValue: workflowServiceMock },
+        { provide: JwtService, useValue: new JwtService({}) },
         { provide: LoggerService, useValue: logger },
       ],
     });
@@ -152,6 +203,22 @@ describe('WebhookController (HTTP pipes)', () => {
       .expect(204);
 
     expect(channelService.handle).toHaveBeenCalled();
+  });
+
+  it('routes POST /webhook/:id/trigger to the trigger service, not the catch-all', async () => {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const response = await request(app.getHttpServer())
+      .post(`/webhook/${id}/trigger`)
+      .send({ foo: 'bar' })
+      .expect(200);
+
+    expect(webhookTriggerService.trigger).toHaveBeenCalledTimes(1);
+    expect(webhookTriggerService.trigger.mock.calls[0][0]).toBe(id);
+    expect(webhookTriggerService.trigger.mock.calls[0][1]).toEqual({
+      foo: 'bar',
+    });
+    expect(response.body).toEqual(triggerResult);
+    expect(channelService.handle).not.toHaveBeenCalled();
   });
 
   it('rejects malformed workflow id on GET before controller logic', async () => {

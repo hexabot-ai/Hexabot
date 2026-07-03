@@ -5,6 +5,7 @@
  */
 
 import { forwardRef, Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -28,6 +29,7 @@ import { MemoryRecordOrmEntity } from './entities/memory-record.entity';
 import { WorkflowRunOrmEntity } from './entities/workflow-run.entity';
 import { WorkflowVersionOrmEntity } from './entities/workflow-version.entity';
 import { WorkflowOrmEntity } from './entities/workflow.entity';
+import { WebhookTriggerGuard } from './guards/webhook-trigger.guard';
 import { McpServerRepository } from './repositories/mcp-server.repository';
 import { MemoryDefinitionRepository } from './repositories/memory-definition.repository';
 import { MemoryRecordRepository } from './repositories/memory-record.repository';
@@ -42,6 +44,7 @@ import { McpServerService } from './services/mcp-server.service';
 import { MemoryDefinitionService } from './services/memory-definition.service';
 import { MemoryRecordService } from './services/memory-record.service';
 import { MemoryService } from './services/memory.service';
+import { WebhookTriggerService } from './services/webhook-trigger.service';
 import { WorkflowRunService } from './services/workflow-run.service';
 import { WorkflowSchedulerService } from './services/workflow-scheduler.service';
 import { WorkflowVersionService } from './services/workflow-version.service';
@@ -62,6 +65,7 @@ import { WORKFLOW_CALL_SERVICE } from './types';
     forwardRef(() => CmsModule),
     forwardRef(() => ChatModule),
     UserModule,
+    JwtModule.register({}),
   ],
   controllers: [
     WorkflowController,
@@ -94,6 +98,8 @@ import { WORKFLOW_CALL_SERVICE } from './types';
     ScheduledWorkflowContext,
     WorkflowContextFactory,
     AgenticService,
+    WebhookTriggerService,
+    WebhookTriggerGuard,
     { provide: WORKFLOW_CALL_SERVICE, useExisting: AgenticService },
   ],
   exports: [
@@ -113,6 +119,8 @@ import { WORKFLOW_CALL_SERVICE } from './types';
     McpClientPoolService,
     ConversationalWorkflowContext,
     AgenticService,
+    WebhookTriggerService,
+    WebhookTriggerGuard,
     WORKFLOW_CALL_SERVICE,
   ],
 })

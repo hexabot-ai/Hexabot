@@ -124,6 +124,7 @@ describe('WorkflowController (TypeORM)', () => {
       zoom: 1,
       builtin: false,
       runAfterMs: 0,
+      webhookTrigger: null,
     };
   };
 
@@ -240,6 +241,7 @@ describe('WorkflowController (TypeORM)', () => {
         [
           {
             ...messagingWorkflowFixtures[0],
+            webhookTrigger: null,
             definition: messagingWorkflowDefinition,
             currentVersion: {
               definitionYml: WorkflowHelper.stringifyDefinition(

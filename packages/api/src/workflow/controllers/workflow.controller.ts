@@ -27,7 +27,6 @@ import { DeleteResult } from 'typeorm/driver/mongodb/typings';
 
 import { ActionService } from '@/actions/actions.service';
 import { I18nService } from '@/i18n/services/i18n.service';
-import { UserService } from '@/user/services/user.service';
 import { UuidParam } from '@/utils/decorators/uuid-param.decorator';
 import { BaseOrmController } from '@/utils/generics/base-orm.controller';
 import { PopulatePipe } from '@/utils/pipes/populate.pipe';
@@ -40,7 +39,7 @@ import {
   ManualEventWrapper,
   ScheduledEventWrapper,
 } from '../lib/trigger-event-wrapper';
-import { AgenticService } from '../services/agentic.service';
+import { WebhookTriggerService } from '../services/webhook-trigger.service';
 import { WorkflowService } from '../services/workflow.service';
 import { WorkflowType } from '../types';
 
@@ -48,8 +47,7 @@ import { WorkflowType } from '../types';
 export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
   constructor(
     private readonly workflowService: WorkflowService,
-    private readonly agenticService: AgenticService,
-    private readonly userService: UserService,
+    private readonly webhookTriggerService: WebhookTriggerService,
     private readonly actionService: ActionService,
     private readonly runtimeBindingsService: RuntimeBindingsService,
     private readonly i18nService: I18nService,
@@ -298,7 +296,7 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
       );
     }
 
-    const workflow = await this.workflowService.findOne(id);
+    const workflow = await this.workflowService.findOneAndPopulate(id);
     if (!workflow) {
       this.logger.warn(`Unable to run Workflow by id ${id}`);
       throw new NotFoundException(`Workflow with ID ${id} not found`);
@@ -327,11 +325,12 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
             triggeredAt: new Date(),
           })
         : new ManualEventWrapper(manualInput, userId);
-    const initiator = await this.userService.findOne(userId);
-    event.setInitiator(initiator!);
-    event.setWorkflowId(workflow.id);
 
-    await this.agenticService.handleEvent(event);
+    await this.webhookTriggerService.dispatchTriggerEvent(
+      workflow,
+      event,
+      userId,
+    );
 
     return { accepted: true };
   }

@@ -12,9 +12,101 @@ import { cloneWithPrototype, toRecord } from "../shared/object";
 import { preprocess } from "../shared/preprocess";
 import { userSchema } from "../user/user";
 
-import { directionTypeSchema, workflowTypeSchema } from "./domain";
+import {
+  directionTypeSchema,
+  WebhookAuthType,
+  webhookJwtAlgorithmSchema,
+  workflowTypeSchema,
+} from "./domain";
 import { nullishToNull } from "./helpers";
 import { workflowVersionSchema } from "./workflow-version";
+
+const nullableString = preprocess(
+  nullishToNull,
+  z.string().nullable().optional(),
+);
+const webhookTriggerBaseShape = {
+  enabled: z.coerce.boolean().default(false),
+};
+
+export const webhookTriggerSchema = preprocess(
+  (value) => {
+    // Default the discriminator so a config without an explicit authType still
+    // validates as an unauthenticated webhook (matches the previous behaviour).
+    const record = toRecord(value);
+    if (record && record.authType == null) {
+      return { ...record, authType: WebhookAuthType.none };
+    }
+
+    return value;
+  },
+  z
+    .discriminatedUnion("authType", [
+      z.object({
+        ...webhookTriggerBaseShape,
+        authType: z.literal(WebhookAuthType.none),
+      }),
+      z.object({
+        ...webhookTriggerBaseShape,
+        authType: z.literal(WebhookAuthType.basic),
+        username: nullableString,
+        password: nullableString,
+      }),
+      z.object({
+        ...webhookTriggerBaseShape,
+        authType: z.literal(WebhookAuthType.header),
+        headerName: nullableString,
+        headerValue: nullableString,
+      }),
+      z.object({
+        ...webhookTriggerBaseShape,
+        authType: z.literal(WebhookAuthType.jwt),
+        jwtSecret: nullableString,
+        jwtAlgorithm: preprocess(
+          nullishToNull,
+          webhookJwtAlgorithmSchema.nullable().optional(),
+        ),
+      }),
+    ])
+    // An enabled webhook with an unset secret would otherwise authenticate
+    // empty credentials, so credentials are mandatory once enabled.
+    .superRefine((config, ctx) => {
+      if (!config.enabled) {
+        return;
+      }
+
+      const requireCredential = (
+        field: string,
+        value: string | null | undefined,
+      ) => {
+        if (!value) {
+          ctx.addIssue({
+            code: "custom",
+            path: [field],
+            message: `${field} is required when the webhook trigger is enabled`,
+          });
+        }
+      };
+
+      switch (config.authType) {
+        case WebhookAuthType.basic:
+          requireCredential("username", config.username);
+          requireCredential("password", config.password);
+          break;
+        case WebhookAuthType.header:
+          requireCredential("headerName", config.headerName);
+          requireCredential("headerValue", config.headerValue);
+          break;
+        case WebhookAuthType.jwt:
+          requireCredential("jwtSecret", config.jwtSecret);
+          break;
+        default:
+          break;
+      }
+    }),
+);
+
+export type WebhookTriggerConfig = z.infer<typeof webhookTriggerSchema>;
 
 export type WorkflowDefinitionParser = (definitionYml: string) => unknown;
 const workflowAliasMap = {
@@ -33,6 +125,10 @@ const workflowStubObjectSchema = baseStubSchema.extend({
   y: z.coerce.number(),
   zoom: z.coerce.number(),
   direction: directionTypeSchema,
+  webhookTrigger: preprocess(
+    nullishToNull,
+    webhookTriggerSchema.nullable(),
+  ).optional(),
 });
 const withWorkflowAliases = (value: unknown): unknown => {
   const original = toRecord(value);

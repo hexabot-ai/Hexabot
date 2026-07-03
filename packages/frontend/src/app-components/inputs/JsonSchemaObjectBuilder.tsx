@@ -245,6 +245,8 @@ type SchemaNodeEditorProps<C extends JsonSchemaOptionContext = "default"> = {
   /** react-hook-form path to this schema node (e.g. "schema", "schema.items", "schema.properties.0.schema") */
   name: string;
   label?: string | JSX.Element;
+  /** Optional helper text rendered under the root title. */
+  description?: React.ReactNode;
   /** If set, type is enforced and selection is hidden. */
   forcedType?: JsonSchemaType;
   /** Hide title input for the root schema node. */
@@ -262,6 +264,7 @@ type SchemaNodeEditorProps<C extends JsonSchemaOptionContext = "default"> = {
 function SchemaNodeEditor<C extends JsonSchemaOptionContext = "default">({
   name,
   label,
+  description,
   forcedType,
   depth = 0,
   maxDepth = 6,
@@ -374,6 +377,16 @@ function SchemaNodeEditor<C extends JsonSchemaOptionContext = "default">({
             )}
           </Stack>
         )}
+
+        {isRootNode &&
+          description &&
+          (typeof description === "string" ? (
+            <Typography variant="caption" color="text.secondary">
+              {description}
+            </Typography>
+          ) : (
+            description
+          ))}
 
         {/* Type + title */}
         {(showTypeSelect || showTitleInput) && (
@@ -760,6 +773,7 @@ export function JsonSchemaObjectBuilder<
 >({
   name,
   label,
+  description,
   maxDepth = 6,
   hideTitle = true,
   hideDescription = true,
@@ -768,6 +782,7 @@ export function JsonSchemaObjectBuilder<
 }: {
   name: string;
   label?: string | JSX.Element;
+  description?: React.ReactNode;
   maxDepth?: number;
   hideTitle?: boolean;
   hideDescription?: boolean;
@@ -784,6 +799,7 @@ export function JsonSchemaObjectBuilder<
       <SchemaNodeEditor
         name={name}
         label={resolvedLabel}
+        description={description}
         forcedType="object"
         depth={0}
         maxDepth={maxDepth}
