@@ -6,7 +6,7 @@
 
 import type { CompiledStep, DefDefinitions } from "@hexabot-ai/agentic";
 import type { ResizeControlDirection } from "@xyflow/system";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { EMPTY_WORKFLOW_GRAPH } from "../constants/workflow.constants";
 import type {
@@ -36,20 +36,16 @@ export const useWorkflowGraphLayout = ({
 }: UseWorkflowGraphLayoutProps) => {
   const [graphData, setGraphData] =
     useState<WorkflowGraphData>(EMPTY_WORKFLOW_GRAPH);
-  const requestTokenRef = useRef(0);
   const isEmptyWorkflow =
     Array.isArray(compiledFlow) && compiledFlow.length === 0;
   const isLoading = compiledFlow === undefined;
 
   useEffect(() => {
-    const requestToken = requestTokenRef.current + 1;
-
-    requestTokenRef.current = requestToken;
     let cancelled = false;
 
     const layoutGraph = async () => {
       if (!compiledFlow?.length) {
-        if (!cancelled && requestTokenRef.current === requestToken) {
+        if (!cancelled) {
           setGraphData(EMPTY_WORKFLOW_GRAPH);
         }
 
@@ -66,14 +62,14 @@ export const useWorkflowGraphLayout = ({
           bindingCatalog,
         });
 
-        if (!cancelled && requestTokenRef.current === requestToken) {
+        if (!cancelled) {
           setGraphData(layoutedGraph ?? EMPTY_WORKFLOW_GRAPH);
         }
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error("Failed to layout workflow graph:", error);
 
-        if (!cancelled && requestTokenRef.current === requestToken) {
+        if (!cancelled) {
           setGraphData(EMPTY_WORKFLOW_GRAPH);
         }
       }

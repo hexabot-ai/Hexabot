@@ -58,7 +58,10 @@ export const alignAllNodesToStartAxis = (
   // For each top-level non-indicator, non-attachment node, use its node center.
   // The targetAxis is the average of all these reference centers.
   const indicatorIds = new Set([START_INDICATOR_ID, END_INDICATOR_ID]);
-  const processedGroupIds = new Set<string>();
+  const groupAlignments = new Map<
+    string,
+    { memberIds: Set<string>; referenceCenter: number }
+  >();
   const referenceCenters: number[] = [];
   const collectGroupMemberIds = (groupId: string): Set<string> => {
     const group = groups.get(groupId);
@@ -125,34 +128,32 @@ export const alignAllNodesToStartAxis = (
   // is the average of these — Start/Stop will be moved to align with it.
 
   nodes.forEach((node) => {
-    if (indicatorIds.has(node.id)) {
-      return;
-    }
-
     // Skip GROUP overlay nodes — they duplicate the bounding-box center of
-    // their member nodes which are already counted via nodeToOutermostGroup.
-    if (node.type === ENodeType.GROUP) {
-      return;
-    }
-
-    if (attachmentParentByChild.has(node.id)) {
+    // their member nodes which are already counted via nodeToOutermostGroup —
+    // and attachment children, which move with their parent.
+    if (node.type === ENodeType.GROUP || attachmentParentByChild.has(node.id)) {
       return;
     }
 
     const groupId = nodeToOutermostGroup.get(node.id);
 
     if (groupId) {
-      if (processedGroupIds.has(groupId)) {
+      if (groupAlignments.has(groupId)) {
         return;
       }
 
-      processedGroupIds.add(groupId);
-      const referenceCenter = getGroupReferenceCenter(groupId);
+      const memberIds = collectGroupMemberIds(groupId);
+      const referenceCenter = getGroupReferenceCenter(groupId, memberIds);
 
       if (referenceCenter !== undefined) {
+        groupAlignments.set(groupId, { memberIds, referenceCenter });
         referenceCenters.push(referenceCenter);
       }
 
+      return;
+    }
+
+    if (indicatorIds.has(node.id)) {
       return;
     }
 
@@ -170,46 +171,28 @@ export const alignAllNodesToStartAxis = (
       ? average(referenceCenters)
       : getAxisCenter(startNode.position, startDims, isVertical, "spread");
   const deltas = new Map<string, number>();
-  const processedGroups = new Set<string>();
 
+  groupAlignments.forEach(({ memberIds, referenceCenter }, groupId) => {
+    const delta = targetAxis - referenceCenter;
+
+    if (delta === 0) {
+      return;
+    }
+
+    memberIds.forEach((id) => {
+      deltas.set(id, delta);
+    });
+    // Also shift the GROUP overlay node itself (same delta as its members).
+    deltas.set(groupId, delta);
+  });
+
+  // Ungrouped nodes — including the Start/Stop indicators — align individually.
   nodes.forEach((node) => {
-    if (attachmentParentByChild.has(node.id)) {
-      return;
-    }
-
-    // GROUP overlay nodes move with the same delta as their members; skip
-    // them here — they're handled below via the groupId path on member nodes.
-    if (node.type === ENodeType.GROUP) {
-      return;
-    }
-
-    const groupId = nodeToOutermostGroup.get(node.id);
-
-    if (groupId) {
-      if (processedGroups.has(groupId)) {
-        return;
-      }
-
-      processedGroups.add(groupId);
-      const memberIds = collectGroupMemberIds(groupId);
-      const referenceCenter = getGroupReferenceCenter(groupId, memberIds);
-
-      if (referenceCenter === undefined) {
-        return;
-      }
-
-      const delta = targetAxis - referenceCenter;
-
-      if (delta === 0) {
-        return;
-      }
-
-      memberIds.forEach((id) => {
-        deltas.set(id, delta);
-      });
-      // Also shift the GROUP overlay node itself (same delta as its members).
-      deltas.set(groupId, delta);
-
+    if (
+      node.type === ENodeType.GROUP ||
+      attachmentParentByChild.has(node.id) ||
+      nodeToOutermostGroup.has(node.id)
+    ) {
       return;
     }
 

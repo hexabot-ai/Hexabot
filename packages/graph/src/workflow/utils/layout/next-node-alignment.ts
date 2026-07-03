@@ -12,10 +12,12 @@ import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 
 import {
   appendMapValue,
+  average,
   getAxisCenter,
   getBoundsSpreadCenter,
   isHorizontalDirection,
   type LayoutContext,
+  translateSpread,
 } from "./geometry";
 import { buildOutgoingMap, mapNodesToGroup } from "./graph-maps";
 
@@ -52,13 +54,10 @@ export const alignNextNodesWithPlaceholders = (
       getBoundsSpreadCenter(bounds, isVertical),
     );
   });
-  // Collect per-target offset contributions grouped by the *origin* group, so
-  // a Conditional with N branches contributes N entries that all point to the
-  // same operator center. We average them per target below.
-  const offsetContributions = new Map<
-    string,
-    Array<{ x: number; y: number }>
-  >();
+  // Collect per-target spread-axis offset contributions grouped by the
+  // *origin* group, so a Conditional with N branches contributes N entries
+  // that all point to the same operator center. We average them per target.
+  const offsetContributions = new Map<string, number[]>();
 
   nodes
     .filter((node) => node.type === ENodeType.BRANCH_PLACEHOLDER)
@@ -102,26 +101,18 @@ export const alignNextNodesWithPlaceholders = (
         isVertical,
         "spread",
       );
-      const offset = isVertical
-        ? { x: referenceCenter - targetCenter, y: 0 }
-        : { x: 0, y: referenceCenter - targetCenter };
+      const offset = referenceCenter - targetCenter;
 
-      if (offset.x === 0 && offset.y === 0) {
-        return;
+      if (offset !== 0) {
+        appendMapValue(offsetContributions, target.id, offset);
       }
-
-      appendMapValue(offsetContributions, target.id, offset);
     });
-  const offsets = new Map<string, { x: number; y: number }>();
+  const offsets = new Map<string, number>();
 
   offsetContributions.forEach((contributions, targetId) => {
-    const count = contributions.length;
-    const avgOffset = {
-      x: contributions.reduce((sum, c) => sum + c.x, 0) / count,
-      y: contributions.reduce((sum, c) => sum + c.y, 0) / count,
-    };
+    const avgOffset = average(contributions);
 
-    if (avgOffset.x === 0 && avgOffset.y === 0) {
+    if (avgOffset === 0) {
       return;
     }
 
@@ -130,28 +121,20 @@ export const alignNextNodesWithPlaceholders = (
     const memberIds = targetGroup ? [...targetGroup.memberNodeIds] : [targetId];
 
     memberIds.forEach((id) => {
-      const existing = offsets.get(id) ?? { x: 0, y: 0 };
-
-      offsets.set(id, {
-        x: existing.x + avgOffset.x,
-        y: existing.y + avgOffset.y,
-      });
+      offsets.set(id, (offsets.get(id) ?? 0) + avgOffset);
     });
   });
 
   return nodes.map((node) => {
     const offset = offsets.get(node.id);
 
-    if (!offset || (offset.x === 0 && offset.y === 0)) {
+    if (!offset) {
       return node;
     }
 
     return {
       ...node,
-      position: {
-        x: node.position.x + offset.x,
-        y: node.position.y + offset.y,
-      },
+      position: translateSpread(node.position, isVertical, offset),
     };
   });
 };

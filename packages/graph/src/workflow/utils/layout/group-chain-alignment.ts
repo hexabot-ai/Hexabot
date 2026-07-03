@@ -123,20 +123,6 @@ export const alignGroupChainAxes = (
       "spread",
     );
   };
-  const moveGroup = (group: GroupMeta, delta: number) => {
-    collectSubtreeIds(group).forEach((id) => {
-      const node = nodesById.get(id);
-
-      if (!node) {
-        return;
-      }
-
-      positions.set(
-        id,
-        translateSpread(positions.get(id) ?? node.position, isVertical, delta),
-      );
-    });
-  };
   const moveNodeSpread = (nodeId: string, delta: number) => {
     const node = nodesById.get(nodeId);
 
@@ -152,6 +138,9 @@ export const alignGroupChainAxes = (
         delta,
       ),
     );
+  };
+  const moveGroup = (group: GroupMeta, delta: number) => {
+    collectSubtreeIds(group).forEach((id) => moveNodeSpread(id, delta));
   };
   const visited = new Set<string>();
 

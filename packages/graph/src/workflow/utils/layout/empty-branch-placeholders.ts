@@ -218,8 +218,7 @@ export const alignEmptyBranchPlaceholders = (
 
     // nodeTrailingEdge: the spread-axis extent of a node including its
     // attachment descendants (e.g. AI-agent binding chips below the task).
-    const nodeTrailingEdge = (node: GraphNode): number =>
-      nodeSpreadExtent(node);
+    const nodeTrailingEdge = nodeSpreadExtent;
     // nodeLeadingEdge: the spread-axis edge that faces the previous branch.
     const nodeLeadingEdge = (node: GraphNode): number =>
       getSpreadCoordinate(node.position, isVertical);
