@@ -30,6 +30,7 @@ import {
   createPlaceholderNodeId,
   createStepNodeId,
 } from "./graph-builder/id-factory";
+import { BRANCH_SPREAD_GAP } from "./layout/constants";
 import {
   buildNodesAndEdges,
   getWorkflowDefaultConfig,
@@ -2954,5 +2955,84 @@ describe("buildNodesAndEdges", () => {
 
     // ph1 (branchIndex=1) must be above ph2 (branchIndex=2).
     expect(ph1!.position.y).toBeLessThan(ph2!.position.y);
+  });
+
+  it("keeps sibling branch gaps uniform when a conditional group follows a parallel inside a branch", async () => {
+    // Regression: branch packing used to run before alignGroupChainAxes pulled
+    // the chained conditional group onto the parallel's axis, permanently
+    // reserving the group's pre-alignment position as an oversized gap between
+    // the outer conditional's sibling branches.
+    const parallelStep: CompiledParallelStep = {
+      id: "1:parallel",
+      label: "parallel",
+      type: StepType.Parallel,
+      strategy: "wait_all",
+      steps: [
+        nestedConditionalStep("1.parallel.0:nested"),
+        taskStep("1.parallel.1:branch_one", "branch_one"),
+        taskStep("1.parallel.2:branch_two", "branch_two"),
+      ],
+    };
+    const chainedConditional: CompiledConditionalStep = {
+      id: "2:chained",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "2:chained:when:0",
+          condition: { kind: "literal", value: "yes" },
+          steps: [],
+        },
+        {
+          id: "2:chained:when:1",
+          steps: [nestedConditionalStep("2.chained.1:nested")],
+        },
+      ],
+    };
+    const rootConditional: CompiledConditionalStep = {
+      id: "0:root",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "0:root:when:0",
+          condition: { kind: "literal", value: "top" },
+          steps: [nestedConditionalStep("0.root.0:nested")],
+        },
+        {
+          id: "0:root:when:1",
+          condition: { kind: "literal", value: "middle" },
+          steps: [parallelStep, chainedConditional],
+        },
+        {
+          id: "0:root:when:2",
+          steps: [taskStep("0.root.2:last", "last")],
+        },
+      ],
+    };
+    const graph = await buildGraph({
+      flow: [rootConditional],
+      tasks: baseTasks(["branch_one", "branch_two", "last"]),
+    });
+    const spanOf = (nodeId: string) => {
+      const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+
+      return getNodeSpreadSpan(node, "horizontal");
+    };
+    const topSpan = spanOf(createGroupId("0.root.0:nested"));
+    const parallelSpan = spanOf(createGroupId(parallelStep.id));
+    const chainedSpan = spanOf(createGroupId(chainedConditional.id));
+    const middleSpan = {
+      leading: Math.min(parallelSpan.leading, chainedSpan.leading),
+      trailing: Math.max(parallelSpan.trailing, chainedSpan.trailing),
+    };
+    const bottomSpan = spanOf(createStepNodeId("0.root.2:last", "task"));
+    const gapAbove = middleSpan.leading - topSpan.trailing;
+    const gapBelow = bottomSpan.leading - middleSpan.trailing;
+
+    expect(gapAbove).toBeGreaterThan(0);
+    expect(gapBelow).toBeGreaterThan(0);
+    expect(gapAbove).toBeLessThanOrEqual(BRANCH_SPREAD_GAP + 1);
+    expect(gapBelow).toBeLessThanOrEqual(BRANCH_SPREAD_GAP + 1);
   });
 });

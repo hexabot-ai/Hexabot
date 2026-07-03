@@ -119,7 +119,14 @@ export const buildNodesAndEdges = async ({
   const finalNodes = alignAllNodesToStartAxis(
     withFreshGroupNodes(
       symmetrizeBranchSiblings(
-        symmetricNodes,
+        // Straighten group chains (e.g. Parallel → Conditional sequenced in
+        // one branch) BEFORE the last packing pass: chain alignment can move a
+        // chained group a long way onto its chain root's axis, and packing
+        // with the pre-alignment bounds would reserve that group's old
+        // position as a permanent oversized gap between sibling branches.
+        alignGroupChainAxes(symmetricNodes, projected.edges, traversal.groups, {
+          config,
+        }),
         projected.edges,
         traversal.groups,
         { config },
