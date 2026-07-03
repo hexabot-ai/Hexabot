@@ -11,8 +11,10 @@ import ListItemAvatar from "@mui/material/ListItemAvatar";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemText from "@mui/material/ListItemText";
 import ListSubheader from "@mui/material/ListSubheader";
+import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import debounce from "@mui/utils/debounce";
-import { Inbox } from "lucide-react";
+import { Inbox, Lock } from "lucide-react";
 import { UIEventHandler, useCallback, useEffect } from "react";
 
 import { useGetFromCache } from "@/hooks/crud/useGet";
@@ -127,6 +129,10 @@ export const ConversationsList = (props: {
           i18n.language,
           thread.lastMessageAt || thread.createdAt,
         );
+        const sourceLabel = getConversationSourceLabel(
+          source?.name,
+          t("label.unknown"),
+        );
 
         if (!subscriber) {
           return null;
@@ -161,13 +167,26 @@ export const ConversationsList = (props: {
                   },
                 }}
               />
-              <Chip
-                size="small"
-                label={getConversationSourceLabel(
-                  source?.name,
-                  t("label.unknown"),
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                {thread.status === "closed" && (
+                  <Tooltip title={t("label.closed")}>
+                    <Stack
+                      component="span"
+                      alignItems="center"
+                      justifyContent="center"
+                      aria-label={t("label.closed")}
+                      sx={{ color: "text.secondary" }}
+                    >
+                      <Lock size={14} />
+                    </Stack>
+                  </Tooltip>
                 )}
-              />
+                <Chip
+                  size="small"
+                  label={sourceLabel}
+                  aria-label={sourceLabel}
+                />
+              </Stack>
             </ListItemButton>
           </ListItem>
         );

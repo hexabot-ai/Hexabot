@@ -102,7 +102,7 @@ describe('ThreadService', () => {
       expect(resolved).toEqual(explicit);
     });
 
-    it('reopens explicit closed thread', async () => {
+    it('creates a new thread when an explicit thread is closed', async () => {
       const now = new Date('2026-03-01T10:00:00.000Z');
       jest.useFakeTimers().setSystemTime(now);
       const explicitClosed = createThread({
@@ -111,32 +111,32 @@ describe('ThreadService', () => {
         closeReason: 'manual',
         closedAt: new Date('2026-03-01T06:00:00.000Z'),
       });
-      const reopened = createThread({
-        ...explicitClosed,
+      const created = createThread({
+        id: 'thread-new',
         status: 'open',
         closeReason: null,
         closedAt: null,
         lastMessageAt: now,
       });
       repository.findOne.mockResolvedValue(explicitClosed);
-      repository.updateOne.mockResolvedValue(reopened);
+      repository.create.mockResolvedValue(created);
 
       const resolved = await service.resolveThreadForIncoming({
         subscriberId: 'sub-1',
         explicitThreadId: explicitClosed.id,
       });
 
-      expect(repository.updateOne).toHaveBeenCalledWith(
-        explicitClosed.id,
-        {
-          status: 'open',
-          closeReason: null,
-          closedAt: null,
-          lastMessageAt: now,
-        },
-        undefined,
-      );
-      expect(resolved).toEqual(reopened);
+      expect(repository.updateOne).not.toHaveBeenCalled();
+      expect(repository.create).toHaveBeenCalledWith({
+        subscriber: 'sub-1',
+        source: 'source-1',
+        title: null,
+        status: 'open',
+        lastMessageAt: now,
+        closeReason: null,
+        closedAt: null,
+      });
+      expect(resolved).toEqual(created);
     });
 
     it('rejects explicit thread that does not belong to subscriber', async () => {

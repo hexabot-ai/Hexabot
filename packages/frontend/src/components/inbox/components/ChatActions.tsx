@@ -4,40 +4,166 @@
  * Full terms: see LICENSE.md.
  */
 
-import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
 import IconButton from "@mui/material/IconButton";
-import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
-import Typography from "@mui/material/Typography";
-import { Hand } from "lucide-react";
-import { useEffect, useState } from "react";
+import Tooltip from "@mui/material/Tooltip";
+import { Lock, UserRoundArrowLeft, UserRoundMinus } from "lucide-react";
 
-import { Avatar } from "@/app-components/displays/Avatar";
+import LicenseGate, {
+  hasLicensePlanAccess,
+  PaidPlan,
+} from "@/components/license/LicenseGate";
 import { useFind } from "@/hooks/crud/useFind";
 import { useUpdate } from "@/hooks/crud/useUpdate";
 import { useAuth } from "@/hooks/useAuth";
+import { useDialogs } from "@/hooks/useDialogs";
+import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 
 import { useChat } from "../hooks/ChatContext";
 
+import { ChatHandoverDialog } from "./ChatHandoverDialog";
+
+const USER_MANAGEMENT_REQUIRED_PLAN: PaidPlan = "pro";
+
 export const ChatActions = () => {
   const { t } = useTranslate();
-  const { subscriber: activeChat } = useChat();
-  const [takeoverBy, setTakeoverBy] = useState<string>(
-    activeChat?.assignedTo ?? "",
-  );
-  const { mutate } = useUpdate(EntityType.SUBSCRIBER);
+  const { thread, subscriber: activeChat } = useChat();
   const { user } = useAuth();
-  const { data: users } = useFind({
-    entity: EntityType.USER,
-  });
+  const dialogs = useDialogs();
+  const { toast } = useToast();
+  const { mutate: updateSubscriber, isPending: isUpdatingSubscriber } =
+    useUpdate(EntityType.SUBSCRIBER, {
+      onError: (error) => {
+        toast.error(error);
+      },
+    });
+  const { mutate: updateThread } = useUpdate(EntityType.THREAD);
+  const canAccessUserManagement = hasLicensePlanAccess(
+    user?.license,
+    USER_MANAGEMENT_REQUIRED_PLAN,
+  );
+  const {
+    data: users,
+    isError: hasUsersError,
+    isFetching: isFetchingUsers,
+  } = useFind(
+    {
+      entity: EntityType.USER,
+    },
+    {
+      hasCount: false,
+    },
+    {
+      enabled: canAccessUserManagement,
+    },
+  );
+  const handleOpenHandoverDialog = async () => {
+    const subscriber = activeChat;
 
-  useEffect(() => {
-    setTakeoverBy(activeChat?.assignedTo ?? "");
-  }, [activeChat?.assignedTo]);
+    if (!canAccessUserManagement || !subscriber || users.length === 0) return;
+
+    const assignedTo = await dialogs.open(ChatHandoverDialog, {
+      assignedTo: subscriber.assignedTo,
+      currentUserId: user?.id,
+      users,
+    });
+    const currentAssignedTo = subscriber.assignedTo ?? null;
+
+    if (assignedTo === undefined || assignedTo === currentAssignedTo) {
+      return;
+    }
+
+    updateSubscriber({
+      id: subscriber.id,
+      params: { assignedTo },
+    });
+  };
+  const handleUnassignConversation = () => {
+    const subscriber = activeChat;
+
+    if (!canAccessUserManagement || !subscriber?.assignedTo) return;
+
+    updateSubscriber({
+      id: subscriber.id,
+      params: { assignedTo: null },
+    });
+  };
+  const handleCloseThread = () => {
+    if (!thread) return;
+
+    updateThread(
+      {
+        id: thread.id,
+        params: {
+          status: "closed",
+          closeReason: "manual",
+          closedAt: new Date(),
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success(t("message.thread_closed_success"));
+        },
+        onError: (error) => {
+          toast.error(error);
+        },
+      },
+    );
+  };
+  const isThreadClosed = thread?.status === "closed";
+  const assignButtonDisabled =
+    !activeChat ||
+    isUpdatingSubscriber ||
+    isFetchingUsers ||
+    hasUsersError ||
+    users.length === 0;
+  const assignButtonTooltip = isUpdatingSubscriber
+    ? t("message.loading")
+    : isFetchingUsers
+      ? t("message.loading")
+      : hasUsersError
+        ? t("message.assign_conversation_users_load_failed")
+        : users.length === 0
+          ? t("message.assign_conversation_no_users")
+          : t("button.assign");
+  const unassignButtonDisabled =
+    !activeChat || !activeChat.assignedTo || isUpdatingSubscriber;
+  const unassignButtonTooltip = isUpdatingSubscriber
+    ? t("message.loading")
+    : activeChat?.assignedTo
+      ? t("button.unassign")
+      : t("message.assign_conversation_not_assigned");
+  const assignButton = (
+    <IconButton
+      aria-label={t("button.assign")}
+      disabled={assignButtonDisabled}
+      onClick={() => {
+        void handleOpenHandoverDialog();
+      }}
+    >
+      {isFetchingUsers || isUpdatingSubscriber ? (
+        <CircularProgress color="inherit" size={18} />
+      ) : (
+        <UserRoundArrowLeft size={18} />
+      )}
+    </IconButton>
+  );
+  const unassignButton = (
+    <IconButton
+      aria-label={t("button.unassign")}
+      disabled={unassignButtonDisabled}
+      onClick={handleUnassignConversation}
+    >
+      {isUpdatingSubscriber ? (
+        <CircularProgress color="inherit" size={18} />
+      ) : (
+        <UserRoundMinus size={18} />
+      )}
+    </IconButton>
+  );
 
   return (
     <Stack
@@ -48,81 +174,42 @@ export const ChatActions = () => {
       flexWrap="wrap"
       marginLeft="auto"
     >
-      {users.length > 0 && (
-        <Box minWidth={180}>
-          <TextField
-            fullWidth
-            size="small"
-            onChange={(e) => setTakeoverBy(e.target.value)}
-            value={takeoverBy}
-            disabled={!activeChat}
-            label={t("label.assign_to")}
-            select
+      {canAccessUserManagement ? (
+        <>
+          <Tooltip title={assignButtonTooltip}>
+            <span>{assignButton}</span>
+          </Tooltip>
+          <Tooltip title={unassignButtonTooltip}>
+            <span>{unassignButton}</span>
+          </Tooltip>
+        </>
+      ) : (
+        <>
+          <LicenseGate
+            requiredPlan={USER_MANAGEMENT_REQUIRED_PLAN}
+            reasonText={t("message.assign_conversation_locked")}
           >
-            {(users || []).map((chatUser) => {
-              const displayName =
-                `${chatUser.firstName} ${chatUser.lastName}`.trim() ||
-                chatUser.email ||
-                chatUser.id;
-
-              return (
-                <MenuItem key={chatUser.id} value={chatUser.id}>
-                  <Stack direction="row" alignItems="center" spacing={1}>
-                    <Avatar
-                      alt={displayName}
-                      size={24}
-                      subscriberId={chatUser.id}
-                    />
-                    <Typography
-                      variant="body2"
-                      sx={{ textTransform: "capitalize" }}
-                    >
-                      {displayName}
-                    </Typography>
-                  </Stack>
-                </MenuItem>
-              );
-            })}
-          </TextField>
-        </Box>
+            {assignButton}
+          </LicenseGate>
+          <LicenseGate
+            requiredPlan={USER_MANAGEMENT_REQUIRED_PLAN}
+            reasonText={t("message.assign_conversation_locked")}
+          >
+            {unassignButton}
+          </LicenseGate>
+        </>
       )}
-      <IconButton
-        disabled={!activeChat}
-        onClick={() =>
-          activeChat &&
-          takeoverBy &&
-          mutate({
-            id: activeChat.id,
-            params: { assignedTo: takeoverBy },
-          })
-        }
-        color="default"
-        sx={{
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 1.5,
-        }}
-      >
-        <Hand size={18} />
-      </IconButton>
-
-      <Button
-        disabled={!activeChat}
-        onClick={() =>
-          activeChat &&
-          mutate({
-            id: activeChat.id,
-            params: {
-              assignedTo:
-                user && user.id === activeChat.assignedTo ? null : user?.id,
-            },
-          })
-        }
-      >
-        {user && user.id === activeChat?.assignedTo
-          ? t("button.handback")
-          : t("button.takeover")}
-      </Button>
+      <Tooltip title={t("button.close_thread")}>
+        <span>
+          <IconButton
+            aria-label={t("button.close_thread")}
+            disabled={!activeChat || isThreadClosed}
+            onClick={handleCloseThread}
+          >
+            <Lock size={18} />
+          </IconButton>
+        </span>
+      </Tooltip>
     </Stack>
   );
 };
