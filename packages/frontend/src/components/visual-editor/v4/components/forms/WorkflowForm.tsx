@@ -27,8 +27,9 @@ import {
 import Grid from "@mui/material/Grid";
 import Typography from "@mui/material/Typography";
 import type { JSONSchema7 as JsonSchema } from "json-schema";
-import { Copy } from "lucide-react";
-import { FC, Fragment, useEffect, useMemo, useRef } from "react";
+import { Code, Copy } from "lucide-react";
+import type { JSONSchema } from "monaco-yaml";
+import { FC, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { ContentContainer, ContentItem } from "@/app-components/dialogs";
@@ -40,6 +41,7 @@ import {
   toJsonSchema,
 } from "@/app-components/inputs/JsonSchemaObjectBuilder";
 import { PasswordInput } from "@/app-components/inputs/PasswordInput";
+import { WebhookSnippetDialog } from "@/components/workflow-webhook/WebhookSnippetDialog";
 import { useCreate } from "@/hooks/crud/useCreate";
 import { useTanstackQueryClient } from "@/hooks/crud/useTanstack";
 import { useUpdate } from "@/hooks/crud/useUpdate";
@@ -51,6 +53,8 @@ import { EntityType, QueryType } from "@/services/types";
 import type { EntityAttributes } from "@/types/base.types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
 import { writeToClipboard } from "@/utils/clipboard";
+
+import { getSchemaDefaults } from "../../utils/schema-defaults.utils";
 
 import { WorkflowTypeSelector } from "./WorkflowTypeSelector";
 
@@ -351,6 +355,22 @@ export const WorkflowForm: FC<
       }),
     );
   };
+  // Snapshotted when the dialog opens so snippets reflect the current
+  // (possibly unsaved) webhook settings and input schema.
+  const [snippetDialogState, setSnippetDialogState] = useState<{
+    webhookTrigger: WebhookTriggerConfig | null;
+    body: Record<string, unknown>;
+  } | null>(null);
+  const handleOpenSnippetDialog = () => {
+    setSnippetDialogState({
+      webhookTrigger:
+        (getValues("webhookTrigger") as WebhookTriggerConfig | null) ?? null,
+      body:
+        getSchemaDefaults(
+          toJsonSchema(getValues("inputSchema")) as JSONSchema,
+        ) ?? {},
+    });
+  };
   const handleTypeChange = (nextType: WorkflowType) => {
     const currentType = getValues("type");
 
@@ -616,11 +636,21 @@ export const WorkflowForm: FC<
                                           })}
                                         >
                                           <IconButton
-                                            edge="end"
                                             size="small"
                                             onClick={handleCopyWebhookUrl}
                                           >
                                             <Copy size={16} />
+                                          </IconButton>
+                                        </Tooltip>
+                                        <Tooltip
+                                          title={t("button.view_code_snippet")}
+                                        >
+                                          <IconButton
+                                            edge="end"
+                                            size="small"
+                                            onClick={handleOpenSnippetDialog}
+                                          >
+                                            <Code size={16} />
                                           </IconButton>
                                         </Tooltip>
                                       </InputAdornment>
@@ -837,6 +867,15 @@ export const WorkflowForm: FC<
               </ContentContainer>
             </Grid>
           </Grid>
+          {isEditing ? (
+            <WebhookSnippetDialog
+              open={snippetDialogState !== null}
+              onClose={() => setSnippetDialogState(null)}
+              url={webhookTriggerUrl}
+              webhookTrigger={snippetDialogState?.webhookTrigger}
+              body={snippetDialogState?.body ?? {}}
+            />
+          ) : null}
         </form>
       </Wrapper>
     </FormProvider>
