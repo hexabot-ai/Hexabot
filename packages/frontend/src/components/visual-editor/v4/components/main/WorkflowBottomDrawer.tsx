@@ -7,6 +7,7 @@
 import { WorkflowType } from "@hexabot-ai/types";
 import {
   Box,
+  CircularProgress,
   Divider,
   Drawer,
   IconButton,
@@ -228,7 +229,7 @@ export const WorkflowBottomDrawer = () => {
     axis: "vertical",
   });
   const [chatKey, setChatKey] = useState(0);
-  const { data: consoleSources } = useFind(
+  const { data: consoleSources, isLoading: isLoadingConsoleSources } = useFind(
     { entity: EntityType.SOURCE },
     {
       hasCount: false,
@@ -248,7 +249,7 @@ export const WorkflowBottomDrawer = () => {
       consoleSources[0]
     )?.id;
   }, [consoleSources, workflow?.id]);
-  const { data: latestOpenThreads } = useFind(
+  const { data: latestOpenThreads, isLoading: isLoadingThreads } = useFind(
     { entity: EntityType.THREAD },
     {
       hasCount: false,
@@ -266,7 +267,11 @@ export const WorkflowBottomDrawer = () => {
     currentThreadIdRef.current = latestOpenThreads?.[0]?.id ?? null;
   }, [latestOpenThreads]);
 
-  const { mutateAsync: closeThread } = useUpdate(EntityType.THREAD);
+  const { mutateAsync: closeThread, isPending: isClosingThread } = useUpdate(
+    EntityType.THREAD,
+  );
+  const isNewThreadDisabled =
+    isLoadingConsoleSources || isLoadingThreads || isClosingThread;
   const handleNewThread = useCallback(async () => {
     const threadId = currentThreadIdRef.current;
 
@@ -405,9 +410,19 @@ export const WorkflowBottomDrawer = () => {
                 {t("visual_editor.chat_widget.preview_conversation")}
               </Typography>
               <Tooltip title={t("visual_editor.chat_widget.new_thread")}>
-                <IconButton onClick={handleNewThread}>
-                  <MessageSquarePlus />
-                </IconButton>
+                <span>
+                  <IconButton
+                    onClick={handleNewThread}
+                    disabled={isNewThreadDisabled}
+                    aria-label={t("visual_editor.chat_widget.new_thread")}
+                  >
+                    {isClosingThread ? (
+                      <CircularProgress size={24} thickness={5} />
+                    ) : (
+                      <MessageSquarePlus />
+                    )}
+                  </IconButton>
+                </span>
               </Tooltip>
             </ChatPreviewHeader>
             <ChatWidgetBody>
