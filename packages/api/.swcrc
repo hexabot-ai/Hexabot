@@ -14,7 +14,7 @@
     "loose": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*", "src/extra/*"]
     }
   },
   "module": {

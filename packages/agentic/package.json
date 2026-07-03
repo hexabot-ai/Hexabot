@@ -17,7 +17,8 @@
     "build": "pnpm run build:cjs && pnpm run build:esm",
     "build:cjs": "tsc -p tsconfig.build.cjs.json",
     "build:esm": "tsc -p tsconfig.build.esm.json",
-    "dev": "pnpm exec concurrently -k -n cjs,esm \"pnpm run build:cjs:watch\" \"pnpm run build:esm:watch\"",
+    "dev": "pnpm run build:cjs:watch",
+    "dev:full": "pnpm exec concurrently -k -n cjs,esm \"pnpm run build:cjs:watch\" \"pnpm run build:esm:watch\"",
     "build:watch": "tsc -p tsconfig.json --watch",
     "lint": "eslint \"{src,examples}/**/*.ts\" \"jest.config.ts\"",
     "lint:fix": "eslint \"{src,examples}/**/*.ts\" \"jest.config.ts\" --fix",
@@ -32,7 +33,7 @@
     "src"
   ],
   "dependencies": {
-    "jsonata": "^2.1.0",
+    "jsonata": "^2.2.0",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
