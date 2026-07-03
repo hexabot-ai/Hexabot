@@ -247,33 +247,6 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   @McpPermission('workflowversion', Action.CREATE)
   @ToolGuards([McpPermissionGuard])
   @Tool({
-    name: 'hexabot_workflow_version_restore',
-    description:
-      'Restore a workflow to a previous YAML version by creating a new restore snapshot.',
-    parameters: z.object({
-      workflowId: uuidSchema,
-      versionId: uuidSchema,
-      message: z.string().optional(),
-    }),
-  })
-  async restoreWorkflowVersion(
-    args: { workflowId: string; versionId: string; message?: string },
-    _context: unknown,
-    request?: HexabotMcpRequest,
-  ) {
-    const version = await this.workflowHelper.restoreWorkflowVersionSnapshot(
-      args,
-      this.getActorId(request),
-    );
-
-    return this.workflowHelper.summarizeWorkflowVersion(version, {
-      includeDefinitionYmlByteLength: true,
-    });
-  }
-
-  @McpPermission('workflowversion', Action.CREATE)
-  @ToolGuards([McpPermissionGuard])
-  @Tool({
     name: 'hexabot_workflow_rollback',
     description:
       'Rollback a workflow to a previous YAML version by creating a new current restore snapshot.',
