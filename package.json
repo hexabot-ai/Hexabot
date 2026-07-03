@@ -7,7 +7,8 @@
   "license": "FCL-1.0-ALv2",
   "packageManager": "pnpm@11.8.0",
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev --filter=!@hexabot-ai/cli --filter=!@hexabot-ai/widget --filter=!@hexabot-ai/graph",
+    "dev:all": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
@@ -30,7 +31,7 @@
     "release:stable:minor": "./bump-version.sh publish stable minor",
     "release:stable:major": "./bump-version.sh publish stable major",
     "release:promote:latest": "./bump-version.sh promote latest current",
-    "dev:api": "turbo run dev --filter=@hexabot-ai/api --filter=@hexabot-ai/agentic --filter=@hexabot-ai/types --parallel"
+    "dev:api": "turbo run dev --filter=@hexabot-ai/api --filter=@hexabot-ai/agentic --filter=@hexabot-ai/types"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.3.0",
@@ -38,7 +39,7 @@
     "concurrently": "^10.0.3",
     "husky": "^9.0.11",
     "rimraf": "^6.0.1",
-    "turbo": "^2.9.18"
+    "turbo": "^2.10.2"
   },
   "engines": {
     "node": "^24.17.0"

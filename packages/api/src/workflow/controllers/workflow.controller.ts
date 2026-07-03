@@ -118,7 +118,7 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
    * @returns Action metadata with JSON schemas.
    */
   @Get('actions{/:type}')
-  findActions(@Param('type') type?: WorkflowType) {
+  findActions(@Param('type') type?: WorkflowType | undefined) {
     if (type && !Object.values(WorkflowType).includes(type)) {
       throw new BadRequestException(`Invalid workflow type "${type}"`);
     }
