@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
 import { useWorkflowBindingsCatalog } from "@/contexts/workflow-bindings.context";
 import { useCreate } from "@/hooks/crud/useCreate";
-import { useGetFromCache } from "@/hooks/crud/useGet";
+import { useGet } from "@/hooks/crud/useGet";
 import {
   useTanstackMutation,
   useTanstackQueryClient,
@@ -135,10 +135,18 @@ export const useWorkflowDefinitionState = ({
       });
     },
   });
-  const getVersionFromCache = useGetFromCache(EntityType.WORKFLOW_VERSION);
-  const currentVersion = workflow?.currentVersion
-    ? getVersionFromCache(workflow?.currentVersion)
-    : null;
+  // Reactive version read: served from the cache, fetched when missing.
+  const { data: currentVersionData } = useGet(
+    workflow?.currentVersion ?? "",
+    { entity: EntityType.WORKFLOW_VERSION },
+    {
+      enabled: !!workflow?.id && !!workflow?.currentVersion,
+      routeParams: { id: workflow?.id },
+    },
+  );
+  const currentVersion = workflow?.currentVersion ? currentVersionData : null;
+  const isDefinitionLoading =
+    !!workflow?.currentVersion && currentVersion === undefined;
   const [yaml, setYaml] = useState(
     currentVersion ? currentVersion.definitionYml : "",
   );
@@ -196,6 +204,10 @@ export const useWorkflowDefinitionState = ({
       // Actions not yet loaded — remain in loading limbo, not an empty workflow
       return { definition: undefined, error: null };
     }
+    if (isDefinitionLoading) {
+      // Version yaml not fetched yet — undefined flow keeps the graph loading
+      return { definition: undefined, error: null };
+    }
     if (!yaml) {
       // Actions ready but yaml is empty → workflow has no steps yet
       return { definition: undefined, error: null, flow: [] as CompiledStep[] };
@@ -215,7 +227,14 @@ export const useWorkflowDefinitionState = ({
     } catch (error) {
       return { definition: undefined, flow: undefined, error: error as Error };
     }
-  }, [actionsByName, compileActionsByName, bindingKinds, yaml, workflow?.id]);
+  }, [
+    actionsByName,
+    compileActionsByName,
+    bindingKinds,
+    isDefinitionLoading,
+    yaml,
+    workflow?.id,
+  ]);
   // New definition version not yet saved ?
   const isDefinitionDirty = useMemo(() => {
     if (workflow?.currentVersion && !currentVersion) {
