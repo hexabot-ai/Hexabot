@@ -33,6 +33,7 @@ import type { WebsocketGateway } from '@/websocket/websocket.gateway';
 
 import { WorkflowUpdateDto } from '../dto/workflow.dto';
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
+import { WorkflowVersionRepository } from '../repositories/workflow-version.repository';
 import { WorkflowRepository } from '../repositories/workflow.repository';
 import { WorkflowType } from '../types';
 
@@ -61,8 +62,29 @@ export class WorkflowService extends BaseOrmService<WorkflowOrmEntity> {
     @Inject(WEBSOCKET_GATEWAY)
     private readonly gateway: WorkflowSocketGateway,
     private readonly workflowRunService: WorkflowRunService,
+    private readonly workflowVersionRepository: WorkflowVersionRepository,
   ) {
     super(repository);
+  }
+
+  /**
+   * Create a workflow and broadcast its blank initial version.
+   *
+   * The blank version 0 (and the workflow's currentVersion pointer) is
+   * persisted by entity lifecycle hooks inside the insert transaction through
+   * the raw EntityManager, which bypasses repository-level mutation events —
+   * so the version's postCreate event is emitted here, after commit.
+   */
+  async create(payload: InferCreateDto<WorkflowOrmEntity>): Promise<Workflow> {
+    const created = await super.create(payload);
+
+    if (created.currentVersion) {
+      await this.workflowVersionRepository.emitPostCreateById(
+        created.currentVersion,
+      );
+    }
+
+    return created;
   }
 
   /**

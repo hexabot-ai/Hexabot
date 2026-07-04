@@ -90,6 +90,7 @@ class ManualOnlyAction extends BaseAction<
 describe('WorkflowController (TypeORM)', () => {
   let workflowController: WorkflowController;
   let workflowService: WorkflowService;
+  let workflowVersionRepository: WorkflowVersionRepository;
   let agenticService: AgenticService;
   let logger: LoggerService;
   let actionService: ActionService;
@@ -165,6 +166,7 @@ describe('WorkflowController (TypeORM)', () => {
       agenticService,
       workflowController,
       workflowService,
+      workflowVersionRepository,
       actionService,
       runtimeBindingsService,
       i18nService,
@@ -172,6 +174,7 @@ describe('WorkflowController (TypeORM)', () => {
       AgenticService,
       WorkflowController,
       WorkflowService,
+      WorkflowVersionRepository,
       ActionService,
       RuntimeBindingsService,
       I18nService,
@@ -484,8 +487,17 @@ describe('WorkflowController (TypeORM)', () => {
           ...payload,
           createdBy: userId,
         },
-        [...IGNORED_TEST_FIELDS],
+        [...IGNORED_TEST_FIELDS, 'currentVersion'],
       );
+
+      // The response must reference the blank version 0 created alongside
+      // the workflow.
+      const blankVersion = await workflowVersionRepository.findOne({
+        where: { workflow: { id: created.id }, version: 0 },
+      });
+
+      expect(blankVersion).toBeDefined();
+      expect(created.currentVersion).toBe(blankVersion!.id);
     });
   });
 

@@ -430,10 +430,23 @@ export const WorkflowProvider: React.FC<WorkflowContextProps> = ({
 
     if (!flowId && workflows.length) {
       updateWorkflowURL(workflows.at(-1)?.id || workflows[0].id);
-    } else if (flowId && !workflows.some((w) => w.id === flowId)) {
+    } else if (
+      flowId &&
+      !workflows.some((w) => w.id === flowId) &&
+      // A just-created/imported workflow is in the item cache before the
+      // collection refetch lands; don't bounce to another workflow meanwhile.
+      !getWorkflowFromCache(flowId)
+    ) {
       void router.replace(`/${RouterType.WORKFLOW_EDITOR}/${workflows[0].id}`);
     }
-  }, [flowId, workflows, isWorkflowsSuccess, updateWorkflowURL, router]);
+  }, [
+    flowId,
+    workflows,
+    isWorkflowsSuccess,
+    updateWorkflowURL,
+    router,
+    getWorkflowFromCache,
+  ]);
 
   return (
     <WorkflowContext.Provider

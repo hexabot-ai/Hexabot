@@ -148,6 +148,31 @@ describe('WorkflowVersionService (TypeORM)', () => {
       expect(created.parentVersion ?? null).toBeNull();
     });
 
+    it('broadcasts the workflow currentVersion update when creating a snapshot', async () => {
+      const workflow = await createWorkflow();
+      const emitSpy = jest.spyOn(
+        workflowVersionService.repository.getEventEmitter(),
+        'emitAsync',
+      );
+      const created = await workflowVersionService.createSnapshot({
+        workflow: workflow.id,
+        definitionYml: 'version: 1',
+        action: WorkflowVersionAction.update,
+        createdBy: userFixtureIds.admin,
+      });
+
+      expect(emitSpy).toHaveBeenCalledWith(
+        'hook:workflow:postUpdate',
+        expect.objectContaining({
+          entityName: 'workflow',
+          entity: expect.objectContaining({
+            id: workflow.id,
+            currentVersion: expect.objectContaining({ id: created.id }),
+          }),
+        }),
+      );
+    });
+
     it('increments version and maps parent/creator fields', async () => {
       const workflow = await createWorkflow();
       const initialDefinition = 'version: 1';

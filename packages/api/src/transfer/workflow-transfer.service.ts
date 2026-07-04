@@ -506,6 +506,11 @@ export class WorkflowTransferService {
           workflowVersionPayload,
         );
 
+      // The version's lifecycle hook moved the workflow's currentVersion
+      // pointer on a separately-loaded row; mirror it on the in-memory entity
+      // so the deferred workflow postCreate event carries the final pointer.
+      importedWorkflow.workflowEntity.currentVersion = workflowVersion;
+
       postCreateEvents.push(
         buildPostCreateEvent(
           'workflowVersion',

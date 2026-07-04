@@ -168,6 +168,44 @@ describe('WorkflowService (TypeORM)', () => {
     });
   });
 
+  it('returns the blank version pointer and broadcasts mutation events on create', async () => {
+    const emitSpy = jest.spyOn(
+      workflowRepository.getEventEmitter(),
+      'emitAsync',
+    );
+    const created = await workflowService.create({
+      name: `workflow_events_${++counter}`,
+      description: 'Workflow create event broadcast test',
+      type: WorkflowType.conversational,
+      schedule: null,
+      createdBy: creatorId,
+    });
+
+    expect(created.currentVersion).toEqual(expect.any(String));
+    expect(emitSpy).toHaveBeenCalledWith(
+      'hook:workflow:postCreate',
+      expect.objectContaining({
+        entityName: 'workflow',
+        entity: expect.objectContaining({
+          id: created.id,
+          currentVersion: expect.objectContaining({
+            id: created.currentVersion,
+          }),
+        }),
+      }),
+    );
+    expect(emitSpy).toHaveBeenCalledWith(
+      'hook:workflowVersion:postCreate',
+      expect.objectContaining({
+        entityName: 'workflowVersion',
+        entity: expect.objectContaining({
+          id: created.currentVersion,
+          version: 0,
+        }),
+      }),
+    );
+  });
+
   it('serializes YAML from definitions before persistence', async () => {
     const entity = await workflowService.findOneAndPopulate({
       where: { id: workflow.id },

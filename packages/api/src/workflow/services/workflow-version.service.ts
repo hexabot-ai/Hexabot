@@ -55,13 +55,22 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
       order: { version: 'DESC' },
     });
     const nextVersion = latestVersion ? latestVersion.version + 1 : 1;
-
-    return await this.create({
+    const created = await this.create({
       ...params,
       version: nextVersion,
       parentVersion: params.parentVersion,
       createdBy: params.createdBy,
     });
+
+    // The version's updateWorkflowVersions lifecycle hook already moved the
+    // workflow's currentVersion pointer, but through the raw TypeORM
+    // repository — re-apply it via the service so the workflow postUpdate
+    // event is broadcast.
+    await this.workflowService.updateOne(params.workflow, {
+      currentVersion: created.id,
+    });
+
+    return created;
   }
 
   /**
@@ -122,7 +131,7 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
       );
     }
 
-    const restoredVersion = await this.createSnapshot({
+    return await this.createSnapshot({
       workflow: workflowId,
       definitionYml: targetVersion.definitionYml,
       message: payload?.message ?? undefined,
@@ -130,11 +139,5 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
       createdBy: payload?.updatedBy ?? null,
       parentVersion: targetVersion.id,
     });
-
-    await this.workflowService.updateOne(workflowId, {
-      currentVersion: restoredVersion.id,
-    });
-
-    return restoredVersion;
   }
 }

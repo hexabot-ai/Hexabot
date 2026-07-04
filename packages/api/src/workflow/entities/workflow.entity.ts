@@ -188,6 +188,10 @@ export class WorkflowOrmEntity extends BaseOrmEntity<WorkflowDto> {
         message: null,
       });
       await event.manager.save(WorkflowVersionOrmEntity, version);
+      // The version's updateWorkflowVersions hook persists the pointer on a
+      // separately-loaded workflow row; mirror it on this instance so the
+      // create response and postCreate event carry the initial version.
+      this.currentVersion = version;
     } catch (error: any) {
       const codes = [error?.code, error?.driverError?.code];
       if (!codes.includes('SQLITE_CONSTRAINT_UNIQUE')) {
