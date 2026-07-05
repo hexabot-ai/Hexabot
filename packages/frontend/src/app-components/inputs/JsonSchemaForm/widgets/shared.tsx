@@ -4,10 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Box, Tooltip } from "@mui/material";
+import { Box, Tooltip, type SxProps, type Theme } from "@mui/material";
 import type { RJSFSchema } from "@rjsf/utils";
 import { Info } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 type LabelWithTooltipProps = {
   label?: ReactNode;
@@ -15,7 +15,7 @@ type LabelWithTooltipProps = {
   iconSize?: number;
 };
 
-export const labelTooltipSx = {
+const labelTooltipSx = {
   display: "inline-flex",
   alignItems: "center",
   gap: 0.5,
@@ -46,6 +46,12 @@ export const getDescription = (
 
   return description || undefined;
 };
+
+/**
+ * Coerces an RJSF widget value to the string a text input expects.
+ */
+export const toInputString = (value: unknown): string =>
+  typeof value === "string" ? value : value == null ? "" : String(value);
 
 export const LabelWithTooltip = ({
   label,
@@ -83,10 +89,64 @@ export const LabelWithTooltip = ({
   );
 };
 
-export const mergeLabelSx = (baseSx: any, sx?: any) => {
-  if (!sx) {
-    return baseSx;
-  }
+export const mergeLabelSx = (
+  baseSx: SxProps<Theme>,
+  sx?: SxProps<Theme>,
+): SxProps<Theme> =>
+  sx
+    ? ([baseSx, ...(Array.isArray(sx) ? sx : [sx])] as SxProps<Theme>)
+    : baseSx;
 
-  return Array.isArray(sx) ? [baseSx, ...sx] : [baseSx, sx];
+type TooltipLabelHostProps = {
+  label?: unknown;
+  schema?: RJSFSchema;
+  options?: { description?: ReactNode };
+  InputLabelProps?: { sx?: SxProps<Theme> } & Record<string, unknown>;
+};
+
+/**
+ * Wraps an RJSF widget/template so its label renders with the schema
+ * description as an info tooltip. With `mergeInputLabelSx`, the MUI input
+ * label also receives the sx needed to keep the icon clickable and ordered
+ * after the required asterisk.
+ */
+export const withTooltipLabel = <P extends TooltipLabelHostProps>(
+  Component: ComponentType<P>,
+  { mergeInputLabelSx = false }: { mergeInputLabelSx?: boolean } = {},
+) => {
+  const WithTooltipLabel = (props: P) => {
+    const description = getDescription(props.schema, props.options);
+    const label = (
+      <LabelWithTooltip
+        label={(props.label as ReactNode) || undefined}
+        description={description}
+      />
+    );
+    const inputLabelProps = mergeInputLabelSx
+      ? {
+          InputLabelProps: {
+            ...props.InputLabelProps,
+            sx: mergeLabelSx(
+              labelTooltipInputLabelSx,
+              props.InputLabelProps?.sx,
+            ),
+          },
+        }
+      : undefined;
+
+    // RJSF types labels as string, but MUI renders any ReactNode fine
+    return (
+      <Component
+        {...props}
+        {...inputLabelProps}
+        label={label as unknown as P["label"]}
+      />
+    );
+  };
+
+  WithTooltipLabel.displayName = `WithTooltipLabel(${
+    Component.displayName ?? Component.name ?? "Component"
+  })`;
+
+  return WithTooltipLabel;
 };

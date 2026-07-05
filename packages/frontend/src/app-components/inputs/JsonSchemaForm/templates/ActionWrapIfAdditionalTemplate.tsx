@@ -14,7 +14,7 @@ import {
 
 import { useTranslate } from "@/hooks/useTranslate";
 
-import { ToolbarIconButton } from "./ToolbarIconButton";
+import { inputRowActionsSx, ToolbarIconButton } from "./ToolbarIconButton";
 
 export const ActionWrapIfAdditionalTemplate = (
   props: WrapIfAdditionalTemplateProps,
@@ -71,15 +71,7 @@ export const ActionWrapIfAdditionalTemplate = (
       <Box flex={1} minWidth={0}>
         {children}
       </Box>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          // Match the themed input height so the button centers on the row
-          height: "2.5rem",
-          flexShrink: 0,
-        }}
-      >
+      <Box sx={inputRowActionsSx}>
         <ToolbarIconButton
           id={buttonId(id, "remove")}
           className="rjsf-object-property-remove"
@@ -88,7 +80,7 @@ export const ActionWrapIfAdditionalTemplate = (
           onClick={onRemoveProperty}
           danger
         >
-          <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+          <DeleteOutlineIcon />
         </ToolbarIconButton>
       </Box>
     </Stack>

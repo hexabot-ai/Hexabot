@@ -12,7 +12,6 @@ import {
   type RJSFSchema,
   type WidgetProps,
 } from "@rjsf/utils";
-import { useEffect } from "react";
 
 import { isExpressionValue } from "@/app-components/inputs/JsonataFormulaField/dynamicValueUtils";
 
@@ -21,6 +20,7 @@ import type { ExpressionFormContext } from "../expression.types";
 import { resolveAllowExpression } from "./expression-policy.utils";
 import { JsonataTextWidget } from "./JsonataTextWidget";
 import { getDescription, LabelWithTooltip } from "./shared";
+import { useExpressionFieldStateReport } from "./useExpressionFieldStateReport";
 
 export const ActionCheckboxWidget = (props: WidgetProps) => {
   const {
@@ -40,7 +40,6 @@ export const ActionCheckboxWidget = (props: WidgetProps) => {
     registry,
   } = props;
   const context = registry.formContext as ExpressionFormContext | undefined;
-  const reportExpressionFieldState = context?.reportExpressionFieldState;
   const isExpression = typeof value === "string" && isExpressionValue(value);
   const allowExpression = resolveAllowExpression({
     schema: schema as RJSFSchema,
@@ -57,30 +56,15 @@ export const ActionCheckboxWidget = (props: WidgetProps) => {
     <LabelWithTooltip label={fieldLabel} description={description} />
   );
 
-  useEffect(() => {
-    if (showExpressionField) {
-      // JsonataTextWidget reports the expression state itself
-      return;
-    }
-
-    reportExpressionFieldState?.(
-      id,
-      isBooleanLikeString
-        ? { hasError: false, suppressSchemaErrors: true }
-        : undefined,
-    );
-  }, [
+  useExpressionFieldStateReport(
     id,
-    isBooleanLikeString,
-    reportExpressionFieldState,
+    isBooleanLikeString
+      ? { hasError: false, suppressSchemaErrors: true }
+      : undefined,
+    context?.reportExpressionFieldState,
+    // JsonataTextWidget reports the expression state itself
     showExpressionField,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      reportExpressionFieldState?.(id, undefined);
-    };
-  }, [id, reportExpressionFieldState]);
+  );
 
   if (showExpressionField) {
     return <JsonataTextWidget {...props} />;

@@ -11,6 +11,7 @@ import {
   buildArrayItemsUiOverlay,
   errorPropertyToFieldId,
   inferSchemaOptionType,
+  isComplexItemSchema,
   mergeUiSchemas,
   withFriendlyOptionTitles,
   type SchemaTypeName,
@@ -90,6 +91,18 @@ describe("json schema form utils", () => {
       ]);
     });
 
+    it("titles options nested in tuple items", () => {
+      const schema = {
+        type: "array",
+        items: [{ anyOf: [{ type: "string" }] }],
+      } as RJSFSchema;
+      const result = withFriendlyOptionTitles(schema, resolveTypeTitle);
+
+      expect((result.items as RJSFSchema[])[0].anyOf).toEqual([
+        { type: "string", title: "Text" },
+      ]);
+    });
+
     it("keeps explicit option titles and does not mutate the input", () => {
       const schema = {
         anyOf: [{ type: "string", title: "Custom" }, { type: "number" }],
@@ -99,6 +112,24 @@ describe("json schema form utils", () => {
       expect(result.anyOf?.[0]).toEqual({ type: "string", title: "Custom" });
       expect(result.anyOf?.[1]).toEqual({ type: "number", title: "Number" });
       expect(schema.anyOf?.[1]).toEqual({ type: "number" });
+    });
+  });
+
+  describe("isComplexItemSchema", () => {
+    it("treats structured and union schemas as complex", () => {
+      expect(isComplexItemSchema({ type: "object" })).toBe(true);
+      expect(isComplexItemSchema({ type: ["array", "null"] })).toBe(true);
+      expect(isComplexItemSchema({ properties: { a: {} } })).toBe(true);
+      expect(isComplexItemSchema({ items: { type: "string" } })).toBe(true);
+      expect(isComplexItemSchema({ anyOf: [{ type: "string" }] })).toBe(true);
+      expect(isComplexItemSchema({ oneOf: [{ type: "string" }] })).toBe(true);
+      expect(isComplexItemSchema({ allOf: [{ type: "string" }] })).toBe(true);
+    });
+
+    it("treats primitive schemas as simple", () => {
+      expect(isComplexItemSchema({ type: "string" })).toBe(false);
+      expect(isComplexItemSchema({ type: ["number", "null"] })).toBe(false);
+      expect(isComplexItemSchema({ enum: ["a", "b"] })).toBe(false);
     });
   });
 

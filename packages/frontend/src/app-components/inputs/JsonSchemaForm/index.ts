@@ -4,10 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-export { FORM_FIELDS } from "./fields";
 export { JsonSchemaForm } from "./JsonSchemaForm";
-export { FORM_TEMPLATES } from "./templates";
-export { FORM_WIDGETS, FORM_WIDGETS_BASE, getFormWidgets } from "./widgets";
 export type {
   ExpressionFieldState,
   ExpressionFormContext,

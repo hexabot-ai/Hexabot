@@ -4,23 +4,22 @@
  * Full terms: see LICENSE.md.
  */
 
-import { ActionCheckboxesWidget } from "./ActionCheckboxesWidget";
+import { Widgets } from "@rjsf/mui";
+
 import { ActionCheckboxWidget } from "./ActionCheckboxWidget";
-import { ActionRadioWidget } from "./ActionRadioWidget";
-import { ActionRangeWidget } from "./ActionRangeWidget";
-import { ActionSelectWidget } from "./ActionSelectWidget";
 import { AutoCompleteWidget } from "./AutoCompleteWidget";
-import { EmailWidget } from "./EmailWidget";
+import { EmailWidget, PasswordWidget, TextWidget } from "./BaseInputWidget";
 import { JsonataTextWidget } from "./JsonataTextWidget";
-import { PasswordWidget } from "./PasswordWidget";
-import { TextWidget } from "./TextWidget";
+import { withTooltipLabel } from "./shared";
 
 export const FORM_WIDGETS_BASE = {
-  SelectWidget: ActionSelectWidget,
+  SelectWidget: withTooltipLabel(Widgets.SelectWidget, {
+    mergeInputLabelSx: true,
+  }),
   CheckboxWidget: ActionCheckboxWidget,
-  CheckboxesWidget: ActionCheckboxesWidget,
-  RadioWidget: ActionRadioWidget,
-  RangeWidget: ActionRangeWidget,
+  CheckboxesWidget: withTooltipLabel(Widgets.CheckboxesWidget),
+  RadioWidget: withTooltipLabel(Widgets.RadioWidget),
+  RangeWidget: withTooltipLabel(Widgets.RangeWidget),
   AutoCompleteWidget,
   TextWidget,
   EmailWidget,

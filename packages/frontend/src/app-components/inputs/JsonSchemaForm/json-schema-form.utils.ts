@@ -74,6 +74,29 @@ export const inferSchemaOptionType = (
 };
 
 /**
+ * True when an array item schema renders as a nested structure (object,
+ * array or union) rather than a single inline input.
+ */
+export const isComplexItemSchema = (schema: RJSFSchema): boolean => {
+  const node = schema as Record<string, unknown>;
+
+  if (SUBSCHEMA_LIST_KEYS.some((key) => Array.isArray(node[key]))) {
+    return true;
+  }
+
+  const type = Array.isArray(schema.type)
+    ? schema.type.find((value) => value !== "null")
+    : schema.type;
+
+  return (
+    type === "object" ||
+    type === "array" ||
+    isRecord(schema.properties) ||
+    schema.items !== undefined
+  );
+};
+
+/**
  * Returns a copy of the schema where every untitled anyOf/oneOf option gets a
  * human-friendly title derived from its type, so union selectors don't fall
  * back to RJSF's "Option 1 / Option 2" labels.
@@ -103,8 +126,13 @@ export const withFriendlyOptionTitles = (
     }
 
     for (const key of SUBSCHEMA_KEYS) {
-      if (next[key] !== undefined) {
-        next[key] = visit(next[key]);
+      const value = next[key];
+
+      if (Array.isArray(value)) {
+        // Tuple form, e.g. `items: [{...}, {...}]`
+        next[key] = value.map(visit);
+      } else if (value !== undefined) {
+        next[key] = visit(value);
       }
     }
 

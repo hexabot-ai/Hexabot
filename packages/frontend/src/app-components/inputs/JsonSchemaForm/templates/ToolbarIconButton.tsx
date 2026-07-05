@@ -17,6 +17,17 @@ export type ToolbarIconButtonProps = {
   children: ReactNode;
 };
 
+/**
+ * Centers row-level action buttons on the themed input height so they align
+ * with the input they act on.
+ */
+export const inputRowActionsSx = {
+  display: "flex",
+  alignItems: "center",
+  height: "2.5rem",
+  flexShrink: 0,
+} as const;
+
 export const ToolbarIconButton = ({
   id,
   className,
@@ -34,11 +45,10 @@ export const ToolbarIconButton = ({
         size="small"
         disabled={disabled}
         onClick={onClick}
-        sx={
-          danger
-            ? { "&:hover": { color: "error.main" } }
-            : { "&:hover": { color: "text.primary" } }
-        }
+        sx={{
+          "& svg": { fontSize: 16 },
+          "&:hover": { color: danger ? "error.main" : "text.primary" },
+        }}
       >
         {children}
       </IconButton>

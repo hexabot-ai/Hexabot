@@ -16,30 +16,10 @@ import {
 } from "@rjsf/utils";
 
 import { useTranslate } from "@/hooks/useTranslate";
-import { isRecord } from "@/utils/object";
 
-import { ToolbarIconButton } from "./ToolbarIconButton";
+import { isComplexItemSchema } from "../json-schema-form.utils";
 
-const isComplexItemSchema = (schema: RJSFSchema): boolean => {
-  if (
-    Array.isArray(schema.anyOf) ||
-    Array.isArray(schema.oneOf) ||
-    Array.isArray(schema.allOf)
-  ) {
-    return true;
-  }
-
-  const type = Array.isArray(schema.type)
-    ? schema.type.find((value) => value !== "null")
-    : schema.type;
-
-  return (
-    type === "object" ||
-    type === "array" ||
-    isRecord(schema.properties) ||
-    schema.items !== undefined
-  );
-};
+import { inputRowActionsSx, ToolbarIconButton } from "./ToolbarIconButton";
 
 export const ActionArrayFieldItemTemplate = (
   props: ArrayFieldItemTemplateProps,
@@ -63,7 +43,6 @@ export const ActionArrayFieldItemTemplate = (
   const isComplex = isComplexItemSchema(schema as RJSFSchema);
   const isInteractionDisabled = disabled || readonly;
   const showReorder = (hasMoveUp || hasMoveDown) && totalItems > 1;
-  const iconSx = { fontSize: 16 } as const;
   const toolbar = hasToolbar ? (
     <Stack direction="row" alignItems="center" sx={{ color: "text.secondary" }}>
       {showReorder ? (
@@ -75,7 +54,7 @@ export const ActionArrayFieldItemTemplate = (
             disabled={isInteractionDisabled || !hasMoveUp}
             onClick={onMoveUpItem}
           >
-            <ArrowUpwardIcon sx={iconSx} />
+            <ArrowUpwardIcon />
           </ToolbarIconButton>
           <ToolbarIconButton
             id={buttonId(fieldPathId, "moveDown")}
@@ -84,7 +63,7 @@ export const ActionArrayFieldItemTemplate = (
             disabled={isInteractionDisabled || !hasMoveDown}
             onClick={onMoveDownItem}
           >
-            <ArrowDownwardIcon sx={iconSx} />
+            <ArrowDownwardIcon />
           </ToolbarIconButton>
         </>
       ) : null}
@@ -96,7 +75,7 @@ export const ActionArrayFieldItemTemplate = (
           disabled={isInteractionDisabled}
           onClick={onCopyItem}
         >
-          <ContentCopyIcon sx={iconSx} />
+          <ContentCopyIcon />
         </ToolbarIconButton>
       ) : null}
       {hasRemove ? (
@@ -108,7 +87,7 @@ export const ActionArrayFieldItemTemplate = (
           onClick={onRemoveItem}
           danger
         >
-          <DeleteOutlineIcon sx={iconSx} />
+          <DeleteOutlineIcon />
         </ToolbarIconButton>
       ) : null}
     </Stack>
@@ -146,19 +125,7 @@ export const ActionArrayFieldItemTemplate = (
       <Box flexGrow={1} minWidth={0}>
         {children}
       </Box>
-      {toolbar ? (
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            // Match the themed input height so the buttons center on the input row
-            height: "2.5rem",
-            flexShrink: 0,
-          }}
-        >
-          {toolbar}
-        </Box>
-      ) : null}
+      {toolbar ? <Box sx={inputRowActionsSx}>{toolbar}</Box> : null}
     </Stack>
   );
 };
