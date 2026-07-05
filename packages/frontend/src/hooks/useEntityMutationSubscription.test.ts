@@ -4,11 +4,13 @@
  * Full terms: see LICENSE.md.
  */
 
+import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
 import { EntityType, QueryType } from "@/services/types";
 
 import {
+  hasMissingRelationRef,
   isThreadInfiniteQuery,
   mergeEntityCachePayload,
 } from "./useEntityMutationSubscription";
@@ -68,6 +70,46 @@ describe("useEntityMutationSubscription helpers", () => {
     expect(merged.status).toBe("finished");
     expect(merged.finishedAt).toEqual(previousData.finishedAt);
     expect(merged.stepLog).toEqual(previousData.stepLog);
+  });
+
+  it("detects a relation ref that is missing from the item cache", () => {
+    const queryClient = new QueryClient();
+    const workflowPayload = {
+      id: "workflow-1",
+      currentVersion: "version-1",
+      publishedVersion: null,
+    };
+
+    expect(
+      hasMissingRelationRef(queryClient, EntityType.WORKFLOW, workflowPayload),
+    ).toBe(true);
+
+    queryClient.setQueryData(
+      [QueryType.item, EntityType.WORKFLOW_VERSION, "version-1"],
+      { id: "version-1", definitionYml: "flow: []" },
+    );
+
+    expect(
+      hasMissingRelationRef(queryClient, EntityType.WORKFLOW, workflowPayload),
+    ).toBe(false);
+  });
+
+  it("ignores null and array relation values", () => {
+    const queryClient = new QueryClient();
+
+    expect(
+      hasMissingRelationRef(queryClient, EntityType.WORKFLOW, {
+        id: "workflow-1",
+        currentVersion: null,
+        publishedVersion: null,
+      }),
+    ).toBe(false);
+    expect(
+      hasMissingRelationRef(queryClient, EntityType.USER, {
+        id: "user-1",
+        roles: ["role-1"],
+      }),
+    ).toBe(false);
   });
 
   it("matches only infinite thread query keys for refetch", () => {

@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { normalize } from "normalizr";
+import { normalize, schema as normalizrSchema } from "normalizr";
 import { useCallback } from "react";
 
 import { isSameEntity } from "@/hooks/crud/helpers";
@@ -16,7 +16,7 @@ import {
 import { ENTITY_MAP } from "@/services/entities";
 import { EntityType, QueryType } from "@/services/types";
 import { IBaseSchema } from "@/types/base.types";
-import { InfiniteData } from "@/types/tanstack.types";
+import { InfiniteData, QueryClient } from "@/types/tanstack.types";
 import { applyFullNameDerivedFields } from "@/utils/full-name.utils";
 import { useSocketGetQuery, useSubscribe } from "@/websocket/socket-hooks";
 
@@ -147,6 +147,31 @@ export const isThreadInfiniteQuery = (queryKey: readonly unknown[]) => {
     qType === QueryType.infinite && isSameEntity(qEntity, EntityType.THREAD)
   );
 };
+// Detects relation refs in a payload that are missing from the item cache.
+export const hasMissingRelationRef = (
+  queryClient: QueryClient,
+  entityType: EntityType,
+  entityData: CacheRecord,
+) => {
+  // normalizr typings omit the runtime `schema` getter
+  const relationSchemas: Record<string, unknown> =
+    (ENTITY_MAP[entityType] as unknown as { schema?: Record<string, unknown> })
+      .schema ?? {};
+
+  return Object.entries(relationSchemas).some(([relation, relationSchema]) => {
+    const relationId = entityData[relation];
+
+    return (
+      typeof relationId === "string" &&
+      relationSchema instanceof normalizrSchema.Entity &&
+      !queryClient.getQueryData([
+        QueryType.item,
+        relationSchema.key,
+        relationId,
+      ])
+    );
+  });
+};
 
 export const useEntityMutationSubscription = () => {
   const queryClient = useTanstackQueryClient();
@@ -200,6 +225,23 @@ export const useEntityMutationSubscription = () => {
           }
 
           affectedEntityTypes.forEach((affectedEntityType) => {
+            if (
+              hasMissingRelationRef(
+                queryClient,
+                affectedEntityType,
+                nextEntityData as CacheRecord,
+              )
+            ) {
+              // Skip the merge: it would mark the query fresh and cancel
+              // this invalidation for observers that mount later.
+              queryClient.invalidateQueries({
+                queryKey: [QueryType.item, affectedEntityType, id],
+                exact: true,
+              });
+
+              return;
+            }
+
             queryClient.setQueryData(
               [QueryType.item, affectedEntityType, id],
               (previousData: CacheRecord | undefined) => {
