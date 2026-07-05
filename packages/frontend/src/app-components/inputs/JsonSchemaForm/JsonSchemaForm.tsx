@@ -9,10 +9,12 @@ import { Form } from "@rjsf/mui";
 import {
   getDefaultFormState,
   type RJSFSchema,
+  type RJSFValidationError,
   type UiSchema,
 } from "@rjsf/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useTranslate } from "@/hooks/useTranslate";
 import { isRecord } from "@/utils/object";
 import validator from "@/utils/rjsf-zod-validator";
 
@@ -21,6 +23,13 @@ import type {
   ExpressionPolicy,
 } from "./expression.types";
 import { FORM_FIELDS } from "./fields";
+import {
+  buildArrayItemsUiOverlay,
+  errorPropertyToFieldId,
+  mergeUiSchemas,
+  withFriendlyOptionTitles,
+  type SchemaTypeName,
+} from "./json-schema-form.utils";
 import { FORM_TEMPLATES } from "./templates";
 import { getFormWidgets } from "./widgets";
 
@@ -90,9 +99,79 @@ export const JsonSchemaForm = <
   const [expressionFieldStates, setExpressionFieldStates] = useState<
     Record<string, ExpressionFieldState>
   >({});
+  const [touchedFieldIds, setTouchedFieldIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const touchedFieldIdsRef = useRef(touchedFieldIds);
+  const fullValidationErrorsRef = useRef<RJSFValidationError[] | null>(null);
+  const markFieldTouched = useCallback((fieldId?: string) => {
+    if (!fieldId) {
+      return;
+    }
+
+    setTouchedFieldIds((current) => {
+      if (current.has(fieldId)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      // Also mark ancestor ids so container-level errors (e.g. minItems)
+      // surface once the user interacts with any nested field
+      const segments = fieldId.split("_");
+
+      for (let index = 1; index <= segments.length; index++) {
+        next.add(segments.slice(0, index).join("_"));
+      }
+
+      return next;
+    });
+  }, []);
+  // Schema errors are only displayed for fields the user has interacted
+  // with; parents still receive the unfiltered list via onFormDataChange
+  const transformErrors = useCallback(
+    (errors: RJSFValidationError[]) => {
+      fullValidationErrorsRef.current = errors;
+
+      if (validateOnMount) {
+        return errors;
+      }
+
+      const touched = touchedFieldIdsRef.current;
+
+      return errors.filter((error) => {
+        const property = error.property ?? ".";
+
+        if (property === ".") {
+          return true;
+        }
+
+        return touched.has(
+          errorPropertyToFieldId(property, idPrefix ?? "root"),
+        );
+      });
+    },
+    [idPrefix, validateOnMount],
+  );
+
+  touchedFieldIdsRef.current = touchedFieldIds;
+  const { t, i18n } = useTranslate();
+  const resolveSchemaTypeTitle = useCallback(
+    (type: SchemaTypeName) => t(`label.schema_types.${type}`) || undefined,
+    // `t` is recreated on every render; the language is the real dependency
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [i18n.language],
+  );
+  const normalizedSchema = useMemo(
+    () => withFriendlyOptionTitles(schema, resolveSchemaTypeTitle),
+    [schema, resolveSchemaTypeTitle],
+  );
+  const normalizedUiSchema = useMemo(
+    () => mergeUiSchemas(buildArrayItemsUiOverlay(normalizedSchema), uiSchema),
+    [normalizedSchema, uiSchema],
+  );
   const normalizedFormData = useMemo(
-    () => withSchemaDefaults(schema, formData),
-    [formData, schema],
+    () => withSchemaDefaults(normalizedSchema, formData),
+    [formData, normalizedSchema],
   );
   const [liveFormData, setLiveFormData] =
     useState<Record<string, unknown>>(normalizedFormData);
@@ -170,6 +249,14 @@ export const JsonSchemaForm = <
   }, [validateOnMount, schema, idPrefix]);
 
   useEffect(() => {
+    // Re-validate when a field becomes touched so its errors, hidden by
+    // transformErrors until now, become visible without another change
+    if (touchedFieldIds.size > 0) {
+      formRef.current?.validateForm();
+    }
+  }, [touchedFieldIds]);
+
+  useEffect(() => {
     return () => {
       onVisibleErrorsChange?.(false);
     };
@@ -178,7 +265,7 @@ export const JsonSchemaForm = <
   return (
     <Form
       ref={formRef}
-      schema={schema}
+      schema={normalizedSchema}
       validator={validator}
       formData={liveFormData}
       formContext={{
@@ -189,16 +276,22 @@ export const JsonSchemaForm = <
         reportExpressionFieldState,
         reportFieldVisibleError,
       }}
-      onChange={(event) => {
+      onChange={(event, fieldId) => {
         const nextFormData = event.formData ?? {};
+        const fullErrors = fullValidationErrorsRef.current ?? event.errors;
 
+        markFieldTouched(fieldId);
         setLiveFormData(nextFormData);
-        onFormDataChange(nextFormData, event.errors);
+        onFormDataChange(nextFormData, fullErrors);
       }}
+      onBlur={(fieldId) => {
+        markFieldTouched(fieldId);
+      }}
+      transformErrors={transformErrors}
       showErrorList={false}
       noHtml5Validate
       liveValidate={liveValidate}
-      uiSchema={{ ...FORM_UI_SCHEMA, ...(uiSchema ?? {}) }}
+      uiSchema={{ ...FORM_UI_SCHEMA, ...(normalizedUiSchema ?? {}) }}
       idPrefix={idPrefix}
       templates={FORM_TEMPLATES}
       fields={FORM_FIELDS}

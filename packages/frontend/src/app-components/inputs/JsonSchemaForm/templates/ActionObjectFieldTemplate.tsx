@@ -36,6 +36,7 @@ import { isRecord } from "@/utils/object";
 import { getDescription, LabelWithTooltip } from "../widgets/shared";
 
 import { isActionFieldHidden } from "./action-field-template.utils";
+import { AddEntryButton } from "./AddEntryButton";
 
 type ActionFieldUiOptions = {
   hideUntilAdded?: boolean;
@@ -192,11 +193,9 @@ export const ActionObjectFieldTemplate = (props: ObjectFieldTemplateProps) => {
     uiOptions,
   );
   const showOptionalDataControlInTitle = !readonly && !disabled;
-  const {
-    ButtonTemplates: { AddButton },
-  } = registry.templates;
   const descriptionText = getDescription(schema as RJSFSchema, uiOptions);
-  const titleLabel = uiOptions?.title ?? title;
+  const titleLabel =
+    uiOptions?.label === false ? undefined : (uiOptions?.title ?? title);
   const canAddOption = addableOptionFields.length > 0 && !disabled && !readonly;
   const label = (
     <LabelWithTooltip
@@ -292,18 +291,13 @@ export const ActionObjectFieldTemplate = (props: ObjectFieldTemplateProps) => {
         </>
       ) : null}
       {canExpand(schema, uiSchema, formData) ? (
-        <Grid container justifyContent="flex-end">
-          <Grid>
-            <AddButton
-              id={buttonId(fieldPathId, "add")}
-              className="rjsf-object-property-expand"
-              onClick={onAddProperty}
-              disabled={disabled || readonly}
-              uiSchema={uiSchema}
-              registry={registry}
-            />
-          </Grid>
-        </Grid>
+        <AddEntryButton
+          id={buttonId(fieldPathId, "add")}
+          className="rjsf-object-property-expand"
+          onClick={onAddProperty}
+          disabled={disabled || readonly}
+          sx={{ mt: 1 }}
+        />
       ) : null}
     </>
   );

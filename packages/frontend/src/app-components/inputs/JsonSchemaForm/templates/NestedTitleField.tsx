@@ -29,7 +29,7 @@ export const NestedTitleField = ({
     <LabelWithTooltip label={title} description={description} iconSize={16} />
   );
   const heading = (
-    <Typography variant={isNested ? "subtitle1" : "h5"}>
+    <Typography variant={isNested ? "subtitle2" : "h5"}>
       {headingText}
     </Typography>
   );

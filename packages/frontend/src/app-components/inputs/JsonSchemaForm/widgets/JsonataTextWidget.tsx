@@ -38,6 +38,7 @@ type JsonataWidgetOptions = {
 export const JsonataTextWidget = ({
   id,
   label,
+  hideLabel,
   required,
   disabled,
   readonly,
@@ -67,11 +68,11 @@ export const JsonataTextWidget = ({
   const normalizeValue = (next: string) => (next === "" ? emptyValue : next);
   const safeValue =
     typeof value === "string" ? value : value == null ? "" : String(value);
-  const fieldLabel = label || undefined;
+  const fieldLabel = hideLabel ? undefined : label || undefined;
   const description = getDescription(schema as RJSFSchema, widgetOptions);
-  const labelWithTooltip = (
+  const labelWithTooltip = fieldLabel ? (
     <LabelWithTooltip label={fieldLabel} description={description} />
-  );
+  ) : undefined;
   const hasDisallowedExpressionValue =
     !allowExpression && isExpressionValue(safeValue);
 
@@ -129,6 +130,7 @@ export const JsonataTextWidget = ({
           {...(props as BaseInputTemplateProps)}
           id={id}
           label={fieldLabel ?? ""}
+          hideLabel={hideLabel}
           required={required}
           disabled={disabled}
           readonly={readonly}

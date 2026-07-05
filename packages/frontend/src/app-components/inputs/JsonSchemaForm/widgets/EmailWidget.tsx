@@ -5,14 +5,14 @@
  */
 
 import { TextField } from "@mui/material";
-import { WidgetProps } from "@rjsf/utils";
+import { labelValue, WidgetProps } from "@rjsf/utils";
 
 import { createReadOnlyInputProps } from "../../readOnlyInput.util";
 
 export const EmailWidget = (props: WidgetProps) => {
   return (
     <TextField
-      label={props.label}
+      label={labelValue(props.label || undefined, props.hideLabel, undefined)}
       type="email"
       value={props.value}
       onChange={(e) => props.onChange(e.target.value)}
