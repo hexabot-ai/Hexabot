@@ -10,11 +10,11 @@ import { GridColDef, GridEventListener } from "@mui/x-data-grid";
 import { Images } from "lucide-react";
 
 import AttachmentThumbnail from "@/app-components/attachment/AttachmentThumbnail";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import useFormattedFileSize from "@/hooks/useFormattedFileSize";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
-import { getDateTimeFormatter } from "@/utils/date";
 
 type MediaLibraryProps = {
   showTitle?: boolean;
@@ -25,6 +25,7 @@ type MediaLibraryProps = {
 export const MediaLibrary = ({ onSelect, accept }: MediaLibraryProps) => {
   const { t } = useTranslate();
   const formatFileSize = useFormattedFileSize();
+  const timestampColumns = useTimestampColumns<Attachment>();
   const columns: GridColDef<Attachment>[] = [
     { field: "id", headerName: "ID" },
     {
@@ -73,26 +74,7 @@ export const MediaLibrary = ({ onSelect, accept }: MediaLibraryProps) => {
       headerAlign: "left",
       width: 64,
     },
-    {
-      maxWidth: 140,
-      field: "createdAt",
-      headerName: t("label.createdAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.created_at", getDateTimeFormatter(params)),
-    },
-    {
-      maxWidth: 140,
-      field: "updatedAt",
-      headerName: t("label.updatedAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.updated_at", getDateTimeFormatter(params)),
-    },
+    ...timestampColumns,
   ];
 
   return (

@@ -4,8 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Action } from "@hexabot-ai/types";
 import type { Language } from "@hexabot-ai/types";
+import { Action } from "@hexabot-ai/types";
 import { Switch } from "@mui/material";
 import { GridColDef } from "@mui/x-data-grid";
 import { Flag, Plus } from "lucide-react";
@@ -15,6 +15,7 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { isSameEntity } from "@/hooks/crud/helpers";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -25,7 +26,6 @@ import { useHasPermission } from "@/hooks/useHasPermission";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
-import { getDateTimeFormatter } from "@/utils/date";
 
 import { LanguageFormDialog } from "./LanguageFormDialog";
 
@@ -33,6 +33,7 @@ export const Languages = () => {
   const { t } = useTranslate();
   const { toast } = useToast();
   const dialogs = useDialogs();
+  const timestampColumns = useTimestampColumns<Language>();
   const hasPermission = useHasPermission();
   const { mutate: updateLanguage } = useUpdate(EntityType.LANGUAGE, {
     onError: () => {
@@ -143,26 +144,7 @@ export const Languages = () => {
         />
       ),
     },
-    {
-      minWidth: 140,
-      field: "createdAt",
-      headerName: t("label.createdAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.created_at", getDateTimeFormatter(params)),
-    },
-    {
-      minWidth: 140,
-      field: "updatedAt",
-      headerName: t("label.updatedAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.updated_at", getDateTimeFormatter(params)),
-    },
+    ...timestampColumns,
     actionColumns,
   ];
 

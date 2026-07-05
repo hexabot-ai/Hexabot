@@ -15,6 +15,7 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { type Filter } from "@/app-components/tables/GenericFilters";
 import { useDialogs } from "@/hooks/useDialogs";
@@ -22,13 +23,13 @@ import { useQueryState } from "@/hooks/useQueryState";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 import { Subscriber } from "@/types/subscriber.types";
-import { getDateTimeFormatter } from "@/utils/date";
 
 import { SubscriberFormDialog } from "./SubscriberFormDialog";
 
 export const Subscribers = () => {
   const { t } = useTranslate();
   const dialogs = useDialogs();
+  const timestampColumns = useTimestampColumns<Subscriber>();
   const actionColumns = useActionColumns<Subscriber>(
     EntityType.SUBSCRIBER,
     [
@@ -108,26 +109,7 @@ export const Subscribers = () => {
       headerAlign: "left",
       renderCell: ({ row }) => row.channel?.name,
     },
-    {
-      minWidth: 140,
-      field: "createdAt",
-      headerName: t("label.createdAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.created_at", getDateTimeFormatter(params)),
-    },
-    {
-      minWidth: 140,
-      field: "updatedAt",
-      headerName: t("label.updatedAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.updated_at", getDateTimeFormatter(params)),
-    },
+    ...timestampColumns,
     actionColumns,
   ];
   const [id, setId] = useQueryState("id");
