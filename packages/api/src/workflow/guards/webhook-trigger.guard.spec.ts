@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 
+import { CredentialService } from '@/user/services/credential.service';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
 import {
   installMessagingWorkflowFixturesTypeOrm,
@@ -46,6 +47,17 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
     Pick<WebsocketGateway, 'joinSockets' | 'broadcastWorkflowEvent'>
   >;
   const jwtService = new JwtService({});
+  // Secrets live in the credentials store; the guard resolves them by id.
+  const credentialStore = new Map<string, string>([
+    ['cred-basic-password', 'webhook-pass'],
+    ['cred-header-value', 'super-secret'],
+    ['cred-jwt-secret', 'jwt-shared-secret'],
+  ]);
+  const credentialServiceMock = {
+    findOneValue: jest.fn(
+      async (id?: string) => (id && credentialStore.get(id)) ?? null,
+    ),
+  } as unknown as jest.Mocked<Pick<CredentialService, 'findOneValue'>>;
   const createdWorkflowIds = new Set<string>();
   let counter = 0;
 
@@ -112,6 +124,10 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
           provide: JwtService,
           useValue: jwtService,
         },
+        {
+          provide: CredentialService,
+          useValue: credentialServiceMock,
+        },
       ],
       typeorm: {
         fixtures: [
@@ -151,7 +167,7 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
       enabled: true,
       authType: WebhookAuthType.basic,
       username: 'webhook-user',
-      password: 'webhook-pass',
+      passwordCredentialId: 'cred-basic-password',
     });
     const encoded = Buffer.from('webhook-user:webhook-pass').toString('base64');
     const context = buildContext(workflow.id, {
@@ -166,7 +182,7 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
       enabled: true,
       authType: WebhookAuthType.basic,
       username: 'webhook-user',
-      password: 'webhook-pass',
+      passwordCredentialId: 'cred-basic-password',
     });
     const encoded = Buffer.from('webhook-user:wrong').toString('base64');
     const context = buildContext(workflow.id, {
@@ -183,7 +199,7 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
       enabled: true,
       authType: WebhookAuthType.header,
       headerName: 'X-Webhook-Token',
-      headerValue: 'super-secret',
+      headerValueCredentialId: 'cred-header-value',
     });
     const context = buildContext(workflow.id, {
       'x-webhook-token': 'super-secret',
@@ -197,7 +213,7 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
       enabled: true,
       authType: WebhookAuthType.header,
       headerName: 'X-Webhook-Token',
-      headerValue: 'super-secret',
+      headerValueCredentialId: 'cred-header-value',
     });
     const context = buildContext(workflow.id, {
       'x-webhook-token': 'nope',
@@ -213,7 +229,7 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
     const workflow = await createManualWebhookWorkflow({
       enabled: true,
       authType: WebhookAuthType.jwt,
-      jwtSecret: secret,
+      jwtSecretCredentialId: 'cred-jwt-secret',
       jwtAlgorithm: WebhookJwtAlgorithm.HS256,
     });
     const token = jwtService.sign({ sub: 'caller' }, { secret });
@@ -228,12 +244,30 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
     const workflow = await createManualWebhookWorkflow({
       enabled: true,
       authType: WebhookAuthType.jwt,
-      jwtSecret: 'jwt-shared-secret',
+      jwtSecretCredentialId: 'cred-jwt-secret',
       jwtAlgorithm: WebhookJwtAlgorithm.HS256,
     });
     const token = jwtService.sign({ sub: 'caller' }, { secret: 'other' });
     const context = buildContext(workflow.id, {
       authorization: `Bearer ${token}`,
+    });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  it('rejects the request when the referenced credential is missing', async () => {
+    const workflow = await createManualWebhookWorkflow({
+      enabled: true,
+      authType: WebhookAuthType.header,
+      headerName: 'X-Webhook-Token',
+      headerValueCredentialId: 'cred-deleted',
+    });
+    // Even the correct secret must not authenticate against a dangling
+    // credential reference: the guard fails closed.
+    const context = buildContext(workflow.id, {
+      'x-webhook-token': 'super-secret',
     });
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
@@ -278,7 +312,7 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
         enabled: true,
         authType: WebhookAuthType.basic,
         username: null,
-        password: null,
+        passwordCredentialId: null,
       },
     } as any);
     // Empty basic credentials (":") must not match an unset configuration.
@@ -301,7 +335,7 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
         enabled: true,
         authType: WebhookAuthType.header,
         headerName: 'X-Webhook-Token',
-        headerValue: null,
+        headerValueCredentialId: null,
       },
     } as any);
     // A request without the header must not match an unset expected value.

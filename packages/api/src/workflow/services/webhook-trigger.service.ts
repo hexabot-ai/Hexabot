@@ -4,19 +4,28 @@
  * Full terms: see LICENSE.md.
  */
 
-import { WorkflowFull, WorkflowRun, WorkflowRunFull } from '@hexabot-ai/types';
 import {
+  WebhookAuthType,
+  WorkflowFull,
+  WorkflowRun,
+  WorkflowRunFull,
+} from '@hexabot-ai/types';
+import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 
+import { CredentialService } from '@/user/services/credential.service';
 import { UserService } from '@/user/services/user.service';
 
 import {
   ManualEventWrapper,
   TriggerEventWrapper,
 } from '../lib/trigger-event-wrapper';
+import { WorkflowType } from '../types';
 
 import { AgenticService } from './agentic.service';
 import { WorkflowService } from './workflow.service';
@@ -32,13 +41,69 @@ export type WorkflowTriggerResult = {
   error: string | null;
 };
 
+/**
+ * A server-issued webhook trigger token. Tokens carry no expiry: they stay
+ * valid until the workflow's signing secret credential is rotated.
+ */
+export type WebhookTokenResult = {
+  token: string;
+};
+
 @Injectable()
 export class WebhookTriggerService {
   constructor(
     private readonly workflowService: WorkflowService,
     private readonly userService: UserService,
     private readonly agenticService: AgenticService,
+    private readonly credentialService: CredentialService,
+    private readonly jwtService: JwtService,
   ) {}
+
+  /**
+   * Signs a webhook trigger token with the workflow's own JWT secret so
+   * callers never have to craft tokens themselves. Tokens carry no expiry;
+   * rotating the secret credential invalidates every previously issued
+   * token. The workflow must be a manual workflow with an enabled,
+   * JWT-authenticated webhook trigger.
+   *
+   * @param id - The workflow ID the token is scoped to.
+   */
+  async generateToken(id: string): Promise<WebhookTokenResult> {
+    const workflow = await this.workflowService.findOne(id);
+    if (!workflow) {
+      throw new NotFoundException(`Workflow with ID ${id} not found`);
+    }
+
+    const webhook = workflow.webhookTrigger;
+    if (
+      workflow.type !== WorkflowType.manual ||
+      !webhook?.enabled ||
+      webhook.authType !== WebhookAuthType.jwt
+    ) {
+      throw new BadRequestException(
+        'Workflow must have an enabled JWT-authenticated webhook trigger',
+      );
+    }
+
+    const secret = await this.credentialService.findOneValue(
+      webhook.jwtSecretCredentialId ?? undefined,
+    );
+    if (!secret) {
+      throw new BadRequestException(
+        'The webhook trigger references a missing JWT secret credential',
+      );
+    }
+
+    const token = this.jwtService.sign(
+      { sub: id },
+      {
+        secret,
+        algorithm: webhook.jwtAlgorithm ?? 'HS256',
+      },
+    );
+
+    return { token };
+  }
 
   /**
    * Executes a manual workflow run from a webhook.

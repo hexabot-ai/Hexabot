@@ -6,13 +6,16 @@
 
 import { randomUUID } from 'crypto';
 
+import { WebhookAuthType, WebhookJwtAlgorithm } from '@hexabot-ai/types';
 import {
   BadRequestException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
 
+import { CredentialService } from '@/user/services/credential.service';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
 import {
   installMessagingWorkflowFixturesTypeOrm,
@@ -47,6 +50,15 @@ describe('WebhookTriggerService (TypeORM)', () => {
   } as jest.Mocked<
     Pick<WebsocketGateway, 'joinSockets' | 'broadcastWorkflowEvent'>
   >;
+  const jwtService = new JwtService({});
+  const credentialStore = new Map<string, string>([
+    ['cred-jwt-secret', 'jwt-shared-secret'],
+  ]);
+  const credentialServiceMock = {
+    findOneValue: jest.fn(
+      async (id?: string) => (id && credentialStore.get(id)) ?? null,
+    ),
+  } as unknown as jest.Mocked<Pick<CredentialService, 'findOneValue'>>;
   const createdWorkflowIds = new Set<string>();
   let counter = 0;
 
@@ -96,6 +108,14 @@ describe('WebhookTriggerService (TypeORM)', () => {
         {
           provide: WEBSOCKET_GATEWAY,
           useValue: websocketGatewayMock,
+        },
+        {
+          provide: JwtService,
+          useValue: jwtService,
+        },
+        {
+          provide: CredentialService,
+          useValue: credentialServiceMock,
         },
       ],
       typeorm: {
@@ -187,5 +207,85 @@ describe('WebhookTriggerService (TypeORM)', () => {
       webhookTriggerService.trigger(randomUUID(), {}),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(agenticService.handleEvent).not.toHaveBeenCalled();
+  });
+
+  describe('generateToken', () => {
+    const createJwtWebhookWorkflow = async (
+      webhookTrigger: Record<string, unknown> | null = {
+        enabled: true,
+        authType: WebhookAuthType.jwt,
+        jwtSecretCredentialId: 'cred-jwt-secret',
+        jwtAlgorithm: WebhookJwtAlgorithm.HS256,
+      },
+    ) => {
+      const created = await workflowService.create({
+        ...buildWorkflowPayload(),
+        type: WorkflowType.manual,
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: true,
+        },
+        webhookTrigger,
+        createdBy: userFixtureIds.admin,
+      } as any);
+      createdWorkflowIds.add(created.id);
+
+      return created;
+    };
+
+    it('signs a verifiable permanent token scoped to the workflow', async () => {
+      const workflow = await createJwtWebhookWorkflow();
+      const { token } = await webhookTriggerService.generateToken(workflow.id);
+      const payload = jwtService.verify<{ sub: string; exp?: number }>(token, {
+        secret: 'jwt-shared-secret',
+        algorithms: ['HS256'],
+      });
+
+      expect(payload.sub).toBe(workflow.id);
+      // Tokens are permanent: revocation happens by rotating the secret.
+      expect(payload.exp).toBeUndefined();
+    });
+
+    it('rejects a workflow whose webhook is not JWT-authenticated', async () => {
+      const workflow = await createJwtWebhookWorkflow({
+        enabled: true,
+        authType: WebhookAuthType.none,
+      });
+
+      await expect(
+        webhookTriggerService.generateToken(workflow.id),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a workflow whose webhook trigger is disabled', async () => {
+      const workflow = await createJwtWebhookWorkflow({
+        enabled: false,
+        authType: WebhookAuthType.jwt,
+        jwtSecretCredentialId: 'cred-jwt-secret',
+      });
+
+      await expect(
+        webhookTriggerService.generateToken(workflow.id),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a dangling secret credential reference', async () => {
+      const workflow = await createJwtWebhookWorkflow({
+        enabled: true,
+        authType: WebhookAuthType.jwt,
+        jwtSecretCredentialId: 'cred-deleted',
+      });
+
+      await expect(
+        webhookTriggerService.generateToken(workflow.id),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('throws NotFoundException for an unknown workflow', async () => {
+      await expect(
+        webhookTriggerService.generateToken(randomUUID()),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });

@@ -56,6 +56,8 @@ import {
   threadFullSchema,
   userFullSchema,
   userSchema,
+  webhookTriggerSchema,
+  WebhookAuthType,
   workflowFullSchema,
   workflowExportBundleSchema,
   workflowExportBundleV1Schema,
@@ -67,6 +69,50 @@ import {
 
 describe("@hexabot-ai/types schemas", () => {
   const now = "2026-01-01T00:00:00.000Z";
+
+  it("never carries inline webhook secrets", () => {
+    // Unknown keys (e.g. an inline secret sent by a stale client) are
+    // stripped: only credential references are part of the config shape.
+    const parsed = webhookTriggerSchema.parse({
+      enabled: true,
+      authType: WebhookAuthType.jwt,
+      jwtSecret: "plaintext-secret",
+      jwtSecretCredentialId: "cred-1",
+    });
+
+    expect("jwtSecret" in parsed).toBe(false);
+    expect(
+      (parsed as { jwtSecretCredentialId?: string | null })
+        .jwtSecretCredentialId,
+    ).toBe("cred-1");
+  });
+
+  it("requires credential refs once the webhook is enabled", () => {
+    expect(() =>
+      webhookTriggerSchema.parse({
+        enabled: true,
+        authType: WebhookAuthType.basic,
+        username: "ada",
+        passwordCredentialId: null,
+      }),
+    ).toThrow();
+    expect(() =>
+      webhookTriggerSchema.parse({
+        enabled: true,
+        authType: WebhookAuthType.basic,
+        username: "ada",
+        passwordCredentialId: "cred-1",
+      }),
+    ).not.toThrow();
+    // Disabled webhooks can be saved without credentials.
+    expect(() =>
+      webhookTriggerSchema.parse({
+        enabled: false,
+        authType: WebhookAuthType.jwt,
+        jwtSecretCredentialId: null,
+      }),
+    ).not.toThrow();
+  });
 
   it("maps user aliases and strips unknown keys", () => {
     const parsed = userSchema.parse({

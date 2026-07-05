@@ -17,7 +17,6 @@ type RunHeaderProps = {
   isFetching: boolean;
   selectedRun?: WorkflowRun;
   workflow?: Workflow | null;
-  workflowInput?: Record<string, unknown>;
   workflowVersion?: WorkflowVersion | null;
   onSelectRun: (runId: string) => void;
 };
@@ -27,7 +26,6 @@ export const RunHeader = ({
   isFetching,
   selectedRun,
   workflow,
-  workflowInput,
   workflowVersion,
   onSelectRun,
 }: RunHeaderProps) => {
@@ -48,8 +46,7 @@ export const RunHeader = ({
           alignItems="center"
           size={{ xs: 12, lg: 9 }}
         >
-          {" "}
-          <RunActions workflow={workflow} workflowInput={workflowInput} />
+          <RunActions workflow={workflow} />
           <RunStatusSummary
             workflowRuns={workflowRuns}
             isFetching={isFetching}

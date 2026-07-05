@@ -5,13 +5,18 @@
  */
 
 import type { WorkflowDefinition } from "@hexabot-ai/agentic";
-import type { WebhookTriggerConfig, Workflow } from "@hexabot-ai/types";
+import type {
+  Credential,
+  WebhookTriggerConfig,
+  Workflow,
+} from "@hexabot-ai/types";
 import {
   WebhookAuthType,
   WebhookJwtAlgorithm,
   WorkflowType,
 } from "@hexabot-ai/types";
 import {
+  Button,
   Collapse,
   Divider,
   FormControlLabel,
@@ -27,11 +32,13 @@ import {
 import Grid from "@mui/material/Grid";
 import Typography from "@mui/material/Typography";
 import type { JSONSchema7 as JsonSchema } from "json-schema";
-import { Copy } from "lucide-react";
-import { FC, Fragment, useEffect, useMemo, useRef } from "react";
+import { Code, Copy, KeyRound } from "lucide-react";
+import type { JSONSchema } from "monaco-yaml";
+import { FC, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { ContentContainer, ContentItem } from "@/app-components/dialogs";
+import AutoCompleteEntitySelect from "@/app-components/inputs/AutoCompleteEntitySelect";
 import { CronInput } from "@/app-components/inputs/CronInput";
 import {
   JsonSchemaObjectBuilder,
@@ -39,7 +46,8 @@ import {
   fromJsonSchema,
   toJsonSchema,
 } from "@/app-components/inputs/JsonSchemaObjectBuilder";
-import { PasswordInput } from "@/app-components/inputs/PasswordInput";
+import { useGenerateWebhookToken } from "@/components/workflow-webhook/hooks/useGenerateWebhookToken";
+import { WebhookSnippetDialog } from "@/components/workflow-webhook/WebhookSnippetDialog";
 import { useCreate } from "@/hooks/crud/useCreate";
 import { useTanstackQueryClient } from "@/hooks/crud/useTanstack";
 import { useUpdate } from "@/hooks/crud/useUpdate";
@@ -47,10 +55,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useConfig } from "@/hooks/useConfig";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
-import { EntityType, QueryType } from "@/services/types";
+import { EntityType, Format, QueryType } from "@/services/types";
 import type { EntityAttributes } from "@/types/base.types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
 import { writeToClipboard } from "@/utils/clipboard";
+
+import { getSchemaDefaults } from "../../utils/schema-defaults.utils";
 
 import { WorkflowTypeSelector } from "./WorkflowTypeSelector";
 
@@ -154,10 +164,10 @@ type WebhookTriggerFormValues = {
   enabled: boolean;
   authType: WebhookAuthType;
   username: string;
-  password: string;
+  passwordCredentialId: string | null;
   headerName: string;
-  headerValue: string;
-  jwtSecret: string;
+  headerValueCredentialId: string | null;
+  jwtSecretCredentialId: string | null;
   jwtAlgorithm: WebhookJwtAlgorithm;
 };
 
@@ -178,18 +188,22 @@ const buildWebhookTriggerFormValues = (
   authType: config?.authType ?? WebhookAuthType.none,
   username:
     config?.authType === WebhookAuthType.basic ? (config.username ?? "") : "",
-  password:
-    config?.authType === WebhookAuthType.basic ? (config.password ?? "") : "",
+  passwordCredentialId:
+    config?.authType === WebhookAuthType.basic
+      ? (config.passwordCredentialId ?? null)
+      : null,
   headerName:
     config?.authType === WebhookAuthType.header
       ? (config.headerName ?? DEFAULT_WEBHOOK_HEADER_NAME)
       : DEFAULT_WEBHOOK_HEADER_NAME,
-  headerValue:
+  headerValueCredentialId:
     config?.authType === WebhookAuthType.header
-      ? (config.headerValue ?? "")
-      : "",
-  jwtSecret:
-    config?.authType === WebhookAuthType.jwt ? (config.jwtSecret ?? "") : "",
+      ? (config.headerValueCredentialId ?? null)
+      : null,
+  jwtSecretCredentialId:
+    config?.authType === WebhookAuthType.jwt
+      ? (config.jwtSecretCredentialId ?? null)
+      : null,
   jwtAlgorithm:
     config?.authType === WebhookAuthType.jwt
       ? (config.jwtAlgorithm ?? WebhookJwtAlgorithm.HS256)
@@ -208,20 +222,20 @@ const buildWebhookTriggerPayload = (
         enabled: true,
         authType: WebhookAuthType.basic,
         username: values.username.trim() || null,
-        password: values.password || null,
+        passwordCredentialId: values.passwordCredentialId || null,
       };
     case WebhookAuthType.header:
       return {
         enabled: true,
         authType: WebhookAuthType.header,
         headerName: values.headerName.trim() || null,
-        headerValue: values.headerValue || null,
+        headerValueCredentialId: values.headerValueCredentialId || null,
       };
     case WebhookAuthType.jwt:
       return {
         enabled: true,
         authType: WebhookAuthType.jwt,
-        jwtSecret: values.jwtSecret || null,
+        jwtSecretCredentialId: values.jwtSecretCredentialId || null,
         jwtAlgorithm: values.jwtAlgorithm,
       };
     case WebhookAuthType.none:
@@ -330,7 +344,7 @@ export const WorkflowForm: FC<
   // mirroring the API-side schema which rejects enabled webhooks with unset
   // credentials.
   const webhookCredentialRules = (authType: WebhookAuthType) => ({
-    validate: (value: string) =>
+    validate: (value: string | null) =>
       !getValues("webhookTrigger.enabled") ||
       getValues("webhookTrigger.authType") !== authType ||
       Boolean(value?.trim()) ||
@@ -350,6 +364,46 @@ export const WorkflowForm: FC<
         defaultValue: "Webhook trigger URL copied.",
       }),
     );
+  };
+  // Token generation targets the SAVED workflow config: the server signs with
+  // the persisted secret credential, so unsaved edits are irrelevant here.
+  const canGenerateWebhookToken = Boolean(
+    isEditing &&
+      workflow?.webhookTrigger?.enabled &&
+      workflow.webhookTrigger.authType === WebhookAuthType.jwt,
+  );
+  const {
+    generateToken,
+    tokenResult,
+    isPending: isGeneratingToken,
+  } = useGenerateWebhookToken(workflow?.id);
+  const handleCopyToken = async () => {
+    if (!tokenResult) {
+      return;
+    }
+
+    await writeToClipboard(tokenResult.token);
+    toast.success(
+      t("message.webhook_token_copied", {
+        defaultValue: "Token copied.",
+      }),
+    );
+  };
+  // Snapshotted when the dialog opens so snippets reflect the current
+  // (possibly unsaved) webhook settings and input schema.
+  const [snippetDialogState, setSnippetDialogState] = useState<{
+    webhookTrigger: WebhookTriggerConfig | null;
+    body: Record<string, unknown>;
+  } | null>(null);
+  const handleOpenSnippetDialog = () => {
+    setSnippetDialogState({
+      webhookTrigger:
+        (getValues("webhookTrigger") as WebhookTriggerConfig | null) ?? null,
+      body:
+        getSchemaDefaults(
+          toJsonSchema(getValues("inputSchema")) as JSONSchema,
+        ) ?? {},
+    });
   };
   const handleTypeChange = (nextType: WorkflowType) => {
     const currentType = getValues("type");
@@ -616,11 +670,21 @@ export const WorkflowForm: FC<
                                           })}
                                         >
                                           <IconButton
-                                            edge="end"
                                             size="small"
                                             onClick={handleCopyWebhookUrl}
                                           >
                                             <Copy size={16} />
+                                          </IconButton>
+                                        </Tooltip>
+                                        <Tooltip
+                                          title={t("button.view_code_snippet")}
+                                        >
+                                          <IconButton
+                                            edge="end"
+                                            size="small"
+                                            onClick={handleOpenSnippetDialog}
+                                          >
+                                            <Code size={16} />
                                           </IconButton>
                                         </Tooltip>
                                       </InputAdornment>
@@ -709,20 +773,41 @@ export const WorkflowForm: FC<
                                   )}
                                 />
                                 <Controller
-                                  name="webhookTrigger.password"
+                                  name="webhookTrigger.passwordCredentialId"
                                   control={control}
                                   rules={webhookCredentialRules(
                                     WebhookAuthType.basic,
                                   )}
-                                  render={({ field, fieldState }) => (
-                                    <PasswordInput
-                                      label={t("label.password")}
-                                      autoComplete="new-password"
-                                      error={Boolean(fieldState.error)}
-                                      helperText={fieldState.error?.message}
-                                      {...field}
-                                    />
-                                  )}
+                                  render={({ field, fieldState }) => {
+                                    const { onChange, ...restField } = field;
+
+                                    return (
+                                      <AutoCompleteEntitySelect<
+                                        Credential,
+                                        "name",
+                                        false
+                                      >
+                                        entity={EntityType.CREDENTIAL}
+                                        format={Format.BASIC}
+                                        searchFields={["name"]}
+                                        labelKey="name"
+                                        label={t(
+                                          "label.webhook_password_credential",
+                                          {
+                                            defaultValue: "Password Credential",
+                                          },
+                                        )}
+                                        multiple={false}
+                                        onChange={(_event, selected) =>
+                                          onChange(selected?.id || null)
+                                        }
+                                        enableEntityAddButton
+                                        error={Boolean(fieldState.error)}
+                                        helperText={fieldState.error?.message}
+                                        {...restField}
+                                      />
+                                    );
+                                  }}
                                 />
                               </>
                             )}
@@ -746,22 +831,42 @@ export const WorkflowForm: FC<
                                   )}
                                 />
                                 <Controller
-                                  name="webhookTrigger.headerValue"
+                                  name="webhookTrigger.headerValueCredentialId"
                                   control={control}
                                   rules={webhookCredentialRules(
                                     WebhookAuthType.header,
                                   )}
-                                  render={({ field, fieldState }) => (
-                                    <PasswordInput
-                                      label={t("label.header_value", {
-                                        defaultValue: "Header Value",
-                                      })}
-                                      autoComplete="new-password"
-                                      error={Boolean(fieldState.error)}
-                                      helperText={fieldState.error?.message}
-                                      {...field}
-                                    />
-                                  )}
+                                  render={({ field, fieldState }) => {
+                                    const { onChange, ...restField } = field;
+
+                                    return (
+                                      <AutoCompleteEntitySelect<
+                                        Credential,
+                                        "name",
+                                        false
+                                      >
+                                        entity={EntityType.CREDENTIAL}
+                                        format={Format.BASIC}
+                                        searchFields={["name"]}
+                                        labelKey="name"
+                                        label={t(
+                                          "label.webhook_header_value_credential",
+                                          {
+                                            defaultValue:
+                                              "Header Value Credential",
+                                          },
+                                        )}
+                                        multiple={false}
+                                        onChange={(_event, selected) =>
+                                          onChange(selected?.id || null)
+                                        }
+                                        enableEntityAddButton
+                                        error={Boolean(fieldState.error)}
+                                        helperText={fieldState.error?.message}
+                                        {...restField}
+                                      />
+                                    );
+                                  }}
                                 />
                               </>
                             )}
@@ -792,23 +897,100 @@ export const WorkflowForm: FC<
                                   )}
                                 />
                                 <Controller
-                                  name="webhookTrigger.jwtSecret"
+                                  name="webhookTrigger.jwtSecretCredentialId"
                                   control={control}
                                   rules={webhookCredentialRules(
                                     WebhookAuthType.jwt,
                                   )}
-                                  render={({ field, fieldState }) => (
-                                    <PasswordInput
-                                      label={t("label.jwt_secret", {
-                                        defaultValue: "Signing Secret",
-                                      })}
-                                      autoComplete="new-password"
-                                      error={Boolean(fieldState.error)}
-                                      helperText={fieldState.error?.message}
-                                      {...field}
-                                    />
-                                  )}
+                                  render={({ field, fieldState }) => {
+                                    const { onChange, ...restField } = field;
+
+                                    return (
+                                      <AutoCompleteEntitySelect<
+                                        Credential,
+                                        "name",
+                                        false
+                                      >
+                                        entity={EntityType.CREDENTIAL}
+                                        format={Format.BASIC}
+                                        searchFields={["name"]}
+                                        labelKey="name"
+                                        label={t(
+                                          "label.webhook_jwt_secret_credential",
+                                          {
+                                            defaultValue:
+                                              "Signing Secret Credential",
+                                          },
+                                        )}
+                                        multiple={false}
+                                        onChange={(_event, selected) =>
+                                          onChange(selected?.id || null)
+                                        }
+                                        enableEntityAddButton
+                                        error={Boolean(fieldState.error)}
+                                        helperText={fieldState.error?.message}
+                                        {...restField}
+                                      />
+                                    );
+                                  }}
                                 />
+                                {canGenerateWebhookToken ? (
+                                  <Stack spacing={1}>
+                                    <Button
+                                      variant="outlined"
+                                      startIcon={<KeyRound size={16} />}
+                                      loading={isGeneratingToken}
+                                      onClick={() => generateToken()}
+                                    >
+                                      {t("button.generate_token", {
+                                        defaultValue: "Generate token",
+                                      })}
+                                    </Button>
+                                    {tokenResult ? (
+                                      <TextField
+                                        value={tokenResult.token}
+                                        size="small"
+                                        slotProps={{
+                                          input: {
+                                            readOnly: true,
+                                            endAdornment: (
+                                              <InputAdornment position="end">
+                                                <Tooltip
+                                                  title={t("button.copy")}
+                                                >
+                                                  <IconButton
+                                                    edge="end"
+                                                    size="small"
+                                                    onClick={handleCopyToken}
+                                                  >
+                                                    <Copy size={16} />
+                                                  </IconButton>
+                                                </Tooltip>
+                                              </InputAdornment>
+                                            ),
+                                          },
+                                        }}
+                                        helperText={t(
+                                          "message.webhook_token_generated",
+                                          {
+                                            defaultValue:
+                                              "Token generated. It does not expire; rotate the signing secret credential to revoke it.",
+                                          },
+                                        )}
+                                      />
+                                    ) : (
+                                      <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                      >
+                                        {t("message.webhook_token_hint", {
+                                          defaultValue:
+                                            "Tokens are signed with the saved secret. Save your changes first.",
+                                        })}
+                                      </Typography>
+                                    )}
+                                  </Stack>
+                                ) : null}
                               </>
                             )}
                           </Stack>
@@ -837,6 +1019,16 @@ export const WorkflowForm: FC<
               </ContentContainer>
             </Grid>
           </Grid>
+          {isEditing ? (
+            <WebhookSnippetDialog
+              open={snippetDialogState !== null}
+              onClose={() => setSnippetDialogState(null)}
+              url={webhookTriggerUrl}
+              workflowId={workflow?.id}
+              webhookTrigger={snippetDialogState?.webhookTrigger}
+              body={snippetDialogState?.body ?? {}}
+            />
+          ) : null}
         </form>
       </Wrapper>
     </FormProvider>

@@ -23,14 +23,12 @@ type WorkflowRunDebuggerProps = {
   initiatorId?: string;
   runId?: string;
   workflow?: Workflow;
-  workflowInput?: Record<string, unknown>;
 };
 
 export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
   initiatorId,
   runId,
   workflow,
-  workflowInput,
 }) => {
   useWorkflowRunLiveUpdates({
     workflowId: workflow?.id,
@@ -134,7 +132,6 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
         isFetching={isFetching}
         selectedRun={selectedRun}
         workflow={workflow ?? null}
-        workflowInput={workflowInput}
         workflowVersion={selectedWorkflowVersion ?? null}
         onSelectRun={setSelectedRunId}
       />

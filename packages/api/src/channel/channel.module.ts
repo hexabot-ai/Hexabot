@@ -13,6 +13,7 @@ import { InjectDynamicProviders } from 'nestjs-dynamic-providers';
 import { AttachmentModule } from '@/attachment/attachment.module';
 import { ChatModule } from '@/chat/chat.module';
 import { CmsModule } from '@/cms/cms.module';
+import { UserModule } from '@/user/user.module';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 import { WorkflowModule } from '@/workflow/workflow.module';
 
@@ -51,6 +52,9 @@ export interface ChannelModuleOptions {
     JwtModule,
     TypeOrmModule.forFeature([SourceOrmEntity, WorkflowOrmEntity]),
     forwardRef(() => WorkflowModule),
+    // WebhookTriggerGuard is instantiated in this module's context (the
+    // trigger route lives on WebhookController) and needs CredentialService.
+    UserModule,
   ],
   controllers: [WebhookController, ChannelController, SourceController],
   providers: [
