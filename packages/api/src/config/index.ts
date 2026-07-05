@@ -79,6 +79,17 @@ export const config: Config = {
       /^\/webhook\//, // Any webhook channel
       /^\/user\/reset(\/[^\/]+)?$/, // Reset request / Change password
     ],
+    // Rate limit for the public workflow webhook trigger endpoint.
+    webhookThrottle: {
+      ttlMs: parseIntWithFallback(
+        process.env.WEBHOOK_TRIGGER_THROTTLE_TTL_MS,
+        60000,
+      ),
+      limit: parseIntWithFallback(
+        process.env.WEBHOOK_TRIGGER_THROTTLE_LIMIT,
+        30,
+      ),
+    },
   },
   sockets: {
     path: '/socket.io',

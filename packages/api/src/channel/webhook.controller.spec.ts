@@ -7,6 +7,7 @@
 import { WebhookAuthType } from '@hexabot-ai/types';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import request from 'supertest';
 
@@ -19,6 +20,7 @@ import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowType } from '@/workflow/types';
 
 import { ChannelService } from './channel.service';
+import { WebhookTriggerThrottlerGuard } from './guards/webhook-trigger-throttler.guard';
 import { ChannelDownloadService } from './services/channel-download.service';
 import { WebhookController } from './webhook.controller';
 
@@ -164,6 +166,10 @@ describe('WebhookController (HTTP pipes)', () => {
       })),
     };
     const { module } = await buildTestingMocks({
+      imports: [
+        // Generous limit: throttling behaviour has its own dedicated suite.
+        ThrottlerModule.forRoot({ throttlers: [{ ttl: 60000, limit: 1000 }] }),
+      ],
       controllers: [WebhookController],
       providers: [
         { provide: ChannelService, useValue: channelService },
@@ -173,6 +179,7 @@ describe('WebhookController (HTTP pipes)', () => {
           useValue: webhookTriggerService,
         },
         WebhookTriggerGuard,
+        WebhookTriggerThrottlerGuard,
         { provide: WorkflowService, useValue: workflowServiceMock },
         { provide: JwtService, useValue: new JwtService({}) },
         {
@@ -241,5 +248,73 @@ describe('WebhookController (HTTP pipes)', () => {
       .expect(404);
 
     expect(channelService.handle).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebhookController (trigger throttling)', () => {
+  let app: INestApplication;
+  let webhookTriggerService: jest.Mocked<
+    Pick<WebhookTriggerService, 'trigger'>
+  >;
+
+  beforeAll(async () => {
+    webhookTriggerService = {
+      trigger: jest.fn().mockResolvedValue(triggerResult),
+    };
+    const workflowServiceMock = {
+      findOne: jest.fn(async (id: string) => ({
+        id,
+        type: WorkflowType.manual,
+        webhookTrigger: { enabled: true, authType: WebhookAuthType.none },
+      })),
+    };
+    const { module } = await buildTestingMocks({
+      imports: [
+        ThrottlerModule.forRoot({ throttlers: [{ ttl: 60000, limit: 2 }] }),
+      ],
+      controllers: [WebhookController],
+      providers: [
+        { provide: ChannelService, useValue: { handle: jest.fn() } },
+        { provide: ChannelDownloadService, useValue: { download: jest.fn() } },
+        { provide: WebhookTriggerService, useValue: webhookTriggerService },
+        WebhookTriggerGuard,
+        WebhookTriggerThrottlerGuard,
+        { provide: WorkflowService, useValue: workflowServiceMock },
+        { provide: JwtService, useValue: new JwtService({}) },
+        {
+          provide: CredentialService,
+          useValue: { findOneValue: jest.fn().mockResolvedValue(null) },
+        },
+        { provide: LoggerService, useValue: { log: jest.fn() } },
+      ],
+    });
+
+    app = module.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns 429 once the per-workflow limit is exceeded', async () => {
+    const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    await request(app.getHttpServer())
+      .post(`/webhook/${id}/trigger`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/webhook/${id}/trigger`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/webhook/${id}/trigger`)
+      .expect(429);
+
+    // A different workflow from the same IP keeps its own budget.
+    const otherId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    await request(app.getHttpServer())
+      .post(`/webhook/${otherId}/trigger`)
+      .expect(200);
   });
 });
