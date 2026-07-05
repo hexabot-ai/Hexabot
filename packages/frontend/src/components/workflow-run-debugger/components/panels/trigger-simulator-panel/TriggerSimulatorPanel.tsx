@@ -219,6 +219,7 @@ export const TriggerSimulatorPanel = ({
           open={isSnippetDialogOpen}
           onClose={() => setIsSnippetDialogOpen(false)}
           url={webhookTriggerUrl}
+          workflowId={workflow?.id}
           webhookTrigger={workflow?.webhookTrigger}
           body={formData}
         />

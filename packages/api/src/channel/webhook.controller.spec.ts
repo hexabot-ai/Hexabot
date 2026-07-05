@@ -11,6 +11,7 @@ import { Request, Response } from 'express';
 import request from 'supertest';
 
 import { LoggerService } from '@/logger/logger.service';
+import { CredentialService } from '@/user/services/credential.service';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WebhookTriggerGuard } from '@/workflow/guards/webhook-trigger.guard';
 import { WebhookTriggerService } from '@/workflow/services/webhook-trigger.service';
@@ -174,6 +175,10 @@ describe('WebhookController (HTTP pipes)', () => {
         WebhookTriggerGuard,
         { provide: WorkflowService, useValue: workflowServiceMock },
         { provide: JwtService, useValue: new JwtService({}) },
+        {
+          provide: CredentialService,
+          useValue: { findOneValue: jest.fn().mockResolvedValue(null) },
+        },
         { provide: LoggerService, useValue: logger },
       ],
     });

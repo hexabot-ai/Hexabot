@@ -19,6 +19,9 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 
+import { LoggerService } from '@/logger/logger.service';
+import { CredentialService } from '@/user/services/credential.service';
+
 import { WorkflowService } from '../services/workflow.service';
 import { WorkflowType } from '../types';
 
@@ -37,7 +40,9 @@ export class WebhookTriggerGuard implements CanActivate {
 
   constructor(
     private readonly workflowService: WorkflowService,
+    private readonly credentialService: CredentialService,
     private readonly jwtService: JwtService,
+    private readonly logger: LoggerService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -62,25 +67,55 @@ export class WebhookTriggerGuard implements CanActivate {
       throw new NotFoundException(`Workflow with ID ${id} not found`);
     }
 
-    this.verifyWebhookAuth(webhook, request);
+    await this.verifyWebhookAuth(webhook, request);
 
     return true;
+  }
+
+  /**
+   * Resolves the secret referenced by the trigger config from the credentials
+   * store. A missing reference or a dangling credential must never
+   * authenticate: both fail closed with a generic 401, with a server-side
+   * warning so operators can diagnose broken references.
+   */
+  private async resolveSecret(
+    credentialId: string | null | undefined,
+  ): Promise<string> {
+    if (!credentialId) {
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+
+    const value = await this.credentialService.findOneValue(credentialId);
+    if (!value) {
+      this.logger.warn(
+        `Webhook trigger references a missing credential (${credentialId})`,
+      );
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+
+    return value;
   }
 
   /**
    * Validates incoming webhook credentials against the workflow configuration.
    * Throws {@link UnauthorizedException} when the credentials are missing or invalid.
    */
-  private verifyWebhookAuth(webhook: WebhookTriggerConfig, req: Request): void {
+  private async verifyWebhookAuth(
+    webhook: WebhookTriggerConfig,
+    req: Request,
+  ): Promise<void> {
     switch (webhook.authType) {
       case WebhookAuthType.none:
         return;
 
       case WebhookAuthType.basic: {
         // A missing expected secret must never authenticate empty credentials.
-        if (!webhook.username || !webhook.password) {
+        if (!webhook.username) {
           throw new UnauthorizedException('Invalid webhook credentials');
         }
+        const expectedPassword = await this.resolveSecret(
+          webhook.passwordCredentialId,
+        );
         const header = req.headers.authorization ?? '';
         const match = header.match(/^Basic\s+(\S+)$/i);
         if (!match) {
@@ -93,7 +128,7 @@ export class WebhookTriggerGuard implements CanActivate {
         const password = separator === -1 ? '' : decoded.slice(separator + 1);
         if (
           !this.safeEqual(username, webhook.username) ||
-          !this.safeEqual(password, webhook.password)
+          !this.safeEqual(password, expectedPassword)
         ) {
           throw new UnauthorizedException('Invalid webhook credentials');
         }
@@ -104,12 +139,15 @@ export class WebhookTriggerGuard implements CanActivate {
       case WebhookAuthType.header: {
         const headerName = (webhook.headerName ?? '').toLowerCase();
         // A missing expected secret must never authenticate empty credentials.
-        if (!headerName || !webhook.headerValue) {
+        if (!headerName) {
           throw new UnauthorizedException('Invalid webhook credentials');
         }
+        const expectedValue = await this.resolveSecret(
+          webhook.headerValueCredentialId,
+        );
         const provided = req.headers[headerName];
         const value = Array.isArray(provided) ? provided[0] : (provided ?? '');
-        if (!this.safeEqual(value, webhook.headerValue)) {
+        if (!this.safeEqual(value, expectedValue)) {
           throw new UnauthorizedException('Invalid webhook credentials');
         }
 
@@ -117,14 +155,15 @@ export class WebhookTriggerGuard implements CanActivate {
       }
 
       case WebhookAuthType.jwt: {
+        const secret = await this.resolveSecret(webhook.jwtSecretCredentialId);
         const header = req.headers.authorization ?? '';
         const match = header.match(/^Bearer\s+(\S+)$/i);
-        if (!match || !webhook.jwtSecret) {
+        if (!match) {
           throw new UnauthorizedException('Invalid webhook credentials');
         }
         try {
           this.jwtService.verify(match[1], {
-            secret: webhook.jwtSecret,
+            secret,
             algorithms: [webhook.jwtAlgorithm ?? 'HS256'],
           });
         } catch {

@@ -18,9 +18,10 @@ export type WebhookSnippetAuth =
   | { type: "none" }
   | { type: "basic"; username: string; password: string }
   | { type: "header"; headerName: string; headerValue: string }
-  // The JWT secret must never be embedded in a snippet; callers sign their
-  // own token, so the snippet always carries a placeholder.
-  | { type: "jwt" };
+  // Trigger secrets live in the credentials store and are never returned to
+  // the client, so basic/header snippets always carry value placeholders. A
+  // JWT snippet may carry a real server-issued token when one was generated.
+  | { type: "jwt"; token?: string };
 
 export type WebhookSnippetConfig = {
   url: string;
@@ -29,6 +30,8 @@ export type WebhookSnippetConfig = {
 };
 
 export const JWT_TOKEN_PLACEHOLDER = "<YOUR_JWT_TOKEN>";
+export const PASSWORD_PLACEHOLDER = "<YOUR_PASSWORD>";
+export const HEADER_VALUE_PLACEHOLDER = "<YOUR_HEADER_VALUE>";
 
 export const WEBHOOK_SNIPPET_TARGETS: Array<{
   id: WebhookSnippetTarget;
@@ -43,22 +46,23 @@ export const WEBHOOK_SNIPPET_TARGETS: Array<{
 
 export const toSnippetAuth = (
   trigger?: WebhookTriggerConfig | null,
+  jwtToken?: string,
 ): WebhookSnippetAuth => {
   switch (trigger?.authType) {
     case WebhookAuthType.basic:
       return {
         type: "basic",
         username: trigger.username || "<YOUR_USERNAME>",
-        password: trigger.password || "<YOUR_PASSWORD>",
+        password: PASSWORD_PLACEHOLDER,
       };
     case WebhookAuthType.header:
       return {
         type: "header",
         headerName: trigger.headerName || "<YOUR_HEADER_NAME>",
-        headerValue: trigger.headerValue || "<YOUR_HEADER_VALUE>",
+        headerValue: HEADER_VALUE_PLACEHOLDER,
       };
     case WebhookAuthType.jwt:
-      return { type: "jwt" };
+      return { type: "jwt", token: jwtToken };
     default:
       return { type: "none" };
   }
@@ -81,7 +85,11 @@ const generateCurl = ({ url, auth, body }: WebhookSnippetConfig): string => {
       );
       break;
     case "jwt":
-      lines.push(`  -H 'Authorization: Bearer ${JWT_TOKEN_PLACEHOLDER}'`);
+      lines.push(
+        `  -H ${singleQuote(
+          `Authorization: Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`,
+        )}`,
+      );
       break;
   }
 
@@ -108,7 +116,11 @@ const generateWget = ({ url, auth, body }: WebhookSnippetConfig): string => {
       );
       break;
     case "jwt":
-      lines.push(`  --header='Authorization: Bearer ${JWT_TOKEN_PLACEHOLDER}'`);
+      lines.push(
+        `  --header=${singleQuote(
+          `Authorization: Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`,
+        )}`,
+      );
       break;
   }
 
@@ -129,7 +141,11 @@ const buildHeaderEntries = (auth: WebhookSnippetAuth): string[] => {
       );
       break;
     case "jwt":
-      entries.push(`"Authorization": "Bearer ${JWT_TOKEN_PLACEHOLDER}"`);
+      entries.push(
+        `"Authorization": ${JSON.stringify(
+          `Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`,
+        )}`,
+      );
       break;
   }
 
@@ -212,7 +228,11 @@ const generatePython = ({ url, auth, body }: WebhookSnippetConfig): string => {
       );
       break;
     case "jwt":
-      headers.push(`"Authorization": "Bearer ${JWT_TOKEN_PLACEHOLDER}"`);
+      headers.push(
+        `"Authorization": ${JSON.stringify(
+          `Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`,
+        )}`,
+      );
       break;
   }
 

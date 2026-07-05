@@ -39,7 +39,10 @@ import {
   ManualEventWrapper,
   ScheduledEventWrapper,
 } from '../lib/trigger-event-wrapper';
-import { WebhookTriggerService } from '../services/webhook-trigger.service';
+import {
+  WebhookTokenResult,
+  WebhookTriggerService,
+} from '../services/webhook-trigger.service';
 import { WorkflowService } from '../services/workflow.service';
 import { WorkflowType } from '../types';
 
@@ -333,5 +336,29 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
     );
 
     return { accepted: true };
+  }
+
+  /**
+   * Issues a webhook trigger token signed with the workflow's JWT secret so
+   * callers do not have to craft tokens themselves. Tokens carry no expiry;
+   * rotating the signing secret credential revokes them.
+   *
+   * @param id - The workflow ID the token is scoped to.
+   * @param req - Express request containing the authenticated session.
+   */
+  @Post(':id/webhook-token')
+  @HttpCode(201)
+  async generateWebhookToken(
+    @UuidParam('id') id: string,
+    @Req() req: Request,
+  ): Promise<WebhookTokenResult> {
+    const userId = req.session?.passport?.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException(
+        'Only authenticated users can generate webhook tokens',
+      );
+    }
+
+    return await this.webhookTriggerService.generateToken(id);
   }
 }

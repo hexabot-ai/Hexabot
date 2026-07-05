@@ -93,7 +93,9 @@ export class WorkflowOrmEntity extends BaseOrmEntity<WorkflowDto> {
   /**
    * Optional webhook trigger configuration for manual workflows. When enabled,
    * exposes a public URL that authenticates incoming calls before running the
-   * workflow. Stored as JSON; credentials are persisted as-is.
+   * workflow. Stored as JSON; secrets are referenced by credential ID, never
+   * inline. The JSON carries no foreign key, so referential integrity is
+   * enforced at the guard: a dangling credential reference fails auth (401).
    */
   @JsonColumn({ name: 'webhook_trigger', nullable: true })
   webhookTrigger?: WebhookTriggerConfig | null;

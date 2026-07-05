@@ -29,6 +29,8 @@ const webhookTriggerBaseShape = {
   enabled: z.coerce.boolean().default(false),
 };
 
+// Secrets are never stored inline on the workflow: each secret lives in the
+// credentials store and the trigger config only carries its credential id.
 export const webhookTriggerSchema = preprocess(
   (value) => {
     // Default the discriminator so a config without an explicit authType still
@@ -50,26 +52,27 @@ export const webhookTriggerSchema = preprocess(
         ...webhookTriggerBaseShape,
         authType: z.literal(WebhookAuthType.basic),
         username: nullableString,
-        password: nullableString,
+        passwordCredentialId: nullableString,
       }),
       z.object({
         ...webhookTriggerBaseShape,
         authType: z.literal(WebhookAuthType.header),
         headerName: nullableString,
-        headerValue: nullableString,
+        headerValueCredentialId: nullableString,
       }),
       z.object({
         ...webhookTriggerBaseShape,
         authType: z.literal(WebhookAuthType.jwt),
-        jwtSecret: nullableString,
+        jwtSecretCredentialId: nullableString,
         jwtAlgorithm: preprocess(
           nullishToNull,
           webhookJwtAlgorithmSchema.nullable().optional(),
         ),
       }),
     ])
-    // An enabled webhook with an unset secret would otherwise authenticate
-    // empty credentials, so credentials are mandatory once enabled.
+    // An enabled webhook with an unset credential reference would otherwise
+    // authenticate empty credentials, so references are mandatory once
+    // enabled.
     .superRefine((config, ctx) => {
       if (!config.enabled) {
         return;
@@ -91,14 +94,23 @@ export const webhookTriggerSchema = preprocess(
       switch (config.authType) {
         case WebhookAuthType.basic:
           requireCredential("username", config.username);
-          requireCredential("password", config.password);
+          requireCredential(
+            "passwordCredentialId",
+            config.passwordCredentialId,
+          );
           break;
         case WebhookAuthType.header:
           requireCredential("headerName", config.headerName);
-          requireCredential("headerValue", config.headerValue);
+          requireCredential(
+            "headerValueCredentialId",
+            config.headerValueCredentialId,
+          );
           break;
         case WebhookAuthType.jwt:
-          requireCredential("jwtSecret", config.jwtSecret);
+          requireCredential(
+            "jwtSecretCredentialId",
+            config.jwtSecretCredentialId,
+          );
           break;
         default:
           break;

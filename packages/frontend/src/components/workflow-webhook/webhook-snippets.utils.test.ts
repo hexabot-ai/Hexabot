@@ -10,7 +10,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   generateWebhookSnippet,
+  HEADER_VALUE_PLACEHOLDER,
   JWT_TOKEN_PLACEHOLDER,
+  PASSWORD_PLACEHOLDER,
   toSnippetAuth,
   WEBHOOK_SNIPPET_TARGETS,
 } from "./webhook-snippets.utils";
@@ -33,53 +35,76 @@ describe("toSnippetAuth", () => {
     expect(toSnippetAuth(undefined)).toEqual({ type: "none" });
   });
 
-  it("maps basic credentials", () => {
+  it("maps basic auth with a password placeholder", () => {
     expect(
       toSnippetAuth({
         enabled: true,
         authType: WebhookAuthType.basic,
         username: "ada",
-        password: "s3cret",
+        passwordCredentialId: "cred-1",
       } as WebhookTriggerConfig),
-    ).toEqual({ type: "basic", username: "ada", password: "s3cret" });
+    ).toEqual({
+      type: "basic",
+      username: "ada",
+      password: PASSWORD_PLACEHOLDER,
+    });
   });
 
-  it("falls back to placeholders for empty credentials", () => {
+  it("falls back to placeholders for empty non-secret fields", () => {
     expect(
       toSnippetAuth({
         enabled: true,
         authType: WebhookAuthType.basic,
         username: null,
-        password: "",
+        passwordCredentialId: null,
       } as WebhookTriggerConfig),
     ).toEqual({
       type: "basic",
       username: "<YOUR_USERNAME>",
-      password: "<YOUR_PASSWORD>",
+      password: PASSWORD_PLACEHOLDER,
     });
     expect(
       toSnippetAuth({
         enabled: true,
         authType: WebhookAuthType.header,
         headerName: null,
-        headerValue: null,
+        headerValueCredentialId: "cred-2",
       } as WebhookTriggerConfig),
     ).toEqual({
       type: "header",
       headerName: "<YOUR_HEADER_NAME>",
-      headerValue: "<YOUR_HEADER_VALUE>",
+      headerValue: HEADER_VALUE_PLACEHOLDER,
     });
   });
 
-  it("never exposes the JWT secret", () => {
+  it("always uses a header value placeholder", () => {
     expect(
       toSnippetAuth({
         enabled: true,
-        authType: WebhookAuthType.jwt,
-        jwtSecret: "super-secret",
-        jwtAlgorithm: null,
+        authType: WebhookAuthType.header,
+        headerName: "X-Webhook-Token",
+        headerValueCredentialId: "cred-2",
       } as WebhookTriggerConfig),
-    ).toEqual({ type: "jwt" });
+    ).toEqual({
+      type: "header",
+      headerName: "X-Webhook-Token",
+      headerValue: HEADER_VALUE_PLACEHOLDER,
+    });
+  });
+
+  it("carries a generated token for jwt auth", () => {
+    const config = {
+      enabled: true,
+      authType: WebhookAuthType.jwt,
+      jwtSecretCredentialId: "cred-3",
+      jwtAlgorithm: null,
+    } as WebhookTriggerConfig;
+
+    expect(toSnippetAuth(config)).toEqual({ type: "jwt", token: undefined });
+    expect(toSnippetAuth(config, "signed.jwt.token")).toEqual({
+      type: "jwt",
+      token: "signed.jwt.token",
+    });
   });
 });
 
@@ -129,6 +154,18 @@ describe("generateWebhookSnippet", () => {
       );
 
       expect(snippet).toContain(`Bearer ${JWT_TOKEN_PLACEHOLDER}`);
+    }
+  });
+
+  it("substitutes a generated token for every target", () => {
+    for (const { id } of WEBHOOK_SNIPPET_TARGETS) {
+      const snippet = generateWebhookSnippet(
+        id,
+        buildConfig({ auth: { type: "jwt", token: "signed.jwt.token" } }),
+      );
+
+      expect(snippet).toContain("Bearer signed.jwt.token");
+      expect(snippet).not.toContain(JWT_TOKEN_PLACEHOLDER);
     }
   });
 

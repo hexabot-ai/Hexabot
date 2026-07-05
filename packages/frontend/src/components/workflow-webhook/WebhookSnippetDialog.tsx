@@ -9,6 +9,7 @@ import type { WebhookTriggerConfig } from "@hexabot-ai/types";
 import {
   Alert,
   Box,
+  Button,
   Dialog,
   DialogContent,
   IconButton,
@@ -17,14 +18,15 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Copy } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Copy, KeyRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { DialogTitle } from "@/app-components/dialogs";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { writeToClipboard } from "@/utils/clipboard";
 
+import { useGenerateWebhookToken } from "./hooks/useGenerateWebhookToken";
 import {
   generateWebhookSnippet,
   toSnippetAuth,
@@ -36,6 +38,7 @@ type WebhookSnippetDialogProps = {
   open: boolean;
   onClose: () => void;
   url: string;
+  workflowId?: string;
   webhookTrigger?: WebhookTriggerConfig | null;
   body: Record<string, unknown>;
 };
@@ -44,21 +47,34 @@ export const WebhookSnippetDialog = ({
   open,
   onClose,
   url,
+  workflowId,
   webhookTrigger,
   body,
 }: WebhookSnippetDialogProps) => {
   const { t } = useTranslate();
   const { toast } = useToast();
   const [target, setTarget] = useState<WebhookSnippetTarget>("curl");
+  const { generateToken, tokenResult, isPending, reset } =
+    useGenerateWebhookToken(workflowId);
+  const isJwtAuth = webhookTrigger?.authType === WebhookAuthType.jwt;
   const snippet = useMemo(
     () =>
       generateWebhookSnippet(target, {
         url,
-        auth: toSnippetAuth(webhookTrigger),
+        auth: toSnippetAuth(webhookTrigger, tokenResult?.token),
         body,
       }),
-    [target, url, webhookTrigger, body],
+    [target, url, webhookTrigger, body, tokenResult],
   );
+
+  // Drop any generated token when the dialog closes so a reopened dialog
+  // never shows a token signed with a since-changed configuration.
+  useEffect(() => {
+    if (!open) {
+      reset();
+    }
+  }, [open, reset]);
+
   const handleCopy = async () => {
     await writeToClipboard(snippet);
     toast.success(t("message.webhook_snippet_copied"));
@@ -113,9 +129,43 @@ export const WebhookSnippetDialog = ({
             </IconButton>
           </Tooltip>
         </Box>
-        {webhookTrigger?.authType === WebhookAuthType.jwt ? (
+        {isJwtAuth ? (
+          <Alert
+            severity="info"
+            sx={{
+              mt: 1,
+              // Keep the long hint from squeezing the action button into
+              // wrapped, broken words.
+              "& .MuiAlert-action": {
+                alignItems: "center",
+                pt: 0,
+                flexShrink: 0,
+              },
+            }}
+            action={
+              workflowId ? (
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<KeyRound size={16} />}
+                  loading={isPending}
+                  onClick={() => generateToken()}
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  {t("button.generate_token")}
+                </Button>
+              ) : undefined
+            }
+          >
+            {tokenResult
+              ? t("message.webhook_token_generated")
+              : t("message.webhook_jwt_token_hint")}
+          </Alert>
+        ) : null}
+        {webhookTrigger?.authType === WebhookAuthType.basic ||
+        webhookTrigger?.authType === WebhookAuthType.header ? (
           <Alert severity="info" sx={{ mt: 1 }}>
-            {t("message.webhook_jwt_token_hint")}
+            {t("message.webhook_secret_placeholder_hint")}
           </Alert>
         ) : null}
       </DialogContent>
