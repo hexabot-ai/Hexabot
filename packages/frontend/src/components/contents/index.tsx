@@ -17,6 +17,7 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { isSameEntity } from "@/hooks/crud/helpers";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -30,7 +31,6 @@ import { useHasPermission } from "@/hooks/useHasPermission";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
-import { getDateTimeFormatter } from "@/utils/date";
 
 import { ContentFormDialog } from "./ContentFormDialog";
 
@@ -38,6 +38,7 @@ export const Contents = () => {
   const { t } = useTranslate();
   const { toast } = useToast();
   const { query } = useAppRouter();
+  const timestampColumns = useTimestampColumns<Content>();
   const queryClient = useTanstackQueryClient();
   const dialogs = useDialogs();
   const hasPermission = useHasPermission();
@@ -146,26 +147,7 @@ export const Contents = () => {
         />
       ),
     },
-    {
-      maxWidth: 140,
-      field: "createdAt",
-      headerName: t("label.createdAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.created_at", getDateTimeFormatter(params)),
-    },
-    {
-      maxWidth: 140,
-      field: "updatedAt",
-      headerName: t("label.updatedAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.updated_at", getDateTimeFormatter(params)),
-    },
+    ...timestampColumns,
     actionColumns,
   ];
 

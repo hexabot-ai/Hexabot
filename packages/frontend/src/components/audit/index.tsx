@@ -14,10 +14,10 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
-import { getDateTimeFormatter } from "@/utils/date";
 
 import {
   formatAuditActor,
@@ -58,20 +58,12 @@ export const Audit = () => {
     ],
     t("label.operations"),
   );
+  const timestampColumns = useTimestampColumns<AuditLog>("createdAt");
   const columns = useMemo(
     () =>
       [
         { field: "id", headerName: "ID", width: 100 },
-        {
-          minWidth: 160,
-          field: "createdAt",
-          headerName: t("label.createdAt"),
-          disableColumnMenu: true,
-          resizable: false,
-          headerAlign: "left",
-          valueGetter: (value) =>
-            t("datetime.created_at", getDateTimeFormatter(value)),
-        },
+        ...timestampColumns,
         {
           minWidth: 140,
           field: "operationStatus",
@@ -140,7 +132,7 @@ export const Audit = () => {
         },
         actionColumns,
       ] satisfies GridColDef<AuditLog>[],
-    [actionColumns, t],
+    [actionColumns, t, timestampColumns],
   );
 
   return (

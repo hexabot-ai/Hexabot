@@ -14,6 +14,7 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useDelete } from "@/hooks/crud/useDelete";
 import { useAppRouter } from "@/hooks/useAppRouter";
@@ -21,7 +22,6 @@ import { useDialogs } from "@/hooks/useDialogs";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
-import { getDateTimeFormatter } from "@/utils/date";
 
 import { ContentTypeFormDialog } from "./ContentTypeFormDialog";
 
@@ -30,6 +30,7 @@ export const ContentTypes = () => {
   const { toast } = useToast();
   const router = useAppRouter();
   const dialogs = useDialogs();
+  const timestampColumns = useTimestampColumns<ContentType>();
   const options = {
     onError: (error: Error) => {
       toast.error(error);
@@ -72,24 +73,7 @@ export const ContentTypes = () => {
   );
   const columns: GridColDef<ContentType>[] = [
     { flex: 1, field: "name", headerName: t("label.name") },
-    {
-      field: "createdAt",
-      headerName: t("label.createdAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.created_at", getDateTimeFormatter(params)),
-    },
-    {
-      field: "updatedAt",
-      headerName: t("label.updatedAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.updated_at", getDateTimeFormatter(params)),
-    },
+    ...timestampColumns,
     actionColumns,
   ];
 

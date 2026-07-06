@@ -16,6 +16,7 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useDelete } from "@/hooks/crud/useDelete";
 import { useUpdate } from "@/hooks/crud/useUpdate";
@@ -32,7 +33,6 @@ import {
   IMcpServerTool,
   IMcpServerToolsDiscovery,
 } from "@/types/mcp-server.types";
-import { getDateTimeFormatter } from "@/utils/date";
 
 import { McpServerFormDialog } from "./McpServerFormDialog";
 import { McpServerResultDrawer } from "./McpServerResultDrawer";
@@ -54,6 +54,7 @@ export const McpServers = () => {
   const { toast } = useToast();
   const dialogs = useDialogs();
   const hasPermission = useHasPermission();
+  const timestampColumns = useTimestampColumns<McpServer>();
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [testDrawerState, setTestDrawerState] =
     useState<DrawerState>(INITIAL_DRAWER_STATE);
@@ -272,26 +273,7 @@ export const McpServers = () => {
           t("label.none")
         ),
     },
-    {
-      minWidth: 140,
-      field: "createdAt",
-      headerName: t("label.createdAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.created_at", getDateTimeFormatter(params)),
-    },
-    {
-      minWidth: 140,
-      field: "updatedAt",
-      headerName: t("label.updatedAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.updated_at", getDateTimeFormatter(params)),
-    },
+    ...timestampColumns,
     actionColumns,
   ];
 

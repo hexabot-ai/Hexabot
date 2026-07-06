@@ -15,6 +15,7 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import {
   formatLicenseQuotaUsage,
@@ -39,7 +40,6 @@ import { useTranslate } from "@/hooks/useTranslate";
 import { PageHeader } from "@/layout/content/PageHeader";
 import { EntityType } from "@/services/types";
 import { User } from "@/types/user.types";
-import { getDateTimeFormatter } from "@/utils/date";
 
 import { CreateUserFormDialog } from "./CreateUserFormDialog";
 import { EditUserFormDialog } from "./EditUserFormDialog";
@@ -99,6 +99,7 @@ const UsersDataGrid = () => {
   const { toast } = useToast();
   const dialogs = useDialogs();
   const { user } = useAuth();
+  const timestampColumns = useTimestampColumns<User>();
   const usersQuota = getLicenseQuotaResource(user?.license, "users");
   const usersQuotaReached = isLicenseQuotaReached(user?.license, "users");
   const usersUpgradeTargetPlan = usersQuotaReached
@@ -231,26 +232,7 @@ const UsersDataGrid = () => {
         />
       ),
     },
-    {
-      minWidth: 140,
-      field: "createdAt",
-      headerName: t("label.createdAt"),
-      disableColumnMenu: true,
-      headerAlign: "left",
-      resizable: false,
-      valueGetter: (params) =>
-        t("datetime.created_at", getDateTimeFormatter(params)),
-    },
-    {
-      minWidth: 140,
-      field: "updatedAt",
-      headerName: t("label.updatedAt"),
-      disableColumnMenu: true,
-      headerAlign: "left",
-      resizable: false,
-      valueGetter: (params) =>
-        t("datetime.updated_at", getDateTimeFormatter(params)),
-    },
+    ...timestampColumns,
     ...(!ssoEnabled ? [actionColumns] : []),
   ];
 

@@ -26,6 +26,7 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useFind } from "@/hooks/crud/useFind";
 import { useUpdate } from "@/hooks/crud/useUpdate";
@@ -36,7 +37,6 @@ import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType, Format } from "@/services/types";
 import { IChannel } from "@/types/channel.types";
 import { writeToClipboard } from "@/utils/clipboard";
-import { getDateTimeFormatter } from "@/utils/date";
 
 import {
   buildSourcesSearchParams,
@@ -56,6 +56,7 @@ export const Sources = () => {
   const { t } = useTranslate();
   const { toast } = useToast();
   const dialogs = useDialogs();
+  const timestampColumns = useTimestampColumns<SourceFull>();
   const [addMenuAnchorEl, setAddMenuAnchorEl] = useState<HTMLElement | null>(
     null,
   );
@@ -290,26 +291,7 @@ export const Sources = () => {
         );
       },
     },
-    {
-      minWidth: 140,
-      field: "createdAt",
-      headerName: t("label.createdAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.created_at", getDateTimeFormatter(params)),
-    },
-    {
-      minWidth: 140,
-      field: "updatedAt",
-      headerName: t("label.updatedAt"),
-      disableColumnMenu: true,
-      resizable: false,
-      headerAlign: "left",
-      valueGetter: (params) =>
-        t("datetime.updated_at", getDateTimeFormatter(params)),
-    },
+    ...timestampColumns,
     actionColumns,
   ];
 
