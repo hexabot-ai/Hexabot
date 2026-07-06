@@ -52,15 +52,12 @@ export default defineConfig({
       allow: [monorepoRoot], // allow Vite to serve shared workspace deps like hoisted node_modules
     },
     watch: {
-      // Use polling for graph/src so file reverts (atomic writes that swap
-      // inodes) are always detected as a "change" event by chokidar, rather
-      // than an unlink+add pair that can miss triggering hotUpdate.
+      // Use polling so atomic writes (inode swaps) in workspace packages are
+      // always detected as a "change" event rather than an unlink+add pair
+      // that can miss triggering hotUpdate.
       usePolling: true,
       interval: 100,
-      ignored: (f: string) => {
-        if (f.startsWith(graphSrc)) return false;
-        return true;
-      },
+      // No custom `ignored` — Vite's defaults already exclude node_modules/.git
     },
     proxy: {
       "/api": {
