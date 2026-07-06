@@ -11,7 +11,7 @@ import {
   type RJSFSchema,
   type WidgetProps,
 } from "@rjsf/utils";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -21,10 +21,14 @@ import {
 import { isExpressionValue } from "@/app-components/inputs/JsonataFormulaField/dynamicValueUtils";
 import { useTranslate } from "@/hooks/useTranslate";
 
-import type { ExpressionFormContext } from "../expression.types";
+import type {
+  ExpressionFieldState,
+  ExpressionFormContext,
+} from "../expression.types";
 
 import { resolveAllowExpression } from "./expression-policy.utils";
-import { getDescription, LabelWithTooltip } from "./shared";
+import { getDescription, LabelWithTooltip, toInputString } from "./shared";
+import { useExpressionFieldStateReport } from "./useExpressionFieldStateReport";
 
 type JsonataFormContext = ExpressionFormContext & {
   globalsSchema?: GlobalsSchema;
@@ -38,6 +42,7 @@ type JsonataWidgetOptions = {
 export const JsonataTextWidget = ({
   id,
   label,
+  hideLabel,
   required,
   disabled,
   readonly,
@@ -60,57 +65,34 @@ export const JsonataTextWidget = ({
     options: widgetOptions,
     policy: context?.expressionPolicy,
   });
-  const hasCustomEmptyValue =
-    widgetOptions !== undefined &&
-    Object.prototype.hasOwnProperty.call(widgetOptions, "emptyValue");
-  const emptyValue = hasCustomEmptyValue ? widgetOptions?.emptyValue : "";
-  const normalizeValue = (next: string) => (next === "" ? emptyValue : next);
-  const safeValue =
-    typeof value === "string" ? value : value == null ? "" : String(value);
-  const fieldLabel = label || undefined;
+  const emptyValue =
+    widgetOptions !== undefined && "emptyValue" in widgetOptions
+      ? widgetOptions.emptyValue
+      : "";
+  const normalizeValue = (next: unknown) => {
+    const text = next == null ? "" : String(next);
+
+    return text === "" ? emptyValue : text;
+  };
+  const safeValue = toInputString(value);
+  const fieldLabel = hideLabel ? undefined : label || undefined;
   const description = getDescription(schema as RJSFSchema, widgetOptions);
-  const labelWithTooltip = (
-    <LabelWithTooltip label={fieldLabel} description={description} />
-  );
   const hasDisallowedExpressionValue =
     !allowExpression && isExpressionValue(safeValue);
 
-  useEffect(() => {
-    if (allowExpression) {
-      reportExpressionFieldState?.(id, undefined);
-
-      return;
-    }
-
-    reportExpressionFieldState?.(
-      id,
-      hasDisallowedExpressionValue
-        ? { hasError: true, suppressSchemaErrors: false }
-        : undefined,
-    );
-  }, [
-    allowExpression,
-    hasDisallowedExpressionValue,
+  useExpressionFieldStateReport(
     id,
+    hasDisallowedExpressionValue
+      ? { hasError: true, suppressSchemaErrors: false }
+      : undefined,
     reportExpressionFieldState,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      reportExpressionFieldState?.(id, undefined);
-    };
-  }, [id, reportExpressionFieldState]);
+  );
 
   const reportAllowedExpressionState = useCallback(
-    (state: { hasError: boolean; suppressSchemaErrors: boolean }) => {
+    (state: ExpressionFieldState) => {
       reportExpressionFieldState?.(
         id,
-        state.hasError || state.suppressSchemaErrors
-          ? {
-              hasError: state.hasError,
-              suppressSchemaErrors: state.suppressSchemaErrors,
-            }
-          : undefined,
+        state.hasError || state.suppressSchemaErrors ? state : undefined,
       );
     },
     [id, reportExpressionFieldState],
@@ -129,6 +111,7 @@ export const JsonataTextWidget = ({
           {...(props as BaseInputTemplateProps)}
           id={id}
           label={fieldLabel ?? ""}
+          hideLabel={hideLabel}
           required={required}
           disabled={disabled}
           readonly={readonly}
@@ -136,20 +119,12 @@ export const JsonataTextWidget = ({
           schema={schema}
           registry={registry}
           options={options}
-          onChange={(nextValue) =>
-            onChange(normalizeValue(nextValue == null ? "" : String(nextValue)))
-          }
+          onChange={(nextValue) => onChange(normalizeValue(nextValue))}
           onBlur={(fieldId, nextValue) =>
-            onBlur?.(
-              fieldId,
-              normalizeValue(nextValue == null ? "" : String(nextValue)),
-            )
+            onBlur?.(fieldId, normalizeValue(nextValue))
           }
           onFocus={(fieldId, nextValue) =>
-            onFocus?.(
-              fieldId,
-              normalizeValue(nextValue == null ? "" : String(nextValue)),
-            )
+            onFocus?.(fieldId, normalizeValue(nextValue))
           }
         />
         {hasDisallowedExpressionValue ? (
@@ -163,7 +138,11 @@ export const JsonataTextWidget = ({
 
   return (
     <JsonataFormulaField
-      label={labelWithTooltip}
+      label={
+        fieldLabel ? (
+          <LabelWithTooltip label={fieldLabel} description={description} />
+        ) : undefined
+      }
       required={required}
       value={safeValue}
       onChange={(next) => onChange(normalizeValue(next))}

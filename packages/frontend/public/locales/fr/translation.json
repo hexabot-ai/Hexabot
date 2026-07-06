@@ -362,6 +362,16 @@
     }
   },
   "label": {
+    "schema_types": {
+      "string": "Texte",
+      "number": "Nombre",
+      "integer": "Nombre",
+      "boolean": "Booléen",
+      "array": "Liste",
+      "object": "Objet",
+      "record": "Paires clé-valeur",
+      "null": "Aucun"
+    },
     "trigger_simulator": "Simulateur de déclencheur",
     "triggered_by": "Déclenché par",
     "messages": "Messages",
@@ -402,6 +412,7 @@
     "content_payloads": "Payloads de contenu",
     "list": "Liste",
     "carousel": "Carrousel",
+    "key": "Clé",
     "value": "Valeur",
     "doc": "Documentation",
     "weight": "Poids",
@@ -703,6 +714,8 @@
     "add": "Ajouter",
     "add_option": "Ajouter une option",
     "add_property": "Ajouter une propriété",
+    "move_up": "Déplacer vers le haut",
+    "move_down": "Déplacer vers le bas",
     "append": "Insérer",
     "delete": "Supprimer",
     "download": "Télécharger",

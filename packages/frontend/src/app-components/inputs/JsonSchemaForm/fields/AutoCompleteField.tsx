@@ -86,24 +86,25 @@ export const AutoCompleteField = ({
   fieldPathId,
   onChange,
 }: FieldProps) => {
-  const { entity, idFormPath, ...props } = uiSchema?.[
-    "ui:options"
-  ] as Rjsf["uiSchema"]["ui:options"];
+  const { entity, idFormPath, ...props } = (uiSchema?.["ui:options"] ??
+    {}) as Rjsf["uiSchema"]["ui:options"];
   const id = get(registry.formContext.formData, idFormPath || "");
   const handleChange = (e: SyntheticEvent<Element, Event>, value: any) => {
     onChange(value, fieldPathId.path);
   };
 
-  if (id && entity) {
-    return (
-      <AutoCompleteFieldWrapper
-        id={id}
-        title={schema.title}
-        value={formData}
-        entity={normalizeEntity(entity)}
-        onChange={handleChange}
-        {...props}
-      />
-    );
+  if (!id || !entity) {
+    return null;
   }
+
+  return (
+    <AutoCompleteFieldWrapper
+      id={id}
+      title={schema.title}
+      value={formData}
+      entity={normalizeEntity(entity)}
+      onChange={handleChange}
+      {...props}
+    />
+  );
 };

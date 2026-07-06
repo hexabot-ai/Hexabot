@@ -36,6 +36,7 @@ import { isRecord } from "@/utils/object";
 import { getDescription, LabelWithTooltip } from "../widgets/shared";
 
 import { isActionFieldHidden } from "./action-field-template.utils";
+import { AddEntryButton } from "./AddEntryButton";
 
 type ActionFieldUiOptions = {
   hideUntilAdded?: boolean;
@@ -46,17 +47,11 @@ const getObjectSchemaPropertyTitle = (
   schema: RJSFSchema,
   propertyName: string,
 ): string | undefined => {
-  if (!isRecord(schema.properties)) {
-    return undefined;
-  }
+  const propertySchema = isRecord(schema.properties)
+    ? schema.properties[propertyName]
+    : undefined;
 
-  const propertySchema = schema.properties[propertyName];
-
-  if (!isRecord(propertySchema)) {
-    return undefined;
-  }
-
-  return typeof propertySchema.title === "string"
+  return isRecord(propertySchema) && typeof propertySchema.title === "string"
     ? propertySchema.title
     : undefined;
 };
@@ -126,19 +121,11 @@ export const ActionObjectFieldTemplate = (props: ObjectFieldTemplateProps) => {
   };
   const isFieldContentVisible = (
     field: ObjectFieldTemplatePropertyType,
-  ): boolean => {
-    if (field.hidden) {
-      return true;
-    }
-
-    const fieldUiOptions = getFieldUiOptions(field.name);
-
-    return !isActionFieldHidden({
-      hidden: false,
-      uiOptions: fieldUiOptions,
+  ): boolean =>
+    !isActionFieldHidden({
+      uiOptions: getFieldUiOptions(field.name),
       formData: objectFormData ?? rootFormData,
     });
-  };
   const addedFieldOrder = new Map(
     addedFieldNames.map((fieldName, index) => [fieldName, index]),
   );
@@ -148,26 +135,13 @@ export const ActionObjectFieldTemplate = (props: ObjectFieldTemplateProps) => {
         field.hidden ||
         (isAddOptionFieldVisible(field) && isFieldContentVisible(field)),
     )
-    .sort((leftField, rightField) => {
-      const leftAddedOrder = addedFieldOrder.get(leftField.name);
-      const rightAddedOrder = addedFieldOrder.get(rightField.name);
-      const leftWasAdded = leftAddedOrder !== undefined;
-      const rightWasAdded = rightAddedOrder !== undefined;
-
-      if (leftWasAdded && rightWasAdded) {
-        return leftAddedOrder - rightAddedOrder;
-      }
-
-      if (leftWasAdded) {
-        return 1;
-      }
-
-      if (rightWasAdded) {
-        return -1;
-      }
-
-      return 0;
-    });
+    // Fields the user just added go last, in the order they were added;
+    // Array.prototype.sort is stable, so the rest keep their schema order
+    .sort(
+      (leftField, rightField) =>
+        (addedFieldOrder.get(leftField.name) ?? -1) -
+        (addedFieldOrder.get(rightField.name) ?? -1),
+    );
   const addableOptionFields = properties.filter((field) => {
     if (field.hidden) {
       return false;
@@ -192,11 +166,9 @@ export const ActionObjectFieldTemplate = (props: ObjectFieldTemplateProps) => {
     uiOptions,
   );
   const showOptionalDataControlInTitle = !readonly && !disabled;
-  const {
-    ButtonTemplates: { AddButton },
-  } = registry.templates;
   const descriptionText = getDescription(schema as RJSFSchema, uiOptions);
-  const titleLabel = uiOptions?.title ?? title;
+  const titleLabel =
+    uiOptions?.label === false ? undefined : (uiOptions?.title ?? title);
   const canAddOption = addableOptionFields.length > 0 && !disabled && !readonly;
   const label = (
     <LabelWithTooltip
@@ -292,18 +264,13 @@ export const ActionObjectFieldTemplate = (props: ObjectFieldTemplateProps) => {
         </>
       ) : null}
       {canExpand(schema, uiSchema, formData) ? (
-        <Grid container justifyContent="flex-end">
-          <Grid>
-            <AddButton
-              id={buttonId(fieldPathId, "add")}
-              className="rjsf-object-property-expand"
-              onClick={onAddProperty}
-              disabled={disabled || readonly}
-              uiSchema={uiSchema}
-              registry={registry}
-            />
-          </Grid>
-        </Grid>
+        <AddEntryButton
+          id={buttonId(fieldPathId, "add")}
+          className="rjsf-object-property-expand"
+          onClick={onAddProperty}
+          disabled={disabled || readonly}
+          sx={{ mt: 1 }}
+        />
       ) : null}
     </>
   );

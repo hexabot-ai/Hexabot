@@ -171,7 +171,7 @@ export const AutoCompleteWidget = ({
     apiPath,
     idKey = "id",
     ...props
-  } = uiSchema?.["ui:options"] as AutoCompleteWidgetOptions;
+  } = (uiSchema?.["ui:options"] ?? {}) as AutoCompleteWidgetOptions;
   const isMultiple = schema?.type === "array" || Boolean(uiMultiple);
   const dependencyQueryConfig = useMemo(
     () =>

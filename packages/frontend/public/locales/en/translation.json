@@ -363,6 +363,16 @@
     }
   },
   "label": {
+    "schema_types": {
+      "string": "Text",
+      "number": "Number",
+      "integer": "Number",
+      "boolean": "Boolean",
+      "array": "List",
+      "object": "Object",
+      "record": "Key-value pairs",
+      "null": "None"
+    },
     "trigger_simulator": "Trigger Simulator",
     "triggered_by": "Triggered By",
     "messages": "Messages",
@@ -403,6 +413,7 @@
     "content_payloads": "Content Payloads",
     "list": "List",
     "carousel": "Carousel",
+    "key": "Key",
     "value": "Value",
     "doc": "Documentation",
     "builtin": "Built-in?",
@@ -704,6 +715,8 @@
     "add": "Add",
     "add_option": "Add option",
     "add_property": "Add property",
+    "move_up": "Move up",
+    "move_down": "Move down",
     "append": "Append",
     "delete": "Delete",
     "download": "Download",

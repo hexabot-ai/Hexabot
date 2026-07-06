@@ -13,29 +13,62 @@ import {
   type WidgetProps,
 } from "@rjsf/utils";
 
-import { getDescription, LabelWithTooltip } from "./shared";
+import { isExpressionValue } from "@/app-components/inputs/JsonataFormulaField/dynamicValueUtils";
 
-export const ActionCheckboxWidget = ({
-  schema,
-  id,
-  htmlName,
-  value,
-  disabled,
-  readonly,
-  label: fieldLabel = "",
-  hideLabel,
-  autofocus,
-  onChange,
-  onBlur,
-  onFocus,
-  options,
-}: WidgetProps) => {
+import type { ExpressionFormContext } from "../expression.types";
+
+import { resolveAllowExpression } from "./expression-policy.utils";
+import { JsonataTextWidget } from "./JsonataTextWidget";
+import { getDescription, LabelWithTooltip } from "./shared";
+import { useExpressionFieldStateReport } from "./useExpressionFieldStateReport";
+
+export const ActionCheckboxWidget = (props: WidgetProps) => {
+  const {
+    schema,
+    id,
+    htmlName,
+    value,
+    disabled,
+    readonly,
+    label: fieldLabel = "",
+    hideLabel,
+    autofocus,
+    onChange,
+    onBlur,
+    onFocus,
+    options,
+    registry,
+  } = props;
+  const context = registry.formContext as ExpressionFormContext | undefined;
+  const isExpression = typeof value === "string" && isExpressionValue(value);
+  const allowExpression = resolveAllowExpression({
+    schema: schema as RJSFSchema,
+    options,
+    policy: context?.expressionPolicy,
+  });
+  const showExpressionField = isExpression && allowExpression;
+  // Tolerate booleans persisted as strings (e.g. workflows authored as YAML)
+  const isBooleanLikeString = value === "true" || value === "false";
+  const checked = value === true || value === "true";
   const description = getDescription(schema as RJSFSchema, options);
   const required = schemaRequiresTrueValue(schema);
-  const checked = typeof value === "undefined" ? false : Boolean(value);
   const labelWithTooltip = (
     <LabelWithTooltip label={fieldLabel} description={description} />
   );
+
+  useExpressionFieldStateReport(
+    id,
+    isBooleanLikeString
+      ? { hasError: false, suppressSchemaErrors: true }
+      : undefined,
+    context?.reportExpressionFieldState,
+    // JsonataTextWidget reports the expression state itself
+    showExpressionField,
+  );
+
+  if (showExpressionField) {
+    return <JsonataTextWidget {...props} />;
+  }
 
   return (
     <FormControlLabel

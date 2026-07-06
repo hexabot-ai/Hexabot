@@ -4,16 +4,29 @@
  * Full terms: see LICENSE.md.
  */
 
-import { ActionBaseInputTemplate } from "./ActionBaseInputTemplate";
+import { Templates } from "@rjsf/mui";
+
+import { withTooltipLabel } from "../widgets/shared";
+
+import { ActionArrayFieldItemTemplate } from "./ActionArrayFieldItemTemplate";
+import { ActionArrayFieldTemplate } from "./ActionArrayFieldTemplate";
 import { ActionFieldTemplate } from "./ActionFieldTemplate";
+import { ActionMultiSchemaFieldTemplate } from "./ActionMultiSchemaFieldTemplate";
 import { ActionObjectFieldTemplate } from "./ActionObjectFieldTemplate";
-import { EmptyDescriptionFieldTemplate } from "./EmptyDescriptionFieldTemplate";
+import { ActionWrapIfAdditionalTemplate } from "./ActionWrapIfAdditionalTemplate";
 import { NestedTitleField } from "./NestedTitleField";
 
 export const FORM_TEMPLATES = {
   TitleFieldTemplate: NestedTitleField,
   FieldTemplate: ActionFieldTemplate,
-  DescriptionFieldTemplate: EmptyDescriptionFieldTemplate,
-  BaseInputTemplate: ActionBaseInputTemplate,
+  // Descriptions render as label tooltips instead
+  DescriptionFieldTemplate: () => null,
+  BaseInputTemplate: withTooltipLabel(Templates.BaseInputTemplate!, {
+    mergeInputLabelSx: true,
+  }),
   ObjectFieldTemplate: ActionObjectFieldTemplate,
+  ArrayFieldTemplate: ActionArrayFieldTemplate,
+  ArrayFieldItemTemplate: ActionArrayFieldItemTemplate,
+  MultiSchemaFieldTemplate: ActionMultiSchemaFieldTemplate,
+  WrapIfAdditionalTemplate: ActionWrapIfAdditionalTemplate,
 };
