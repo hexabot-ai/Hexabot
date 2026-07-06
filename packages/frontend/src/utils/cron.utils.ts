@@ -8,6 +8,7 @@ export type Frequency = "second" | "minute" | "hour" | "day" | "week" | "month";
 
 export type CronState = {
   frequency: Frequency;
+  interval: number;
   minute: number;
   hour: number;
   dayOfWeek: number;
@@ -23,6 +24,23 @@ export const FREQUENCY_VALUES: Frequency[] = [
   "month",
 ];
 
+// Divisors of 60/24 only, so runs stay aligned to clock boundaries
+export const SECOND_MINUTE_INTERVALS = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30];
+
+export const HOUR_INTERVALS = [1, 2, 3, 4, 6, 8, 12];
+
+export function getIntervalOptions(frequency: Frequency): number[] {
+  switch (frequency) {
+    case "second":
+    case "minute":
+      return SECOND_MINUTE_INTERVALS;
+    case "hour":
+      return HOUR_INTERVALS;
+    default:
+      return [1];
+  }
+}
+
 export const DOW_VALUES = [
   "sunday",
   "monday",
@@ -35,6 +53,7 @@ export const DOW_VALUES = [
 
 export const DEFAULT_CRON_STATE: CronState = {
   frequency: "day",
+  interval: 1,
   minute: 0,
   hour: 0,
   dayOfWeek: 1,
@@ -46,15 +65,16 @@ export function pad(n: number): string {
 }
 
 export function toCron(state: CronState): string {
-  const { frequency, minute, hour, dayOfWeek, dayOfMonth } = state;
+  const { frequency, interval, minute, hour, dayOfWeek, dayOfMonth } = state;
+  const step = (every: number) => (every > 1 ? `*/${every}` : "*");
 
   switch (frequency) {
     case "second":
-      return "* * * * * *";
+      return `${step(interval)} * * * * *`;
     case "minute":
-      return "0 * * * * *";
+      return `0 ${step(interval)} * * * *`;
     case "hour":
-      return `0 ${minute} * * * *`;
+      return `0 ${minute} ${step(interval)} * * *`;
     case "day":
       return `0 ${minute} ${hour} * * *`;
     case "week":
@@ -72,7 +92,12 @@ export function fromCron(expression: string): CronState {
   if (!normalized) return { ...DEFAULT_CRON_STATE };
 
   const [sec, min, hour, dom, , dow] = normalized;
-  const isWild = (v: string) => v === "*";
+  const stepOf = (v: string): number | null => {
+    const match = /^\*\/(\d+)$/.exec(v);
+
+    return match ? parseInt(match[1], 10) : null;
+  };
+  const isWild = (v: string) => v === "*" || stepOf(v) !== null;
   const toNum = (v: string, fallback: number) => {
     const n = parseInt(v, 10);
 
@@ -80,13 +105,26 @@ export function fromCron(expression: string): CronState {
   };
 
   if (isWild(sec) && isWild(min) && isWild(hour)) {
-    return { ...DEFAULT_CRON_STATE, frequency: "second" };
+    return {
+      ...DEFAULT_CRON_STATE,
+      frequency: "second",
+      interval: stepOf(sec) ?? 1,
+    };
   }
   if (sec === "0" && isWild(min) && isWild(hour)) {
-    return { ...DEFAULT_CRON_STATE, frequency: "minute" };
+    return {
+      ...DEFAULT_CRON_STATE,
+      frequency: "minute",
+      interval: stepOf(min) ?? 1,
+    };
   }
   if ((sec === "0" || isWild(sec)) && !isWild(min) && isWild(hour)) {
-    return { ...DEFAULT_CRON_STATE, frequency: "hour", minute: toNum(min, 0) };
+    return {
+      ...DEFAULT_CRON_STATE,
+      frequency: "hour",
+      interval: stepOf(hour) ?? 1,
+      minute: toNum(min, 0),
+    };
   }
   if ((sec === "0" || isWild(sec)) && !isWild(min) && !isWild(hour)) {
     if (!isWild(dow)) {

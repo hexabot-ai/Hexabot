@@ -572,38 +572,50 @@ export const WorkflowForm: FC<
                     {...register("description")}
                   />
                 </ContentItem>
-                {typeValue === WorkflowType.scheduled && (
-                  <ContentItem>
-                    <Controller
-                      name="schedule"
-                      control={control}
-                      rules={{
-                        validate: (value) =>
-                          (value && value.trim().length > 0) ||
-                          t("message.schedule_is_required", {
-                            defaultValue:
-                              "Schedule is required for scheduled workflows.",
-                          }),
-                      }}
-                      render={({ field }) => (
-                        <CronInput
-                          value={field.value}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          label={t("label.schedule", {
-                            defaultValue: "Schedule",
-                          })}
-                          error={!!errors.schedule}
-                        />
-                      )}
-                    />
-                  </ContentItem>
-                )}
               </ContentContainer>
             </Grid>
 
             <Grid size={{ xs: 12, md: 7 }}>
               <ContentContainer>
+                {typeValue === WorkflowType.scheduled && (
+                  <ContentItem>
+                    <Paper variant="spaced">
+                      <Stack spacing={1.5}>
+                        <Typography variant="h6">
+                          {t("label.schedule", {
+                            defaultValue: "Schedule",
+                          })}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {t("message.schedule_description", {
+                            defaultValue:
+                              "Choose how often this workflow runs automatically.",
+                          })}
+                        </Typography>
+                        <Controller
+                          name="schedule"
+                          control={control}
+                          rules={{
+                            validate: (value) =>
+                              (value && value.trim().length > 0) ||
+                              t("message.schedule_is_required", {
+                                defaultValue:
+                                  "Schedule is required for scheduled workflows.",
+                              }),
+                          }}
+                          render={({ field }) => (
+                            <CronInput
+                              value={field.value}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              error={!!errors.schedule}
+                            />
+                          )}
+                        />
+                      </Stack>
+                    </Paper>
+                  </ContentItem>
+                )}
                 {isManualWorkflow && (
                   <ContentItem>
                     <Paper variant="spaced">
