@@ -5,12 +5,14 @@
  */
 
 import type { Workflow } from "@hexabot-ai/types";
+import { Box, Tab, Tabs, useMediaQuery, useTheme } from "@mui/material";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import { FC, useEffect, useMemo, useState } from "react";
 
 import { useFind } from "@/hooks/crud/useFind";
 import { useGetFromCache } from "@/hooks/crud/useGet";
+import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType, Format } from "@/services/types";
 
 import { useWorkflowRunLiveUpdates } from "../hooks/useWorkflowRunLiveUpdates";
@@ -18,6 +20,8 @@ import { useWorkflowRunLiveUpdates } from "../hooks/useWorkflowRunLiveUpdates";
 import { RunHeader } from "./header/RunHeader";
 import { InspectorPanel } from "./panels/inspector-panel/InspectorPanel";
 import { StepTracePanel } from "./panels/step-trace-panel";
+
+type MobilePanel = "steps" | "inspector";
 
 type WorkflowRunDebuggerProps = {
   initiatorId?: string;
@@ -30,6 +34,11 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
   runId,
   workflow,
 }) => {
+  const { t } = useTranslate();
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down("lg"));
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("steps");
+
   useWorkflowRunLiveUpdates({
     workflowId: workflow?.id,
     initiatorId,
@@ -66,29 +75,8 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
   );
 
   useEffect(() => {
-    if (!workflowRuns.length) {
-      if (!runId) {
-        setSelectedRunId(undefined);
-      }
-
-      return;
-    }
-
-    const isSelectedStillAvailable = workflowRuns.some(
-      (run) => run.id === selectedRunId,
-    );
-
-    if (!isSelectedStillAvailable && !runId) {
-      setSelectedRunId(workflowRuns[0]?.id);
-    }
-  }, [runId, selectedRunId, workflowRuns]);
-
-  useEffect(() => {
-    if (runId) {
-      setSelectedRunId(runId);
-      setSelectedStepId(undefined);
-    }
-  }, [runId]);
+    setSelectedRunId(runId ?? latestRun?.id);
+  }, [runId, latestRun?.id]);
 
   const selectedRun = useMemo(
     () => workflowRuns.find((run) => run.id === selectedRunId) ?? latestRun,
@@ -99,13 +87,6 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
 
     return selectedRun?.stepLog?.[selectedStepId] ?? null;
   }, [selectedRun?.stepLog, selectedStepId]);
-
-  useEffect(() => {
-    if (runId) return;
-    // New run
-    setSelectedRunId(latestRun?.id);
-    setSelectedStepId(undefined);
-  }, [latestRun?.id, runId]);
 
   useEffect(() => {
     setSelectedStepId(undefined);
@@ -119,8 +100,15 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
   }, [latestRun?.stepLog, selectedStepId]);
 
   const handleSelectStep = (stepId: string) => {
-    setSelectedStepId((current) => (current === stepId ? undefined : stepId));
+    const isSelecting = selectedStepId !== stepId;
+
+    setSelectedStepId(isSelecting ? stepId : undefined);
+    if (isSmallScreen && isSelecting) {
+      setMobilePanel("inspector");
+    }
   };
+  const panelDisplay = (panel: MobilePanel) =>
+    !isSmallScreen || mobilePanel === panel ? "contents" : "none";
   const selectedWorkflowVersion = selectedRun?.workflowVersion
     ? getWorkflowVersionFromCache(selectedRun?.workflowVersion)
     : null;
@@ -135,13 +123,27 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
         workflowVersion={selectedWorkflowVersion ?? null}
         onSelectRun={setSelectedRunId}
       />
+      {isSmallScreen && (
+        <Tabs
+          value={mobilePanel}
+          onChange={(_, v: MobilePanel) => setMobilePanel(v)}
+          variant="fullWidth"
+        >
+          <Tab value="steps" label={t("label.step_trace.title")} />
+          <Tab value="inspector" label={t("label.inspector")} />
+        </Tabs>
+      )}
       <Grid container spacing={1} flex={1} overflow="hidden">
-        <StepTracePanel
-          stepLog={selectedRun?.stepLog ?? null}
-          selectedStepId={selectedStepId}
-          onSelectStep={handleSelectStep}
-        />
-        <InspectorPanel run={selectedRun ?? null} step={selectedStep} />
+        <Box sx={{ display: panelDisplay("steps") }}>
+          <StepTracePanel
+            stepLog={selectedRun?.stepLog ?? null}
+            selectedStepId={selectedStepId}
+            onSelectStep={handleSelectStep}
+          />
+        </Box>
+        <Box sx={{ display: panelDisplay("inspector") }}>
+          <InspectorPanel run={selectedRun ?? null} step={selectedStep} />
+        </Box>
       </Grid>
     </Stack>
   );
