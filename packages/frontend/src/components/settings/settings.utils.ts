@@ -4,11 +4,9 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { RJSFSchema, UiSchema } from "@rjsf/utils";
+import type { RJSFSchema } from "@rjsf/utils";
 
 import type { ISettingSchemasMap } from "@/types/setting.types";
-
-import { extractUiSchema } from "../visual-editor/v4/utils/schema-defaults.utils";
 
 type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
 
@@ -42,16 +40,4 @@ export const resolveSettingsGroupTitle = (
     ns: group,
     defaultValue: group,
   });
-};
-
-export const buildSettingsUiSchema = (schema: RJSFSchema): UiSchema => {
-  const extracted = extractUiSchema(schema);
-  const order = Object.keys(schema.properties || {});
-
-  return {
-    ...extracted,
-    // Avoid duplicating the tab title inside each panel.
-    "ui:title": "",
-    ...(order.length ? { "ui:order": order } : {}),
-  };
 };

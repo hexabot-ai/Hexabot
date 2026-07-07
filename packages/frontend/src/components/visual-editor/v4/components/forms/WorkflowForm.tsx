@@ -40,6 +40,7 @@ import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
 import { ContentContainer, ContentItem } from "@/app-components/dialogs";
 import AutoCompleteEntitySelect from "@/app-components/inputs/AutoCompleteEntitySelect";
 import { CronInput } from "@/app-components/inputs/CronInput";
+import { getSchemaDefaults } from "@/app-components/inputs/JsonSchemaForm";
 import {
   JsonSchemaObjectBuilder,
   SchemaNodeForm,
@@ -59,8 +60,6 @@ import { EntityType, Format, QueryType } from "@/services/types";
 import type { EntityAttributes } from "@/types/base.types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
 import { writeToClipboard } from "@/utils/clipboard";
-
-import { getSchemaDefaults } from "../../utils/schema-defaults.utils";
 
 import { WorkflowTypeSelector } from "./WorkflowTypeSelector";
 

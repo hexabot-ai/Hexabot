@@ -5,6 +5,15 @@
  */
 
 export { JsonSchemaForm } from "./JsonSchemaForm";
+export { buildPanelUiSchema } from "./json-schema-form.utils";
+export {
+  extractUiSchema,
+  getSchemaDefaults,
+  getSchemaProperties,
+  getSchemaPropertyNames,
+  hasSchemaProperties,
+  withSchemaDefaults,
+} from "./schema-defaults.utils";
 export type {
   ExpressionFieldState,
   ExpressionFormContext,

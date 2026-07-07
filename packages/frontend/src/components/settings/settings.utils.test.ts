@@ -4,15 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { RJSFSchema } from "@rjsf/utils";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ISettingSchemasMap } from "@/types/setting.types";
 
-import {
-  buildSettingsUiSchema,
-  resolveSettingsGroupTitle,
-} from "./settings.utils";
+import { resolveSettingsGroupTitle } from "./settings.utils";
 
 describe("settings utils", () => {
   describe("resolveSettingsGroupTitle", () => {
@@ -48,23 +44,6 @@ describe("settings utils", () => {
       expect(t).toHaveBeenCalledWith("title.custom_group", {
         ns: "custom_group",
         defaultValue: "custom_group",
-      });
-    });
-  });
-
-  describe("buildSettingsUiSchema", () => {
-    it("sets empty root ui:title and preserves property order", () => {
-      const schema: RJSFSchema = {
-        type: "object",
-        properties: {
-          first: { type: "string" },
-          second: { type: "boolean" },
-        },
-      };
-
-      expect(buildSettingsUiSchema(schema)).toEqual({
-        "ui:title": "",
-        "ui:order": ["first", "second"],
       });
     });
   });

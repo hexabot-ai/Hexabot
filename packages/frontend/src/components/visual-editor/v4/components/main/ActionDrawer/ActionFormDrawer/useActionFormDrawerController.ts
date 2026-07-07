@@ -19,16 +19,16 @@ import {
 import type { FlowStepPath } from "@hexabot-ai/graph";
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  getSchemaDefaults,
+  hasSchemaProperties,
+} from "@/app-components/inputs/JsonSchemaForm";
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
 import { useTranslate } from "@/hooks/useTranslate";
 import type { IAction } from "@/types/action.types";
 
 import { useWorkflow } from "../../../../hooks/useWorkflow";
 import { useSelectedActionNode } from "../../../../hooks/useWorkflowSelection";
-import {
-  getSchemaDefaults,
-  getSchemaPropertyNames,
-} from "../../../../utils/schema-defaults.utils";
 import { createBaseDefinition } from "../../../../utils/workflow-definition.utils";
 import { useStepDrawerClose } from "../../StepDrawer/withStepDrawerLayout";
 
@@ -157,17 +157,11 @@ export const useActionFormDrawerController = ({
     ? `action-create-${target.initialTaskName}-${target.action.name}`
     : (selectedNodeId ?? actionName ?? "action");
   const hasInputSchema = useMemo(
-    () =>
-      getSchemaPropertyNames(
-        actionSchema?.inputSchema as Record<string, unknown>,
-      ).length > 0,
+    () => hasSchemaProperties(actionSchema?.inputSchema),
     [actionSchema?.inputSchema],
   );
   const hasActionSettingsSchema = useMemo(
-    () =>
-      getSchemaPropertyNames(
-        actionSchema?.settingSchema as Record<string, unknown>,
-      ).length > 0,
+    () => hasSchemaProperties(actionSchema?.settingSchema),
     [actionSchema?.settingSchema],
   );
   const workflowExecutionSettingsDefaults = useMemo<Partial<Settings>>(() => {

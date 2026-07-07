@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildArrayItemsUiOverlay,
+  buildPanelUiSchema,
   errorPropertyToFieldId,
   inferSchemaOptionType,
   isComplexItemSchema,
@@ -236,6 +237,29 @@ describe("json schema form utils", () => {
     it("returns the other side when one is missing", () => {
       expect(mergeUiSchemas(undefined, { a: 1 } as never)).toEqual({ a: 1 });
       expect(mergeUiSchemas({ a: 1 } as never, undefined)).toEqual({ a: 1 });
+    });
+  });
+
+  describe("buildPanelUiSchema", () => {
+    it("hides the root title and preserves property order", () => {
+      const schema: RJSFSchema = {
+        type: "object",
+        properties: {
+          first: { type: "string" },
+          second: { type: "boolean" },
+        },
+      };
+
+      expect(buildPanelUiSchema(schema)).toEqual({
+        "ui:title": "",
+        "ui:order": ["first", "second"],
+      });
+    });
+
+    it("omits ui:order when the schema has no properties", () => {
+      expect(buildPanelUiSchema({ type: "object" })).toEqual({
+        "ui:title": "",
+      });
     });
   });
 });

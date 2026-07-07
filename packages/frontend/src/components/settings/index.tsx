@@ -19,7 +19,10 @@ import type { RJSFSchema } from "@rjsf/utils";
 import { Settings as SettingsIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { JsonSchemaForm } from "@/app-components/inputs/JsonSchemaForm";
+import {
+  buildPanelUiSchema,
+  JsonSchemaForm,
+} from "@/app-components/inputs/JsonSchemaForm";
 import { a11yProps, TabPanel } from "@/app-components/tabs/TabPanel";
 import { useFind } from "@/hooks/crud/useFind";
 import { useUpdate } from "@/hooks/crud/useUpdate";
@@ -34,10 +37,7 @@ import type { EntityAttributes } from "@/types/base.types";
 
 import LicenseActivatedModal from "../license/LicenseActivatedModal";
 
-import {
-  buildSettingsUiSchema,
-  resolveSettingsGroupTitle,
-} from "./settings.utils";
+import { resolveSettingsGroupTitle } from "./settings.utils";
 
 const SETTINGS_NAV_WIDTH = 160;
 const StyledFormContainer = styled("div")(({ theme }) => ({
@@ -265,7 +265,7 @@ export const Settings = () => {
                               handleFormDataChange(groupName, data);
                             }
                           }}
-                          uiSchema={buildSettingsUiSchema(schema)}
+                          uiSchema={buildPanelUiSchema(schema)}
                           enableJsonataTextWidget={false}
                           idPrefix={`settings-${groupName}`}
                         />

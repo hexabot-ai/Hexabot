@@ -7,7 +7,6 @@
 import type RJSFForm from "@rjsf/core";
 import { Form } from "@rjsf/mui";
 import {
-  getDefaultFormState,
   type RJSFSchema,
   type RJSFValidationError,
   type UiSchema,
@@ -15,7 +14,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTranslate } from "@/hooks/useTranslate";
-import { isRecord } from "@/utils/object";
 import validator from "@/utils/rjsf-zod-validator";
 
 import type {
@@ -30,6 +28,7 @@ import {
   withFriendlyOptionTitles,
   type SchemaTypeName,
 } from "./json-schema-form.utils";
+import { extractUiSchema, withSchemaDefaults } from "./schema-defaults.utils";
 import { FORM_TEMPLATES } from "./templates";
 import { getFormWidgets } from "./widgets";
 
@@ -38,27 +37,6 @@ const FORM_UI_SCHEMA = {
     norender: true,
   },
 } as const;
-const withSchemaDefaults = (
-  schema: RJSFSchema,
-  formData: Record<string, unknown>,
-) => {
-  try {
-    const nextFormData = getDefaultFormState<Record<string, unknown>>(
-      validator,
-      schema,
-      formData,
-      schema,
-      false,
-      {
-        emptyObjectFields: "skipEmptyDefaults",
-      },
-    );
-
-    return isRecord(nextFormData) ? nextFormData : formData;
-  } catch {
-    return formData;
-  }
-};
 
 type JsonSchemaFormProps<
   D extends Record<string, unknown> = Record<string, unknown>,
@@ -165,8 +143,17 @@ export const JsonSchemaForm = <
     () => withFriendlyOptionTitles(schema, resolveSchemaTypeTitle),
     [schema, resolveSchemaTypeTitle],
   );
+  // ui:* keys embedded in the schema are applied automatically; the
+  // `uiSchema` prop is only needed for overrides on top of them
   const normalizedUiSchema = useMemo(
-    () => mergeUiSchemas(buildArrayItemsUiOverlay(normalizedSchema), uiSchema),
+    () =>
+      mergeUiSchemas(
+        mergeUiSchemas(
+          extractUiSchema(normalizedSchema),
+          buildArrayItemsUiOverlay(normalizedSchema),
+        ),
+        uiSchema,
+      ),
     [normalizedSchema, uiSchema],
   );
   const normalizedFormData = useMemo(

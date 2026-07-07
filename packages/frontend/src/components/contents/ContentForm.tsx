@@ -5,19 +5,19 @@
  */
 
 import { type Content, type ContentType } from "@hexabot-ai/types";
-import { getDefaultFormState } from "@rjsf/utils";
 import { isMatch } from "lodash";
 import { FC, Fragment, useMemo, useState } from "react";
 
-import { JsonSchemaForm } from "@/app-components/inputs/JsonSchemaForm";
+import {
+  getSchemaDefaults,
+  JsonSchemaForm,
+} from "@/app-components/inputs/JsonSchemaForm";
 import { useCreate } from "@/hooks/crud/useCreate";
 import { useUpdate } from "@/hooks/crud/useUpdate";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
-
-import { extractUiSchema } from "../visual-editor/v4/utils/schema-defaults.utils";
 
 import { buildContentParams, buildContentSchema } from "./content.schema.utils";
 
@@ -38,12 +38,13 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
   const contentTypeId = content?.contentType ?? contentType?.id ?? "";
   const schema = buildContentSchema(contentType?.schema);
   const defaultFormData = useMemo(
-    () => ({
-      contentType: contentTypeId,
-      ...getDefaultFormState(undefined as any, schema),
-      ...content,
-      ...content?.properties,
-    }),
+    () =>
+      ({
+        contentType: contentTypeId,
+        ...getSchemaDefaults(schema),
+        ...content,
+        ...content?.properties,
+      }) as ContentFormData,
     [content, contentTypeId],
   );
   const [formData, setFormData] = useState<ContentFormData>(defaultFormData);
@@ -111,7 +112,6 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
         formData={formData}
         onFormDataChange={setFormData}
         onVisibleErrorsChange={setHasVisibleErrors}
-        uiSchema={extractUiSchema(schema)}
         enableJsonataTextWidget={false}
         idPrefix={content ? `content-${content.id}` : "content-new"}
       />

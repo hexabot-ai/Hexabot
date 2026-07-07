@@ -12,24 +12,36 @@ import { JSONSchema } from "monaco-yaml";
 import { isRecord } from "@/utils/object";
 import validator from "@/utils/rjsf-zod-validator";
 
+const computeDefaultFormState = <T = Record<string, unknown>>(
+  schema: RJSFSchema,
+  formData?: T,
+) =>
+  getDefaultFormState<T>(validator, schema, formData, schema, false, {
+    emptyObjectFields: "skipEmptyDefaults",
+  });
+
 export const getSchemaDefaults = <T extends Record<string, JsonValue>>(
-  schema: JSONSchema,
+  schema: JSONSchema | RJSFSchema,
 ): T | undefined => {
   try {
-    const defaults = getDefaultFormState<T>(
-      validator,
-      schema as RJSFSchema,
-      undefined,
-      schema as RJSFSchema,
-      false,
-      {
-        emptyObjectFields: "skipEmptyDefaults",
-      },
-    );
+    const defaults = computeDefaultFormState<T>(schema as RJSFSchema);
 
     return normalizeDefaults(defaults) as T;
   } catch {
     return undefined;
+  }
+};
+
+export const withSchemaDefaults = (
+  schema: RJSFSchema,
+  formData: Record<string, unknown>,
+): Record<string, unknown> => {
+  try {
+    const nextFormData = computeDefaultFormState(schema, formData);
+
+    return isRecord(nextFormData) ? nextFormData : formData;
+  } catch {
+    return formData;
   }
 };
 
@@ -68,7 +80,7 @@ const normalizeDefaults = (
 type SchemaProperties = Record<string, unknown>;
 
 export const getSchemaProperties = <T extends SchemaProperties>(
-  schema?: RJSFSchema,
+  schema?: unknown,
 ): T | undefined => {
   if (!isRecord(schema) || !isRecord(schema.properties)) {
     return undefined;
@@ -79,9 +91,12 @@ export const getSchemaProperties = <T extends SchemaProperties>(
   return Object.keys(properties).length > 0 ? properties : undefined;
 };
 
-export const getSchemaPropertyNames = (schema?: RJSFSchema): string[] => {
+export const getSchemaPropertyNames = (schema?: unknown): string[] => {
   return Object.keys(getSchemaProperties(schema) ?? {});
 };
+
+export const hasSchemaProperties = (schema?: unknown): boolean =>
+  getSchemaPropertyNames(schema).length > 0;
 
 const UI_KEYS = [
   "ui:widget",

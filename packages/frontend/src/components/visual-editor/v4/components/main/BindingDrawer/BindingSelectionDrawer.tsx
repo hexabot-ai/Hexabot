@@ -15,7 +15,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { type RJSFSchema, type UiSchema } from "@rjsf/utils";
+import { type RJSFSchema } from "@rjsf/utils";
 import { ArrowLeft, ChevronRight, Plus, Save } from "lucide-react";
 import type { JSONSchema } from "monaco-yaml";
 import { useEffect, useMemo, useState } from "react";
@@ -23,7 +23,11 @@ import { useEffect, useMemo, useState } from "react";
 import { withDrawerLayout } from "@/app-components/drawers/DrawerLayout";
 import { DrawerPrimaryFooterAction } from "@/app-components/drawers/DrawerPrimaryFooterAction";
 import { EditableTypography } from "@/app-components/inputs/EditableTypography";
-import { JsonSchemaForm } from "@/app-components/inputs/JsonSchemaForm";
+import {
+  getSchemaDefaults,
+  getSchemaPropertyNames,
+  JsonSchemaForm,
+} from "@/app-components/inputs/JsonSchemaForm";
 import { useTranslate } from "@/hooks/useTranslate";
 
 import { humanizeBindingKind } from "../../../utils/binding-kind.utils";
@@ -31,10 +35,6 @@ import {
   createUniqueBindingName,
   normalizeBindingName,
 } from "../../../utils/binding-name.utils";
-import {
-  extractUiSchema,
-  getSchemaDefaults,
-} from "../../../utils/schema-defaults.utils";
 
 type BindingSelectionDrawerBaseProps = {
   availableBindings: string[];
@@ -73,7 +73,6 @@ type BindingSelectionDrawerContentProps = {
   bindingLabel: string;
   bindingLabelLower: string;
   bindingSchema?: JSONSchema;
-  bindingUiSchema: UiSchema;
   bindingName: string;
   bindingNameError: string | null;
   bindingDescription: string;
@@ -101,16 +100,6 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined => {
   }
 
   return value as Record<string, unknown>;
-};
-const getSchemaPropertyNames = (schema?: JSONSchema): string[] => {
-  const schemaRecord = asRecord(schema);
-  const schemaProperties = asRecord(schemaRecord?.properties);
-
-  if (!schemaProperties) {
-    return [];
-  }
-
-  return Object.keys(schemaProperties);
 };
 const pickSchemaFields = (
   value: Record<string, unknown>,
@@ -142,7 +131,6 @@ const BindingSelectionDrawerContent = ({
   bindingLabel,
   bindingLabelLower,
   bindingSchema,
-  bindingUiSchema,
   bindingName,
   bindingNameError,
   bindingDescription,
@@ -219,7 +207,6 @@ const BindingSelectionDrawerContent = ({
             formData={bindingData}
             onFormDataChange={onBindingDataChange}
             onVisibleErrorsChange={onVisibleErrorsChange}
-            uiSchema={bindingUiSchema}
             idPrefix="single-binding-selection-drawer"
             expressionPolicy="opt-in"
           />
@@ -477,10 +464,6 @@ export const BindingSelectionDrawer = ({
     normalizedEditingBindingName,
     t,
   ]);
-  const bindingUiSchema = useMemo(
-    () => extractUiSchema(bindingSchema as RJSFSchema | undefined),
-    [bindingSchema],
-  );
   const defaultBindingData = useMemo(() => {
     if (!bindingSchema) {
       return {};
@@ -589,7 +572,6 @@ export const BindingSelectionDrawer = ({
       bindingLabel={normalizedBindingLabel}
       bindingLabelLower={bindingLabelLower}
       bindingSchema={bindingSchema}
-      bindingUiSchema={bindingUiSchema}
       bindingName={bindingName}
       bindingNameError={bindingNameError}
       bindingDescription={bindingDescription}

@@ -7,13 +7,10 @@
 import { Stack, Typography } from "@mui/material";
 import type { RJSFSchema } from "@rjsf/utils";
 
+import { hasSchemaProperties } from "@/app-components/inputs/JsonSchemaForm";
 import { useTranslate } from "@/hooks/useTranslate";
 import { IAction } from "@/types/action.types";
 
-import {
-  extractUiSchema,
-  getSchemaPropertyNames,
-} from "../../../../utils/schema-defaults.utils";
 import { buildSettingsUiSchema } from "../../../../utils/settings-ui-schema.utils";
 import { ActionSchemaPanel } from "../ActionSchemaPanel";
 
@@ -67,10 +64,8 @@ export const ActionFormDrawerContent = ({
     );
   }
 
-  const hasInputSchema =
-    getSchemaPropertyNames(actionSchema.inputSchema as RJSFSchema).length > 0;
-  const hasSettingsSchema =
-    getSchemaPropertyNames(actionSchema.settingSchema as RJSFSchema).length > 0;
+  const hasInputSchema = hasSchemaProperties(actionSchema.inputSchema);
+  const hasSettingsSchema = hasSchemaProperties(actionSchema.settingSchema);
 
   return (
     <Stack spacing={1}>
@@ -83,7 +78,6 @@ export const ActionFormDrawerContent = ({
           onVisibleErrorsChange={onInputVisibleErrorsChange}
           panelKey={`${panelKeyBase}-input`}
           emptyLabel={t("visual_editor.actions_drawer.form.empty_schema.input")}
-          uiSchema={extractUiSchema(actionSchema.inputSchema as RJSFSchema)}
           expressionPolicy="input-default"
           headerAction={<DynamicValueHelp />}
         />

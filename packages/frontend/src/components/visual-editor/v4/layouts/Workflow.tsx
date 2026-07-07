@@ -36,6 +36,7 @@ import {
 } from "react";
 
 import { ConfirmDialogBody } from "@/app-components/dialogs";
+import { getSchemaDefaults } from "@/app-components/inputs/JsonSchemaForm";
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
 import { useWorkflowBindingsCatalog } from "@/contexts/workflow-bindings.context";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -72,7 +73,6 @@ import {
   createUniqueBindingName,
   normalizeBindingName,
 } from "../utils/binding-name.utils";
-import { getSchemaDefaults } from "../utils/schema-defaults.utils";
 import {
   mountDefBindingRef,
   setDefBindingRefs,
