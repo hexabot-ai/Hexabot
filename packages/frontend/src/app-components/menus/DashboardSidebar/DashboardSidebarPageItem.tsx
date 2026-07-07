@@ -170,9 +170,15 @@ export const DashboardSidebarPageItem = ({
         {tooltipTitle ? (
           <Tooltip
             title={tooltipTitle}
-            placement="right"
+            placement="top-start"
+            arrow
             enterDelay={700}
             disableInteractive
+            slotProps={{
+              popper: {
+                modifiers: [{ name: "offset", options: { offset: [8, -20] } }],
+              },
+            }}
             {...tooltip}
           >
             <Box component="span" sx={{ display: "block", width: "100%" }}>
@@ -190,7 +196,8 @@ export const DashboardSidebarPageItem = ({
                 position: "fixed",
                 positionAnchor: submenuAnchorName,
                 top: "anchor(top)",
-                left: "calc(anchor(right) + 8px)",
+                left: "anchor(right)",
+                pl: "8px",
               }}
             >
               <Paper elevation={8}>
