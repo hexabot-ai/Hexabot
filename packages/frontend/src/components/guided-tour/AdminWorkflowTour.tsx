@@ -16,7 +16,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { lighten, useColorScheme, useTheme } from "@mui/material/styles";
 import { X } from "lucide-react";
 import {
   type ReactNode,
@@ -115,15 +115,10 @@ const AdminWorkflowTourTooltip = ({
       elevation={0}
       style={{
         ...styles.tooltip,
-        backgroundColor: theme.palette.background.paper,
-        backgroundImage: `linear-gradient(135deg, ${alpha(
-          theme.palette.primary.main,
-          0.1,
-        )} 0%, ${theme.palette.background.paper} 44%)`,
-        border: `1px solid ${theme.palette.divider}`,
+        backgroundImage: `linear-gradient(135deg, rgba(${theme.vars.palette.primary.mainChannel} / 0.1) 0%, rgba(${theme.vars.palette.primary.mainChannel} / 0) 44%)`,
+
         borderRadius: theme.shape.borderRadius,
-        boxShadow: theme.shadows[8],
-        color: theme.palette.text.primary,
+        color: theme.vars.palette.text.primary,
         padding: 0,
       }}
       {...tooltipProps}
@@ -138,7 +133,7 @@ const AdminWorkflowTourTooltip = ({
               right: 12,
               top: 12,
               "&:hover": {
-                bgcolor: alpha(theme.palette.primary.main, 0.08),
+                bgcolor: `rgba(${theme.vars.palette.primary.mainChannel} / 0.08)`,
                 color: "text.primary",
               },
             }}
@@ -175,7 +170,7 @@ const AdminWorkflowTourTooltip = ({
               aria-hidden="true"
               sx={{
                 alignItems: "center",
-                bgcolor: alpha(theme.palette.primary.main, 0.12),
+                bgcolor: `rgba(${theme.vars.palette.primary.mainChannel} / 0.12)`,
                 borderRadius: 1,
                 color: "primary.main",
                 display: "flex",
@@ -278,6 +273,9 @@ const AdminWorkflowTourTooltip = ({
 export const AdminWorkflowTour = () => {
   const router = useAppRouter();
   const theme = useTheme();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const tooltipBg = isDark ? theme.palette.grey[700] : theme.palette.grey[100];
   const { user, isAuthenticated, refetchUser } = useAuth();
   const hasPermission = useHasPermission();
   const { toast } = useToast();
@@ -379,7 +377,7 @@ export const AdminWorkflowTour = () => {
         content: t("visual_editor.guided_tour.action_save.content"),
         disableBeacon: true,
         hideFooter: true,
-        placement: "left",
+        placement: "left-end",
         spotlightClicks: true,
       },
       {
@@ -623,11 +621,11 @@ export const AdminWorkflowTour = () => {
       tooltipComponent={AdminWorkflowTourTooltip}
       styles={{
         options: {
-          arrowColor: theme.palette.background.paper,
-          backgroundColor: theme.palette.background.paper,
-          overlayColor: "rgba(15, 23, 42, 0.58)",
-          primaryColor: theme.palette.primary.main,
-          textColor: theme.palette.text.primary,
+          arrowColor: tooltipBg,
+          backgroundColor: tooltipBg,
+          overlayColor: lighten(theme.palette.common.black, isDark ? 0.6 : 0.3),
+          primaryColor: theme.vars.palette.primary.main,
+          textColor: theme.vars.palette.text.primary,
           zIndex: theme.zIndex.modal + 100,
         },
       }}
