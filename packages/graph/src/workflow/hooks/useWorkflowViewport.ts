@@ -12,31 +12,32 @@ import {
   type Node,
   type Viewport,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
   DEFAULT_WORKFLOW_VIEWPORT,
-  WORKFLOW_VIEWPORT_AUTO_FIT_MAX_ZOOM,
   WORKFLOW_VIEWPORT_FIT_PADDING,
-  WORKFLOW_VIEWPORT_MAX_ZOOM,
+  WORKFLOW_VIEWPORT_FOCUS_DURATION,
   WORKFLOW_VIEWPORT_MIN_ZOOM,
 } from "../constants/workflow.constants";
+import { ENodeType } from "../types/workflow-node.types";
 import {
   isMeaningfulWorkflowViewport,
-  isWorkflowBoundsVisibleInViewport,
   normalizeWorkflowViewportZoom,
 } from "../utils/workflow-graph.utils";
 
 const EMPTY_WORKFLOW_SYNC_KEY = "__workflow-empty__";
+/** IDs of semantic workflow step nodes (TASK / OPERATOR) in graph order. */
+const getStepNodeIds = (nodes: Node[]): string[] =>
+  nodes
+    .filter((n) => n.type === ENodeType.TASK || n.type === ENodeType.OPERATOR)
+    .map((n) => n.id);
 const parseViewportNumber = (
   value: number | string | null | undefined,
-): number => {
-  if (value === null || value === undefined || value === "") {
-    return Number.NaN;
-  }
-
-  return Number(value);
-};
+): number =>
+  value === null || value === undefined || value === ""
+    ? Number.NaN
+    : Number(value);
 
 export type ViewportState = {
   id?: string | null;
@@ -63,127 +64,96 @@ export const useWorkflowViewport = <TNode extends Node = Node>({
   const workflowHeight = useStore(
     (state) => state.height ?? state.domNode?.clientHeight ?? 0,
   );
-  const [shouldCenterAfterFirstInsert, setShouldCenterAfterFirstInsert] =
-    useState(false);
+  const viewportSyncKey = viewport?.id ?? EMPTY_WORKFLOW_SYNC_KEY;
+  // Per-flow bookkeeping, keyed by viewportSyncKey so switching workflows
+  // implicitly resets it — no dedicated reset effects needed.
   const viewportInitializedForFlowRef = useRef<string | null>(null);
-  const graphVisibilityInitializedForFlowRef = useRef<string | null>(null);
-  const nodeIdsSignatureRef = useRef<string | null>(null);
-  const nodeIdsSignature = useMemo(
-    () =>
-      graphNodes
-        .map(({ id }) => id)
-        .sort()
-        .join("|"),
+  const prevStepNodeIdsRef = useRef<{ key: string; ids: string[] } | null>(
+    null,
+  );
+  const centerAfterFirstInsertRef = useRef(false);
+  const graphNodesRef = useRef(graphNodes);
+
+  graphNodesRef.current = graphNodes;
+
+  // Changes only when step nodes are added or removed, so the viewport effect
+  // never fires for structural-only updates (attachments, placeholders,
+  // indicators, groups).
+  const stepNodeSignature = useMemo(
+    () => getStepNodeIds(graphNodes).join("|"),
     [graphNodes],
   );
   const { defaultViewport, hasPersistedViewport } = useMemo(() => {
-    const parsedX = parseViewportNumber(viewport?.x);
-    const parsedY = parseViewportNumber(viewport?.y);
-    const parsedZoom = parseViewportNumber(viewport?.zoom);
-    const hasUsableViewport =
-      Number.isFinite(parsedX) &&
-      Number.isFinite(parsedY) &&
-      Number.isFinite(parsedZoom) &&
-      parsedZoom >= WORKFLOW_VIEWPORT_MIN_ZOOM &&
-      parsedZoom <= WORKFLOW_VIEWPORT_MAX_ZOOM;
     const parsedViewport = {
-      x: Number.isFinite(parsedX) ? parsedX : DEFAULT_WORKFLOW_VIEWPORT.x,
-      y: Number.isFinite(parsedY) ? parsedY : DEFAULT_WORKFLOW_VIEWPORT.y,
-      zoom: normalizeWorkflowViewportZoom(parsedZoom),
+      x: parseViewportNumber(viewport?.x),
+      y: parseViewportNumber(viewport?.y),
+      zoom: parseViewportNumber(viewport?.zoom),
     };
 
-    return {
-      defaultViewport: parsedViewport,
-      hasPersistedViewport:
-        hasUsableViewport && isMeaningfulWorkflowViewport(parsedViewport),
-    };
-  }, [viewport?.id, viewport?.x, viewport?.y, viewport?.zoom]);
-  const emptyViewport = useMemo(
-    () => ({
-      x: workflowWidth / 2,
-      y: workflowHeight / 2,
-      zoom: 1,
-    }),
-    [workflowHeight, workflowWidth],
-  );
-  const shouldUseComputedEmptyViewport =
-    isEmptyWorkflow &&
-    (!hasPersistedViewport ||
-      (defaultViewport.x === 0 &&
-        defaultViewport.y === 0 &&
-        defaultViewport.zoom === 1));
+    // Meaningful ⇔ finite, zoom within bounds, not the {0,0,1} default
+    return isMeaningfulWorkflowViewport(parsedViewport)
+      ? { defaultViewport: parsedViewport, hasPersistedViewport: true }
+      : {
+          defaultViewport: {
+            x: Number.isFinite(parsedViewport.x)
+              ? parsedViewport.x
+              : DEFAULT_WORKFLOW_VIEWPORT.x,
+            y: Number.isFinite(parsedViewport.y)
+              ? parsedViewport.y
+              : DEFAULT_WORKFLOW_VIEWPORT.y,
+            zoom: normalizeWorkflowViewportZoom(parsedViewport.zoom),
+          },
+          hasPersistedViewport: false,
+        };
+  }, [viewport?.x, viewport?.y, viewport?.zoom]);
   const initialViewport = useMemo(
-    () => (shouldUseComputedEmptyViewport ? emptyViewport : defaultViewport),
-    [defaultViewport, emptyViewport, shouldUseComputedEmptyViewport],
+    () =>
+      isEmptyWorkflow && !hasPersistedViewport
+        ? { x: workflowWidth / 2, y: workflowHeight / 2, zoom: 1 }
+        : defaultViewport,
+    [
+      defaultViewport,
+      hasPersistedViewport,
+      isEmptyWorkflow,
+      workflowHeight,
+      workflowWidth,
+    ],
   );
-  const viewportSyncKey = viewport?.id ?? EMPTY_WORKFLOW_SYNC_KEY;
   const syncViewportForFlow = useCallback(
-    (viewport: Viewport) => {
-      setViewport(viewport);
+    (nextViewport: Viewport, options?: { duration?: number }) => {
+      setViewport(nextViewport, options);
       viewportInitializedForFlowRef.current = viewportSyncKey;
     },
     [setViewport, viewportSyncKey],
   );
-  const centerGraphAtCurrentZoom = useCallback(() => {
-    if (graphNodes.length === 0 || workflowWidth <= 0 || workflowHeight <= 0) {
-      return;
-    }
-
-    const currentViewport = getViewport();
-    const currentZoom = normalizeWorkflowViewportZoom(currentViewport.zoom);
-    const graphBounds = getNodesBounds(graphNodes);
-    const centeredViewport = getViewportForBounds(
-      graphBounds,
-      workflowWidth,
-      workflowHeight,
-      currentZoom,
-      currentZoom,
-      0,
-    );
-
-    syncViewportForFlow(centeredViewport);
-  }, [
-    getViewport,
-    graphNodes,
-    syncViewportForFlow,
-    workflowHeight,
-    workflowWidth,
-  ]);
-  const fitGraphToViewport = useCallback(() => {
-    if (graphNodes.length === 0 || workflowWidth <= 0 || workflowHeight <= 0) {
-      return;
-    }
-
-    const graphBounds = getNodesBounds(graphNodes);
-    const fittedViewport = getViewportForBounds(
-      graphBounds,
-      workflowWidth,
-      workflowHeight,
-      WORKFLOW_VIEWPORT_MIN_ZOOM,
-      WORKFLOW_VIEWPORT_AUTO_FIT_MAX_ZOOM,
-      WORKFLOW_VIEWPORT_FIT_PADDING,
-    );
-
-    syncViewportForFlow(fittedViewport);
-  }, [graphNodes, syncViewportForFlow, workflowHeight, workflowWidth]);
-  const isGraphVisibleInViewport = useCallback(
-    (viewport: Viewport) => {
-      if (
-        graphNodes.length === 0 ||
-        workflowWidth <= 0 ||
-        workflowHeight <= 0
-      ) {
-        return false;
+  /**
+   * Center the given nodes without exceeding `maxZoom` (the current zoom by
+   * default). When the nodes do not fit at that zoom — the view would be
+   * cropped — the zoom is lowered just enough to bring them fully into view.
+   */
+  const focusNodes = useCallback(
+    (nodes: Node[], options?: { duration?: number; maxZoom?: number }) => {
+      if (nodes.length === 0 || workflowWidth <= 0 || workflowHeight <= 0) {
+        return;
       }
 
-      return isWorkflowBoundsVisibleInViewport({
-        bounds: getNodesBounds(graphNodes),
-        viewport,
-        viewportWidth: workflowWidth,
-        viewportHeight: workflowHeight,
-      });
+      const focusedViewport = getViewportForBounds(
+        getNodesBounds(nodes),
+        workflowWidth,
+        workflowHeight,
+        WORKFLOW_VIEWPORT_MIN_ZOOM,
+        options?.maxZoom ?? normalizeWorkflowViewportZoom(getViewport().zoom),
+        WORKFLOW_VIEWPORT_FIT_PADDING,
+      );
+
+      syncViewportForFlow(
+        focusedViewport,
+        options?.duration !== undefined
+          ? { duration: options.duration }
+          : undefined,
+      );
     },
-    [graphNodes, workflowHeight, workflowWidth],
+    [getViewport, syncViewportForFlow, workflowHeight, workflowWidth],
   );
 
   useEffect(() => {
@@ -191,119 +161,96 @@ export const useWorkflowViewport = <TNode extends Node = Node>({
       return;
     }
 
-    if (viewportInitializedForFlowRef.current === viewportSyncKey) {
-      return;
+    // Apply the initial viewport once per workflow
+    if (viewportInitializedForFlowRef.current !== viewportSyncKey) {
+      syncViewportForFlow(initialViewport);
     }
 
-    syncViewportForFlow(initialViewport);
-  }, [
-    initialViewport,
-    syncViewportForFlow,
-    viewportSyncKey,
-    workflowHeight,
-    workflowWidth,
-  ]);
+    const nodes = graphNodesRef.current;
+    const prevEntry = prevStepNodeIdsRef.current;
+    // null → first run for this workflow (persisted viewport is respected)
+    const prevStepIds =
+      prevEntry?.key === viewportSyncKey ? prevEntry.ids : null;
+    const stepIds = getStepNodeIds(nodes);
 
-  useEffect(() => {
-    nodeIdsSignatureRef.current = null;
-    graphVisibilityInitializedForFlowRef.current = null;
-  }, [viewportSyncKey]);
+    // While the workflow is empty, keep treating the next run as a first run
+    // so inserts are handled by the center-after-first-insert flow only.
+    prevStepNodeIdsRef.current = isEmptyWorkflow
+      ? null
+      : { key: viewportSyncKey, ids: stepIds };
 
-  useEffect(() => {
-    if (
-      !shouldCenterAfterFirstInsert ||
-      graphNodes.length === 0 ||
-      workflowWidth <= 0 ||
-      workflowHeight <= 0
-    ) {
-      return;
-    }
-
-    centerGraphAtCurrentZoom();
-    setShouldCenterAfterFirstInsert(false);
-  }, [
-    centerGraphAtCurrentZoom,
-    shouldCenterAfterFirstInsert,
-    workflowHeight,
-    workflowWidth,
-  ]);
-
-  useEffect(() => {
-    if (workflowWidth <= 0 || workflowHeight <= 0) {
-      return;
-    }
-
-    const previousNodeIdsSignature = nodeIdsSignatureRef.current;
-
-    nodeIdsSignatureRef.current = nodeIdsSignature;
-
-    if (
-      graphNodes.length > 0 &&
-      graphVisibilityInitializedForFlowRef.current !== viewportSyncKey
-    ) {
-      graphVisibilityInitializedForFlowRef.current = viewportSyncKey;
-
-      if (shouldCenterAfterFirstInsert) {
-        return;
+    // First insert into an empty workflow → center the whole graph
+    if (centerAfterFirstInsertRef.current) {
+      if (nodes.length > 0) {
+        centerAfterFirstInsertRef.current = false;
+        focusNodes(nodes, { duration: WORKFLOW_VIEWPORT_FOCUS_DURATION });
       }
 
-      if (!hasPersistedViewport || !isGraphVisibleInViewport(defaultViewport)) {
-        fitGraphToViewport();
-
-        return;
-      }
-    }
-
-    if (
-      !previousNodeIdsSignature ||
-      previousNodeIdsSignature === nodeIdsSignature ||
-      shouldCenterAfterFirstInsert
-    ) {
       return;
     }
 
-    if (graphNodes.length === 0) {
-      const currentViewport = getViewport();
+    // First run for this workflow, or step nodes materializing after the
+    // async layout (load / workflow switch) → respect the persisted viewport.
+    // Real inserts from zero steps go through the first-insert flag above.
+    if (prevStepIds === null || prevStepIds.length === 0) {
+      return;
+    }
 
+    // All nodes removed → reset viewport to canvas center
+    if (nodes.length === 0) {
       syncViewportForFlow({
         x: workflowWidth / 2,
         y: workflowHeight / 2,
-        zoom: currentViewport.zoom,
+        zoom: getViewport().zoom,
       });
 
       return;
     }
 
-    centerGraphAtCurrentZoom();
+    const prevStepIdSet = new Set(prevStepIds);
+    const stepIdSet = new Set(stepIds);
+    // Use count change to distinguish insertion from deletion — step IDs are
+    // index-based, so a deletion shifts subsequent IDs and makes them look new.
+    const isInsertion = stepIds.length > prevStepIds.length;
+    const addedStepId = isInsertion
+      ? stepIds.find((id) => !prevStepIdSet.has(id))
+      : undefined;
+    const lastRemovedIndex = prevStepIds.reduce(
+      (last, id, index) => (stepIdSet.has(id) ? last : index),
+      -1,
+    );
+    const targetStepId =
+      addedStepId ??
+      (lastRemovedIndex === -1
+        ? undefined
+        : (prevStepIds
+            .slice(0, lastRemovedIndex)
+            .reverse()
+            .find((id) => stepIdSet.has(id)) ?? stepIds[0]));
+    const targetNode = nodes.find((n) => n.id === targetStepId);
+
+    if (targetNode) {
+      focusNodes([targetNode], { duration: WORKFLOW_VIEWPORT_FOCUS_DURATION });
+    }
   }, [
-    centerGraphAtCurrentZoom,
-    fitGraphToViewport,
+    focusNodes,
     getViewport,
-    graphNodes.length,
-    hasPersistedViewport,
-    defaultViewport,
-    isGraphVisibleInViewport,
-    nodeIdsSignature,
-    shouldCenterAfterFirstInsert,
+    initialViewport,
+    isEmptyWorkflow,
+    stepNodeSignature,
     syncViewportForFlow,
     viewportSyncKey,
     workflowHeight,
     workflowWidth,
   ]);
 
-  useEffect(() => {
-    if (isEmptyWorkflow) {
-      nodeIdsSignatureRef.current = null;
-    }
-  }, [isEmptyWorkflow]);
-
   const requestCenterAfterFirstInsert = useCallback(() => {
     if (isEmptyWorkflow) {
-      setShouldCenterAfterFirstInsert(true);
+      centerAfterFirstInsertRef.current = true;
     }
   }, [isEmptyWorkflow]);
   const clearCenterAfterFirstInsert = useCallback(() => {
-    setShouldCenterAfterFirstInsert(false);
+    centerAfterFirstInsertRef.current = false;
   }, []);
 
   return {
