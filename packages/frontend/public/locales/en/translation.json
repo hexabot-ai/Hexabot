@@ -857,7 +857,8 @@
         },
         "description": {
           "placeholder": "Optional step description."
-        }
+        },
+        "back_to_actions": "Back to actions"
       }
     },
     "tool_drawer": {

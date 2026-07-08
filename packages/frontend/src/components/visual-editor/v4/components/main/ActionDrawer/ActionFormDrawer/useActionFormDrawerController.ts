@@ -69,6 +69,7 @@ export type ActionFormDrawerCreateTarget = {
 type UseActionFormDrawerControllerParams = {
   target: ActionFormDrawerCreateTarget | null;
   onClose?: (reason: ActionFormDrawerCloseReason) => void;
+  onBack?: () => void;
 };
 
 type SplitTaskSettingsResult = {
@@ -115,6 +116,7 @@ const splitTaskSettings = (
 export const useActionFormDrawerController = ({
   target,
   onClose,
+  onBack,
 }: UseActionFormDrawerControllerParams): UseActionFormDrawerControllerResult => {
   const { t } = useTranslate();
   const {
@@ -481,6 +483,7 @@ export const useActionFormDrawerController = ({
       onTaskNameCancel: handleTaskNameCancel,
       onDescriptionCommit: handleDescriptionCommit,
       onDescriptionCancel: handleDescriptionCancel,
+      onBack,
     },
     inputData,
     isUsingWorkflowExecutionDefaults,
