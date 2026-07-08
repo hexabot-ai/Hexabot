@@ -11,7 +11,7 @@ import type { GroupMeta } from "../graph-builder/types";
 
 import { runBranchGroupPass } from "./branch-group-pass";
 import { FLOW_LAYER_GAP } from "./constants";
-import type { AxisBounds, LayoutContext } from "./geometry";
+import type { LayoutContext } from "./geometry";
 import {
   collectAttachmentDescendants,
   countNodeIds,
@@ -35,13 +35,8 @@ export const alignBranchFlowOrigins = (
   groups: Map<string, GroupMeta>,
   ctx: LayoutContext,
 ): GraphNode[] => {
-  // A branch that starts with a group (e.g. a Loop) renders its box with
-  // extra padding on its leading edge — the group node itself doesn't exist
-  // yet at this stage of the pipeline (getGroupNodes runs after this pass),
-  // so the leading-edge bound computed below would otherwise ignore that
-  // padding and leave the eventual box's visible top edge sitting ahead of a
-  // sibling branch that starts with a plain node, even once their operator
-  // nodes share the same flow coordinate.
+  // Account for group leading padding before group nodes are materialized, so
+  // grouped and plain branch starts align on the same visible edge.
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const groupEntryLeadingInset = new Map<string, number>();
 
@@ -109,19 +104,17 @@ export const alignBranchFlowOrigins = (
       const targetLeading = Math.max(
         ...branches.map((branch) => branch.leading),
       );
-      // Branches of the same operator (e.g. every Parallel branch) commonly
-      // reconverge on a shared merge/join node. ELK already placed that shared
-      // node to clear the widest original branch, which is by definition at
-      // least as far along as `targetLeading` — so it never needs to move, and
-      // must not: nodes outside this group (e.g. the step after the whole
-      // Parallel) were already positioned relative to its original spot.
-      // Count which branches can reach each node so those shared convergence
-      // nodes can be excluded, then resolve one delta per remaining node — the
-      // largest any (single) branch requires — before moving anything.
+      // Shared convergence nodes keep ELK's position; shift only branch-local
+      // nodes, using the largest required delta per node.
       const branchCountByNodeId = countNodeIds(
         branches.map((branch) => branch.nodeIds),
       );
       const deltaByNodeId = new Map<string, number>();
+      const addDelta = (
+        deltas: Map<string, number>,
+        nodeId: string,
+        delta: number,
+      ) => deltas.set(nodeId, Math.max(deltas.get(nodeId) ?? delta, delta));
 
       branches.forEach((branch) => {
         const delta = targetLeading - branch.leading;
@@ -135,12 +128,7 @@ export const alignBranchFlowOrigins = (
             return;
           }
 
-          const existing = deltaByNodeId.get(nodeId);
-
-          deltaByNodeId.set(
-            nodeId,
-            existing === undefined ? delta : Math.max(existing, delta),
-          );
+          addDelta(deltaByNodeId, nodeId, delta);
         });
       });
 
@@ -149,28 +137,18 @@ export const alignBranchFlowOrigins = (
       const sharedNodeIds = [...branchCountByNodeId.entries()]
         .filter(([, count]) => count > 1)
         .map(([nodeId]) => nodeId);
+      const attachmentIds = new Set<string>();
 
-      if (!sharedNodeIds.length) {
-        return;
-      }
+      attachmentChildrenByParent.forEach((childIds) => {
+        childIds.forEach((childId) => attachmentIds.add(childId));
+      });
 
-      // A shared convergence node (e.g. a Parallel's join placeholder) is
-      // deliberately left where ELK put it, on the assumption ELK already
-      // placed it to clear every branch. That assumption can be wrong: ELK may
-      // not rank real nested content (e.g. a task buried inside one branch's
-      // own Conditional) as the deepest node, and the shared node must clear
-      // not just individual branch nodes but the group's full padded bounding
-      // box (the visual box drawn around the group) — otherwise it renders
-      // inside the group instead of after it. Everything reachable *after* the
-      // shared node (outside this group entirely — e.g. the step following the
-      // whole Parallel) must shift by the same flow-axis amount, or it would
-      // end up positioned before the node that now feeds it.
       const collectForwardNodeIds = (startId: string): Set<string> => {
         const forwardNodeIds = new Set<string>();
         const queue = [startId];
 
         while (queue.length) {
-          const current = queue.shift()!;
+          const current = queue.pop()!;
 
           if (forwardNodeIds.has(current)) {
             continue;
@@ -193,39 +171,82 @@ export const alignBranchFlowOrigins = (
 
         return forwardNodeIds;
       };
-      // Measure only the group's *other* real content — not the shared node(s)
-      // themselves, which are members of this group; including them would be
-      // circular since the rendered box always grows to enclose wherever we
-      // place them, so what they must clear is every other real member.
-      const groupBounds = branches
-        .flatMap((branch) => [...branch.nodeIds])
-        .filter((nodeId) => (branchCountByNodeId.get(nodeId) ?? 0) <= 1)
-        .map((nodeId) => getNodeBounds(nodeId, "flow"))
-        .filter((bounds): bounds is AxisBounds => Boolean(bounds));
+      const getTrailingEdge = (nodeIds: Iterable<string>) => {
+        let trailing = -Infinity;
 
-      if (!groupBounds.length) {
+        for (const nodeId of nodeIds) {
+          if (attachmentIds.has(nodeId)) {
+            continue;
+          }
+
+          const bounds = getNodeBounds(nodeId, "flow");
+
+          if (bounds) {
+            trailing = Math.max(trailing, bounds.trailing);
+          }
+        }
+
+        return isFinite(trailing) ? trailing + FLOW_LAYER_GAP : undefined;
+      };
+      const localNodeIds = function* () {
+        for (const [nodeId, count] of branchCountByNodeId) {
+          if (count <= 1) {
+            yield nodeId;
+          }
+        }
+      };
+      const sharedTrailing = getTrailingEdge(localNodeIds());
+
+      if (sharedTrailing !== undefined) {
+        sharedNodeIds.forEach((nodeId) => {
+          const bounds = getNodeBounds(nodeId, "flow");
+
+          if (!bounds) {
+            return;
+          }
+
+          const delta = sharedTrailing - bounds.leading;
+
+          if (delta >= 1) {
+            collectForwardNodeIds(nodeId).forEach((forwardId) =>
+              moveNode(forwardId, delta),
+            );
+          }
+        });
+      }
+
+      if (!deltaByNodeId.size) {
         return;
       }
 
-      const groupTrailing =
-        Math.max(...groupBounds.map((bounds) => bounds.trailing)) +
-        FLOW_LAYER_GAP;
+      const externalTrailing = getTrailingEdge(branchCountByNodeId.keys());
+      const externalDeltaByNodeId = new Map<string, number>();
 
-      sharedNodeIds.forEach((nodeId) => {
-        const bounds = getNodeBounds(nodeId, "flow");
+      if (externalTrailing === undefined) {
+        return;
+      }
 
-        if (!bounds) {
-          return;
-        }
+      branchCountByNodeId.forEach((_, memberId) => {
+        (outgoingBySource.get(memberId) ?? []).forEach(({ targetId }) => {
+          if (
+            group.memberNodeIds.has(targetId) ||
+            branchCountByNodeId.has(targetId)
+          ) {
+            return;
+          }
 
-        const delta = groupTrailing - bounds.leading;
+          const bounds = getNodeBounds(targetId, "flow");
+          const delta = bounds ? externalTrailing - bounds.leading : 0;
 
-        if (delta >= 1) {
-          collectForwardNodeIds(nodeId).forEach((forwardId) =>
-            moveNode(forwardId, delta),
-          );
-        }
+          if (delta >= 1) {
+            collectForwardNodeIds(targetId).forEach((forwardId) =>
+              addDelta(externalDeltaByNodeId, forwardId, delta),
+            );
+          }
+        });
       });
+
+      externalDeltaByNodeId.forEach((delta, nodeId) => moveNode(nodeId, delta));
     },
   );
 };

@@ -68,6 +68,8 @@ type ElkModel = {
       layoutOptions: Record<string, string>;
       ports: Array<{
         id: string;
+        x?: number;
+        y?: number;
         properties: Record<string, string>;
       }>;
     }>;
@@ -241,14 +243,45 @@ const toElk = (nodes: GraphNode[], edges: Edge[], ctx: LayoutContext) => {
 
       nodeOffsets.set(node.id, offset);
 
+      // Pin ports to the visible card when attachments inflate the ELK box.
+      const isInflated =
+        dimensions.width !== sourceDimensions.width ||
+        dimensions.height !== sourceDimensions.height;
+      const portsBySide = new Map<string, ElkPort[]>();
+
+      ports.forEach((port) => appendMapValue(portsBySide, port.side, port));
+
+      const getPortCoordinates = (port: ElkPort) => {
+        const sidePorts = portsBySide.get(port.side) ?? [];
+        const ratio = (sidePorts.indexOf(port) + 1) / (sidePorts.length + 1);
+
+        return {
+          x:
+            port.side === "WEST"
+              ? 0
+              : port.side === "EAST"
+                ? dimensions.width
+                : offset.x + sourceDimensions.width * ratio,
+          y:
+            port.side === "NORTH"
+              ? 0
+              : port.side === "SOUTH"
+                ? dimensions.height
+                : offset.y + sourceDimensions.height * ratio,
+        };
+      };
+
       return {
         id: node.id,
         ...dimensions,
         layoutOptions: {
-          "org.eclipse.elk.portConstraints": "FIXED_ORDER",
+          "org.eclipse.elk.portConstraints": isInflated
+            ? "FIXED_POS"
+            : "FIXED_ORDER",
         },
         ports: ports.map((port) => ({
           id: port.elkId,
+          ...(isInflated ? getPortCoordinates(port) : {}),
           properties: { "org.eclipse.elk.port.side": port.side },
         })),
       };

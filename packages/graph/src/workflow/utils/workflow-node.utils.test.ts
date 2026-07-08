@@ -5,12 +5,12 @@
  */
 
 import {
-  type DefDefinitions,
   StepType,
   type CompiledConditionalStep,
   type CompiledLoopStep,
   type CompiledParallelStep,
   type CompiledStep,
+  type DefDefinitions,
   type TaskDefinition,
 } from "@hexabot-ai/agentic";
 import { describe, expect, it } from "vitest";
@@ -1893,6 +1893,95 @@ describe("buildNodesAndEdges", () => {
         });
       });
     }
+  }
+
+  for (const direction of ["horizontal", "vertical"] as const) {
+    it(`does not push Stop past the last main-flow node when a branch has wide attachment rows in ${direction} mode`, async () => {
+      // Regression: wide binding rows inflated Stop/placeholder gaps; keep
+      // them at the visible card's FLOW_LAYER_GAP spacing.
+      const conditionalStep: CompiledConditionalStep = {
+        id: "0:conditional",
+        label: "conditional",
+        type: StepType.Conditional,
+        branches: [
+          {
+            id: "0:conditional:when:0",
+            condition: { kind: "literal", value: "false" },
+            steps: [taskStep("0.cond.0:short_agent", "short_agent")],
+          },
+          {
+            id: "0:conditional:when:1",
+            steps: [
+              taskStep("0.cond.1:long_agent_1", "long_agent_1"),
+              taskStep("0.cond.1:long_agent_2", "long_agent_2"),
+            ],
+          },
+        ],
+      };
+      const graph = await buildGraph({
+        flow: [conditionalStep],
+        tasks: {
+          short_agent: { action: "agent_action", settings: {} },
+          long_agent_1: { action: "agent_action", settings: {} },
+          long_agent_2: {
+            action: "agent_action",
+            settings: {},
+            bindings: {
+              tools: ["tool_1"],
+              mcp: ["mcp_1"],
+              memory: ["mem_1"],
+              model: "model_1",
+            },
+          },
+        },
+        defs: {
+          tool_1: { kind: "tools", settings: {} },
+          mcp_1: { kind: "mcp", settings: {} },
+          mem_1: { kind: "memory", settings: {} },
+          model_1: { kind: "model", settings: {} },
+        },
+        actionCatalog: createActionCatalog({
+          agent_action: ["tools", "mcp", "model", "memory"],
+        }),
+        bindingCatalog: createBindingCatalog([
+          { kind: "tools", multiple: true },
+          { kind: "mcp", multiple: true },
+          { kind: "memory", multiple: true },
+          { kind: "model", multiple: false },
+        ]),
+        direction,
+      });
+      const endNode = graph.nodes.find((node) => node.id === END_INDICATOR_ID);
+      const lastMainFlowNode = graph.nodes.find(
+        (node) => node.id === createStepNodeId("0.cond.1:long_agent_2", "task"),
+      );
+
+      expect(endNode).toBeDefined();
+      expect(lastMainFlowNode).toBeDefined();
+
+      const taskDims = NODE_METRICS[ENodeType.TASK]?.dimensions ?? {
+        width: 0,
+        height: 0,
+      };
+      const bpDims = NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions ?? {
+        width: 0,
+        height: 0,
+      };
+      const endLeading =
+        direction === "vertical" ? endNode!.position.y : endNode!.position.x;
+      const lastNodeTrailing =
+        direction === "vertical"
+          ? lastMainFlowNode!.position.y + taskDims.height
+          : lastMainFlowNode!.position.x + taskDims.width;
+      const bpFlowSize =
+        direction === "vertical" ? bpDims.height : bpDims.width;
+
+      expect(endLeading).toBeGreaterThanOrEqual(lastNodeTrailing);
+      // Attachments must not inflate either last-node -> placeholder -> Stop gap.
+      expect(endLeading).toBeLessThanOrEqual(
+        lastNodeTrailing + 2 * FLOW_LAYER_GAP + bpFlowSize + 1,
+      );
+    });
   }
 
   it("does not create duplicate node or edge IDs", async () => {

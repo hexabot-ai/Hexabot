@@ -9,12 +9,12 @@ import { MarkerType, type Node } from "@xyflow/react";
 import {
   Brain,
   ChartNoAxesGantt,
-  CircleStop,
   GitBranch,
   ListTree,
   Play,
   Plus,
   Repeat,
+  Square,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -221,7 +221,7 @@ export const NODE_DEFINITIONS = {
     },
     [EIndicatorType.WORKFLOW_END]: {
       theme: {
-        Icon: CircleStop,
+        Icon: Square,
         borderColor: "#e95d32",
       },
       ports: [ELinkType.INDICATOR_IN],
