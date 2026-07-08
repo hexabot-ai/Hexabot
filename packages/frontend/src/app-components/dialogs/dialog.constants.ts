@@ -11,6 +11,7 @@ import { ContentFormDialog } from "@/components/contents/ContentFormDialog";
 import { CredentialFormDialog } from "@/components/credentials/CredentialFormDialog";
 import { LabelFormDialog } from "@/components/labels/LabelFormDialog";
 import { LanguageFormDialog } from "@/components/languages/LanguageFormDialog";
+import { McpServerFormDialog } from "@/components/mcp-servers/McpServerFormDialog";
 import { MemoryDefinitionFormDialog } from "@/components/memory-definitions/MemoryDefinitionFormDialog";
 import { RoleFormDialog } from "@/components/roles/RoleFormDialog";
 import { TranslationFormDialog } from "@/components/translations/TranslationFormDialog";
@@ -43,6 +44,10 @@ export const BASE_ADD_DIALOG_MAP = {
   },
   [EntityType.LABEL]: {
     dialog: LabelFormDialog,
+    presetValues: undefined,
+  },
+  [EntityType.MCP_SERVER]: {
+    dialog: McpServerFormDialog,
     presetValues: undefined,
   },
   [EntityType.MEMORY_DEFINITION]: {
