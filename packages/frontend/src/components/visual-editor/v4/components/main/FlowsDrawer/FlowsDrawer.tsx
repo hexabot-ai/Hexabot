@@ -124,19 +124,28 @@ export const FlowsDrawer = ({
   const [open, setOpen] = useState(
     () => !isCompact && Boolean(getLocalStorage(drawerIsOpenStorage)),
   );
+  const [showYaml, setShowYaml] = useState(false);
+  const closeYamlPanel = useCallback(() => {
+    setShowYaml(false);
+    onActiveDefChange?.(); // YAML view is no longer visible — deactivate button
+  }, [onActiveDefChange]);
 
   useEffect(() => {
-    if (isCompact) setOpen(false);
-  }, [isCompact]);
+    if (isCompact) {
+      setOpen(false);
+      closeYamlPanel();
+    }
+  }, [isCompact, closeYamlPanel]);
 
   const toggleOpen = useCallback(() => {
-    setOpen((prev) => {
-      setLocalStorage(drawerIsOpenStorage, prev ? "" : "true");
+    const next = !open;
 
-      return !prev;
-    });
-  }, [setLocalStorage]);
-  const [showYaml, setShowYaml] = useState(false);
+    setLocalStorage(drawerIsOpenStorage, next ? "true" : "");
+    if (!next) {
+      closeYamlPanel();
+    }
+    setOpen(next);
+  }, [open, setLocalStorage, closeYamlPanel]);
   const [showVersions, setShowVersions] = useState(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
@@ -353,18 +362,17 @@ export const FlowsDrawer = ({
   }, [isSearching, selectedFlowTypeKey, typeGroups]);
 
   const handleToggleYaml = () => {
-    setShowYaml((prev) => {
-      if (prev) onActiveDefChange?.(); // switching away from YAML — deactivate button
-
-      return !prev;
-    });
+    if (showYaml) {
+      closeYamlPanel();
+    } else {
+      setShowYaml(true);
+    }
     setShowVersions(false);
     if (!open) setOpen(true);
   };
   const handleToggleVersions = () => {
     setShowVersions((prev) => !prev);
-    setShowYaml(false);
-    onActiveDefChange?.(); // switching to versions view — deactivate button
+    closeYamlPanel();
     if (!open) {
       setOpen(true);
     }
