@@ -28,11 +28,10 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { JsonSchemaForm } from "@/app-components/inputs/JsonSchemaForm";
 import {
-  extractUiSchema,
-  getSchemaProperties,
-} from "@/components/visual-editor/v4/utils/schema-defaults.utils";
+  hasSchemaProperties,
+  JsonSchemaForm,
+} from "@/app-components/inputs/JsonSchemaForm";
 import { WebhookSnippetDialog } from "@/components/workflow-webhook/WebhookSnippetDialog";
 import { useConfig } from "@/hooks/useConfig";
 import { useTranslate } from "@/hooks/useTranslate";
@@ -60,7 +59,7 @@ export const TriggerSimulatorPanel = ({
   const inputSchema = isManualWorkflow
     ? (workflow?.inputSchema as RJSFSchema | undefined)
     : undefined;
-  const hasInputProperties = Boolean(getSchemaProperties(inputSchema));
+  const hasInputProperties = hasSchemaProperties(inputSchema);
   const isInputValid = useMemo(() => {
     if (!isManualWorkflow || !hasInputProperties || !inputSchema) {
       return true;
@@ -141,7 +140,6 @@ export const TriggerSimulatorPanel = ({
                 formData={formData}
                 onFormDataChange={onFormDataChange}
                 liveValidate
-                uiSchema={extractUiSchema(inputSchema)}
                 idPrefix="workflow-trigger"
                 enableJsonataTextWidget={false}
               />

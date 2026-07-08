@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSourcePayload,
-  buildSourceSettingsUiSchema,
   buildSourcesSearchParams,
   getPublicChannels,
   getSourceFormDefaults,
@@ -277,23 +276,6 @@ describe("source form utils", () => {
           greeting_message: { type: "string" },
           show_file: { type: "boolean" },
         },
-      });
-    });
-  });
-
-  describe("buildSourceSettingsUiSchema", () => {
-    it("keeps property order and removes duplicated root title", () => {
-      expect(
-        buildSourceSettingsUiSchema({
-          type: "object",
-          properties: {
-            first: { type: "string" },
-            second: { type: "boolean" },
-          },
-        }),
-      ).toEqual({
-        "ui:title": "",
-        "ui:order": ["first", "second"],
       });
     });
   });

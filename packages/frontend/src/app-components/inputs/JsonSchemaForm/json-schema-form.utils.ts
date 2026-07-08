@@ -8,6 +8,20 @@ import type { RJSFSchema, UiSchema } from "@rjsf/utils";
 
 import { isRecord } from "@/utils/object";
 
+/**
+ * uiSchema for forms rendered inside an already-titled container (tab,
+ * accordion, panel): hides the root schema title to avoid duplicating it
+ * and pins property order to the schema's declaration order.
+ */
+export const buildPanelUiSchema = (schema: RJSFSchema): UiSchema => {
+  const order = Object.keys(schema.properties || {});
+
+  return {
+    "ui:title": "",
+    ...(order.length ? { "ui:order": order } : {}),
+  };
+};
+
 const SUBSCHEMA_RECORD_KEYS = ["properties", "definitions", "$defs"] as const;
 const SUBSCHEMA_KEYS = [
   "items",

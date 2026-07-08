@@ -7,9 +7,8 @@
 import { AttachmentResourceRef } from "@hexabot-ai/types";
 import { RJSFSchema } from "@rjsf/utils";
 
+import { getSchemaProperties } from "@/app-components/inputs/JsonSchemaForm";
 import { type JsonSchemaType } from "@/app-components/inputs/JsonSchemaObjectBuilder";
-
-import { getSchemaProperties } from "../visual-editor/v4/utils/schema-defaults.utils";
 
 import { type ContentFormData } from "./ContentForm";
 

@@ -9,9 +9,8 @@ import {
   type Source,
   type SourceFull,
 } from "@hexabot-ai/types";
-import type { RJSFSchema, UiSchema } from "@rjsf/utils";
+import type { RJSFSchema } from "@rjsf/utils";
 
-import { extractUiSchema } from "@/components/visual-editor/v4/utils/schema-defaults.utils";
 import { EntityType } from "@/services/types";
 import type { IChannel } from "@/types/channel.types";
 import type { SearchPayload } from "@/types/search.types";
@@ -165,17 +164,6 @@ export const resolveSourceSettingsSchema = (schema: unknown): RJSFSchema => {
     ...(schema as RJSFSchema),
     type: "object",
     properties,
-  };
-};
-
-export const buildSourceSettingsUiSchema = (schema: RJSFSchema): UiSchema => {
-  const extracted = extractUiSchema(schema);
-  const order = Object.keys(schema.properties || {});
-
-  return {
-    ...extracted,
-    "ui:title": "",
-    ...(order.length ? { "ui:order": order } : {}),
   };
 };
 

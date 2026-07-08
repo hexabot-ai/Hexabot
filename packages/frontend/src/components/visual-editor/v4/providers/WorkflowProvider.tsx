@@ -20,6 +20,7 @@ import type { WorkflowImportResult } from "@hexabot-ai/types";
 import debounce from "@mui/utils/debounce";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { getSchemaDefaults } from "@/app-components/inputs/JsonSchemaForm";
 import { useFind } from "@/hooks/crud/useFind";
 import { useGetFromCache } from "@/hooks/crud/useGet";
 import {
@@ -41,7 +42,6 @@ import type { EntityAttributes } from "@/types/base.types";
 import { WorkflowContext } from "../contexts/workflow.context";
 import { useWorkflowDefinitionState } from "../hooks/useWorkflowDefinitionState";
 import type { WorkflowContextProps } from "../types/workflow.types";
-import { getSchemaDefaults } from "../utils/schema-defaults.utils";
 import {
   createBaseDefinition,
   createTaskName,

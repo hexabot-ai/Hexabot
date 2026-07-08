@@ -7,10 +7,7 @@
 import { Settings } from "@hexabot-ai/agentic";
 import type { RJSFSchema, UiSchema } from "@rjsf/utils";
 
-import {
-  extractUiSchema,
-  getSchemaPropertyNames,
-} from "./schema-defaults.utils";
+import { getSchemaPropertyNames } from "@/app-components/inputs/JsonSchemaForm";
 
 export const buildSettingsUiSchema = (
   schema?: RJSFSchema,
@@ -18,29 +15,26 @@ export const buildSettingsUiSchema = (
 ): UiSchema | undefined => {
   const properties = getSchemaPropertyNames(schema);
 
-  if (properties.length === 0) {
+  if (!properties.includes("retries")) {
     return undefined;
   }
-  const uiSchema = extractUiSchema(schema);
+  const data = formData?.retries as Settings["retries"] | undefined;
 
-  if (properties.includes("retries")) {
-    const data = formData?.retries as Settings["retries"] | undefined;
-
-    if (!data?.enabled) {
-      const retryProps = getSchemaPropertyNames(
-        schema?.properties?.["retries"] as RJSFSchema,
-      );
-
-      uiSchema.retries = retryProps
-        .filter((p) => p !== "enabled")
-        .reduce((acc, p) => {
-          return {
-            ...acc,
-            [p]: { "ui:disabled": true },
-          };
-        }, {});
-    }
+  if (data?.enabled) {
+    return undefined;
   }
+  const retryProps = getSchemaPropertyNames(
+    schema?.properties?.["retries"] as RJSFSchema,
+  );
 
-  return uiSchema;
+  return {
+    retries: retryProps
+      .filter((p) => p !== "enabled")
+      .reduce((acc, p) => {
+        return {
+          ...acc,
+          [p]: { "ui:disabled": true },
+        };
+      }, {}),
+  };
 };

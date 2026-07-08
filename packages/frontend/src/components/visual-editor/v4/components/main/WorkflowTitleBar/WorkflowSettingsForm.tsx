@@ -14,11 +14,13 @@ import type { RJSFSchema } from "@rjsf/utils";
 import type { JSONSchema } from "monaco-yaml";
 import { FC, Fragment, useEffect, useMemo, useState } from "react";
 
-import { JsonSchemaForm } from "@/app-components/inputs/JsonSchemaForm";
+import {
+  getSchemaDefaults,
+  JsonSchemaForm,
+} from "@/app-components/inputs/JsonSchemaForm";
 import { useTranslate } from "@/hooks/useTranslate";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
 
-import { getSchemaDefaults } from "../../../utils/schema-defaults.utils";
 import { buildSettingsUiSchema } from "../../../utils/settings-ui-schema.utils";
 
 type WorkflowSettingsFormPreset = {

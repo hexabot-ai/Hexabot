@@ -22,7 +22,10 @@ import { Controller, useForm } from "react-hook-form";
 
 import { ContentContainer, ContentItem } from "@/app-components/dialogs";
 import AutoCompleteEntitySelect from "@/app-components/inputs/AutoCompleteEntitySelect";
-import { JsonSchemaForm } from "@/app-components/inputs/JsonSchemaForm";
+import {
+  buildPanelUiSchema,
+  JsonSchemaForm,
+} from "@/app-components/inputs/JsonSchemaForm";
 import { useCreate } from "@/hooks/crud/useCreate";
 import { useUpdate } from "@/hooks/crud/useUpdate";
 import { useToast } from "@/hooks/useToast";
@@ -34,7 +37,6 @@ import { ComponentFormProps } from "@/types/common/dialogs.types";
 
 import {
   buildSourcePayload,
-  buildSourceSettingsUiSchema,
   getSourceFormDefaults,
   getSourceDisplayChannelName,
   isSourceChannelRegistered,
@@ -88,7 +90,7 @@ export const SourceForm: FC<
     [channelName, presetValues?.channelsByName],
   );
   const settingsUiSchema = useMemo(
-    () => buildSourceSettingsUiSchema(settingsSchema),
+    () => buildPanelUiSchema(settingsSchema),
     [settingsSchema],
   );
   const hasSettingsSchema = useMemo(

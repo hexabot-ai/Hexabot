@@ -11,12 +11,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { DrawerPrimaryFooterAction } from "@/app-components/drawers/DrawerPrimaryFooterAction";
 import { EditableTypography } from "@/app-components/inputs/EditableTypography";
+import { hasSchemaProperties } from "@/app-components/inputs/JsonSchemaForm";
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
 import { useTranslate } from "@/hooks/useTranslate";
 
 import { useWorkflow } from "../../../hooks/useWorkflow";
 import { normalizeBindingName } from "../../../utils/binding-name.utils";
-import { getSchemaPropertyNames } from "../../../utils/schema-defaults.utils";
 import { buildSettingsUiSchema } from "../../../utils/settings-ui-schema.utils";
 import {
   createToolBindingDefinitionMutation,
@@ -203,10 +203,7 @@ export const ToolFormDrawer = ({ target, onClose }: ToolFormDrawerProps) => {
       : `edit:${target.ownerDefName}:${target.bindingName}`
     : "";
   const hasSettingsSchema = useMemo(
-    () =>
-      getSchemaPropertyNames(
-        actionSchema?.settingSchema as Record<string, unknown> | undefined,
-      ).length > 0,
+    () => hasSchemaProperties(actionSchema?.settingSchema),
     [actionSchema?.settingSchema],
   );
   const normalizedToolName = useMemo(
