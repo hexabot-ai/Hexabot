@@ -32,8 +32,8 @@ export const RoleForm: FC<ComponentFormProps<Role>> = ({
     onError: (error: Error) => {
       toast.error(error);
     },
-    onSuccess() {
-      rest.onSuccess?.();
+    onSuccess(data: Role) {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   };

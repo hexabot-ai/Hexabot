@@ -6,9 +6,12 @@
 
 import { Action } from "@hexabot-ai/types";
 import { ChipTypeMap } from "@mui/material";
-import { AutocompleteProps } from "@mui/material/Autocomplete";
-import type { ReactNode } from "react";
-import { forwardRef, useEffect, useMemo, useRef } from "react";
+import {
+  AutocompleteProps,
+  AutocompleteValue,
+} from "@mui/material/Autocomplete";
+import type { ReactNode, SyntheticEvent } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useInfiniteFind } from "@/hooks/crud/useInfiniteFind";
 import { useSearch } from "@/hooks/useSearch";
@@ -56,6 +59,7 @@ export type AutoCompleteEntitySelectProps<
   noOptionsWarning?: string;
   isDisabledWhenEmpty?: boolean;
   enableEntityAddButton?: boolean;
+  disableAutoSelectOnCreate?: boolean;
   routeParams?: RouteParams;
   queryEnabled?: boolean;
   where?: Record<string, unknown>;
@@ -76,6 +80,7 @@ const AutoCompleteEntitySelect = <
     sortKey = "id",
     labelKey,
     enableEntityAddButton,
+    disableAutoSelectOnCreate,
     routeParams,
     queryEnabled = true,
     where,
@@ -140,18 +145,20 @@ const AutoCompleteEntitySelect = <
       ],
     },
   );
-  // flatten & filter unique & sort
-  const flattenedData = data?.pages
-    ?.flat()
-    .filter(
-      (a, idx, self) =>
-        self.findIndex((b) => a?.[idKey] === b?.[idKey]) === idx,
-    )
-    .sort((a, b) => -b[sortKey]?.localeCompare(a[sortKey]));
-  const options =
-    preprocess && flattenedData
+  const options = useMemo(() => {
+    // flatten & filter unique & sort
+    const flattenedData = data?.pages
+      ?.flat()
+      .filter(
+        (a, idx, self) =>
+          self.findIndex((b) => a?.[idKey] === b?.[idKey]) === idx,
+      )
+      .sort((a, b) => -b[sortKey]?.localeCompare(a[sortKey]));
+
+    return preprocess && flattenedData
       ? preprocess((flattenedData || []) as unknown as Value[])
       : ((flattenedData || []) as Value[]);
+  }, [data, idKey, sortKey, preprocess]);
 
   useEffect(() => {
     if (!queryEnabled) {
@@ -167,17 +174,43 @@ const AutoCompleteEntitySelect = <
     serializedWhere,
   ]);
 
+  const { multiple, value, onChange } = rest;
+  // Select the newly created entity (appended to the current selection when multiple)
+  const handleEntityCreated = useCallback(
+    (created: unknown) => {
+      const createdValue = created as Value;
+      const newValue = (
+        multiple
+          ? [
+              ...options.filter((option) =>
+                ((value as string[]) || []).includes(
+                  (option as Record<string, string>)[idKey],
+                ),
+              ),
+              createdValue,
+            ]
+          : createdValue
+      ) as AutocompleteValue<Value, Multiple, false, false>;
+
+      onChange?.({} as SyntheticEvent, newValue, "selectOption");
+    },
+    [multiple, value, onChange, options, idKey],
+  );
+
   return (
     <WithEntityButton
       entity={entity as keyof typeof BASE_ADD_DIALOG_MAP}
       permissionAction={Action.CREATE}
       enableEntityAddButton={enableEntityAddButton}
+      onEntityCreated={
+        disableAutoSelectOnCreate ? undefined : handleEntityCreated
+      }
     >
       <AutoCompleteSelect<Value, Label, Multiple>
         ref={ref}
         idKey={idKey}
         labelKey={labelKey}
-        options={options || []}
+        options={options}
         onSearch={onSearch}
         loading={isFetching}
         data-multiple={rest.multiple}

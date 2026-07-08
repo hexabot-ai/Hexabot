@@ -37,8 +37,8 @@ export const CredentialForm: FC<ComponentFormProps<Credential>> = ({
       rest.onError?.();
       toast.error(t("message.internal_server_error"));
     },
-    onSuccess() {
-      rest.onSuccess?.();
+    onSuccess(data: Credential) {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   };

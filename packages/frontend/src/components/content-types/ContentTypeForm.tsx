@@ -68,8 +68,8 @@ export const ContentTypeForm: FC<ComponentFormProps<ContentType>> = ({
       rest.onError?.();
       toast.error(error);
     },
-    onSuccess: () => {
-      rest.onSuccess?.();
+    onSuccess: (data: ContentType) => {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   };

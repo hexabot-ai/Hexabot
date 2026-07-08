@@ -37,8 +37,8 @@ export const McpServerForm: FC<ComponentFormProps<McpServer>> = ({
       rest.onError?.();
       toast.error(error);
     },
-    onSuccess() {
-      rest.onSuccess?.();
+    onSuccess(data: McpServer) {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   };

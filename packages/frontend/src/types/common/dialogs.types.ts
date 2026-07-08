@@ -164,7 +164,7 @@ export type TPayload<D, P = unknown> = {
 export type ComponentFormProps<D, P = unknown> = FormButtonsProps & {
   data: TPayload<D, P>;
   onError?: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (data?: D) => void;
   Wrapper?: React.FC<FormDialogProps>;
   WrapperProps?: Partial<FormDialogProps> & Partial<FormButtonsProps>;
 };
@@ -174,4 +174,8 @@ export type ExtractFormProps<T extends (arg: { data: any }) => unknown> =
 
 export type ComponentFormDialogProps<
   T extends (arg: { data: any }) => unknown,
-> = FormButtonsProps & DialogProps<ExtractFormProps<T>, boolean>;
+> = FormButtonsProps &
+  DialogProps<
+    ExtractFormProps<T>,
+    boolean | NonNullable<ExtractFormProps<T>["defaultValues"]>
+  >;
