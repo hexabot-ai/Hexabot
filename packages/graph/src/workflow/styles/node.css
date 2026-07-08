@@ -146,7 +146,6 @@
   border-radius: 999px;
   border: 1px solid #d1d5db;
   background-color: #ffffff;
-  color: #ef4444;
   box-shadow: 0 2px 4px #00000014;
   display: inline-flex;
   align-items: center;
@@ -165,19 +164,19 @@
 .workflow-graph.dark .workflow-node-delete-button:hover,
 .workflow-graph.dark .workflow-node-delete-button:focus-visible {
   border-color: #f87171;
+  color: #f87171;
 }
 
 .workflow-node-delete-button:hover,
 .workflow-node-delete-button:focus-visible {
   background-color: #ffffff;
   border-color: #f87171;
-  outline: none;
+  color: #f87171;
 }
 
 .workflow-node-see-code-button {
   top: 6px;
   right: 36px;
-  color: var(--template-palette-primary-main);
 }
 
 .workflow-node-see-code-button:hover:not(
@@ -190,7 +189,7 @@
     transparent
   ) !important;
   border-color: currentColor !important;
-  outline: none;
+  color: var(--template-palette-primary-main);
 }
 
 .workflow-node-see-code-button--active {
