@@ -33,8 +33,8 @@ export const LanguageForm: FC<ComponentFormProps<Language>> = ({
       rest.onError?.();
       toast.error(t("message.internal_server_error"));
     },
-    onSuccess() {
-      rest.onSuccess?.();
+    onSuccess(data: Language) {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   };

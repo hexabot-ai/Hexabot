@@ -60,8 +60,8 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
       rest.onError?.();
       toast.error(error);
     },
-    onSuccess: () => {
-      rest.onSuccess?.();
+    onSuccess: (data: Content) => {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   };

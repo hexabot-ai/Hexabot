@@ -53,8 +53,8 @@ export const LabelForm: FC<ComponentFormProps<Label>> = ({
       rest.onError?.();
       toast.error(error);
     },
-    onSuccess: () => {
-      rest.onSuccess?.();
+    onSuccess: (data: Label) => {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   };

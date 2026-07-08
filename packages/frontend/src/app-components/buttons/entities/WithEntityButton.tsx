@@ -27,18 +27,21 @@ export const WithEntityButton = <
   slotProps,
   permissionAction,
   enableEntityAddButton,
+  onEntityCreated,
 }: PropsWithChildren<{
   entity: TE;
   payload?: TP;
   slotProps?: ButtonProps;
   permissionAction: Action;
   enableEntityAddButton?: boolean;
+  onEntityCreated?: (created: THook<{ entity: TE }>["basic"]) => void;
 }>) => {
   const Button = (
     <EntityButtonWrapper
       entity={entity}
       confirmOptions={payload}
       permissionAction={permissionAction}
+      onEntityCreated={onEntityCreated}
       {...slotProps}
     />
   );

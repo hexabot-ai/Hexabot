@@ -54,8 +54,8 @@ export const MemoryDefinitionForm: FC<ComponentFormProps<MemoryDefinition>> = ({
       rest.onError?.();
       toast.error(error);
     },
-    onSuccess: () => {
-      rest.onSuccess?.();
+    onSuccess: (data: MemoryDefinition) => {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   };

@@ -63,8 +63,8 @@ export const TranslationForm: FC<ComponentFormProps<Translation>> = ({
       rest.onError?.();
       toast.error(error);
     },
-    onSuccess() {
-      rest.onSuccess?.();
+    onSuccess(data) {
+      rest.onSuccess?.(data);
       toast.success(t("message.success_save"));
     },
   });

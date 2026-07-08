@@ -47,6 +47,7 @@ const buttonsCustomizations: Components<Theme> = {
             style: {
               height: "2.25rem",
               padding: "3px 9px",
+              lineHeight: 1,
             },
           },
           {

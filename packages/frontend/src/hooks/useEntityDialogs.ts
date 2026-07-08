@@ -27,10 +27,10 @@ export const useEntityDialogs = <
   const dialogs = useDialogs();
   const EntityDialogComponent = BASE_ADD_DIALOG_MAP[entity][
     "dialog"
-  ] as unknown as DialogComponent<TP, TD>;
-  const open = (payload: TP, options?: OpenDialogOptions<TD>) => {
+  ] as unknown as DialogComponent<TP, TD | boolean>;
+  const open = (payload: TP, options?: OpenDialogOptions<TD | boolean>) => {
     if (EntityDialogComponent) {
-      dialogs.open(EntityDialogComponent, payload, {
+      return dialogs.open(EntityDialogComponent, payload, {
         ...BASE_ADD_DIALOG_MAP[entity]?.["options"],
         ...options,
       });

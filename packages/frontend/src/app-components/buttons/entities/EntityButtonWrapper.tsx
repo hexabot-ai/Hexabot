@@ -27,12 +27,14 @@ export const EntityButtonWrapper = <
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   confirmOptions = {},
   permissionAction,
+  onEntityCreated,
 }: {
   entity: TE;
   slotProps?: ButtonProps;
-  openOptions?: OpenDialogOptions<THook<{ entity: TE }>["basic"]>;
+  openOptions?: OpenDialogOptions<THook<{ entity: TE }>["basic"] | boolean>;
   confirmOptions?: ConfirmOptions & { selectedIds?: string[] };
   permissionAction: Action;
+  onEntityCreated?: (created: THook<{ entity: TE }>["basic"]) => void;
 }) => {
   const hasPermission = useHasPermission();
 
@@ -50,6 +52,7 @@ export const EntityButtonWrapper = <
         entity={entity}
         slotProps={slotProps}
         openOptions={openOptions}
+        onEntityCreated={onEntityCreated}
       />
     );
   }

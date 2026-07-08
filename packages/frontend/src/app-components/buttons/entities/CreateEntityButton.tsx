@@ -20,19 +20,31 @@ export const CreateEntityButton = <
   entity,
   slotProps,
   openOptions,
+  onEntityCreated,
 }: {
   entity: TE;
   slotProps?: ButtonProps;
-  openOptions?: OpenDialogOptions<THook<{ entity: TE }>["basic"]>;
+  openOptions?: OpenDialogOptions<THook<{ entity: TE }>["basic"] | boolean>;
+  onEntityCreated?: (created: THook<{ entity: TE }>["basic"]) => void;
 }) => {
   const { t } = useTranslate();
   const entityDialogs = useEntityDialogs(entity);
+  const handleClick = async () => {
+    const result = await entityDialogs.open(
+      { defaultValues: null },
+      openOptions,
+    );
+
+    if (result && typeof result === "object" && "id" in result) {
+      onEntityCreated?.(result);
+    }
+  };
 
   return (
     <Button
       size="small"
       variant="contained"
-      onClick={() => entityDialogs.open({ defaultValues: null }, openOptions)}
+      onClick={handleClick}
       startIcon={<Plus size={18} />}
       {...slotProps}
     >
