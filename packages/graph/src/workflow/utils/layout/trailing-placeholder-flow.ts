@@ -16,8 +16,8 @@ import {
   getFlowCoordinate,
   getFlowSize,
   isHorizontalDirection,
-  type LayoutContext,
   withFlowCoordinate,
+  type LayoutContext,
 } from "./geometry";
 import { isAttachmentEdge } from "./graph-maps";
 
@@ -41,19 +41,25 @@ export const tightenTrailingPlaceholders = (
   const isVertical = !isHorizontalDirection(ctx);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const visibleSourcesByTarget = new Map<string, string[]>();
+  const directSourcesByTarget = new Map<string, string[]>();
 
   edges.forEach((edge) => {
-    if (isAttachmentEdge(edge) || edge.hidden) {
+    if (isAttachmentEdge(edge)) {
       return;
     }
 
-    appendMapValue(visibleSourcesByTarget, edge.target, edge.source);
+    const targetNode = nodesById.get(edge.target);
+
+    if (!edge.hidden && targetNode?.type === ENodeType.BRANCH_PLACEHOLDER) {
+      appendMapValue(visibleSourcesByTarget, edge.target, edge.source);
+    }
+
+    if (targetNode?.type === ENodeType.INDICATOR) {
+      appendMapValue(directSourcesByTarget, edge.target, edge.source);
+    }
   });
 
-  // The flow-axis edge a source's outgoing link leaves from: the node's far
-  // edge, or the padded far edge of a group's member bounds when the link
-  // comes from a group overlay (the overlay node doesn't exist yet at this
-  // stage of the pipeline).
+  // Use the source's far edge, or the future group overlay's padded far edge.
   const sourceFlowEnd = (sourceId: string): number | undefined => {
     const sourceNode = nodesById.get(sourceId);
 
@@ -89,41 +95,92 @@ export const tightenTrailingPlaceholders = (
       padding / 2
     );
   };
+  const tightenedPositions = new Map<string, GraphNode["position"]>();
 
-  return nodes.map((node) => {
+  nodes.forEach((node) => {
     if (node.type !== ENodeType.BRANCH_PLACEHOLDER) {
-      return node;
+      return;
     }
 
     const sources = visibleSourcesByTarget.get(node.id) ?? [];
 
-    // A join placeholder (several branches converging on it) marks a shared
-    // convergence point, and an operator-fed placeholder is an empty branch —
-    // both keep their position. Only a placeholder trailing a single step or
-    // group gets pulled.
     if (
       sources.length !== 1 ||
       nodesById.get(sources[0])?.type === ENodeType.OPERATOR
     ) {
-      return node;
+      return;
     }
 
     const flowEnd = sourceFlowEnd(sources[0]);
 
     if (flowEnd === undefined) {
-      return node;
+      return;
     }
 
     const targetFlow = flowEnd + FLOW_LAYER_GAP;
     const currentFlow = getFlowCoordinate(node.position, isVertical);
 
     if (Math.abs(currentFlow - targetFlow) < 0.5) {
-      return node;
+      return;
     }
 
-    return {
-      ...node,
-      position: withFlowCoordinate(node.position, isVertical, targetFlow),
-    };
+    tightenedPositions.set(
+      node.id,
+      withFlowCoordinate(node.position, isVertical, targetFlow),
+    );
+  });
+
+  nodes.forEach((node) => {
+    if (node.type !== ENodeType.INDICATOR) {
+      return;
+    }
+
+    const sources = (directSourcesByTarget.get(node.id) ?? []).filter((id) =>
+      nodesById.has(id),
+    );
+
+    if (!sources.length) {
+      return;
+    }
+
+    const maxSourceEnd = sources.reduce((max, sourceId) => {
+      const pos =
+        tightenedPositions.get(sourceId) ?? nodesById.get(sourceId)?.position;
+      const srcNode = nodesById.get(sourceId);
+
+      if (!pos || !srcNode) {
+        return max;
+      }
+
+      return Math.max(
+        max,
+        getFlowCoordinate(pos, isVertical) +
+          getFlowSize(
+            getWorkflowNodeDimensions(srcNode.type, ctx.config),
+            isVertical,
+          ),
+      );
+    }, -Infinity);
+
+    if (!isFinite(maxSourceEnd)) {
+      return;
+    }
+
+    const targetFlow = maxSourceEnd + FLOW_LAYER_GAP;
+    const currentFlow = getFlowCoordinate(node.position, isVertical);
+
+    // Only pull Stop left; alignBranchFlowOrigins handles rightward pushes.
+    if (targetFlow < currentFlow - 0.5) {
+      tightenedPositions.set(
+        node.id,
+        withFlowCoordinate(node.position, isVertical, targetFlow),
+      );
+    }
+  });
+
+  return nodes.map((node) => {
+    const newPosition = tightenedPositions.get(node.id);
+
+    return newPosition ? { ...node, position: newPosition } : node;
   });
 };
