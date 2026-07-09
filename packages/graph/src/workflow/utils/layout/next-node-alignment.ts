@@ -8,18 +8,22 @@ import { getNodesBounds, type Edge } from "@xyflow/react";
 
 import { ENodeType, type GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
-import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 
 import {
   appendMapValue,
+  applySpreadDeltas,
   average,
-  getAxisCenter,
   getBoundsSpreadCenter,
+  getWorkflowNodeAxisCenter,
+  indexNodes,
   isHorizontalDirection,
   type LayoutContext,
-  translateSpread,
 } from "./geometry";
-import { buildOutgoingMap, mapNodesToGroup } from "./graph-maps";
+import {
+  buildOutgoingMap,
+  getExistingNodes,
+  mapNodesToGroup,
+} from "./graph-maps";
 
 export const alignNextNodesWithPlaceholders = (
   nodes: GraphNode[],
@@ -28,7 +32,7 @@ export const alignNextNodesWithPlaceholders = (
   ctx: LayoutContext,
 ) => {
   const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesById = indexNodes(nodes);
   const outgoingBySource = buildOutgoingMap(edges);
   const nodeToInnermostGroup = mapNodesToGroup(groups, "innermost");
   // Resolve the bounding-box center of each group so the alignment can use
@@ -39,9 +43,7 @@ export const alignNextNodesWithPlaceholders = (
   const groupBBoxCenterByGroupId = new Map<string, number>();
 
   groups.forEach((group, groupId) => {
-    const memberNodes = [...group.memberNodeIds]
-      .map((id) => nodesById.get(id))
-      .filter((n): n is GraphNode => Boolean(n));
+    const memberNodes = getExistingNodes(group.memberNodeIds, nodesById);
 
     if (!memberNodes.length) {
       return;
@@ -63,12 +65,9 @@ export const alignNextNodesWithPlaceholders = (
     .filter((node) => node.type === ENodeType.BRANCH_PLACEHOLDER)
     .forEach((placeholder) => {
       const outgoingEdge = outgoingBySource.get(placeholder.id)?.[0];
-
-      if (!outgoingEdge) {
-        return;
-      }
-
-      const target = nodesById.get(outgoingEdge.targetId);
+      const target = outgoingEdge
+        ? nodesById.get(outgoingEdge.targetId)
+        : undefined;
 
       if (!target) {
         return;
@@ -78,26 +77,16 @@ export const alignNextNodesWithPlaceholders = (
       const groupBBoxCenter = originGroupId
         ? groupBBoxCenterByGroupId.get(originGroupId)
         : undefined;
-      const targetDims = getWorkflowNodeDimensions(target.type, ctx.config);
-      const placeholderDims = getWorkflowNodeDimensions(
-        placeholder.type,
-        ctx.config,
-      );
       // Use the group's bounding-box center as the reference so the next step
       // aligns with the group's visual midpoint (where xyflow routes the exit
       // overlay edge).  Fall back to the placeholder's own center when there
       // is no group.
       const referenceCenter =
         groupBBoxCenter ??
-        getAxisCenter(
-          placeholder.position,
-          placeholderDims,
-          isVertical,
-          "spread",
-        );
-      const targetCenter = getAxisCenter(
-        target.position,
-        targetDims,
+        getWorkflowNodeAxisCenter(placeholder, ctx, isVertical, "spread");
+      const targetCenter = getWorkflowNodeAxisCenter(
+        target,
+        ctx,
         isVertical,
         "spread",
       );
@@ -125,16 +114,5 @@ export const alignNextNodesWithPlaceholders = (
     });
   });
 
-  return nodes.map((node) => {
-    const offset = offsets.get(node.id);
-
-    if (!offset) {
-      return node;
-    }
-
-    return {
-      ...node,
-      position: translateSpread(node.position, isVertical, offset),
-    };
-  });
+  return applySpreadDeltas(nodes, offsets, isVertical);
 };

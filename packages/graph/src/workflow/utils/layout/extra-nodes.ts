@@ -12,14 +12,15 @@ import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 import { EXTRA_NODE_GAP, EXTRA_NODE_OFFSET } from "./constants";
 import {
   appendMapValue,
+  indexNodes,
   getFlowCoordinate,
   getFlowSize,
   getSpreadCoordinate,
   getSpreadSize,
   isHorizontalDirection,
-  type LayoutContext,
   withFlowCoordinate,
   withSpreadCoordinate,
+  type LayoutContext,
 } from "./geometry";
 
 export const addExtraNodes = (
@@ -27,16 +28,15 @@ export const addExtraNodes = (
   edges: Edge[],
   ctx: LayoutContext,
 ) => {
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesById = indexNodes(nodes);
   const isVertical = !isHorizontalDirection(ctx);
   const adjacencyMap = new Map<string, GraphNode[]>();
   const incomingAttachmentCounts = new Map<string, number>();
 
   edges.forEach(({ source, target }) => {
-    const sourceNode = nodesById.get(source);
     const targetNode = nodesById.get(target);
 
-    if (sourceNode && targetNode) {
+    if (nodesById.has(source) && targetNode) {
       appendMapValue(adjacencyMap, source, targetNode);
       incomingAttachmentCounts.set(
         target,
@@ -61,31 +61,26 @@ export const addExtraNodes = (
   const queue = sourceIds.filter(
     (sourceId) => (remainingIncoming.get(sourceId) ?? 0) === 0,
   );
-  const queued = new Set(queue);
+  const queued = new Set(queue.length ? queue : sourceIds);
   const processed = new Set<string>();
 
   if (!queue.length) {
-    sourceIds.forEach((sourceId) => {
-      queue.push(sourceId);
-      queued.add(sourceId);
-    });
+    queue.push(...sourceIds);
   }
 
   const enqueueSource = (sourceId: string) => {
     if (
-      !adjacencyMap.has(sourceId) ||
-      queued.has(sourceId) ||
-      processed.has(sourceId)
+      adjacencyMap.has(sourceId) &&
+      !queued.has(sourceId) &&
+      !processed.has(sourceId)
     ) {
-      return;
+      queue.push(sourceId);
+      queued.add(sourceId);
     }
-
-    queue.push(sourceId);
-    queued.add(sourceId);
   };
   const positionTargets = (sourceId: string) => {
-    const targets = adjacencyMap.get(sourceId);
     const sourceNode = nodesById.get(sourceId);
+    const targets = adjacencyMap.get(sourceId);
 
     if (!sourceNode || !targets?.length) {
       return;
@@ -97,33 +92,31 @@ export const addExtraNodes = (
       sourceNode.type,
       ctx.config,
     );
-    const targetsWithDimensions = targets.map((target) => ({
-      node: target,
-      dimensions: getWorkflowNodeDimensions(target.type, ctx.config),
-    }));
+    const sourceFlow = getFlowCoordinate(sourcePosition, isVertical);
+    const sourceSpread = getSpreadCoordinate(sourcePosition, isVertical);
+    const sourceFlowSize = getFlowSize(sourceDimensions, isVertical);
+    const sourceSpreadSize = getSpreadSize(sourceDimensions, isVertical);
+    const targetsWithDimensions = targets.map((node) => {
+      const dimensions = getWorkflowNodeDimensions(node.type, ctx.config);
+
+      return {
+        node,
+        flowSize: getFlowSize(dimensions, isVertical),
+        spreadSize: getSpreadSize(dimensions, isVertical),
+      };
+    });
     const totalBreadth =
-      targetsWithDimensions.reduce(
-        (sum, target) => sum + getFlowSize(target.dimensions, isVertical),
-        0,
-      ) +
+      targetsWithDimensions.reduce((sum, { flowSize }) => sum + flowSize, 0) +
       EXTRA_NODE_GAP * (targets.length - 1);
+    let cursor = sourceFlow + (sourceFlowSize - totalBreadth) / 2;
 
-    let cursor =
-      getFlowCoordinate(sourcePosition, isVertical) +
-      (getFlowSize(sourceDimensions, isVertical) - totalBreadth) / 2;
-
-    targetsWithDimensions.forEach(({ node, dimensions }) => {
-      const spreadPosition = isVertical
-        ? getSpreadCoordinate(sourcePosition, isVertical) -
-          EXTRA_NODE_OFFSET -
-          getSpreadSize(dimensions, isVertical)
-        : getSpreadCoordinate(sourcePosition, isVertical) +
-          getSpreadSize(sourceDimensions, isVertical) +
-          EXTRA_NODE_OFFSET;
+    targetsWithDimensions.forEach(({ node, flowSize, spreadSize }) => {
       const position = withSpreadCoordinate(
         withFlowCoordinate(sourcePosition, isVertical, cursor),
         isVertical,
-        spreadPosition,
+        isVertical
+          ? sourceSpread - EXTRA_NODE_OFFSET - spreadSize
+          : sourceSpread + sourceSpreadSize + EXTRA_NODE_OFFSET,
       );
 
       overrides.set(node.id, {
@@ -132,7 +125,7 @@ export const addExtraNodes = (
         sourcePosition: isVertical ? Position.Left : Position.Bottom,
       });
       resolvedPositions.set(node.id, position);
-      cursor += getFlowSize(dimensions, isVertical) + EXTRA_NODE_GAP;
+      cursor += flowSize + EXTRA_NODE_GAP;
 
       const nextRemainingIncoming = (remainingIncoming.get(node.id) ?? 0) - 1;
 
@@ -146,29 +139,21 @@ export const addExtraNodes = (
 
   // Nested attachment targets must read their parent's overridden coordinates.
   while (queue.length) {
-    const sourceId = queue.shift();
-
-    if (!sourceId) {
-      continue;
-    }
+    const sourceId = queue.shift()!;
 
     queued.delete(sourceId);
 
-    if (processed.has(sourceId)) {
-      continue;
+    if (!processed.has(sourceId)) {
+      processed.add(sourceId);
+      positionTargets(sourceId);
     }
-
-    processed.add(sourceId);
-    positionTargets(sourceId);
   }
 
   sourceIds.forEach((sourceId) => {
-    if (processed.has(sourceId)) {
-      return;
+    if (!processed.has(sourceId)) {
+      positionTargets(sourceId);
+      processed.add(sourceId);
     }
-
-    positionTargets(sourceId);
-    processed.add(sourceId);
   });
 
   return nodes.map((node) => ({

@@ -11,11 +11,13 @@ import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 
 import { ELK_NODE_NODE_SPACING, FLOW_LAYER_GAP } from "./constants";
 import {
+  applyPositionOverrides,
   getAxisCenter,
   getFlowCoordinate,
   getFlowSize,
   getSpreadCoordinate,
   getSpreadSize,
+  indexNodes,
   isHorizontalDirection,
   type LayoutContext,
   withFlowCoordinate,
@@ -60,20 +62,24 @@ export const alignEmptyBranchPlaceholders = (
   ctx: LayoutContext,
 ): GraphNode[] => {
   const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesById = indexNodes(nodes);
   const outgoingBySource = buildOutgoingMap(edges, true);
   const { childrenByParent: attachmentChildrenByParent } = buildAttachmentMaps(
     edges,
     nodesById,
   );
+  const getNodeDimensions = (node: GraphNode) =>
+    getWorkflowNodeDimensions(node.type, ctx.config);
+  const getTypeDimensions = (type: ENodeType) =>
+    getWorkflowNodeDimensions(type, ctx.config);
+  const getSpreadExtent = (node: GraphNode): number =>
+    getSpreadCoordinate(node.position, isVertical) +
+    getSpreadSize(getNodeDimensions(node), isVertical);
   // Compute the full spread-axis extent of a node including all its attachment
   // descendants.  In horizontal mode attachments extend below the task (y+h),
   // in vertical mode they extend to the left so they do NOT increase x+w.
   const nodeSpreadExtent = (node: GraphNode): number => {
-    const dims = getWorkflowNodeDimensions(node.type, ctx.config);
-    let maxExtent =
-      getSpreadCoordinate(node.position, isVertical) +
-      getSpreadSize(dims, isVertical);
+    let maxExtent = getSpreadExtent(node);
 
     if (!isVertical) {
       // Horizontal mode: attachments are placed below the task.
@@ -85,16 +91,9 @@ export const alignEmptyBranchPlaceholders = (
       ).forEach((childId) => {
         const child = nodesById.get(childId);
 
-        if (!child) {
-          return;
+        if (child) {
+          maxExtent = Math.max(maxExtent, getSpreadExtent(child));
         }
-
-        const childDims = getWorkflowNodeDimensions(child.type, ctx.config);
-        const childExtent =
-          getSpreadCoordinate(child.position, isVertical) +
-          getSpreadSize(childDims, isVertical);
-
-        maxExtent = Math.max(maxExtent, childExtent);
       });
     }
 
@@ -119,20 +118,20 @@ export const alignEmptyBranchPlaceholders = (
       isEmpty: boolean;
     };
     const slots: BranchSlot[] = (outgoingBySource.get(operatorId) ?? [])
-      .map(({ targetId, sourceHandle }) => {
+      .flatMap(({ targetId, sourceHandle }): BranchSlot[] => {
         const node = nodesById.get(targetId);
+        const branchIndex = parseConditionalBranchIndex(sourceHandle);
 
-        if (!node) {
-          return null;
-        }
-
-        return {
-          branchIndex: parseConditionalBranchIndex(sourceHandle),
-          node,
-          isEmpty: node.type === ENodeType.BRANCH_PLACEHOLDER,
-        };
+        return node && branchIndex >= 0
+          ? [
+              {
+                branchIndex,
+                node,
+                isEmpty: node.type === ENodeType.BRANCH_PLACEHOLDER,
+              },
+            ]
+          : [];
       })
-      .filter((s): s is BranchSlot => s !== null && s.branchIndex >= 0)
       .sort((a, b) => a.branchIndex - b.branchIndex);
     const emptySlots = slots.filter((s) => s.isEmpty);
 
@@ -150,15 +149,12 @@ export const alignEmptyBranchPlaceholders = (
     // mixed conditional).
     const flowTarget = nonEmptySlots.length
       ? Math.min(
-          ...nonEmptySlots.map((s) =>
-            getFlowCoordinate(s.node.position, isVertical),
+          ...nonEmptySlots.map(({ node }) =>
+            getFlowCoordinate(node.position, isVertical),
           ),
         )
       : getFlowCoordinate(operatorNode.position, isVertical) +
-        getFlowSize(
-          getWorkflowNodeDimensions(operatorNode.type, ctx.config),
-          isVertical,
-        ) +
+        getFlowSize(getNodeDimensions(operatorNode), isVertical) +
         FLOW_LAYER_GAP;
 
     emptySlots.forEach(({ node: placeholder }) => {
@@ -172,10 +168,7 @@ export const alignEmptyBranchPlaceholders = (
     });
 
     // ── 2. Branch-spread positioning ─────────────────────────────────────────
-    const placeholderDims = getWorkflowNodeDimensions(
-      ENodeType.BRANCH_PLACEHOLDER,
-      ctx.config,
-    );
+    const placeholderDims = getTypeDimensions(ENodeType.BRANCH_PLACEHOLDER);
     const phSize = getSpreadSize(placeholderDims, isVertical);
 
     // When all branches are empty there is no non-empty anchor to compute from.
@@ -185,14 +178,11 @@ export const alignEmptyBranchPlaceholders = (
     // matches what ELK produces for branches that each hold one task node.
     // The placeholder is centered within each slot.
     if (!nonEmptySlots.length) {
-      const taskDims = getWorkflowNodeDimensions(ENodeType.TASK, ctx.config);
+      const taskDims = getTypeDimensions(ENodeType.TASK);
       const slotSize = getSpreadSize(taskDims, isVertical);
       const pitch = slotSize + ELK_NODE_NODE_SPACING;
       const slotOffset = (slotSize - phSize) / 2;
-      const operatorDims = getWorkflowNodeDimensions(
-        operatorNode.type,
-        ctx.config,
-      );
+      const operatorDims = getNodeDimensions(operatorNode);
       const operatorSpreadCenter = getAxisCenter(
         operatorNode.position,
         operatorDims,
@@ -225,9 +215,7 @@ export const alignEmptyBranchPlaceholders = (
     // nodeCenter: midpoint between leading and trailing edges (with attachments).
     const nodeCenter = (node: GraphNode): number =>
       (nodeLeadingEdge(node) + nodeTrailingEdge(node)) / 2;
-    const nonEmptySortedByIndex = [...nonEmptySlots].sort(
-      (a, b) => a.branchIndex - b.branchIndex,
-    );
+    const nonEmptySortedByIndex = nonEmptySlots;
     // Derive a fallback per-slot pitch from ELK's layout when there is only
     // one non-empty branch (used for extrapolation at the edges).
     let fallbackPitch = 0;
@@ -243,26 +231,26 @@ export const alignEmptyBranchPlaceholders = (
 
     if (fallbackPitch <= 0) {
       // Single non-empty branch: derive pitch from ELK's maximum consecutive gap.
-      const allReps = [...slots].sort((a, b) => {
-        const aPos = getSpreadCoordinate(a.node.position, isVertical);
-        const bPos = getSpreadCoordinate(b.node.position, isVertical);
+      const allReps = [...slots].sort(
+        (a, b) =>
+          getSpreadCoordinate(a.node.position, isVertical) -
+          getSpreadCoordinate(b.node.position, isVertical),
+      );
 
-        return aPos - bPos;
-      });
-
-      for (let i = 1; i < allReps.length; i++) {
-        const prev = getSpreadCoordinate(
-          allReps[i - 1].node.position,
-          isVertical,
-        );
-        const curr = getSpreadCoordinate(allReps[i].node.position, isVertical);
-
-        fallbackPitch = Math.max(fallbackPitch, curr - prev);
-      }
+      fallbackPitch = Math.max(
+        0,
+        ...allReps
+          .slice(1)
+          .map(
+            ({ node }, index) =>
+              getSpreadCoordinate(node.position, isVertical) -
+              getSpreadCoordinate(allReps[index].node.position, isVertical),
+          ),
+      );
     }
 
     if (fallbackPitch <= 0) {
-      const taskDims = getWorkflowNodeDimensions(ENodeType.TASK, ctx.config);
+      const taskDims = getTypeDimensions(ENodeType.TASK);
 
       fallbackPitch = getSpreadSize(taskDims, isVertical) + 20;
     }
@@ -285,12 +273,10 @@ export const alignEmptyBranchPlaceholders = (
         (s) => s.branchIndex > branchIndex,
       );
       const key = `${above?.branchIndex ?? "none"}_${below?.branchIndex ?? "none"}`;
+      const group = emptyGroups.get(key) ?? { above, below, slots: [] };
 
-      if (!emptyGroups.has(key)) {
-        emptyGroups.set(key, { above, below, slots: [] });
-      }
-
-      emptyGroups.get(key)!.slots.push({ branchIndex, node: placeholder });
+      group.slots.push({ branchIndex, node: placeholder });
+      emptyGroups.set(key, group);
     });
 
     emptyGroups.forEach(({ above, below, slots: groupSlots }) => {
@@ -346,13 +332,5 @@ export const alignEmptyBranchPlaceholders = (
     });
   });
 
-  return nodes.map((node) => {
-    const override = overrides.get(node.id);
-
-    if (!override) {
-      return node;
-    }
-
-    return { ...node, position: override };
-  });
+  return applyPositionOverrides(nodes, overrides);
 };

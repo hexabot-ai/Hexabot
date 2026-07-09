@@ -30,16 +30,18 @@ export type AxisBounds = { leading: number; trailing: number };
 export const appendMapValue = <K, V>(map: Map<K, V[]>, key: K, value: V) => {
   const values = map.get(key);
 
-  if (values) {
-    values.push(value);
-
-    return;
-  }
-
-  map.set(key, [value]);
+  values ? values.push(value) : map.set(key, [value]);
 };
 export const average = (values: number[]) =>
   values.reduce((sum, value) => sum + value, 0) / values.length;
+export const indexNodes = <T extends GraphNode>(nodes: T[]) =>
+  new Map(nodes.map((node) => [node.id, node]));
+export const indexPositions = (nodes: GraphNode[]) =>
+  new Map(nodes.map((node) => [node.id, node.position]));
+export const notEmpty = <T>(value: T | null | undefined): value is T =>
+  value !== null && value !== undefined;
+export const setMaxMapValue = <K>(map: Map<K, number>, key: K, value: number) =>
+  map.set(key, Math.max(map.get(key) ?? value, value));
 export const getFlowCoordinate = (
   position: NodePosition,
   isVertical: boolean,
@@ -123,6 +125,91 @@ export const getGraphNodeDimensions = (
     height: style?.height ?? 0,
   };
 };
+export const getNodeAxisCenter = (
+  node: GraphNode,
+  ctx: LayoutContext,
+  isVertical: boolean,
+  axis: Axis,
+  position = node.position,
+) =>
+  getAxisCenter(position, getGraphNodeDimensions(node, ctx), isVertical, axis);
+export const getWorkflowNodeAxisCenter = (
+  node: GraphNode,
+  ctx: LayoutContext,
+  isVertical: boolean,
+  axis: Axis,
+  position = node.position,
+) =>
+  getAxisCenter(
+    position,
+    getWorkflowNodeDimensions(node.type, ctx.config),
+    isVertical,
+    axis,
+  );
+export const getWorkflowNodeAxisEnd = (
+  node: GraphNode,
+  ctx: LayoutContext,
+  isVertical: boolean,
+  axis: Axis,
+  position = node.position,
+) =>
+  getAxisCoordinate(position, isVertical, axis) +
+  getAxisSize(
+    getWorkflowNodeDimensions(node.type, ctx.config),
+    isVertical,
+    axis,
+  );
+export const translatePositionMapNode = (
+  nodeId: string,
+  positions: Map<string, NodePosition>,
+  nodesById: Map<string, GraphNode>,
+  isVertical: boolean,
+  delta: number,
+  axis: Axis = "spread",
+) => {
+  const node = nodesById.get(nodeId);
+
+  if (node) {
+    const translate = axis === "flow" ? translateFlow : translateSpread;
+
+    positions.set(
+      nodeId,
+      translate(positions.get(nodeId) ?? node.position, isVertical, delta),
+    );
+  }
+};
+export const applyResolvedPositions = <T extends GraphNode>(
+  nodes: T[],
+  positions: Map<string, NodePosition>,
+) =>
+  nodes.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
+  }));
+export const applyPositionOverrides = <T extends GraphNode>(
+  nodes: T[],
+  positions: Map<string, NodePosition>,
+) =>
+  nodes.map((node) => {
+    const position = positions.get(node.id);
+
+    return position ? { ...node, position } : node;
+  });
+export const applySpreadDeltas = <T extends GraphNode>(
+  nodes: T[],
+  deltas: Map<string, number>,
+  isVertical: boolean,
+) =>
+  nodes.map((node) => {
+    const delta = deltas.get(node.id);
+
+    return delta === undefined || delta === 0
+      ? node
+      : {
+          ...node,
+          position: translateSpread(node.position, isVertical, delta),
+        };
+  });
 export const getPositionedNodeAxisBounds = (
   nodeId: string,
   positions: Map<string, NodePosition>,

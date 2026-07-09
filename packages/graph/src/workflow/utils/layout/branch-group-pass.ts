@@ -10,14 +10,16 @@ import type { GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
 
 import {
+  applyResolvedPositions,
   getPositionedNodeAxisBounds,
+  indexNodes,
+  indexPositions,
   isHorizontalDirection,
+  translatePositionMapNode,
   type Axis,
   type AxisBounds,
   type LayoutContext,
   type NodePosition,
-  translateFlow,
-  translateSpread,
 } from "./geometry";
 import {
   buildMainFlowMaps,
@@ -64,29 +66,25 @@ export const runBranchGroupPass = (
   }) => void,
 ): GraphNode[] => {
   const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const positions = new Map(nodes.map((node) => [node.id, node.position]));
+  const nodesById = indexNodes(nodes);
+  const positions = indexPositions(nodes);
   const { outgoingBySource, attachmentChildrenByParent } =
     buildMainFlowMaps(edges);
-  const translate = axis === "spread" ? translateSpread : translateFlow;
   const pass: BranchLayoutPass = {
     isVertical,
     nodesById,
     positions,
     outgoingBySource,
     attachmentChildrenByParent,
-    moveNode: (nodeId, delta) => {
-      const node = nodesById.get(nodeId);
-
-      if (!node) {
-        return;
-      }
-
-      positions.set(
+    moveNode: (nodeId, delta) =>
+      translatePositionMapNode(
         nodeId,
-        translate(positions.get(nodeId) ?? node.position, isVertical, delta),
-      );
-    },
+        positions,
+        nodesById,
+        isVertical,
+        delta,
+        axis,
+      ),
     collectBranch: (startId, group) =>
       collectBranchNodeIds({
         startId,
@@ -137,8 +135,5 @@ export const runBranchGroupPass = (
       handleGroup({ group, operatorNode, branchTargets, pass });
     });
 
-  return nodes.map((node) => ({
-    ...node,
-    position: positions.get(node.id) ?? node.position,
-  }));
+  return applyResolvedPositions(nodes, positions);
 };

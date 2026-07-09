@@ -8,13 +8,14 @@ import { getNodesBounds, type Edge } from "@xyflow/react";
 
 import { ENodeType, type GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
-import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 
 import { FLOW_LAYER_GAP } from "./constants";
 import {
   appendMapValue,
+  applyPositionOverrides,
   getFlowCoordinate,
-  getFlowSize,
+  getWorkflowNodeAxisEnd,
+  indexNodes,
   isHorizontalDirection,
   withFlowCoordinate,
   type LayoutContext,
@@ -39,7 +40,7 @@ export const tightenTrailingPlaceholders = (
   ctx: LayoutContext,
 ): GraphNode[] => {
   const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesById = indexNodes(nodes);
   const visibleSourcesByTarget = new Map<string, string[]>();
   const directSourcesByTarget = new Map<string, string[]>();
 
@@ -64,13 +65,7 @@ export const tightenTrailingPlaceholders = (
     const sourceNode = nodesById.get(sourceId);
 
     if (sourceNode) {
-      return (
-        getFlowCoordinate(sourceNode.position, isVertical) +
-        getFlowSize(
-          getWorkflowNodeDimensions(sourceNode.type, ctx.config),
-          isVertical,
-        )
-      );
+      return getWorkflowNodeAxisEnd(sourceNode, ctx, isVertical, "flow");
     }
 
     const group = groups.get(sourceId);
@@ -144,22 +139,20 @@ export const tightenTrailingPlaceholders = (
     }
 
     const maxSourceEnd = sources.reduce((max, sourceId) => {
-      const pos =
-        tightenedPositions.get(sourceId) ?? nodesById.get(sourceId)?.position;
       const srcNode = nodesById.get(sourceId);
 
-      if (!pos || !srcNode) {
-        return max;
-      }
-
-      return Math.max(
-        max,
-        getFlowCoordinate(pos, isVertical) +
-          getFlowSize(
-            getWorkflowNodeDimensions(srcNode.type, ctx.config),
-            isVertical,
-          ),
-      );
+      return srcNode
+        ? Math.max(
+            max,
+            getWorkflowNodeAxisEnd(
+              srcNode,
+              ctx,
+              isVertical,
+              "flow",
+              tightenedPositions.get(sourceId) ?? srcNode.position,
+            ),
+          )
+        : max;
     }, -Infinity);
 
     if (!isFinite(maxSourceEnd)) {
@@ -178,9 +171,5 @@ export const tightenTrailingPlaceholders = (
     }
   });
 
-  return nodes.map((node) => {
-    const newPosition = tightenedPositions.get(node.id);
-
-    return newPosition ? { ...node, position: newPosition } : node;
-  });
+  return applyPositionOverrides(nodes, tightenedPositions);
 };

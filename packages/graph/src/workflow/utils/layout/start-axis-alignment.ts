@@ -12,21 +12,22 @@ import {
   START_INDICATOR_ID,
 } from "../graph-builder/id-factory";
 import type { GroupMeta } from "../graph-builder/types";
-import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 
 import {
+  applySpreadDeltas,
   average,
-  getAxisCenter,
   getBoundsSpreadCenter,
-  getGraphNodeDimensions,
+  getNodeAxisCenter,
+  getWorkflowNodeAxisCenter,
+  indexNodes,
   isHorizontalDirection,
   type LayoutContext,
-  translateSpread,
 } from "./geometry";
 import {
   buildAttachmentMaps,
   collectAttachmentDescendants,
-  collectNodeIdsWithAttachmentDescendants,
+  collectGroupSubtreeIds,
+  getExistingNodes,
   mapNodesToGroup,
 } from "./graph-maps";
 
@@ -43,7 +44,7 @@ export const alignAllNodesToStartAxis = (
     return nodes;
   }
 
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesById = indexNodes(nodes);
   const {
     childrenByParent: attachmentChildrenByParent,
     parentByChild: attachmentParentByChild,
@@ -66,35 +67,14 @@ export const alignAllNodesToStartAxis = (
   const collectGroupMemberIds = (groupId: string): Set<string> => {
     const group = groups.get(groupId);
 
-    if (!group) {
-      return new Set();
-    }
-
-    const memberIds = collectNodeIdsWithAttachmentDescendants(
-      group.memberNodeIds,
-      attachmentChildrenByParent,
-      nodesById,
-    );
-
-    groups.forEach((candidateGroup, candidateGroupId) => {
-      if (
-        candidateGroupId === groupId ||
-        candidateGroup.level <= group.level ||
-        !nodesById.has(candidateGroupId)
-      ) {
-        return;
-      }
-
-      const isNestedGroup = [...candidateGroup.memberNodeIds].some((nodeId) =>
-        group.memberNodeIds.has(nodeId),
-      );
-
-      if (isNestedGroup) {
-        memberIds.add(candidateGroupId);
-      }
-    });
-
-    return memberIds;
+    return group
+      ? collectGroupSubtreeIds(
+          group,
+          groups,
+          attachmentChildrenByParent,
+          nodesById,
+        )
+      : new Set();
   };
   const getGroupReferenceCenter = (
     groupId: string,
@@ -103,17 +83,10 @@ export const alignAllNodesToStartAxis = (
     const groupOverlay = nodesById.get(groupId);
 
     if (groupOverlay) {
-      return getAxisCenter(
-        groupOverlay.position,
-        getGraphNodeDimensions(groupOverlay, ctx),
-        isVertical,
-        "spread",
-      );
+      return getNodeAxisCenter(groupOverlay, ctx, isVertical, "spread");
     }
 
-    const memberNodes = [...memberIds]
-      .map((id) => nodesById.get(id))
-      .filter((member): member is GraphNode => Boolean(member));
+    const memberNodes = getExistingNodes(memberIds, nodesById);
 
     if (!memberNodes.length) {
       return;
@@ -157,19 +130,16 @@ export const alignAllNodesToStartAxis = (
       return;
     }
 
-    const dims = getWorkflowNodeDimensions(node.type, ctx.config);
-
     referenceCenters.push(
-      getAxisCenter(node.position, dims, isVertical, "spread"),
+      getWorkflowNodeAxisCenter(node, ctx, isVertical, "spread"),
     );
   });
 
   // Fall back to Start's own center when there are no content nodes.
-  const startDims = getWorkflowNodeDimensions(startNode.type, ctx.config);
   const targetAxis =
     referenceCenters.length > 0
       ? average(referenceCenters)
-      : getAxisCenter(startNode.position, startDims, isVertical, "spread");
+      : getWorkflowNodeAxisCenter(startNode, ctx, isVertical, "spread");
   const deltas = new Map<string, number>();
 
   groupAlignments.forEach(({ memberIds, referenceCenter }, groupId) => {
@@ -196,8 +166,12 @@ export const alignAllNodesToStartAxis = (
       return;
     }
 
-    const dims = getWorkflowNodeDimensions(node.type, ctx.config);
-    const nodeCenter = getAxisCenter(node.position, dims, isVertical, "spread");
+    const nodeCenter = getWorkflowNodeAxisCenter(
+      node,
+      ctx,
+      isVertical,
+      "spread",
+    );
     const delta = targetAxis - nodeCenter;
 
     if (delta === 0) {
@@ -212,16 +186,5 @@ export const alignAllNodesToStartAxis = (
     ).forEach((childId) => deltas.set(childId, delta));
   });
 
-  return nodes.map((node) => {
-    const delta = deltas.get(node.id);
-
-    if (delta === undefined || delta === 0) {
-      return node;
-    }
-
-    return {
-      ...node,
-      position: translateSpread(node.position, isVertical, delta),
-    };
-  });
+  return applySpreadDeltas(nodes, deltas, isVertical);
 };

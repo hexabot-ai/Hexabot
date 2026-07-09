@@ -8,12 +8,13 @@ import { ENodeType, type GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
 
 import {
-  getAxisCenter,
-  getGraphNodeDimensions,
+  applySpreadDeltas,
+  getNodeAxisCenter,
+  indexNodes,
   isHorizontalDirection,
   type LayoutContext,
-  translateSpread,
 } from "./geometry";
+import { getExistingNodes } from "./graph-maps";
 
 export const alignGroupBoundaryNodesToGroupAxis = (
   nodes: GraphNode[],
@@ -21,7 +22,7 @@ export const alignGroupBoundaryNodesToGroupAxis = (
   ctx: LayoutContext,
 ) => {
   const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesById = indexNodes(nodes);
   const deltas = new Map<string, number>();
 
   groups.forEach((group) => {
@@ -31,21 +32,10 @@ export const alignGroupBoundaryNodesToGroupAxis = (
       return;
     }
 
-    const groupAxis = getAxisCenter(
-      groupNode.position,
-      getGraphNodeDimensions(groupNode, ctx),
-      isVertical,
-      "spread",
+    const groupAxis = getNodeAxisCenter(groupNode, ctx, isVertical, "spread");
+    const groupNodes = getExistingNodes(group.memberNodeIds, nodesById).filter(
+      (node) => (node.data as { groupName?: string }).groupName === group.id,
     );
-    const groupNodes = [...group.memberNodeIds]
-      .map((nodeId) => nodesById.get(nodeId))
-      .filter((node): node is GraphNode => {
-        if (!node) {
-          return false;
-        }
-
-        return (node.data as { groupName?: string }).groupName === group.id;
-      });
     const placeholders = groupNodes.filter(
       (node) => node.type === ENodeType.BRANCH_PLACEHOLDER,
     );
@@ -61,13 +51,7 @@ export const alignGroupBoundaryNodesToGroupAxis = (
 
     boundaryNodes.forEach((node) => {
       const delta =
-        groupAxis -
-        getAxisCenter(
-          node.position,
-          getGraphNodeDimensions(node, ctx),
-          isVertical,
-          "spread",
-        );
+        groupAxis - getNodeAxisCenter(node, ctx, isVertical, "spread");
 
       if (Math.abs(delta) >= 1) {
         deltas.set(node.id, delta);
@@ -75,16 +59,5 @@ export const alignGroupBoundaryNodesToGroupAxis = (
     });
   });
 
-  return nodes.map((node) => {
-    const delta = deltas.get(node.id);
-
-    if (delta === undefined) {
-      return node;
-    }
-
-    return {
-      ...node,
-      position: translateSpread(node.position, isVertical, delta),
-    };
-  });
+  return applySpreadDeltas(nodes, deltas, isVertical);
 };

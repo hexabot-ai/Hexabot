@@ -35,20 +35,14 @@ import {
 import { isAttachmentEdge } from "./graph-maps";
 
 const elk = new ELK();
-const getElkSide = (position: Position) => {
-  switch (position) {
-    case Position.Top:
-      return "NORTH";
-    case Position.Bottom:
-      return "SOUTH";
-    case Position.Left:
-      return "WEST";
-    case Position.Right:
-      return "EAST";
-    default:
-      return "EAST";
-  }
+const ELK_SIDE_BY_POSITION: Partial<Record<Position, string>> = {
+  [Position.Top]: "NORTH",
+  [Position.Bottom]: "SOUTH",
+  [Position.Left]: "WEST",
+  [Position.Right]: "EAST",
 };
+const getElkSide = (position: Position) =>
+  ELK_SIDE_BY_POSITION[position] ?? "EAST";
 
 type ElkPort = {
   handleId: WorkflowPort;
@@ -86,27 +80,21 @@ const toElk = (nodes: GraphNode[], edges: Edge[], ctx: LayoutContext) => {
   const isVertical = !isHorizontalDirection(ctx);
   const direction = ctx.config?.direction ?? "horizontal";
   const elkDirection = isVertical ? "DOWN" : "RIGHT";
-  const nodeIds = new Set(nodes.map((node) => node.id));
+  const nodeIds = new Set(nodes.map(({ id }) => id));
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
   const attachmentTargetsBySource = new Map<string, GraphNode[]>();
-
-  edges.forEach((edge) => {
-    if (!isAttachmentEdge(edge)) {
-      return;
-    }
-
-    const sourceNode = nodeMap.get(edge.source);
-    const targetNode = nodeMap.get(edge.target);
-
-    if (!sourceNode || !targetNode) {
-      return;
-    }
-
-    appendMapValue(attachmentTargetsBySource, edge.source, targetNode);
-  });
   const layoutDimensions = new Map<string, NodeDimensions>();
   const nodePorts = new Map<string, ElkPort[]>();
   const nodeOffsets = new Map<string, { x: number; y: number }>();
+
+  edges.forEach((edge) => {
+    const targetNode = nodeMap.get(edge.target);
+
+    if (isAttachmentEdge(edge) && nodeMap.has(edge.source) && targetNode) {
+      appendMapValue(attachmentTargetsBySource, edge.source, targetNode);
+    }
+  });
+
   const resolveLayoutDimensions = (
     nodeId: string,
     visited = new Set<string>(),
@@ -134,8 +122,8 @@ const toElk = (nodes: GraphNode[], edges: Edge[], ctx: LayoutContext) => {
 
     visited.add(nodeId);
 
-    const targetDimensions = targets.map((target) =>
-      resolveLayoutDimensions(target.id, visited),
+    const targetDimensions = targets.map(({ id }) =>
+      resolveLayoutDimensions(id, visited),
     );
     const totalBreadth =
       targetDimensions.reduce(
@@ -171,31 +159,10 @@ const toElk = (nodes: GraphNode[], edges: Edge[], ctx: LayoutContext) => {
     ports: ElkPort[] | undefined,
     preferredHandle?: string | null,
     preferredType?: EHandleType,
-  ) => {
-    if (!ports?.length) {
-      return;
-    }
-
-    if (preferredHandle) {
-      const handlePort = ports.find(
-        (port) => port.handleId === preferredHandle,
-      );
-
-      if (handlePort) {
-        return handlePort.elkId;
-      }
-    }
-
-    if (preferredType) {
-      const typedPort = ports.find((port) => port.type === preferredType);
-
-      if (typedPort) {
-        return typedPort.elkId;
-      }
-    }
-
-    return ports[0]?.elkId;
-  };
+  ) =>
+    ports?.find((port) => port.handleId === preferredHandle)?.elkId ??
+    ports?.find((port) => port.type === preferredType)?.elkId ??
+    ports?.[0]?.elkId;
   const graph: ElkModel["graph"] = {
     id: "root",
     layoutOptions: {
@@ -228,18 +195,17 @@ const toElk = (nodes: GraphNode[], edges: Edge[], ctx: LayoutContext) => {
 
       nodePorts.set(node.id, ports);
 
-      const dimensions =
-        layoutDimensions.get(node.id) ?? resolveLayoutDimensions(node.id);
+      const dimensions = resolveLayoutDimensions(node.id);
       const sourceDimensions = getWorkflowNodeDimensions(node.type, ctx.config);
-      const offset = isVertical
-        ? {
-            x: Math.max(0, dimensions.width - sourceDimensions.width),
-            y: Math.max(0, (dimensions.height - sourceDimensions.height) / 2),
-          }
-        : {
-            x: Math.max(0, (dimensions.width - sourceDimensions.width) / 2),
-            y: 0,
-          };
+      // Flow axis stays 0: any width ELK reserves for a wide attachment row
+      // must land after the card, since only the trailing side gets pulled
+      // back to a standard gap post-layout.
+      const offset = {
+        x: isVertical
+          ? Math.max(0, dimensions.width - sourceDimensions.width)
+          : 0,
+        y: 0,
+      };
 
       nodeOffsets.set(node.id, offset);
 
@@ -288,25 +254,23 @@ const toElk = (nodes: GraphNode[], edges: Edge[], ctx: LayoutContext) => {
     }),
     edges: edges
       .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
-      .map((edge) => {
-        return {
-          id: edge.id,
-          sources: [
-            resolvePort(
-              nodePorts.get(edge.source),
-              edge.sourceHandle,
-              EHandleType.SOURCE,
-            ) ?? `${edge.source}__out`,
-          ],
-          targets: [
-            resolvePort(
-              nodePorts.get(edge.target),
-              edge.targetHandle,
-              EHandleType.TARGET,
-            ) ?? `${edge.target}__in`,
-          ],
-        };
-      }),
+      .map((edge) => ({
+        id: edge.id,
+        sources: [
+          resolvePort(
+            nodePorts.get(edge.source),
+            edge.sourceHandle,
+            EHandleType.SOURCE,
+          ) ?? `${edge.source}__out`,
+        ],
+        targets: [
+          resolvePort(
+            nodePorts.get(edge.target),
+            edge.targetHandle,
+            EHandleType.TARGET,
+          ) ?? `${edge.target}__in`,
+        ],
+      })),
   };
 
   return { graph, nodeOffsets };

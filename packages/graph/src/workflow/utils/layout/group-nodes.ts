@@ -16,10 +16,12 @@ import { withAlpha } from "../color.utils";
 import type { GroupMeta } from "../graph-builder/types";
 
 import { getGroupBackgroundAlpha } from "./constants";
-import { getGraphNodeDimensions } from "./geometry";
+import { getGraphNodeDimensions, indexNodes } from "./geometry";
 import {
   buildAttachmentMaps,
   collectAttachmentDescendants,
+  collectNestedGroupOverlayIds,
+  getExistingNodes,
 } from "./graph-maps";
 
 const getBounds = (nodes: GraphNode[], config: INodeConfig) => {
@@ -56,7 +58,7 @@ export const getGroupNodes = (
   config: INodeConfig,
   attachmentEdges: Edge[],
 ) => {
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesById = indexNodes(nodes);
   const { childrenByParent: attachmentChildrenByParent } = buildAttachmentMaps(
     attachmentEdges,
     nodesById,
@@ -84,20 +86,15 @@ export const getGroupNodes = (
         ),
       ),
     ];
-    const nestedGroupNodes = groupsByDepth
-      .filter(
-        (candidate) =>
-          candidate.id !== group.id &&
-          candidate.level > group.level &&
-          [...candidate.memberNodeIds].some((memberId) =>
-            group.memberNodeIds.has(memberId),
-          ),
-      )
-      .map((candidate) => groupNodesById.get(candidate.id))
+    const nestedGroupNodes = collectNestedGroupOverlayIds(
+      group,
+      groups,
+      nodesById,
+      false,
+    )
+      .map((candidateId) => groupNodesById.get(candidateId))
       .filter((node): node is GraphNode<ENodeType.GROUP> => Boolean(node));
-    const boundsMembers = boundsMemberIds
-      .map((nodeId) => nodesById.get(nodeId))
-      .filter((node): node is GraphNode => Boolean(node));
+    const boundsMembers = getExistingNodes(boundsMemberIds, nodesById);
     const color = config.highlights?.[group.operatorType]?.color;
     const padding = config.highlights?.[group.operatorType]?.padding ?? 0;
     const radius = config.highlights?.[group.operatorType]?.radius;

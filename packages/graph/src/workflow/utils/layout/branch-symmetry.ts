@@ -8,11 +8,10 @@ import type { Edge } from "@xyflow/react";
 
 import type { GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
-import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 
 import { runBranchGroupPass } from "./branch-group-pass";
 import { BRANCH_SPREAD_GAP } from "./constants";
-import { getAxisCenter, type AxisBounds, type LayoutContext } from "./geometry";
+import { getNodeAxisCenter, notEmpty, type LayoutContext } from "./geometry";
 import { countNodeIds } from "./graph-maps";
 
 type SpreadBranch = {
@@ -51,16 +50,18 @@ export const symmetrizeBranchSiblings = (
       // assigned to any single branch's lane; ELK already placed it to clear
       // every branch).
       const mainFlowBranchCountByNodeId = countNodeIds(
-        rawBranches.map((branch) => branch.mainFlowNodeIds),
+        rawBranches.map(({ mainFlowNodeIds }) => mainFlowNodeIds),
       );
+      const isSingleBranchNode = (nodeId: string) =>
+        (mainFlowBranchCountByNodeId.get(nodeId) ?? 0) <= 1;
+      const getBounds = (nodeIds: Set<string>) =>
+        [...nodeIds]
+          .filter(isSingleBranchNode)
+          .map(getNodeSpreadBounds)
+          .filter(notEmpty);
       const branches = rawBranches
         .map(({ branchIndex, allNodeIds }): SpreadBranch | undefined => {
-          const bounds = [...allNodeIds]
-            .filter(
-              (nodeId) => (mainFlowBranchCountByNodeId.get(nodeId) ?? 0) <= 1,
-            )
-            .map(getNodeSpreadBounds)
-            .filter((bounds): bounds is AxisBounds => Boolean(bounds));
+          const bounds = getBounds(allNodeIds);
 
           if (!bounds.length) {
             return;
@@ -69,43 +70,44 @@ export const symmetrizeBranchSiblings = (
           return {
             branchIndex,
             nodeIds: allNodeIds,
-            leading: Math.min(...bounds.map((bounds) => bounds.leading)),
-            trailing: Math.max(...bounds.map((bounds) => bounds.trailing)),
+            leading: Math.min(...bounds.map(({ leading }) => leading)),
+            trailing: Math.max(...bounds.map(({ trailing }) => trailing)),
           };
         })
-        .filter((branch): branch is SpreadBranch => Boolean(branch))
+        .filter(notEmpty)
         .sort((a, b) => a.branchIndex - b.branchIndex);
 
       if (branches.length < 2) {
         return;
       }
 
-      const operatorCenter = getAxisCenter(
-        positions.get(operatorNode.id) ?? operatorNode.position,
-        getWorkflowNodeDimensions(operatorNode.type, ctx.config),
+      const operatorCenter = getNodeAxisCenter(
+        operatorNode,
+        ctx,
         isVertical,
         "spread",
+        positions.get(operatorNode.id) ?? operatorNode.position,
       );
       const totalSize =
         branches.reduce(
-          (sum, branch) => sum + branch.trailing - branch.leading,
+          (sum, { leading, trailing }) => sum + trailing - leading,
           0,
         ) +
         BRANCH_SPREAD_GAP * (branches.length - 1);
       let cursor = operatorCenter - totalSize / 2;
 
-      branches.forEach((branch) => {
-        const delta = cursor - branch.leading;
+      branches.forEach(({ leading, trailing, nodeIds }) => {
+        const delta = cursor - leading;
 
         if (Math.abs(delta) >= 1) {
-          branch.nodeIds.forEach((nodeId) => {
-            if ((mainFlowBranchCountByNodeId.get(nodeId) ?? 0) <= 1) {
+          nodeIds.forEach((nodeId) => {
+            if (isSingleBranchNode(nodeId)) {
               moveNode(nodeId, delta);
             }
           });
         }
 
-        cursor += branch.trailing - branch.leading + BRANCH_SPREAD_GAP;
+        cursor += trailing - leading + BRANCH_SPREAD_GAP;
       });
 
       // A shared convergence node (e.g. a Parallel's join placeholder) never

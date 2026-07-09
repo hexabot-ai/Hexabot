@@ -11,14 +11,17 @@ import type { GroupMeta } from "../graph-builder/types";
 
 import {
   appendMapValue,
-  getAxisCenter,
-  getGraphNodeDimensions,
+  applyResolvedPositions,
+  getNodeAxisCenter,
+  indexNodes,
+  indexPositions,
   isHorizontalDirection,
+  translatePositionMapNode,
   type LayoutContext,
-  translateSpread,
 } from "./geometry";
 import {
   buildAttachmentMaps,
+  collectGroupSubtreeIds,
   collectNodeIdsWithAttachmentDescendants,
   isAttachmentEdge,
 } from "./graph-maps";
@@ -46,17 +49,18 @@ export const alignGroupChainAxes = (
   ctx: LayoutContext,
 ): GraphNode[] => {
   const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const positions = new Map(nodes.map((node) => [node.id, node.position]));
+  const nodesById = indexNodes(nodes);
+  const positions = indexPositions(nodes);
   const { childrenByParent: attachmentChildrenByParent } = buildAttachmentMaps(
     edges,
     nodesById,
   );
-  const isGroupNode = (id: string) =>
-    nodesById.get(id)?.type === ENodeType.GROUP;
+  const isType = (id: string, type: ENodeType) =>
+    nodesById.get(id)?.type === type;
+  const isGroupNode = (id: string) => isType(id, ENodeType.GROUP);
   const isPlaceholderNode = (id: string) =>
-    nodesById.get(id)?.type === ENodeType.BRANCH_PLACEHOLDER;
-  const isTaskNode = (id: string) => nodesById.get(id)?.type === ENodeType.TASK;
+    isType(id, ENodeType.BRANCH_PLACEHOLDER);
+  const isTaskNode = (id: string) => isType(id, ENodeType.TASK);
   // Links continuing a branch's sequence: from a group or a plain step to the
   // next sibling group/step sequenced within the same branch, or to the
   // branch's trailing placeholder that ends it. Hidden edges are the direct
@@ -82,67 +86,35 @@ export const alignGroupChainAxes = (
   // Every node that moves when this group moves: its members (which already
   // include nested groups' members) plus their attachment descendants, its own
   // overlay box, and any nested group overlays.
-  const collectSubtreeIds = (group: GroupMeta): Set<string> => {
-    const ids = collectNodeIdsWithAttachmentDescendants(
-      group.memberNodeIds,
+  const collectSubtreeIds = (group: GroupMeta): Set<string> =>
+    collectGroupSubtreeIds(
+      group,
+      groups,
       attachmentChildrenByParent,
       nodesById,
     );
-
-    if (nodesById.has(group.id)) {
-      ids.add(group.id);
-    }
-
-    groups.forEach((candidate, candidateId) => {
-      if (
-        candidateId === group.id ||
-        candidate.level <= group.level ||
-        !nodesById.has(candidateId)
-      ) {
-        return;
-      }
-
-      const isNested = [...candidate.memberNodeIds].some((memberId) =>
-        group.memberNodeIds.has(memberId),
-      );
-
-      if (isNested) {
-        ids.add(candidateId);
-      }
-    });
-
-    return ids;
-  };
   const groupCenter = (groupId: string): number | undefined => {
     const overlay = nodesById.get(groupId);
 
-    if (!overlay) {
-      return;
-    }
-
-    return getAxisCenter(
-      positions.get(groupId) ?? overlay.position,
-      getGraphNodeDimensions(overlay, ctx),
+    return overlay
+      ? getNodeAxisCenter(
+          overlay,
+          ctx,
+          isVertical,
+          "spread",
+          positions.get(groupId) ?? overlay.position,
+        )
+      : undefined;
+  };
+  const moveNodeSpread = (nodeId: string, delta: number) =>
+    translatePositionMapNode(
+      nodeId,
+      positions,
+      nodesById,
       isVertical,
+      delta,
       "spread",
     );
-  };
-  const moveNodeSpread = (nodeId: string, delta: number) => {
-    const node = nodesById.get(nodeId);
-
-    if (!node) {
-      return;
-    }
-
-    positions.set(
-      nodeId,
-      translateSpread(
-        positions.get(nodeId) ?? node.position,
-        isVertical,
-        delta,
-      ),
-    );
-  };
   const moveGroup = (group: GroupMeta, delta: number) => {
     collectSubtreeIds(group).forEach((id) => moveNodeSpread(id, delta));
   };
@@ -155,17 +127,18 @@ export const alignGroupChainAxes = (
 
     for (;;) {
       const predecessors = overlayPredecessors.get(currentId) ?? [];
+      const predecessor = predecessors[0];
 
-      if (predecessors.length !== 1 || seen.has(predecessors[0])) {
+      if (predecessors.length !== 1 || seen.has(predecessor)) {
         return false;
       }
 
-      if (isGroupNode(predecessors[0])) {
+      if (isGroupNode(predecessor)) {
         return true;
       }
 
-      seen.add(predecessors[0]);
-      currentId = predecessors[0];
+      seen.add(predecessor);
+      currentId = predecessor;
     }
   };
   const visited = new Set<string>();
@@ -188,18 +161,17 @@ export const alignGroupChainAxes = (
 
     while (true) {
       const successors = overlaySuccessors.get(currentId) ?? [];
+      const nextId = successors[0];
 
       // Only follow a strict 1-to-1 spine — stop at a fan-out or a join, which
       // the branch-symmetry passes already position.
       if (
         successors.length !== 1 ||
-        (overlayPredecessors.get(successors[0])?.length ?? 0) !== 1 ||
-        visited.has(successors[0])
+        (overlayPredecessors.get(nextId)?.length ?? 0) !== 1 ||
+        visited.has(nextId)
       ) {
         break;
       }
-
-      const nextId = successors[0];
 
       visited.add(nextId);
 
@@ -207,13 +179,10 @@ export const alignGroupChainAxes = (
 
       if (nextGroup) {
         const nextCenter = groupCenter(nextId);
+        const delta = nextCenter === undefined ? 0 : anchorAxis - nextCenter;
 
-        if (nextCenter !== undefined) {
-          const delta = anchorAxis - nextCenter;
-
-          if (Math.abs(delta) >= 1) {
-            moveGroup(nextGroup, delta);
-          }
+        if (Math.abs(delta) >= 1) {
+          moveGroup(nextGroup, delta);
         }
 
         currentId = nextId;
@@ -228,11 +197,12 @@ export const alignGroupChainAxes = (
       if (nextNode) {
         const delta =
           anchorAxis -
-          getAxisCenter(
-            positions.get(nextId) ?? nextNode.position,
-            getGraphNodeDimensions(nextNode, ctx),
+          getNodeAxisCenter(
+            nextNode,
+            ctx,
             isVertical,
             "spread",
+            positions.get(nextId) ?? nextNode.position,
           );
 
         if (Math.abs(delta) >= 1) {
@@ -253,8 +223,5 @@ export const alignGroupChainAxes = (
     }
   });
 
-  return nodes.map((node) => ({
-    ...node,
-    position: positions.get(node.id) ?? node.position,
-  }));
+  return applyResolvedPositions(nodes, positions);
 };

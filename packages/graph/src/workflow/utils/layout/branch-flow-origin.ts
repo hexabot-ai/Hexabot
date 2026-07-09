@@ -11,7 +11,12 @@ import type { GroupMeta } from "../graph-builder/types";
 
 import { runBranchGroupPass } from "./branch-group-pass";
 import { FLOW_LAYER_GAP } from "./constants";
-import type { LayoutContext } from "./geometry";
+import {
+  indexNodes,
+  notEmpty,
+  setMaxMapValue,
+  type LayoutContext,
+} from "./geometry";
 import {
   collectAttachmentDescendants,
   countNodeIds,
@@ -37,20 +42,17 @@ export const alignBranchFlowOrigins = (
 ): GraphNode[] => {
   // Account for group leading padding before group nodes are materialized, so
   // grouped and plain branch starts align on the same visible edge.
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const nodesById = indexNodes(nodes);
   const groupEntryLeadingInset = new Map<string, number>();
 
   groups.forEach((group) => {
     const padding = ctx.config?.highlights?.[group.operatorType]?.padding;
-
-    if (!padding) {
-      return;
-    }
-
-    const operatorNode = getGroupOperatorNode(group, nodesById);
+    const operatorNode = padding
+      ? getGroupOperatorNode(group, nodesById)
+      : undefined;
 
     if (operatorNode) {
-      groupEntryLeadingInset.set(operatorNode.id, padding / 2);
+      groupEntryLeadingInset.set(operatorNode.id, padding! / 2);
     }
   });
 
@@ -79,23 +81,17 @@ export const alignBranchFlowOrigins = (
             .map((nodeId) => {
               const bounds = getNodeBounds(nodeId, "flow");
 
-              if (!bounds) {
-                return undefined;
-              }
-
-              return bounds.leading - (groupEntryLeadingInset.get(nodeId) ?? 0);
+              return bounds?.leading === undefined
+                ? undefined
+                : bounds.leading - (groupEntryLeadingInset.get(nodeId) ?? 0);
             })
-            .filter((value): value is number => value !== undefined);
+            .filter(notEmpty);
 
-          if (!leadings.length) {
-            return;
-          }
-
-          return { nodeIds: allNodeIds, leading: Math.min(...leadings) };
+          return leadings.length
+            ? { nodeIds: allNodeIds, leading: Math.min(...leadings) }
+            : undefined;
         })
-        .filter((branch): branch is { nodeIds: Set<string>; leading: number } =>
-          Boolean(branch),
-        );
+        .filter(notEmpty);
 
       if (branches.length < 2) {
         return;
@@ -114,7 +110,7 @@ export const alignBranchFlowOrigins = (
         deltas: Map<string, number>,
         nodeId: string,
         delta: number,
-      ) => deltas.set(nodeId, Math.max(deltas.get(nodeId) ?? delta, delta));
+      ) => setMaxMapValue(deltas, nodeId, delta);
 
       branches.forEach((branch) => {
         const delta = targetLeading - branch.leading;
@@ -124,11 +120,9 @@ export const alignBranchFlowOrigins = (
         }
 
         branch.nodeIds.forEach((nodeId) => {
-          if ((branchCountByNodeId.get(nodeId) ?? 0) > 1) {
-            return;
+          if ((branchCountByNodeId.get(nodeId) ?? 0) <= 1) {
+            addDelta(deltaByNodeId, nodeId, delta);
           }
-
-          addDelta(deltaByNodeId, nodeId, delta);
         });
       });
 
@@ -175,11 +169,9 @@ export const alignBranchFlowOrigins = (
         let trailing = -Infinity;
 
         for (const nodeId of nodeIds) {
-          if (attachmentIds.has(nodeId)) {
-            continue;
-          }
-
-          const bounds = getNodeBounds(nodeId, "flow");
+          const bounds = attachmentIds.has(nodeId)
+            ? undefined
+            : getNodeBounds(nodeId, "flow");
 
           if (bounds) {
             trailing = Math.max(trailing, bounds.trailing);
