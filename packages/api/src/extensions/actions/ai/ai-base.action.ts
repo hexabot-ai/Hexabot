@@ -52,6 +52,11 @@ export type LanguageModelProvider =
   | ProviderV3
   | ProviderV2;
 
+type StopWhenOptions = {
+  hasMcpBindings?: boolean;
+  hasMemoryBindings?: boolean;
+};
+
 export abstract class AiBaseAction<
   I,
   O,
@@ -61,6 +66,8 @@ export abstract class AiBaseAction<
   private static readonly DEFAULT_COLOR = '#b65bfd';
 
   private static readonly DEFAULT_GROUP = 'ai';
+
+  private static readonly DEFAULT_MCP_MEMORY_STEP_COUNT = 10;
 
   protected constructor(
     metadata: ActionMetadata<I, O, S>,
@@ -618,6 +625,7 @@ export abstract class AiBaseAction<
       stop_tool_call: string;
     }>,
     tools?: Record<string, unknown>,
+    options: StopWhenOptions = {},
   ): {
     stopWhen:
       | ReturnType<typeof stepCountIs>
@@ -632,7 +640,14 @@ export abstract class AiBaseAction<
     > = [];
     // By default the default step count would be the max number of tools
     // that could be called + 1 step pour generating the output
-    const defaultStepCount = tools ? 1 + Object.keys(tools).length : 0;
+    const toolBasedDefaultStepCount = tools ? 1 + Object.keys(tools).length : 0;
+    const defaultStepCount =
+      options.hasMcpBindings && options.hasMemoryBindings
+        ? Math.max(
+            toolBasedDefaultStepCount,
+            AiBaseAction.DEFAULT_MCP_MEMORY_STEP_COUNT,
+          )
+        : toolBasedDefaultStepCount;
     const resolvedStepCount = settings.stop_step_count ?? defaultStepCount;
 
     if (resolvedStepCount > 0) {

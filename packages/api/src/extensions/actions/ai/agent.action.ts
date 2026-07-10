@@ -87,6 +87,10 @@ export class AiAgentAction extends AiBaseAction<
     const { stopWhen, stepCount, toolCall } = this.buildStopWhen(
       settings,
       tools,
+      {
+        hasMcpBindings: Object.keys(bindings.mcp ?? {}).length > 0,
+        hasMemoryBindings: selectedMemorySlugs.length > 0,
+      },
     );
     const agent = new ToolLoopAgent({
       ...callSettings,
