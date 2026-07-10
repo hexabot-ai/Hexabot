@@ -1048,6 +1048,17 @@ export const Workflow = () => {
       />
       <ActionFormDrawer
         target={pendingActionCreateTarget}
+        onBack={
+          pendingActionCreateTarget
+            ? () => {
+                const insertPath = pendingActionCreateTarget.insertPath;
+
+                setPendingActionCreateTarget(null);
+                setPendingInsertPath(insertPath);
+                setActionsDrawerOpen(true);
+              }
+            : undefined
+        }
         onClose={(reason) => {
           const isCreateFlow = Boolean(pendingActionCreateTarget);
 

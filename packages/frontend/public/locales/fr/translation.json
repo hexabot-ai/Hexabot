@@ -855,7 +855,8 @@
         },
         "description": {
           "placeholder": "Description optionnelle de l'étape."
-        }
+        },
+        "back_to_actions": "Retour aux actions"
       }
     },
     "tool_drawer": {

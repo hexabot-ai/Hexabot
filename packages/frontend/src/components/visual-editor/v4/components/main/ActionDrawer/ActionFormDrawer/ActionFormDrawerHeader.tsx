@@ -4,7 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Stack, Typography } from "@mui/material";
+import { Button, Stack, Typography } from "@mui/material";
+import { ArrowLeft } from "lucide-react";
 
 import { EditableTypography } from "@/app-components/inputs/EditableTypography";
 import { useTranslate } from "@/hooks/useTranslate";
@@ -19,6 +20,7 @@ export type ActionFormDrawerHeaderProps = {
   onTaskNameCancel: () => void;
   onDescriptionCommit: (nextDescription: string) => void;
   onDescriptionCancel: () => void;
+  onBack?: () => void;
 };
 
 export const ActionFormDrawerHeader = ({
@@ -31,11 +33,23 @@ export const ActionFormDrawerHeader = ({
   onTaskNameCancel,
   onDescriptionCommit,
   onDescriptionCancel,
+  onBack,
 }: ActionFormDrawerHeaderProps) => {
   const { t } = useTranslate();
 
   return (
     <Stack spacing={0.25} minWidth={0}>
+      {onBack ? (
+        <Button
+          variant="text"
+          size="small"
+          startIcon={<ArrowLeft size={16} />}
+          onClick={onBack}
+          sx={{ alignSelf: "flex-start" }}
+        >
+          {t("visual_editor.actions_drawer.form.back_to_actions")}
+        </Button>
+      ) : null}
       <EditableTypography
         component="div"
         variant="subtitle1"

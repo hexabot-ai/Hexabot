@@ -22,11 +22,13 @@ export type { ActionFormDrawerCloseReason, ActionFormDrawerCreateTarget };
 type ActionFormDrawerProps = {
   target: ActionFormDrawerCreateTarget | null;
   onClose?: (reason: ActionFormDrawerCloseReason) => void;
+  onBack?: () => void;
 };
 
 export const ActionFormDrawer = ({
   target,
   onClose,
+  onBack,
 }: ActionFormDrawerProps) => {
   const {
     open,
@@ -47,7 +49,7 @@ export const ActionFormDrawer = ({
     headerProps,
     footerProps,
     onClose: handleClose,
-  } = useActionFormDrawerController({ target, onClose });
+  } = useActionFormDrawerController({ target, onClose, onBack });
 
   return (
     <ActionFormDrawerLayout
