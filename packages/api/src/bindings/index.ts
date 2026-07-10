@@ -8,4 +8,6 @@ export * from './bindings.module';
 
 export * from './base-binding-kind';
 
+export * from './runtime-bindings';
+
 export * from './create-binding-kind';

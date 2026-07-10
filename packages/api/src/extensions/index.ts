@@ -20,6 +20,10 @@ export * from './channels/web/inbound';
 
 export * from './helpers/local-storage/index.helper';
 
+export * from './actions/ai/ai-prompt.helpers';
+
+export * from './actions/ai/ai-schemas';
+
 export * from './actions/ai/model.binding';
 
 export * from './actions/ai/tools.binding';
