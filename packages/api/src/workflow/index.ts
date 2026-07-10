@@ -54,6 +54,10 @@ export * from './repositories/mcp-server.repository';
 
 export * from './contexts/conversational-workflow.context';
 
+export * from './contexts/workflow-runtime.context';
+
+export * from './types';
+
 export * from './services/workflow.service';
 
 export * from './services/workflow-version.service';

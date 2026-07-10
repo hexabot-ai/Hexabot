@@ -7,17 +7,10 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { ProviderV2, ProviderV3 } from '@ai-sdk/provider';
-import {
-  IncomingMessageType,
-  Message,
-  StdIncomingMessage,
-  StdOutgoingMessage,
-  Thread,
-} from '@hexabot-ai/types';
+import { StdIncomingMessage, StdOutgoingMessage } from '@hexabot-ai/types';
 import {
   LanguageModel,
   LanguageModelUsage,
-  ModelMessage,
   ToolSet,
   hasToolCall,
   stepCountIs,
@@ -31,11 +24,15 @@ import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.con
 import { McpToolBindingDefinitions } from '@/workflow/types';
 
 import {
-  AiCommonSettings,
-  AiPromptInput,
-  DEFAULT_AI_MESSAGES_LIMIT,
-  DEFAULT_AI_PROMPT,
-} from './ai-schemas';
+  buildMemoryPrompt,
+  buildPrompt,
+  formatMemoryValue,
+  normalizeMessagesForModel,
+  resolveMemoryBindingSlugs,
+  resolveMessageContent,
+  type PromptPayload,
+} from './ai-prompt.helpers';
+import { AiCommonSettings, AiPromptInput } from './ai-schemas';
 
 export type { AiCommonSettings, AiPromptInput } from './ai-schemas';
 
@@ -54,16 +51,6 @@ export type LanguageModelProvider =
     })
   | ProviderV3
   | ProviderV2;
-
-type PromptPayload =
-  | {
-      prompt: string;
-      system?: string;
-    }
-  | {
-      messages: ModelMessage[];
-      system?: string;
-    };
 
 export abstract class AiBaseAction<
   I,
@@ -374,254 +361,40 @@ export abstract class AiBaseAction<
   protected resolveMessageContent(
     payload: StdOutgoingMessage | StdIncomingMessage,
   ) {
-    if (!payload) {
-      return undefined;
-    }
-
-    const data = payload.data as Record<string, unknown>;
-
-    if (typeof data.text === 'string') {
-      return data.text;
-    }
-
-    if (typeof data.serializedText === 'string') {
-      return data.serializedText;
-    }
-
-    if (
-      payload.type === IncomingMessageType.location &&
-      typeof data.coordinates === 'object' &&
-      data.coordinates !== null &&
-      'lat' in data.coordinates &&
-      'lon' in data.coordinates
-    ) {
-      const { lat, lon } = data.coordinates as { lat: number; lon: number };
-
-      return `location:${lat},${lon}`;
-    }
-
-    try {
-      return JSON.stringify(data);
-    } catch {
-      return String(payload);
-    }
+    return resolveMessageContent(payload);
   }
 
   protected normalizeMessagesForModel(
-    messages: Message[],
+    messages: Parameters<typeof normalizeMessagesForModel>[0],
     subscriberId: string,
-  ): ModelMessage[] {
-    type ConversationMessage = {
-      role: Extract<ModelMessage['role'], 'user' | 'assistant'>;
-      content: string;
-      createdAt: Date;
-    };
-
-    const normalized: ConversationMessage[] = messages
-      .map((message) => {
-        const content = this.resolveMessageContent(message.message);
-
-        if (!content) {
-          return undefined;
-        }
-
-        const role: ConversationMessage['role'] =
-          message.sender === subscriberId ? 'user' : 'assistant';
-
-        return {
-          role,
-          content,
-          createdAt: message.createdAt,
-        };
-      })
-      .filter((message): message is ConversationMessage => Boolean(message));
-
-    return normalized
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      .map(({ role, content }) => ({ role, content }));
+  ) {
+    return normalizeMessagesForModel(messages, subscriberId);
   }
 
-  protected async buildPrompt(
+  protected buildPrompt(
     input: AiPromptInput,
     context: C,
     selectedMemorySlugs: string[] = [],
   ): Promise<PromptPayload> {
-    const promptPayload = { system: input.system };
-    const memoryPrompt = this.buildMemoryPrompt(context, selectedMemorySlugs);
-    if (memoryPrompt) {
-      promptPayload.system = promptPayload.system
-        ? `${promptPayload.system}\n\n${memoryPrompt}`
-        : memoryPrompt;
-    }
-
-    if (input.input_mode === 'prompt') {
-      const prompt = input.prompt ?? DEFAULT_AI_PROMPT;
-
-      return {
-        prompt,
-        system: promptPayload.system,
-      };
-    }
-
-    if (input.input_mode === 'history') {
-      const messagesLimit = input.messages_limit ?? DEFAULT_AI_MESSAGES_LIMIT;
-
-      if (messagesLimit < 1) {
-        throw new Error(
-          'Input mode "history" requires a positive "messages_limit" value.',
-        );
-      }
-
-      const subscriberId = context.initiatorId;
-      if (!subscriberId) {
-        throw new Error(
-          'A subscriber id is required to load previous messages for this action.',
-        );
-      }
-      const threadId = context.threadId;
-      if (!threadId) {
-        throw new Error(
-          'A thread id is required to load previous messages for this action.',
-        );
-      }
-
-      const messageService = context.services.message;
-      if (!messageService) {
-        throw new Error(
-          'Message service is unavailable in the workflow context.',
-        );
-      }
-
-      const history = await messageService.findLastMessages(
-        { id: threadId } as Thread,
-        messagesLimit,
-      );
-      const messages = this.normalizeMessagesForModel(history, subscriberId);
-
-      return { messages, system: promptPayload.system };
-    }
-
-    throw new Error(
-      'An "input_mode" of either "prompt" or "history" is required to build the model request.',
-    );
+    return buildPrompt(input, context, selectedMemorySlugs);
   }
 
   protected resolveMemoryBindingSlugs(
     context: C,
     memoryBindings?: RuntimeBindings['memory'],
   ): string[] {
-    if (!memoryBindings || Object.keys(memoryBindings).length === 0) {
-      return [];
-    }
-
-    const memoryStore = context.memoryStore;
-    if (!memoryStore) {
-      return [];
-    }
-
-    const idToSlug = new Map<string, string>();
-    for (const [slug, definition] of memoryStore.definitionCache.entries()) {
-      if (definition.id) {
-        idToSlug.set(definition.id, slug);
-      }
-    }
-
-    const selectedSlugs = new Set<string>();
-    for (const [defName, binding] of Object.entries(memoryBindings)) {
-      const definitionId = binding.settings?.definition_id;
-      const slug =
-        typeof definitionId === 'string'
-          ? idToSlug.get(definitionId)
-          : undefined;
-      if (!slug) {
-        throw new Error(
-          `Unable to resolve memory definition "${String(definitionId)}" from bindings.memory.${defName}.settings.definition_id.`,
-        );
-      }
-
-      selectedSlugs.add(slug);
-    }
-
-    return Array.from(selectedSlugs);
+    return resolveMemoryBindingSlugs(context, memoryBindings);
   }
 
   protected buildMemoryPrompt(
     context: C,
     selectedMemorySlugs: string[] = [],
   ): string | undefined {
-    if (selectedMemorySlugs.length === 0) {
-      return undefined;
-    }
-
-    const memoryStore = context.memoryStore;
-    if (!memoryStore) {
-      return undefined;
-    }
-
-    const { definitionCache, instances } = memoryStore;
-    if (!definitionCache || definitionCache.size === 0) {
-      return undefined;
-    }
-
-    const sections: string[] = [];
-    const selectedSlugSet = new Set(selectedMemorySlugs);
-    for (const [slug, definition] of definitionCache.entries()) {
-      if (!selectedSlugSet.has(slug)) {
-        continue;
-      }
-
-      const instance = instances[slug];
-      if (!instance) {
-        continue;
-      }
-
-      const lines: string[] = [];
-      for (const field of instance.fields({ includeAdditional: true })) {
-        if (field.value === undefined) {
-          continue;
-        }
-
-        const label = (field.title ?? field.name).trim();
-        const value = this.formatMemoryValue(field.value);
-        lines.push(`- ${label}: ${value}`);
-      }
-
-      if (lines.length === 0) {
-        continue;
-      }
-
-      sections.push(`## ${definition.name}\n${lines.join('\n')}`);
-    }
-
-    if (sections.length === 0) {
-      return undefined;
-    }
-
-    return `# Working Memory\n${sections.join('\n\n')}`;
+    return buildMemoryPrompt(context, selectedMemorySlugs);
   }
 
   protected formatMemoryValue(value: unknown): string {
-    if (typeof value === 'string') {
-      return value;
-    }
-
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      return String(value);
-    }
-
-    if (value === null) {
-      return 'null';
-    }
-
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
+    return formatMemoryValue(value);
   }
 
   protected safeStringify(value: unknown): string {

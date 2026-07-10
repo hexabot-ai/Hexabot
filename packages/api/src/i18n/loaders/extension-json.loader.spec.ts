@@ -12,6 +12,13 @@ import { I18nTranslation } from 'nestjs-i18n';
 
 import { ExtensionJsonLoader } from './extension-json.loader';
 
+jest.mock('chokidar', () => ({
+  watch: jest.fn(() => ({
+    on: jest.fn().mockReturnThis(),
+    close: jest.fn(),
+  })),
+}));
+
 describe('ExtensionJsonLoader', () => {
   const tempDirectories: string[] = [];
   const createTempDir = async () => {
