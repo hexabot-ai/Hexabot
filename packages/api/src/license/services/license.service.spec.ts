@@ -77,7 +77,7 @@ const buildExpectedQuotas = (
     unlimited: 25,
   };
   const workflowsLimitByTier: Record<LicenseQuotaTier, number | null> = {
-    community: 3,
+    community: 10,
     starter: 25,
     pro: 150,
     unlimited: null,

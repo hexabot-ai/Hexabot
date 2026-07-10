@@ -45,7 +45,7 @@ export const LICENSE_QUOTA_LIMITS: Record<
     unlimited: 25,
   },
   workflows: {
-    community: 3,
+    community: 10,
     starter: 25,
     pro: 150,
     unlimited: null,
