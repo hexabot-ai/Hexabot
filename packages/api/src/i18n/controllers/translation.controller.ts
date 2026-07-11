@@ -15,6 +15,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import pLimit from 'p-limit';
 import { FindManyOptions, In, Not } from 'typeorm';
 import { DeleteResult } from 'typeorm/driver/mongodb/typings';
 
@@ -110,10 +111,13 @@ export class TranslationController extends BaseOrmController<TranslationOrmEntit
       return str && strings.indexOf(str) == pos;
     });
     // Perform refresh
+    const dbLimit = pLimit(10);
     const queue = strings.map((str) =>
-      this.translationService.findOneOrCreate(
-        { where: { str } },
-        { str, translations: defaultTrans },
+      dbLimit(() =>
+        this.translationService.findOneOrCreate(
+          { where: { str } },
+          { str, translations: defaultTrans },
+        ),
       ),
     );
     await Promise.all(queue);

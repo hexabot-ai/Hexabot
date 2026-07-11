@@ -7,6 +7,7 @@
 import type { IntegrationHealthResponse } from '@hexabot-ai/types';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import pLimit from 'p-limit';
 
 import { BaseOrmEntity } from './database';
 import { HealthService } from './health/health.service';
@@ -80,8 +81,10 @@ export class AppService {
         ),
       ),
     );
-
-    await Promise.all(subscribe.map((room) => req.socket.join(room)));
+    const socketLimit = pLimit(15);
+    await Promise.all(
+      subscribe.map((room) => socketLimit(() => req.socket.join(room))),
+    );
 
     return res.status(200).json({
       success: true,

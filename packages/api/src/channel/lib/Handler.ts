@@ -19,6 +19,7 @@ import { Inject, Injectable, OnModuleInit, Type } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { Request, Response } from 'express';
 import mime from 'mime';
+import pLimit from 'p-limit';
 import z from 'zod';
 
 import { AttachmentService } from '@/attachment/services/attachment.service';
@@ -236,18 +237,21 @@ export default abstract class ChannelHandler<
 
     const metadatas = await this.getMessageAttachments(event);
     const subscriber = event.getInitiator();
+    const storageLimit = pLimit(4);
     const attachments = await Promise.all(
-      metadatas.map(({ file, name, type, size }) => {
-        return this.attachmentService.store(file, {
-          name: `${name ? `${name}-` : ''}${randomUUID()}.${mime.extension(type)}`,
-          type,
-          size,
-          resourceRef: AttachmentResourceRef.MessageAttachment,
-          access: AttachmentAccess.Private,
-          createdByRef: AttachmentCreatedByRef.Subscriber,
-          createdBy: subscriber.id,
-        });
-      }),
+      metadatas.map(({ file, name, type, size }) =>
+        storageLimit(() =>
+          this.attachmentService.store(file, {
+            name: `${name ? `${name}-` : ''}${randomUUID()}.${mime.extension(type)}`,
+            type,
+            size,
+            resourceRef: AttachmentResourceRef.MessageAttachment,
+            access: AttachmentAccess.Private,
+            createdByRef: AttachmentCreatedByRef.Subscriber,
+            createdBy: subscriber.id,
+          }),
+        ),
+      ),
     );
 
     event.setPersistedAttachments(attachments);
