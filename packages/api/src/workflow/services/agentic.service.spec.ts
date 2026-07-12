@@ -707,6 +707,145 @@ describe('AgenticService (TypeORM)', () => {
       });
     });
 
+    it('reuses the recorded child run instead of spawning a duplicate during parent replay', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      // Parent is mid-resume: markRunning happened, but the persisted
+      // suspension bookkeeping from the original call_workflow is still there.
+      const parentRun = await createParentRun();
+      const childRun = await workflowRunService.create({
+        workflow: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        triggeredBy: initiator.id,
+        parentRun: parentRun.id,
+        status: 'finished',
+        input: { from: 'parent' },
+        output: { child: 'done' },
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        suspendedStep: 'call_child',
+        suspensionReason: 'awaiting_child_workflow',
+        suspensionData: {
+          workflow_id: childWorkflow.id,
+          workflow_run_id: childRun.id,
+        },
+      });
+      const event = createEvent({ text: 'reply that resumes the parent' });
+      const runnerSnapshot: WorkflowSnapshot = {
+        status: 'finished',
+        actions: {},
+      };
+      const runner = buildRunnerMock({
+        startResult: {
+          status: 'finished',
+          output: { duplicate: true },
+          snapshot: runnerSnapshot,
+        },
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: runnerSnapshot,
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const result = await agenticService.callWorkflow({
+        workflowId: childWorkflow.id,
+        input: { from: 'parent' },
+        parentContext: {
+          workflowRunId: parentRun.id,
+          event,
+          // The runtime control reports a recorded resume result for the
+          // upcoming suspend() — the signature of a deterministic replay.
+          workflow: { hasRecordedResult: () => true },
+        } as any,
+      });
+      const childRuns = (await workflowRunService.findAndPopulate({
+        where: { workflow: { id: childWorkflow.id } },
+      })) as WorkflowRunFull[];
+
+      expect(childRuns).toHaveLength(1);
+      expect(runner.start).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        status: 'finished',
+        workflow_id: childWorkflow.id,
+        workflow_run_id: childRun.id,
+        output: { child: 'done' },
+      });
+    });
+
+    it('spawns a new child run for a later call even when stale suspension bookkeeping matches', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createParentRun();
+      const previousChildRun = await workflowRunService.create({
+        workflow: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        triggeredBy: initiator.id,
+        parentRun: parentRun.id,
+        status: 'finished',
+        input: { from: 'parent' },
+        output: { child: 'done' },
+      });
+      // Suspension fields are not cleared when the parent resumes, so a
+      // subsequent sequential call to the same workflow sees stale metadata.
+      await workflowRunService.updateOne(parentRun.id, {
+        suspendedStep: 'call_child',
+        suspensionReason: 'awaiting_child_workflow',
+        suspensionData: {
+          workflow_id: childWorkflow.id,
+          workflow_run_id: previousChildRun.id,
+        },
+      });
+      const event = createEvent({ text: 'second sequential call' });
+      const runtimeContext = { state: {}, event } as any;
+      workflowContextFactoryMock.create.mockResolvedValue(runtimeContext);
+      const runnerSnapshot: WorkflowSnapshot = {
+        status: 'finished',
+        actions: {},
+      };
+      const runner = buildRunnerMock({
+        startResult: {
+          status: 'finished',
+          output: { child: 'done-again' },
+          snapshot: runnerSnapshot,
+        },
+        state: {
+          input: { from: 'parent' },
+          output: { child: 'done-again' },
+          iterationStack: [],
+        },
+        snapshot: runnerSnapshot,
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const result = await agenticService.callWorkflow({
+        workflowId: childWorkflow.id,
+        input: { from: 'parent' },
+        parentContext: {
+          workflowRunId: parentRun.id,
+          event,
+          // No recorded result: this is a fresh call, not a replay.
+          workflow: { hasRecordedResult: () => false },
+        } as any,
+      });
+      const childRuns = (await workflowRunService.findAndPopulate({
+        where: { workflow: { id: childWorkflow.id } },
+      })) as WorkflowRunFull[];
+
+      expect(childRuns).toHaveLength(2);
+      expect(runner.start).toHaveBeenCalled();
+      expect(result).toEqual(
+        expect.objectContaining({
+          status: 'finished',
+          workflow_id: childWorkflow.id,
+          output: { child: 'done-again' },
+        }),
+      );
+      expect(result).not.toEqual(
+        expect.objectContaining({ workflow_run_id: previousChildRun.id }),
+      );
+    });
+
     it('resumes a suspended child leaf before unwinding the parent run', async () => {
       const childWorkflow = await createWorkflowWithDefinition();
       const parentRun = await createParentRun();

@@ -353,6 +353,12 @@ class ParallelWorkflowRuntimeControl implements WorkflowRuntimeControl {
     return Promise.reject(new ParallelSuspensionError());
   }
 
+  hasRecordedResult(): boolean {
+    // Suspension is not supported inside parallel blocks, so no resume
+    // result can ever be recorded for them.
+    return false;
+  }
+
   resume(data?: unknown): void {
     this.getParent().resume(data);
   }

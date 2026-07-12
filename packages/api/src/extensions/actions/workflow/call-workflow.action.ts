@@ -10,7 +10,10 @@ import { z } from 'zod';
 import { createAction } from '@/actions/create-action';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 import { workflowResourceRef } from '@/workflow/resource-refs';
-import { CallWorkflowResult } from '@/workflow/types';
+import {
+  AWAITING_CHILD_WORKFLOW_REASON,
+  CallWorkflowResult,
+} from '@/workflow/types';
 
 const callWorkflowInputSchema = z.object({
   workflow_id: z.uuid().meta({
@@ -81,6 +84,18 @@ export const CallWorkflowAction = createAction<
   inputSchema: callWorkflowInputSchema,
   outputSchema: callWorkflowFinishedSchema,
   async execute({ input, context }) {
+    // Deterministic replay re-executes this action when the parent resumes
+    // after the child completed. The child was already spawned by the original
+    // execution, so skip the spawn and let suspend() return the recorded
+    // child payload immediately.
+    if (context.workflow.hasRecordedResult()) {
+      const resumeData = await context.workflow.suspend<unknown>({
+        reason: AWAITING_CHILD_WORKFLOW_REASON,
+      });
+
+      return assertFinishedResult(callWorkflowResumeSchema.parse(resumeData));
+    }
+
     // AgenticService owns workflow resolution and run creation because the
     // target workflow is an API-persisted entity, not an agentic DSL primitive.
     const result = await context.services.agentic.callWorkflow({
@@ -97,7 +112,7 @@ export const CallWorkflowAction = createAction<
     // A future event resumes the child leaf first; AgenticService then resumes
     // this parent action with the final child payload.
     const resumeData = await context.workflow.suspend<unknown>({
-      reason: 'awaiting_child_workflow',
+      reason: AWAITING_CHILD_WORKFLOW_REASON,
       data: {
         workflow_id: result.workflow_id,
         workflow_run_id: result.workflow_run_id,

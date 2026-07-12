@@ -1341,6 +1341,191 @@ describe('WorkflowRunner', () => {
     }
   });
 
+  it('lets actions skip side effects via hasRecordedResult when replaying a resumed step', async () => {
+    const sideEffects: string[] = [];
+    const spawnAction = defineAction<
+      unknown,
+      { reply: string },
+      TestContext,
+      Settings
+    >({
+      name: 'spawn_then_wait_action',
+      inputSchema: z.any(),
+      outputSchema: z.object({ reply: z.string() }),
+      execute: async ({ context }) => {
+        // Deterministic replay re-runs this body; the guard must prevent the
+        // side effect from executing a second time.
+        if (!context.workflow.hasRecordedResult()) {
+          sideEffects.push('spawn');
+        }
+
+        const resumeData = (await context.workflow.suspend({
+          reason: 'awaiting_child_workflow',
+        })) as { reply: string };
+
+        return { reply: resumeData.reply };
+      },
+    });
+    const definition: WorkflowDefinition = {
+      defs: createTaskDefs({
+        wait_step: {
+          action: 'spawn_then_wait_action',
+          inputs: {},
+        },
+      }),
+      flow: [{ do: 'wait_step' }],
+      outputs: { reply: '=$output.wait_step.reply' },
+    };
+    const compiled = compileWorkflow(definition, {
+      actions: { spawn_then_wait_action: spawnAction },
+    });
+    const runner = new WorkflowRunner(compiled);
+    const startResult = await runner.start({
+      inputData: {},
+      context: new TestContext({}),
+    });
+
+    expect(startResult.status).toBe('suspended');
+    if (startResult.status !== 'suspended') {
+      throw new Error('Workflow did not suspend as expected');
+    }
+
+    expect(sideEffects).toEqual(['spawn']);
+
+    const runtimeState = runner.getState() as ExecutionState;
+    const rebuilt = await WorkflowRunner.fromPersistedState(compiled, {
+      state: {
+        input: { ...runtimeState.input },
+        output: { ...runtimeState.output },
+        iteration: runtimeState.iteration,
+        accumulator: runtimeState.accumulator,
+        iterationStack: [...runtimeState.iterationStack],
+      },
+      context: new TestContext({}),
+      snapshot: startResult.snapshot,
+      suspension: {
+        stepId: startResult.step.id,
+        reason: startResult.reason ?? null,
+        data: startResult.data,
+        stepExecId: startResult.stepExecId,
+        suspendIndex: startResult.suspendIndex,
+        suspendKey: startResult.suspendKey,
+        awaitResults: startResult.awaitResults,
+      },
+    });
+    const resumeResult = await rebuilt.resume({
+      resumeData: { reply: 'child-finished' },
+    });
+
+    expect(resumeResult.status).toBe('finished');
+    if (resumeResult.status === 'finished') {
+      expect(resumeResult.output.reply).toBe('child-finished');
+    }
+
+    // The side effect must not run a second time during deterministic replay.
+    expect(sideEffects).toEqual(['spawn']);
+  });
+
+  it('reports recorded results only for suspensions that will replay immediately', async () => {
+    const observed: boolean[] = [];
+    const multiSuspendAction = defineAction<
+      unknown,
+      { firstReply: string; secondReply: string },
+      TestContext,
+      Settings
+    >({
+      name: 'observing_multi_suspend_action',
+      inputSchema: z.any(),
+      outputSchema: z.object({
+        firstReply: z.string(),
+        secondReply: z.string(),
+      }),
+      execute: async ({ context }) => {
+        observed.push(context.workflow.hasRecordedResult());
+        const first = (await context.workflow.suspend({
+          reason: 'first_pause',
+        })) as { reply: string };
+
+        observed.push(context.workflow.hasRecordedResult());
+        const second = (await context.workflow.suspend({
+          reason: 'second_pause',
+        })) as { reply: string };
+
+        return {
+          firstReply: first.reply,
+          secondReply: second.reply,
+        };
+      },
+    });
+    const definition: WorkflowDefinition = {
+      defs: createTaskDefs({
+        wait_step: {
+          action: 'observing_multi_suspend_action',
+          inputs: {},
+        },
+      }),
+      flow: [{ do: 'wait_step' }],
+      outputs: {
+        firstReply: '=$output.wait_step.firstReply',
+        secondReply: '=$output.wait_step.secondReply',
+      },
+    };
+    const compiled = compileWorkflow(definition, {
+      actions: { observing_multi_suspend_action: multiSuspendAction },
+    });
+    const runner = new WorkflowRunner(compiled);
+    const firstSuspension = await runner.start({
+      inputData: {},
+      context: new TestContext({}),
+    });
+    expect(firstSuspension.status).toBe('suspended');
+
+    const secondSuspension = await runner.resume({
+      resumeData: { reply: 'first-answer' },
+    });
+    expect(secondSuspension.status).toBe('suspended');
+    if (secondSuspension.status !== 'suspended') {
+      throw new Error('Workflow did not suspend on second await point');
+    }
+
+    // In-memory execution never sees pre-recorded results.
+    expect(observed).toEqual([false, false]);
+
+    const runtimeState = runner.getState() as ExecutionState;
+    const rebuilt = await WorkflowRunner.fromPersistedState(compiled, {
+      state: {
+        input: { ...runtimeState.input },
+        output: { ...runtimeState.output },
+        iteration: runtimeState.iteration,
+        accumulator: runtimeState.accumulator,
+        iterationStack: [...runtimeState.iterationStack],
+      },
+      context: new TestContext({}),
+      snapshot: secondSuspension.snapshot,
+      suspension: {
+        stepId: secondSuspension.step.id,
+        reason: secondSuspension.reason ?? null,
+        data: secondSuspension.data,
+        stepExecId: secondSuspension.stepExecId,
+        suspendIndex: secondSuspension.suspendIndex,
+        suspendKey: secondSuspension.suspendKey,
+        awaitResults: secondSuspension.awaitResults,
+      },
+    });
+    const finalResult = await rebuilt.resume({
+      resumeData: { reply: 'second-answer' },
+    });
+
+    expect(finalResult.status).toBe('finished');
+    if (finalResult.status === 'finished') {
+      expect(finalResult.output.firstReply).toBe('first-answer');
+      expect(finalResult.output.secondReply).toBe('second-answer');
+    }
+
+    // During replay both suspensions have recorded results awaiting them.
+    expect(observed).toEqual([false, false, true, true]);
+  });
+
   it('fails resume when replay suspension metadata does not match the workflow code path', async () => {
     const suspendAction = defineAction<
       unknown,

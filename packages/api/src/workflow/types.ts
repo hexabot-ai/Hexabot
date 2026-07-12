@@ -38,6 +38,12 @@ export type MemoryValue = Record<string, unknown>;
 export type WorkflowResult = WorkflowStartResult | WorkflowResumeResult;
 
 /**
+ * Suspension reason used by the `call_workflow` action while its parent run
+ * waits for a spawned child run to reach a terminal state.
+ */
+export const AWAITING_CHILD_WORKFLOW_REASON = 'awaiting_child_workflow';
+
+/**
  * Payload passed from a child workflow back to the suspended `call_workflow`
  * action in its parent. Only `finished` is exposed as the action output; the
  * action converts `failed` into a thrown error and treats `suspended` as a

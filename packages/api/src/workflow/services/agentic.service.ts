@@ -32,6 +32,7 @@ import type {
   WorkflowCallService,
   WorkflowResult,
 } from '../types';
+import { AWAITING_CHILD_WORKFLOW_REASON } from '../types';
 
 import { WorkflowRunService } from './workflow-run.service';
 import { WorkflowService } from './workflow.service';
@@ -165,6 +166,27 @@ export class AgenticService implements WorkflowCallService {
       throw new Error(
         `Unable to load parent workflow run ${parentContext.workflowRunId}`,
       );
+    }
+
+    // Defense in depth against deterministic replay: if the parent is
+    // re-executing an already-resolved `call_workflow` suspension, reuse the
+    // child run it originally spawned instead of creating a duplicate.
+    const replayedChildRun = await this.findReplayedChildRun(
+      parentRun,
+      workflowId,
+      parentContext,
+    );
+    if (replayedChildRun) {
+      this.logger.log(
+        'Reusing recorded child workflow run during parent replay',
+        {
+          parentRunId: parentRun.id,
+          childRunId: replayedChildRun.id,
+          workflowId,
+        },
+      );
+
+      return this.toPersistedCallWorkflowResult(replayedChildRun);
     }
 
     const workflow = await this.workflowService.findOneAndPopulate(workflowId);
@@ -495,6 +517,101 @@ export class AgenticService implements WorkflowCallService {
       workflow_id: run.workflow.id,
       workflow_run_id: run.id,
       error: this.stringifyError(result.error),
+    };
+  }
+
+  /**
+   * Detect a deterministic replay of a `call_workflow` suspension and return
+   * the child run originally spawned by that call, if any.
+   *
+   * Replay is identified by the parent runtime control reporting a recorded
+   * resume result for the upcoming suspension; the persisted parent
+   * suspension metadata then pins which child run the original call created.
+   * The runtime signal is required because suspension bookkeeping is not
+   * cleared on resume, so metadata alone would also match a later sequential
+   * call to the same workflow.
+   */
+  private async findReplayedChildRun(
+    parentRun: WorkflowRunFull,
+    workflowId: string,
+    parentContext: WorkflowRuntimeContext,
+  ): Promise<WorkflowRunFull | null> {
+    if (!this.isReplayingRecordedSuspension(parentContext)) {
+      return null;
+    }
+
+    if (parentRun.suspensionReason !== AWAITING_CHILD_WORKFLOW_REASON) {
+      return null;
+    }
+
+    const suspensionData = parentRun.suspensionData as
+      | { workflow_id?: unknown; workflow_run_id?: unknown }
+      | null
+      | undefined;
+    if (
+      suspensionData?.workflow_id !== workflowId ||
+      typeof suspensionData.workflow_run_id !== 'string'
+    ) {
+      return null;
+    }
+
+    const childRun = await this.workflowRunService.findOneAndPopulate(
+      suspensionData.workflow_run_id,
+    );
+    if (
+      !childRun ||
+      this.resolveRunId(childRun.parentRun) !== parentRun.id ||
+      childRun.workflow.id !== workflowId
+    ) {
+      return null;
+    }
+
+    return childRun;
+  }
+
+  /**
+   * Report whether the parent context is replaying a suspension whose resume
+   * result is already recorded.
+   */
+  private isReplayingRecordedSuspension(
+    parentContext: WorkflowRuntimeContext,
+  ): boolean {
+    try {
+      return parentContext.workflow.hasRecordedResult();
+    } catch {
+      // The context may not be attached to a running workflow runtime.
+      return false;
+    }
+  }
+
+  /**
+   * Build the `call_workflow` contract payload from a persisted child run.
+   */
+  private toPersistedCallWorkflowResult(
+    run: WorkflowRunFull,
+  ): CallWorkflowResult {
+    if (run.status === 'finished') {
+      return {
+        status: 'finished',
+        workflow_id: run.workflow.id,
+        workflow_run_id: run.id,
+        output: run.output ?? {},
+      };
+    }
+
+    if (run.status === 'failed') {
+      return {
+        status: 'failed',
+        workflow_id: run.workflow.id,
+        workflow_run_id: run.id,
+        error: run.error ?? 'Child workflow run failed',
+      };
+    }
+
+    return {
+      status: 'suspended',
+      workflow_id: run.workflow.id,
+      workflow_run_id: run.id,
     };
   }
 

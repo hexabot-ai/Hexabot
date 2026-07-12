@@ -157,6 +157,21 @@ export class RunnerRuntimeControl implements WorkflowRuntimeControl {
     return request.resume.promise as Promise<T>;
   }
 
+  hasRecordedResult(key?: string): boolean {
+    const currentStep = this.runner.getCurrentStep();
+    if (!currentStep) {
+      return false;
+    }
+
+    const execution = this.ensureStepExecution(currentStep.id);
+    const suspendKey = buildSuspendKey(execution.suspendCursor + 1, key);
+    if (execution.awaitResults.has(suspendKey)) {
+      return true;
+    }
+
+    return (this.primedResumeData.get(currentStep.id)?.length ?? 0) > 0;
+  }
+
   resume(data?: unknown): void {
     void this.runner.resume({ resumeData: data });
   }
