@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { Expression, Focus } from 'jsonata';
+import type { Expression } from 'jsonata';
 import jsonata from 'jsonata';
 
 import type { JsonValue, Settings } from './dsl.types';
@@ -12,21 +12,14 @@ import type {
   CompiledMapping,
   CompiledValue,
   EvaluationScope,
+  JsonataFunctionRegistry,
 } from './workflow-types';
 
-export type JsonataFunctionImplementation = (
-  this: Focus,
-  ...args: any[]
-) => unknown;
-
-export type JsonataFunctionConfig =
-  | JsonataFunctionImplementation
-  | {
-      implementation: JsonataFunctionImplementation;
-      signature?: string;
-    };
-
-export type JsonataFunctionRegistry = Record<string, JsonataFunctionConfig>;
+export type {
+  JsonataFunctionConfig,
+  JsonataFunctionImplementation,
+  JsonataFunctionRegistry,
+} from './workflow-types';
 
 export type CompileValueOptions = {
   jsonataFunctions?: JsonataFunctionRegistry;
@@ -38,10 +31,11 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 const resolveNestedExpressions = async (
   value: unknown,
   scope: EvaluationScope,
+  jsonataFunctions?: JsonataFunctionRegistry,
   seen: WeakSet<object> = new WeakSet(),
 ): Promise<unknown> => {
   if (typeof value === 'string' && value.startsWith('=')) {
-    return evaluateValue(compileValue(value), scope);
+    return evaluateValue(compileValue(value, { jsonataFunctions }), scope);
   }
 
   if (Array.isArray(value)) {
@@ -51,7 +45,9 @@ const resolveNestedExpressions = async (
     seen.add(value);
 
     return Promise.all(
-      value.map((entry) => resolveNestedExpressions(entry, scope, seen)),
+      value.map((entry) =>
+        resolveNestedExpressions(entry, scope, jsonataFunctions, seen),
+      ),
     );
   }
 
@@ -64,7 +60,7 @@ const resolveNestedExpressions = async (
     const entries = await Promise.all(
       Object.entries(value).map(async ([key, entry]) => [
         key,
-        await resolveNestedExpressions(entry, scope, seen),
+        await resolveNestedExpressions(entry, scope, jsonataFunctions, seen),
       ]),
     );
 
@@ -108,14 +104,16 @@ export const compileValue = (
   value: unknown,
   options?: CompileValueOptions,
 ): CompiledValue => {
+  const jsonataFunctions = options?.jsonataFunctions;
+
   if (typeof value === 'string' && value.startsWith('=')) {
     const expression = jsonata(value.slice(1));
-    registerJsonataFunctions(expression, options?.jsonataFunctions);
+    registerJsonataFunctions(expression, jsonataFunctions);
 
-    return { kind: 'expression', source: value, expression };
+    return { kind: 'expression', source: value, expression, jsonataFunctions };
   }
 
-  return { kind: 'literal', value };
+  return { kind: 'literal', value, jsonataFunctions };
 };
 
 /**
@@ -162,6 +160,7 @@ export const evaluateMapping = async (
       await resolveNestedExpressions(
         await evaluateValue(compiled, scope),
         scope,
+        compiled.jsonataFunctions,
       ),
     ]),
   );

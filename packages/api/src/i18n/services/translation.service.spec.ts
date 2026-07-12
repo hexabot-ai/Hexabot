@@ -12,6 +12,7 @@ import { buildTestingMocks } from '@/utils/test/utils';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowType } from '@/workflow/types';
 
+import { TranslationOrmEntity } from '../entities/translation.entity';
 import { TranslationRepository } from '../repositories/translation.repository';
 import { TranslationService } from '../services/translation.service';
 
@@ -149,5 +150,54 @@ describe('TranslationService', () => {
     expect(strings).not.toContain('Workflow description');
     expect(strings).not.toContain('Internal workflow description');
     expect(strings).not.toContain('Task description to ignore');
+  });
+
+  it('refreshes workflow translations sequentially with one dynamic i18n reload', async () => {
+    const operationOrder: string[] = [];
+    jest
+      .spyOn(service, 'getAllWorkflowStrings')
+      .mockResolvedValue(['Hello user', '', 'Pick one', 'Hello user']);
+    const resetSpy = jest
+      .spyOn(service, 'resetI18nTranslations')
+      .mockResolvedValue(undefined);
+    const findOneOrCreateSpy = jest
+      .spyOn(service, 'findOneOrCreate')
+      .mockImplementation(async (options, payload) => {
+        const str = (options as { where: { str: string } }).where.str;
+        operationOrder.push(`start:${str}`);
+        await service.handleTranslationsUpdate();
+        operationOrder.push(`end:${str}`);
+
+        return payload as TranslationOrmEntity;
+      });
+    const deleteManySpy = jest
+      .spyOn(service, 'deleteMany')
+      .mockImplementation(async () => {
+        await service.handleTranslationsUpdate();
+
+        return { acknowledged: true, deletedCount: 0 };
+      });
+
+    await expect(
+      service.refreshWorkflowTranslations({ fr: '' }),
+    ).resolves.toEqual({
+      acknowledged: true,
+      deletedCount: 0,
+    });
+
+    expect(findOneOrCreateSpy).toHaveBeenCalledTimes(2);
+    expect(
+      findOneOrCreateSpy.mock.calls.map(
+        ([options]) => (options as { where: { str: string } }).where.str,
+      ),
+    ).toEqual(['Hello user', 'Pick one']);
+    expect(operationOrder).toEqual([
+      'start:Hello user',
+      'end:Hello user',
+      'start:Pick one',
+      'end:Pick one',
+    ]);
+    expect(deleteManySpy).toHaveBeenCalledTimes(1);
+    expect(resetSpy).toHaveBeenCalledTimes(1);
   });
 });

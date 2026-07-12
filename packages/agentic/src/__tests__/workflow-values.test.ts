@@ -92,6 +92,32 @@ describe('workflow values', () => {
     });
   });
 
+  it('registers custom functions on nested expressions inside literal values', async () => {
+    const translate = jest.fn((key: string) => `translated:${key}`);
+    const mapping = {
+      payload: compileValue(
+        {
+          title: "=$t('Title')",
+          actions: ['=$t("Confirm")', { label: "=$t('Cancel')" }],
+        },
+        { jsonataFunctions: { t: translate } },
+      ),
+    };
+    const values = await evaluateMapping(mapping, {
+      input: {},
+      context: new TestContext().state,
+      output: {},
+    });
+
+    expect(values).toEqual({
+      payload: {
+        title: 'translated:Title',
+        actions: ['translated:Confirm', { label: 'translated:Cancel' }],
+      },
+    });
+    expect(translate).toHaveBeenCalledTimes(3);
+  });
+
   it('handles missing mappings and deep merges settings', async () => {
     await expect(
       evaluateMapping(undefined, {

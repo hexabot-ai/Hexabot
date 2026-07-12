@@ -14,6 +14,8 @@ import { extractTaskDefinitions as extractTaskDefinitionsFromDefs } from '@hexab
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import jsonata from 'jsonata';
+import { FindManyOptions, In, Not } from 'typeorm';
+import { DeleteResult } from 'typeorm/driver/mongodb/typings';
 
 import { I18nService } from '@/i18n/services/i18n.service';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
@@ -24,6 +26,9 @@ import { TranslationRepository } from '../repositories/translation.repository';
 
 @Injectable()
 export class TranslationService extends BaseOrmService<TranslationOrmEntity> {
+  /** Number of in-flight batch operations deferring the i18n refresh. */
+  private i18nRefreshDeferrals = 0;
+
   constructor(
     repository: TranslationRepository,
     private readonly workflowService: WorkflowService,
@@ -36,6 +41,38 @@ export class TranslationService extends BaseOrmService<TranslationOrmEntity> {
   public async resetI18nTranslations() {
     const translations = await this.findAll();
     this.i18n.refreshDynamicTranslations(translations);
+  }
+
+  /**
+   * Synchronize stored translations with the strings currently used by
+   * workflows: create missing ones and purge those no longer referenced.
+   *
+   * Writes run sequentially with the per-event i18n refresh deferred to a
+   * single reload at the end, so a large refresh cannot exhaust the DB pool.
+   *
+   * @param defaultTranslations - Empty translations map seeded on new strings.
+   * @returns The result of purging stale translations.
+   */
+  async refreshWorkflowTranslations(
+    defaultTranslations: TranslationOrmEntity['translations'],
+  ): Promise<DeleteResult> {
+    return await this.deferI18nRefresh(async () => {
+      const strings = [
+        ...new Set((await this.getAllWorkflowStrings()).filter(Boolean)),
+      ];
+
+      for (const str of strings) {
+        await this.findOneOrCreate(
+          { where: { str } },
+          { str, translations: { ...defaultTranslations } },
+        );
+      }
+
+      const deleteOptions: FindManyOptions<TranslationOrmEntity> =
+        strings.length > 0 ? { where: { str: Not(In(strings)) } } : {};
+
+      return await this.deleteMany(deleteOptions);
+    });
   }
 
   /**
@@ -73,8 +110,29 @@ export class TranslationService extends BaseOrmService<TranslationOrmEntity> {
    * Updates the in-memory translations
    */
   @OnEvent('hook:translation:*')
-  handleTranslationsUpdate() {
-    this.resetI18nTranslations();
+  async handleTranslationsUpdate(): Promise<void> {
+    if (this.i18nRefreshDeferrals > 0) {
+      return;
+    }
+
+    await this.resetI18nTranslations();
+  }
+
+  /**
+   * Run a batch of translation writes with the event-driven i18n refresh
+   * deferred, then reload the in-memory translations once at the end.
+   */
+  private async deferI18nRefresh<T>(operation: () => Promise<T>): Promise<T> {
+    this.i18nRefreshDeferrals++;
+
+    try {
+      return await operation();
+    } finally {
+      this.i18nRefreshDeferrals--;
+      if (this.i18nRefreshDeferrals === 0) {
+        await this.resetI18nTranslations();
+      }
+    }
   }
 
   /**
