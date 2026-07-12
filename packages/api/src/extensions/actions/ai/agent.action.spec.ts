@@ -7,9 +7,11 @@
 import { ToolLoopAgent, hasToolCall, stepCountIs } from 'ai';
 
 import { ActionService } from '@/actions/actions.service';
+import { toDraft07JsonSchema } from '@/utils/helpers/zod';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import { AiAgentAction } from './agent.action';
+import { aiAgentSettingsSchema } from './ai-schemas';
 
 jest.mock('ai', () => {
   const generateFn = jest.fn();
@@ -90,6 +92,68 @@ describe('AiAgentAction', () => {
     toolLoopAgentGenerateMock.mockReset();
     actionService = { register: jest.fn() } as unknown as ActionService;
     action = new AiAgentAction(actionService);
+  });
+
+  it('defaults tool-enabled agent runs to an explicit 10-step budget', async () => {
+    const provider = Object.assign(
+      jest.fn().mockReturnValue('model-instance'),
+      {
+        languageModel: jest.fn(),
+      },
+    );
+    const actionsService = {
+      get: jest.fn().mockReturnValue({
+        description: 'demo tool',
+        inputSchema: {},
+        outputSchema: {},
+        run: jest.fn(),
+      }),
+    };
+    const context = createContext({ actions: actionsService });
+
+    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+    jest.spyOn(action as any, 'createModel').mockReturnValue('model-instance');
+    toolLoopAgentGenerateMock.mockResolvedValue({
+      text: 'Done',
+      finishReason: 'stop',
+      rawFinishReason: 'stop',
+      steps: [],
+    } as any);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'use the tools' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+      } as any,
+      context,
+      bindings: {
+        ...createModelBindings(),
+        tools: {
+          search: { action: 'search_action' },
+          translate: { action: 'translate_action' },
+        },
+      } as any,
+    });
+
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(10);
+  });
+
+  it('advertises a visible default 10-step budget in the form schema', () => {
+    const jsonSchema = toDraft07JsonSchema(aiAgentSettingsSchema) as {
+      properties?: Record<string, Record<string, any>>;
+    };
+    const stopStepCount = jsonSchema.properties?.stop_step_count;
+
+    expect(aiAgentSettingsSchema.parse({})).not.toHaveProperty(
+      'stop_step_count',
+    );
+    expect(stopStepCount).toEqual(
+      expect.objectContaining({
+        default: 10,
+      }),
+    );
+    expect(stopStepCount?.['ui:options']?.hideUntilAdded).toBeUndefined();
   });
 
   it('creates a ToolLoopAgent, runs it, and normalizes the response', async () => {
@@ -213,7 +277,7 @@ describe('AiAgentAction', () => {
       'search',
       'translate',
     ]);
-    expect(stepCountIsMock).toHaveBeenCalledWith(3);
+    expect(stepCountIsMock).toHaveBeenCalledWith(10);
     await (agentOptions.tools as any).search.execute({ query: 'hello' });
     expect(toolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
       scope: 'web',
@@ -362,7 +426,7 @@ describe('AiAgentAction', () => {
     expect(agentOptions.instructions).toContain('- Name: Ada');
   });
 
-  it('allows repeated MCP work before updating memory by default', async () => {
+  it('uses the default 10-step budget with MCP and memory tools', async () => {
     const provider = Object.assign(
       jest.fn().mockReturnValue('model-instance'),
       {
@@ -450,10 +514,10 @@ describe('AiAgentAction', () => {
       'calendar__attach_meet',
       'update_memory',
     ]);
-    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBeGreaterThanOrEqual(10);
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(10);
   });
 
-  it('keeps the tool-based default when it already exceeds the MCP memory minimum', async () => {
+  it('keeps the default at 10 when more than 9 tools are available', async () => {
     const provider = Object.assign(
       jest.fn().mockReturnValue('model-instance'),
       {
@@ -540,14 +604,12 @@ describe('AiAgentAction', () => {
 
     const agentOptions = ToolLoopAgentMock.mock.calls[0][0] as any;
 
-    // 12 MCP tools + update_memory = 13 tools, so the tool-based default
-    // (1 + 13 = 14) must win over the MCP+memory minimum of 10.
     expect(Object.keys(agentOptions.tools)).toHaveLength(13);
     expect(agentOptions.tools).toHaveProperty('update_memory');
-    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(14);
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(10);
   });
 
-  it('lets an explicit stop_step_count win over the MCP memory default', async () => {
+  it('lets an explicit stop_step_count override the default budget', async () => {
     const provider = Object.assign(
       jest.fn().mockReturnValue('model-instance'),
       {
@@ -762,7 +824,7 @@ describe('AiAgentAction', () => {
       'search',
       'planner__lookup',
     ]);
-    expect(stepCountIsMock).toHaveBeenCalledWith(3);
+    expect(stepCountIsMock).toHaveBeenCalledWith(10);
     await agentOptions.tools.search.execute({ query: 'hello' });
     expect(actionToolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
       locale: 'en',

@@ -30,6 +30,8 @@ export const DEFAULT_AI_OBJECT_SYSTEM_PROMPT = [
   '- Return only the object: no prose, no explanation, no fields outside the schema.',
 ].join('\n');
 
+export const DEFAULT_AI_STEP_BUDGET = 10;
+
 const aiPromptBaseSchema = z.object({
   input_mode: z
     .enum(['prompt', 'history'])
@@ -209,17 +211,12 @@ export const aiCommonSettingsSchema = z.strictObject({
         hideUntilAdded: true,
       },
     }),
-  stop_step_count: z
-    .int()
-    .positive()
-    .optional()
-    .meta({
-      title: 'Stop step count',
-      description: 'Maximum number of agent steps before stopping.',
-      'ui:options': {
-        hideUntilAdded: true,
-      },
-    }),
+  stop_step_count: z.int().positive().optional().meta({
+    title: 'Stop step count',
+    description:
+      'Maximum number of agent steps before stopping. Defaults to 10 when tools are available.',
+    default: DEFAULT_AI_STEP_BUDGET,
+  }),
   stop_tool_call: z
     .string()
     .trim()
