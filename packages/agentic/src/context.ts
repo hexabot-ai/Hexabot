@@ -99,6 +99,18 @@ export interface WorkflowRuntimeControl {
    * @returns Promise resolved with the data supplied to {@link resume}.
    */
   suspend<T = unknown>(options?: SuspensionOptions): Promise<T>;
+  /**
+   * Reports whether the next {@link suspend} call in the currently running
+   * action already has a recorded resume result. This happens during
+   * deterministic replay of a resumed step: the action body re-executes and
+   * `suspend()` resolves immediately with the recorded payload. Actions that
+   * perform side effects before suspending must skip those side effects when
+   * this returns `true`, otherwise they run once per resume.
+   *
+   * @param key - Optional user key matching the `key` passed to `suspend`.
+   * @returns `true` when the upcoming suspension resolves from a recorded result.
+   */
+  hasRecordedResult(key?: string): boolean;
   resume(data?: unknown): void;
   getSnapshot(): WorkflowSnapshot;
 }
