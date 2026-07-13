@@ -76,13 +76,6 @@ export const ExpressionAssist = ({
         open={Boolean(menuAnchor)}
         onClose={onMenuClose}
         onClick={(event) => event.stopPropagation()}
-        slotProps={{
-          paper: {
-            sx: {
-              maxWidth: 320,
-            },
-          },
-        }}
       >
         <MenuItem onClick={onReplaceWithExpression}>
           <ListItemText
