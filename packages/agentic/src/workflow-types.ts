@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { Expression } from 'jsonata';
+import type { Expression, Focus } from 'jsonata';
 import type { ZodType } from 'zod';
 
 import type { Action } from './action/action.types';
@@ -15,10 +15,40 @@ import { StepType, type StepInfo } from './workflow-event-emitter';
 
 export type { CompiledTaskBindings } from './bindings/base-binding';
 
-/** Value representation used by the runtime after compilation. */
+/** Custom function callable from JSONata expressions. */
+export type JsonataFunctionImplementation = (
+  this: Focus,
+  ...args: any[]
+) => unknown;
+
+/** Function implementation, optionally paired with a JSONata type signature. */
+export type JsonataFunctionConfig =
+  | JsonataFunctionImplementation
+  | {
+      implementation: JsonataFunctionImplementation;
+      signature?: string;
+    };
+
+/** Map of function names to implementations, registered on compiled expressions. */
+export type JsonataFunctionRegistry = Record<string, JsonataFunctionConfig>;
+
+/**
+ * Value representation used by the runtime after compilation.
+ * The function registry is kept so nested `=` expressions discovered at
+ * evaluation time can be compiled with the same custom functions.
+ */
 export type CompiledValue =
-  | { kind: 'literal'; value: unknown }
-  | { kind: 'expression'; source: string; expression: Expression };
+  | {
+      kind: 'literal';
+      value: unknown;
+      jsonataFunctions?: JsonataFunctionRegistry;
+    }
+  | {
+      kind: 'expression';
+      source: string;
+      expression: Expression;
+      jsonataFunctions?: JsonataFunctionRegistry;
+    };
 
 /** Map of variable names to compiled values. */
 export type CompiledMapping = Record<string, CompiledValue>;

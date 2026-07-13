@@ -15,7 +15,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { FindManyOptions, In, Not } from 'typeorm';
+import { FindManyOptions } from 'typeorm';
 import { DeleteResult } from 'typeorm/driver/mongodb/typings';
 
 import { UuidParam } from '@/utils';
@@ -85,10 +85,9 @@ export class TranslationController extends BaseOrmController<TranslationOrmEntit
 
   /**
    * Refresh translations : Add new strings and remove old ones
-   * @returns {Promise<any>}
    */
   @Post('refresh')
-  async refresh(): Promise<any> {
+  async refresh(): Promise<DeleteResult> {
     const defaultLanguage = await this.languageService.getDefaultLanguage();
     const languages = await this.languageService.getLanguages();
     const defaultTrans: TranslationOrmEntity['translations'] = Object.keys(
@@ -103,25 +102,10 @@ export class TranslationController extends BaseOrmController<TranslationOrmEntit
         },
         {} as { [key: string]: string },
       );
-    // Scan workflows
-    let strings = await this.translationService.getAllWorkflowStrings();
-    // Filter unique and not empty messages
-    strings = strings.filter((str, pos) => {
-      return str && strings.indexOf(str) == pos;
-    });
-    // Perform refresh
-    const queue = strings.map((str) =>
-      this.translationService.findOneOrCreate(
-        { where: { str } },
-        { str, translations: defaultTrans },
-      ),
-    );
-    await Promise.all(queue);
-    // Purge non existing translations
-    const deleteOptions: FindManyOptions<TranslationOrmEntity> =
-      strings.length > 0 ? { where: { str: Not(In(strings)) } } : {};
 
-    return await this.translationService.deleteMany(deleteOptions);
+    return await this.translationService.refreshWorkflowTranslations(
+      defaultTrans,
+    );
   }
 
   /**
