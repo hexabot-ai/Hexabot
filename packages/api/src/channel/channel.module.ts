@@ -14,6 +14,7 @@ import { AttachmentModule } from '@/attachment/attachment.module';
 import { ChatModule } from '@/chat/chat.module';
 import { CmsModule } from '@/cms/cms.module';
 import { UserModule } from '@/user/user.module';
+import { extensionNodeModulesGlobs } from '@/utils/helpers/extension-globs';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 import { WorkflowModule } from '@/workflow/workflow.module';
 
@@ -38,8 +39,9 @@ export interface ChannelModuleOptions {
 @InjectDynamicProviders(
   // Built-in core channels
   'node_modules/@hexabot-ai/api/dist/extensions/channels/**/*.channel.js',
-  // Community extensions installed via npm
-  'node_modules/hexabot-channel-*/**/*.channel.js',
+  // Community extensions installed via npm, wherever the package manager
+  // placed them (flat install, hoisted workspace root, …)
+  ...extensionNodeModulesGlobs('hexabot-channel-*/**/*.channel.js'),
   // Custom & under dev channels
   'dist/extensions/channels/**/*.channel.js',
 )

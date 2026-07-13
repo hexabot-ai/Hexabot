@@ -11,6 +11,7 @@ import { InjectDynamicProviders } from 'nestjs-dynamic-providers';
 import { ChatModule } from '@/chat/chat.module';
 import { CmsModule } from '@/cms/cms.module';
 import { UserModule } from '@/user/user.module';
+import { extensionNodeModulesGlobs } from '@/utils/helpers/extension-globs';
 import { WorkflowModule } from '@/workflow/workflow.module';
 
 import { ContentTypeTransferAdapter } from './adapters/content-type-transfer.adapter';
@@ -25,7 +26,9 @@ import { WorkflowTransferService } from './workflow-transfer.service';
 
 @InjectDynamicProviders(
   'node_modules/@hexabot-ai/api/dist/extensions/**/*.workflow-transfer.adapter.js',
-  'node_modules/hexabot-*/**/*.workflow-transfer.adapter.js',
+  // Community adapters installed via npm, wherever the package manager
+  // placed them (flat install, hoisted workspace root, …)
+  ...extensionNodeModulesGlobs('hexabot-*/**/*.workflow-transfer.adapter.js'),
   'dist/extensions/**/*.workflow-transfer.adapter.js',
 )
 @Module({

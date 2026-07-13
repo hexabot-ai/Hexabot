@@ -8,6 +8,8 @@ import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InjectDynamicProviders } from 'nestjs-dynamic-providers';
 
+import { extensionNodeModulesGlobs } from '@/utils/helpers/extension-globs';
+
 import { SettingController } from './controllers/setting.controller';
 import { MetadataOrmEntity } from './entities/metadata.entity';
 import { SettingOrmEntity } from './entities/setting.entity';
@@ -30,8 +32,9 @@ const runtimeSettingProviderPatterns = [
     : [
         // API package settings groups installed via npm
         'node_modules/@hexabot-ai/api/dist/**/*.settings.js',
-        // Community settings groups installed via npm
-        'node_modules/hexabot-*/**/*.settings.js',
+        // Community settings groups installed via npm, wherever the package
+        // manager placed them (flat install, hoisted workspace root, …)
+        ...extensionNodeModulesGlobs('hexabot-*/**/*.settings.js'),
       ]),
 ] as const;
 

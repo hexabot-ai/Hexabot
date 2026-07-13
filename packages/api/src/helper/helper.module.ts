@@ -10,6 +10,7 @@ import { InjectDynamicProviders } from 'nestjs-dynamic-providers';
 
 import { ChatModule } from '@/chat/chat.module';
 import { CmsModule } from '@/cms/cms.module';
+import { extensionNodeModulesGlobs } from '@/utils/helpers/extension-globs';
 
 import { HelperController } from './helper.controller';
 import { HelperService } from './helper.service';
@@ -18,8 +19,9 @@ import { HelperService } from './helper.service';
 @InjectDynamicProviders(
   // Built-in core helpers
   'node_modules/@hexabot-ai/api/dist/extensions/helpers/**/*.helper.js',
-  // Community extensions installed via npm
-  'node_modules/hexabot-helper-*/**/*.helper.js',
+  // Community extensions installed via npm, wherever the package manager
+  // placed them (flat install, hoisted workspace root, …)
+  ...extensionNodeModulesGlobs('hexabot-helper-*/**/*.helper.js'),
   // Custom & under dev helpers
   'dist/extensions/helpers/**/*.helper.js',
 )
