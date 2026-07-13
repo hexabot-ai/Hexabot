@@ -38,6 +38,7 @@ import {
   WORKFLOW_TYPES,
   WORKFLOW_TYPE_ORDER,
 } from "@/constants/workflow.constants";
+import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
 import { useDelete } from "@/hooks/crud/useDelete";
 import { useFind } from "@/hooks/crud/useFind";
 import { useAuth } from "@/hooks/useAuth";
@@ -50,6 +51,7 @@ import { EntityType } from "@/services/types";
 import { useResizableDrawerSize } from "../../../../../../hooks/useResizableDrawerSize";
 import { useWorkflow } from "../../../hooks/useWorkflow";
 import { YamlEditor } from "../../yaml-editor";
+import { getWorkflowValidationIssueCounts } from "../../yaml-editor/validation/validation";
 import { WorkflowMenu } from "../WorkflowMenu";
 
 import { FlowsDrawerCollapsedActions } from "./FlowsDrawerCollapsedActions";
@@ -100,6 +102,7 @@ export const FlowsDrawer = ({
     workflows,
     selectedFlowId,
     updateWorkflowURL,
+    yaml,
     isDefinitionDirty,
     isSaving,
     isExportingWorkflow,
@@ -107,6 +110,12 @@ export const FlowsDrawer = ({
     exportWorkflow,
     importWorkflowBundle,
   } = useWorkflow();
+  const {
+    actions = [],
+    isLoading: actionsLoading,
+    isError: actionsError,
+  } = useWorkflowActionsCatalog();
+  const availableActions = actionsLoading || actionsError ? undefined : actions;
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down("lg"));
   const isSmall = useMediaQuery(theme.breakpoints.down("md"));
@@ -203,6 +212,14 @@ export const FlowsDrawer = ({
   const yamlToggleLabel = showYaml
     ? t("visual_editor.yaml_editor.hide")
     : t("visual_editor.yaml_editor.show");
+  const yamlIssueCounts = useMemo(
+    () =>
+      getWorkflowValidationIssueCounts({
+        yaml,
+        actions: availableActions,
+      }),
+    [availableActions, yaml],
+  );
   const versionsToggleLabel = showVersions
     ? t("visual_editor.workflow_versions.hide")
     : t("visual_editor.workflow_versions.show");
@@ -494,6 +511,8 @@ export const FlowsDrawer = ({
         yamlLabel={yamlToggleLabel}
         onToggleYaml={handleToggleYaml}
         isYamlOpen={showYaml}
+        yamlWarningCount={yamlIssueCounts.warnings}
+        yamlErrorCount={yamlIssueCounts.errors}
         versionsLabel={versionsToggleLabel}
         onToggleVersions={handleToggleVersions}
         isVersionsOpen={showVersions}
@@ -636,6 +655,8 @@ export const FlowsDrawer = ({
           onNew={onNew}
           onToggleYaml={handleToggleYaml}
           isYamlOpen={showYaml}
+          yamlWarningCount={yamlIssueCounts.warnings}
+          yamlErrorCount={yamlIssueCounts.errors}
         />
       )}
       {open && (

@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Box, IconButton, Tooltip, Typography } from "@mui/material";
+import { Badge, Box, IconButton, Tooltip, Typography } from "@mui/material";
 import { ChevronLeft, ChevronRight, Code, History } from "lucide-react";
 
 import { FlowDrawerHeader } from "./styles";
@@ -16,6 +16,8 @@ type FlowsDrawerHeaderProps = {
   yamlLabel: string;
   onToggleYaml: () => void;
   isYamlOpen: boolean;
+  yamlWarningCount: number;
+  yamlErrorCount: number;
   versionsLabel: string;
   onToggleVersions: () => void;
   isVersionsOpen: boolean;
@@ -28,6 +30,8 @@ export const FlowsDrawerHeader = ({
   yamlLabel,
   onToggleYaml,
   isYamlOpen,
+  yamlWarningCount,
+  yamlErrorCount,
   versionsLabel,
   onToggleVersions,
   isVersionsOpen,
@@ -52,14 +56,27 @@ export const FlowsDrawerHeader = ({
             </IconButton>
           </Tooltip>
           <Tooltip title={yamlLabel}>
-            <IconButton
-              size="small"
-              onClick={onToggleYaml}
-              color={isYamlOpen ? "primary" : "default"}
-              aria-pressed={isYamlOpen}
+            <Badge
+              badgeContent={yamlWarningCount}
+              color="warning"
+              invisible={yamlWarningCount === 0}
+              anchorOrigin={{ vertical: "top", horizontal: "left" }}
             >
-              <Code size={16} />
-            </IconButton>
+              <Badge
+                badgeContent={yamlErrorCount}
+                color="error"
+                invisible={yamlErrorCount === 0}
+              >
+                <IconButton
+                  size="small"
+                  onClick={onToggleYaml}
+                  color={isYamlOpen ? "primary" : "default"}
+                  aria-pressed={isYamlOpen}
+                >
+                  <Code size={16} />
+                </IconButton>
+              </Badge>
+            </Badge>
           </Tooltip>
           <IconButton size="small" onClick={onToggle}>
             <ChevronLeft size={16} />

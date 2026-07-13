@@ -27,6 +27,10 @@ type ApplyWorkflowValidationMarkersOptions = {
   yaml: string;
   actions?: IAction[];
 };
+type WorkflowValidationIssueCounts = {
+  warnings: number;
+  errors: number;
+};
 
 const EXECUTION_SETTING_KEYS = new Set(Object.keys(BaseSettingsSchema.shape));
 const EXECUTION_SETTINGS_SCHEMA = BaseSettingsSchema.toJSONSchema({
@@ -58,30 +62,56 @@ const toReferencePath = (path: readonly PropertyKey[]): ReferencePath =>
       typeof segment === "string" || typeof segment === "number",
   );
 
-export const applyWorkflowValidationMarkers = ({
-  editorInstance,
+export const getWorkflowValidationIssueCounts = ({
+  yaml,
+  actions,
+}: Pick<
+  ApplyWorkflowValidationMarkersOptions,
+  "yaml" | "actions"
+>): WorkflowValidationIssueCounts => {
+  if (!yaml) {
+    return { warnings: 0, errors: 0 };
+  }
+
+  const doc = parseDocument(yaml);
+
+  if (doc.errors.length > 0) {
+    return {
+      warnings: doc.warnings.length,
+      errors: doc.errors.length,
+    };
+  }
+
+  const markers = collectWorkflowValidationMarkers({
+    monacoInstance: {
+      MarkerSeverity: { Error: 8 },
+    } as unknown as Monaco,
+    yaml,
+    actions,
+  });
+
+  return {
+    warnings: doc.warnings.length,
+    errors: markers.length,
+  };
+};
+
+const collectWorkflowValidationMarkers = ({
   monacoInstance,
   yaml,
   actions,
-}: ApplyWorkflowValidationMarkersOptions) => {
-  if (!editorInstance || !monacoInstance) return;
-  const model = editorInstance.getModel();
-
-  if (!model) return;
-
+}: Pick<
+  ApplyWorkflowValidationMarkersOptions,
+  "monacoInstance" | "yaml" | "actions"
+>) => {
+  if (!monacoInstance) return [];
   // Build a YAML AST so validation errors can be mapped to source locations.
   const lineCounter = new LineCounter();
   const doc = parseDocument(yaml, { lineCounter });
 
   if (doc.errors.length > 0) {
-    // YAML syntax issues are surfaced elsewhere, so clear workflow markers here.
-    monacoInstance.editor.setModelMarkers(
-      model,
-      YAML_WORKFLOW_VALIDATION_OWNER,
-      [],
-    );
-
-    return;
+    // YAML syntax issues are surfaced elsewhere.
+    return [];
   }
 
   const markers: editor.IMarkerData[] = [];
@@ -104,13 +134,7 @@ export const applyWorkflowValidationMarkers = ({
       });
     });
 
-    monacoInstance.editor.setModelMarkers(
-      model,
-      YAML_WORKFLOW_VALIDATION_OWNER,
-      markers,
-    );
-
-    return;
+    return markers;
   }
 
   const taskDefinitions = extractTaskDefinitions(parsed.data.defs);
@@ -202,9 +226,27 @@ export const applyWorkflowValidationMarkers = ({
     });
   }
 
+  return markers;
+};
+
+export const applyWorkflowValidationMarkers = ({
+  editorInstance,
+  monacoInstance,
+  yaml,
+  actions,
+}: ApplyWorkflowValidationMarkersOptions) => {
+  if (!editorInstance || !monacoInstance) return;
+  const model = editorInstance.getModel();
+
+  if (!model) return;
+
   monacoInstance.editor.setModelMarkers(
     model,
     YAML_WORKFLOW_VALIDATION_OWNER,
-    markers,
+    collectWorkflowValidationMarkers({
+      monacoInstance,
+      yaml,
+      actions,
+    }),
   );
 };

@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Box, IconButton, Tooltip } from "@mui/material";
+import { Badge, Box, IconButton, Tooltip } from "@mui/material";
 import { Code, Plus, Search, Upload } from "lucide-react";
 import type { ReactElement } from "react";
 
@@ -22,6 +22,8 @@ type FlowsDrawerCollapsedActionsProps = {
   onNew?: () => void;
   onToggleYaml: () => void;
   isYamlOpen: boolean;
+  yamlWarningCount: number;
+  yamlErrorCount: number;
 };
 
 export const FlowsDrawerCollapsedActions = ({
@@ -38,6 +40,8 @@ export const FlowsDrawerCollapsedActions = ({
   onNew,
   onToggleYaml,
   isYamlOpen,
+  yamlWarningCount,
+  yamlErrorCount,
 }: FlowsDrawerCollapsedActionsProps) => (
   <Box
     display="flex"
@@ -53,14 +57,27 @@ export const FlowsDrawerCollapsedActions = ({
       </IconButton>
     </Tooltip>
     <Tooltip title={yamlLabel}>
-      <IconButton
-        size="small"
-        onClick={onToggleYaml}
-        color={isYamlOpen ? "primary" : "default"}
-        aria-pressed={isYamlOpen}
+      <Badge
+        badgeContent={yamlWarningCount}
+        color="warning"
+        invisible={yamlWarningCount === 0}
+        anchorOrigin={{ vertical: "top", horizontal: "left" }}
       >
-        <Code size={16} />
-      </IconButton>
+        <Badge
+          badgeContent={yamlErrorCount}
+          color="error"
+          invisible={yamlErrorCount === 0}
+        >
+          <IconButton
+            size="small"
+            onClick={onToggleYaml}
+            color={isYamlOpen ? "primary" : "default"}
+            aria-pressed={isYamlOpen}
+          >
+            <Code size={16} />
+          </IconButton>
+        </Badge>
+      </Badge>
     </Tooltip>
     <Tooltip title={importWorkflowLabel}>
       <span>
