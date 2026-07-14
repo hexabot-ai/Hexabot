@@ -6,6 +6,8 @@
 
 import { z, type ZodIssue } from 'zod';
 
+import { type WorkflowValidationIssue } from '../validation-issue';
+
 const TASK_KIND = 'task';
 
 export type BindingKindSchema = z.ZodTypeAny;
@@ -87,7 +89,7 @@ export type ValidateAndResolveBindingsOptions = {
 };
 
 type BindingValidationResult = {
-  errors: string[];
+  issues: WorkflowValidationIssue[];
   resolvedDefs: ResolvedBindingDefs;
 };
 
@@ -116,11 +118,26 @@ const hasBindingsConfigured = (workflow: BindingAwareWorkflowLike): boolean => {
 
   return hasNonTaskDefs || hasNestedBindings;
 };
-const formatZodIssues = (issues: ZodIssue[], prefix: string): string[] =>
-  issues.map((issue) => {
+const toBindingSettingsIssues = (
+  zodIssues: ZodIssue[],
+  defName: string,
+): WorkflowValidationIssue[] =>
+  zodIssues.map((issue) => {
     const path = issue.path.join('.') || '<root>';
 
-    return `${prefix}.${path}: ${issue.message}`;
+    return {
+      code: 'binding_settings',
+      message: `defs.${defName}.settings.${path}: ${issue.message}`,
+      path: [
+        'defs',
+        defName,
+        'settings',
+        ...issue.path.filter(
+          (segment): segment is string | number =>
+            typeof segment === 'string' || typeof segment === 'number',
+        ),
+      ],
+    };
   });
 const collectDuplicateReferences = (refs: string[]): string[] => {
   const seen = new Set<string>();
@@ -155,8 +172,10 @@ const collectBindingRefs = (
 
   return refs;
 };
-const detectBindingCycles = (defs: Record<string, DefLike>): string[] => {
-  const errors: string[] = [];
+const detectBindingCycles = (
+  defs: Record<string, DefLike>,
+): WorkflowValidationIssue[] => {
+  const issues: WorkflowValidationIssue[] = [];
   const reportedCycles = new Set<string>();
   const states = new Map<string, 'visiting' | 'visited'>();
   const stack: string[] = [];
@@ -178,9 +197,11 @@ const detectBindingCycles = (defs: Record<string, DefLike>): string[] => {
 
       if (!reportedCycles.has(cycleKey)) {
         reportedCycles.add(cycleKey);
-        errors.push(
-          `defs.${defName}.bindings: Circular binding reference detected (${cyclePath.join(' -> ')}).`,
-        );
+        issues.push({
+          code: 'binding_cycle',
+          message: `defs.${defName}.bindings: Circular binding reference detected (${cyclePath.join(' -> ')}).`,
+          path: ['defs', defName, 'bindings'],
+        });
       }
 
       return;
@@ -206,14 +227,23 @@ const detectBindingCycles = (defs: Record<string, DefLike>): string[] => {
     visit(defName);
   }
 
-  return errors;
+  return issues;
 };
+const missingActionIssue = (
+  defName: string,
+  actionName: string,
+): WorkflowValidationIssue => ({
+  code: 'missing_action',
+  message: `defs.${defName}.action: No action implementation provided for "${actionName}".`,
+  path: ['defs', defName, 'action'],
+  actionName,
+});
 const resolveSupportedBindingKinds = (
   definition: DefLike,
   defName: string,
   kinds: BindingKindSchemas,
   actions: Record<string, BindingValidationActionMetadata> | undefined,
-  errors: string[],
+  issues: WorkflowValidationIssue[],
 ): readonly string[] | null => {
   if (definition.action) {
     if (!actions) {
@@ -222,9 +252,7 @@ const resolveSupportedBindingKinds = (
 
     const action = actions[definition.action];
     if (!action) {
-      errors.push(
-        `defs.${defName}.action: No action implementation provided for "${definition.action}".`,
-      );
+      issues.push(missingActionIssue(defName, definition.action));
 
       return [];
     }
@@ -243,7 +271,7 @@ export const validateAndResolveBindings = (
   workflow: BindingAwareWorkflowLike,
   options?: BindingKindSchemas | ValidateAndResolveBindingsOptions,
 ): BindingValidationResult => {
-  const errors: string[] = [];
+  const issues: WorkflowValidationIssue[] = [];
   const resolvedDefs: ResolvedBindingDefs = {};
   const defs = workflow.defs ?? {};
   const resolvedOptions = resolveValidationOptions(options);
@@ -254,17 +282,17 @@ export const validateAndResolveBindings = (
   const parsedSettingsByDefName = new Map<string, unknown>();
 
   if (hasBindingUsage && kindNames.length === 0) {
-    errors.push(
-      'Workflows that declare non-task defs or nested bindings require a non-empty "bindingKinds" registry.',
-    );
+    issues.push({
+      code: 'binding_registry_required',
+      message:
+        'Workflows that declare non-task defs or nested bindings require a non-empty "bindingKinds" registry.',
+    });
   }
 
   for (const [defName, defDefinition] of Object.entries(defs)) {
     if (defDefinition.kind === TASK_KIND) {
       if (defDefinition.action && actions && !actions[defDefinition.action]) {
-        errors.push(
-          `defs.${defName}.action: No action implementation provided for "${defDefinition.action}".`,
-        );
+        issues.push(missingActionIssue(defName, defDefinition.action));
       }
       continue;
     }
@@ -272,38 +300,42 @@ export const validateAndResolveBindings = (
     const kindDefinition = kinds[defDefinition.kind];
 
     if (!kindDefinition) {
-      errors.push(
-        `defs.${defName}.kind: Unknown binding kind "${defDefinition.kind}".`,
-      );
+      issues.push({
+        code: 'unknown_binding_kind',
+        message: `defs.${defName}.kind: Unknown binding kind "${defDefinition.kind}".`,
+        path: ['defs', defName, 'kind'],
+        bindingKind: defDefinition.kind,
+      });
       continue;
     }
 
     const actionPolicy = kindDefinition.actionPolicy ?? 'optional';
     if (actionPolicy === 'required' && !defDefinition.action) {
-      errors.push(
-        `defs.${defName}.action: Binding kind "${defDefinition.kind}" requires an action.`,
-      );
+      issues.push({
+        code: 'action_required',
+        message: `defs.${defName}.action: Binding kind "${defDefinition.kind}" requires an action.`,
+        path: ['defs', defName, 'action'],
+        bindingKind: defDefinition.kind,
+      });
     }
     if (actionPolicy === 'forbidden' && defDefinition.action) {
-      errors.push(
-        `defs.${defName}.action: Binding kind "${defDefinition.kind}" does not allow action declarations.`,
-      );
+      issues.push({
+        code: 'action_forbidden',
+        message: `defs.${defName}.action: Binding kind "${defDefinition.kind}" does not allow action declarations.`,
+        path: ['defs', defName, 'action'],
+        bindingKind: defDefinition.kind,
+      });
     }
     if (defDefinition.action && actions && !actions[defDefinition.action]) {
-      errors.push(
-        `defs.${defName}.action: No action implementation provided for "${defDefinition.action}".`,
-      );
+      issues.push(missingActionIssue(defName, defDefinition.action));
     }
 
     const { schema } = kindDefinition;
     const parsedPayload = schema.safeParse(defDefinition.settings);
 
     if (!parsedPayload.success) {
-      errors.push(
-        ...formatZodIssues(
-          parsedPayload.error.issues,
-          `defs.${defName}.settings`,
-        ),
+      issues.push(
+        ...toBindingSettingsIssues(parsedPayload.error.issues, defName),
       );
       continue;
     }
@@ -323,31 +355,41 @@ export const validateAndResolveBindings = (
       defName,
       kinds,
       actions,
-      errors,
+      issues,
     );
     const shouldValidateSupportedKinds = Array.isArray(supportedKinds);
 
     for (const [bindingKind, bindingRefs] of Object.entries(defBindings)) {
+      const bindingPath = ['defs', defName, 'bindings', bindingKind];
       const kindDefinition = kinds[bindingKind];
 
       if (!kindDefinition) {
-        errors.push(
-          `defs.${defName}.bindings.${bindingKind}: Unknown binding kind "${bindingKind}".`,
-        );
+        issues.push({
+          code: 'unknown_binding_kind',
+          message: `defs.${defName}.bindings.${bindingKind}: Unknown binding kind "${bindingKind}".`,
+          path: bindingPath,
+          bindingKind,
+        });
         continue;
       }
 
       const { multiple } = kindDefinition;
       if (multiple && !Array.isArray(bindingRefs)) {
-        errors.push(
-          `defs.${defName}.bindings.${bindingKind}: Expected an array of def references for binding kind "${bindingKind}".`,
-        );
+        issues.push({
+          code: 'binding_ref',
+          message: `defs.${defName}.bindings.${bindingKind}: Expected an array of def references for binding kind "${bindingKind}".`,
+          path: bindingPath,
+          bindingKind,
+        });
         continue;
       }
       if (!multiple && typeof bindingRefs !== 'string') {
-        errors.push(
-          `defs.${defName}.bindings.${bindingKind}: Expected a single def reference string for binding kind "${bindingKind}".`,
-        );
+        issues.push({
+          code: 'binding_ref',
+          message: `defs.${defName}.bindings.${bindingKind}: Expected a single def reference string for binding kind "${bindingKind}".`,
+          path: bindingPath,
+          bindingKind,
+        });
         continue;
       }
 
@@ -358,39 +400,51 @@ export const validateAndResolveBindings = (
       ) {
         const supportedKindsLabel =
           supportedKinds.length > 0 ? supportedKinds.join(', ') : '<none>';
-        errors.push(
-          `defs.${defName}.bindings.${bindingKind}: "${defDefinition.action ?? defDefinition.kind}" does not support binding kind "${bindingKind}". Supported binding kinds: ${supportedKindsLabel}.`,
-        );
+        issues.push({
+          code: 'binding_unsupported',
+          message: `defs.${defName}.bindings.${bindingKind}: "${defDefinition.action ?? defDefinition.kind}" does not support binding kind "${bindingKind}". Supported binding kinds: ${supportedKindsLabel}.`,
+          path: bindingPath,
+          bindingKind,
+        });
       }
 
       const refs = toBindingRefs(bindingRefs);
       const duplicateRefs = collectDuplicateReferences(refs);
       if (duplicateRefs.length > 0) {
-        errors.push(
-          `defs.${defName}.bindings.${bindingKind}: Duplicate def reference(s): ${duplicateRefs.join(', ')}`,
-        );
+        issues.push({
+          code: 'binding_ref',
+          message: `defs.${defName}.bindings.${bindingKind}: Duplicate def reference(s): ${duplicateRefs.join(', ')}`,
+          path: bindingPath,
+          bindingKind,
+        });
       }
 
       for (const ref of refs) {
         const definition = defs[ref];
 
         if (!definition) {
-          errors.push(
-            `defs.${defName}.bindings.${bindingKind}: Unknown def reference "${ref}".`,
-          );
+          issues.push({
+            code: 'binding_ref',
+            message: `defs.${defName}.bindings.${bindingKind}: Unknown def reference "${ref}".`,
+            path: bindingPath,
+            bindingKind,
+          });
           continue;
         }
 
         if (definition.kind !== bindingKind) {
-          errors.push(
-            `defs.${defName}.bindings.${bindingKind}: Def "${ref}" has kind "${definition.kind}" and cannot be mounted as "${bindingKind}".`,
-          );
+          issues.push({
+            code: 'binding_ref',
+            message: `defs.${defName}.bindings.${bindingKind}: Def "${ref}" has kind "${definition.kind}" and cannot be mounted as "${bindingKind}".`,
+            path: bindingPath,
+            bindingKind,
+          });
         }
       }
     }
   }
 
-  errors.push(...detectBindingCycles(defs));
+  issues.push(...detectBindingCycles(defs));
 
   const inProgress = new Set<string>();
   const mountResolvedDef = (
@@ -447,7 +501,7 @@ export const validateAndResolveBindings = (
     mountResolvedDef(defName);
   }
 
-  return { errors, resolvedDefs };
+  return { issues, resolvedDefs };
 };
 
 export const mountTaskBindings = (

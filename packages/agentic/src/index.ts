@@ -40,6 +40,12 @@ export {
 
 export * from './dsl.types';
 
+export {
+  issueMessages,
+  type WorkflowValidationIssue,
+  type WorkflowValidationIssueCode,
+} from './validation-issue';
+
 export type {
   BindingKindDescriptor,
   BindingKindSchemas,
