@@ -43,5 +43,9 @@
   },
   "engines": {
     "node": "^24.17.0"
+  },
+  "dependencies": {
+    "@hexabot-ai/api": "workspace:*",
+    "@hexabot-ai/types": "workspace:*"
   }
 }

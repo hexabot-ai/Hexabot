@@ -13,8 +13,10 @@ import { ActionService } from './actions.service';
 @InjectDynamicProviders(
   // Built-in core actions
   'node_modules/@hexabot-ai/api/dist/extensions/actions/**/*.action.js',
-  // Community extensions installed via npm
+  // Community extensions installed in the API package
   'node_modules/hexabot-action-*/**/*.action.js',
+  // Community extensions installed at the workspace root
+  '../../node_modules/hexabot-action-*/**/*.action.js',
   // Custom & under dev actions
   'dist/extensions/actions/**/*.action.js',
 )

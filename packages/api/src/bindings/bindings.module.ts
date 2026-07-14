@@ -13,8 +13,10 @@ import { RuntimeBindingsService } from './runtime-bindings.service';
 @InjectDynamicProviders(
   // Built-in core runtime binding kinds
   'node_modules/@hexabot-ai/api/dist/extensions/actions/**/*.binding.js',
-  // Community runtime binding kinds installed via npm
+  // Community runtime binding kinds installed in the API package
   'node_modules/hexabot-action-*/**/*.binding.js',
+  // Community runtime binding kinds installed at the workspace root
+  '../../node_modules/hexabot-action-*/**/*.binding.js',
   // Custom & under dev runtime binding kinds
   'dist/extensions/actions/**/*.binding.js',
 )
