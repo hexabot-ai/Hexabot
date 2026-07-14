@@ -15,6 +15,11 @@ export type FlowsDrawerProps = {
   onEdit?: (workflow: Workflow) => void;
   activeCodeDef?: string;
   onActiveDefChange?: () => void;
+  /**
+   * External request to open the YAML editor panel (e.g. from the graph
+   * error panel CTA). Every increment opens the drawer on the YAML view.
+   */
+  openYamlRequest?: number;
 };
 
 export type FlowTypeKey = WorkflowType | string;

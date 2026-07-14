@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { IAction } from "@/types/action.types";
 
+import type { WorkflowIssue } from "../../../types/workflow.types";
 import { YAML_WORKFLOW_VALIDATION_OWNER } from "../constants";
 
 import { applyWorkflowValidationMarkers } from "./validation";
@@ -21,38 +22,55 @@ const makeAction = (name: string): IAction =>
     settingSchema: {},
     outputSchema: {},
   }) as IAction;
+const makeEditorMocks = () => {
+  const setModelMarkers = vi.fn();
+  const model = {} as editor.ITextModel;
+  const editorInstance = {
+    getModel: () => model,
+  } as editor.IStandaloneCodeEditor;
+  const monacoInstance = {
+    MarkerSeverity: {
+      Error: 8,
+    },
+    editor: {
+      setModelMarkers,
+    },
+  } as unknown as Monaco;
+
+  return { setModelMarkers, model, editorInstance, monacoInstance };
+};
+const yaml = [
+  "defs:",
+  "  task_alpha:",
+  "    kind: task",
+  "    action: missing_action",
+  "flow:",
+  "  - do: task_alpha",
+  "outputs:",
+  '  result: "=$output.task_alpha"',
+].join("\n");
 
 describe("yaml validation markers", () => {
-  it("targets unknown action markers under defs.<task>.action paths", () => {
-    const setModelMarkers = vi.fn();
-    const model = {} as editor.ITextModel;
-    const editorInstance = {
-      getModel: () => model,
-    } as editor.IStandaloneCodeEditor;
-    const monacoInstance = {
-      MarkerSeverity: {
-        Error: 8,
+  it("targets issue markers at their yaml paths", () => {
+    const { setModelMarkers, model, editorInstance, monacoInstance } =
+      makeEditorMocks();
+    const issues: WorkflowIssue[] = [
+      {
+        code: "missing_action",
+        message: 'The "missing_action" action is not available on this server.',
+        rawMessage:
+          'defs.task_alpha.action: No action implementation provided for "missing_action".',
+        path: ["defs", "task_alpha", "action"],
+        actionName: "missing_action",
       },
-      editor: {
-        setModelMarkers,
-      },
-    } as unknown as Monaco;
-    const yaml = [
-      "defs:",
-      "  task_alpha:",
-      "    kind: task",
-      "    action: missing_action",
-      "flow:",
-      "  - do: task_alpha",
-      "outputs:",
-      '  result: "=$output.task_alpha"',
-    ].join("\n");
+    ];
 
     applyWorkflowValidationMarkers({
       editorInstance,
       monacoInstance,
       yaml,
       actions: [makeAction("known_action")],
+      issues,
     });
 
     expect(setModelMarkers).toHaveBeenCalledTimes(1);
@@ -65,8 +83,38 @@ describe("yaml validation markers", () => {
     expect(targetModel).toBe(model);
     expect(owner).toBe(YAML_WORKFLOW_VALIDATION_OWNER);
     expect(markers).toHaveLength(1);
-    expect(markers[0]?.message).toContain('Unknown action: "missing_action"');
+    expect(markers[0]?.message).toBe(issues[0].message);
     expect(markers[0]?.startLineNumber).toBe(4);
     expect((markers[0]?.endLineNumber ?? 0) >= 4).toBe(true);
+  });
+
+  it("skips issues without a path and non-JSONata schema issues", () => {
+    const { setModelMarkers, editorInstance, monacoInstance } =
+      makeEditorMocks();
+    const issues: WorkflowIssue[] = [
+      {
+        code: "catalog_error",
+        message: "The action catalog could not be loaded from the server.",
+        rawMessage: "Failed to load the workflow catalogs from the server.",
+      },
+      {
+        code: "schema",
+        message: "defs.task_alpha.kind: Invalid literal value",
+        rawMessage: "defs.task_alpha.kind: Invalid literal value",
+        path: ["defs", "task_alpha", "kind"],
+      },
+    ];
+
+    applyWorkflowValidationMarkers({
+      editorInstance,
+      monacoInstance,
+      yaml,
+      actions: [makeAction("known_action")],
+      issues,
+    });
+
+    const markers = setModelMarkers.mock.calls[0]?.[2] as editor.IMarkerData[];
+
+    expect(markers).toHaveLength(0);
   });
 });

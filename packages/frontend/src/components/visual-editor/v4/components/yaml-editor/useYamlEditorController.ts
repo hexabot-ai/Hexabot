@@ -29,7 +29,7 @@ export function useYamlEditorController(
   onHighlightClear?: () => void,
   highlightDef?: string,
 ) {
-  const { yaml, definitionErrors, updateDefinitionState, taskIds } =
+  const { yaml, definitionIssues, updateDefinitionState, taskIds } =
     useWorkflow();
   const {
     actions = [],
@@ -143,8 +143,9 @@ export function useYamlEditorController(
       monacoInstance: monacoRef.current,
       yaml,
       actions: availableActions,
+      issues: definitionIssues,
     });
-  }, [yaml, availableActions]);
+  }, [yaml, availableActions, definitionIssues]);
   const beforeMount = useCallback((monacoInstance: Monaco) => {
     ensureYamlLanguageService(monacoInstance);
   }, []);
@@ -225,5 +226,5 @@ export function useYamlEditorController(
     };
   }, []);
 
-  return { value: yaml, definitionErrors, onChange, beforeMount, onMount };
+  return { value: yaml, definitionIssues, onChange, beforeMount, onMount };
 }

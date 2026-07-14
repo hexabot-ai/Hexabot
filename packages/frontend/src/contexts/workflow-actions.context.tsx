@@ -14,6 +14,7 @@ type WorkflowActionsCatalogContextValue = {
   actionsByName: Map<string, IAction>;
   isLoading: boolean;
   isFetching: boolean;
+  isSuccess: boolean;
   isError: boolean;
 };
 
@@ -32,6 +33,7 @@ export const WorkflowActionsProvider = ({
     data: actions = [],
     isLoading,
     isFetching,
+    isSuccess,
     isError,
   } = useApiClientQuery("getActions", {
     params: workflowType ? [workflowType] : undefined,
@@ -51,8 +53,15 @@ export const WorkflowActionsProvider = ({
     [actions],
   );
   const value = useMemo(
-    () => ({ actions, actionsByName, isLoading, isFetching, isError }),
-    [actions, actionsByName, isLoading, isFetching, isError],
+    () => ({
+      actions,
+      actionsByName,
+      isLoading,
+      isFetching,
+      isSuccess,
+      isError,
+    }),
+    [actions, actionsByName, isLoading, isFetching, isSuccess, isError],
   );
 
   return (

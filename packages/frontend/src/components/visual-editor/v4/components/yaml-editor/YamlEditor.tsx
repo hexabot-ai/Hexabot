@@ -10,6 +10,8 @@ import { Alert, AlertTitle, useColorScheme } from "@mui/material";
 import { handleEditorWillMount } from "@/app-components/inputs/JsonataFormulaField/monaco";
 import { useTranslate } from "@/hooks/useTranslate";
 
+import { uniqueIssueMessages } from "../../utils/workflow-issue-localization";
+
 import { YAML_EDITOR_OPTIONS } from "./constants";
 import { useYamlEditorController } from "./useYamlEditorController";
 
@@ -24,10 +26,11 @@ export function YamlEditor({
   onHighlightClear,
   highlightDef,
 }: YamlEditorProps) {
-  const { value, definitionErrors, onChange, beforeMount, onMount } =
+  const { value, definitionIssues, onChange, beforeMount, onMount } =
     useYamlEditorController(onHighlightClear, highlightDef);
   const { mode } = useColorScheme();
   const { t } = useTranslate();
+  const issueMessages = uniqueIssueMessages(definitionIssues);
 
   return (
     <div className="yaml-editor nokey">
@@ -47,14 +50,14 @@ export function YamlEditor({
           options={YAML_EDITOR_OPTIONS}
         />
       </div>
-      {definitionErrors.length > 0 ? (
+      {issueMessages.length > 0 ? (
         <Alert severity="error" className="yaml-editor__alert">
           <AlertTitle>
             {t("visual_editor.yaml_editor.validation_title")}
           </AlertTitle>
           <ul className="yaml-editor__error-list">
-            {definitionErrors.map((errorMessage) => (
-              <li key={errorMessage}>{errorMessage}</li>
+            {issueMessages.map((issueMessage) => (
+              <li key={issueMessage}>{issueMessage}</li>
             ))}
           </ul>
         </Alert>

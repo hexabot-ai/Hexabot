@@ -783,6 +783,12 @@
     "updated_at": "{{val, datetime, dateFormat}}"
   },
   "visual_editor": {
+    "workflow_graph": {
+      "invalid_workflow": "This workflow can't be displayed",
+      "missing_action": "The \"{{0}}\" action is not available on this server. Install or enable the extension that provides it, then restart the API.",
+      "catalog_error": "The action catalog could not be loaded from the server. Check that the API is running, then reload the page.",
+      "open_yaml_editor": "Open YAML editor"
+    },
     "flows_drawer": {
       "title": "Flows",
       "search_placeholder": "Search name or description",
