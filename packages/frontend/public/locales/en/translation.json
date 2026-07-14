@@ -699,6 +699,8 @@
     "restore": "Restore",
     "edit": "Edit",
     "save": "Save",
+    "undo": "Undo",
+    "redo": "Redo",
     "run": "Run",
     "run_now": "Run now",
     "view_code_snippet": "Get code snippet",

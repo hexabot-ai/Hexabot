@@ -698,6 +698,8 @@
     "restore": "Restaurer",
     "edit": "Modifier",
     "save": "Sauvegarder",
+    "undo": "Annuler",
+    "redo": "Rétablir",
     "run": "Exécuter",
     "run_now": "Exécuter maintenant",
     "view_code_snippet": "Obtenir un extrait de code",

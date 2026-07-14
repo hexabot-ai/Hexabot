@@ -91,6 +91,10 @@ export interface IWorkflowContext {
     Workflow
   >;
   persistDefinition: () => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   publishVersion: (versionId?: string) => void;
   unpublishVersion: () => void;
   restoreVersion: (parentVersion: string, definitionYml: string) => void;
