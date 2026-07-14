@@ -141,19 +141,23 @@ describe('WorkflowTransferDefinitionService', () => {
       ),
     ).toEqual(definition);
 
-    expect(() =>
-      service.parseWithLocalCatalog(
-        AgenticWorkflow.stringifyDefinition({
-          ...definition,
-          defs: {
-            missing_action: {
-              kind: 'task',
-              action: 'missing_action',
-            },
-          },
-        } as WorkflowDefinition),
-      ),
-    ).toThrow(BadRequestException);
+    const invalidYaml = AgenticWorkflow.stringifyDefinition({
+      ...definition,
+      defs: {
+        missing_action: {
+          kind: 'task',
+          action: 'missing_action',
+        },
+      },
+    } as WorkflowDefinition);
+
+    expect(() => service.parseWithLocalCatalog(invalidYaml)).toThrow(
+      BadRequestException,
+    );
+    // Message is derived from the structured validation issues.
+    expect(() => service.parseWithLocalCatalog(invalidYaml)).toThrow(
+      'Invalid workflow YAML: defs.missing_action.action: No action implementation provided for "missing_action".',
+    );
   });
 
   it('collects literal binding and task resource references only', () => {

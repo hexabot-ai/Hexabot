@@ -4,7 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import { WorkflowDefinition, validateWorkflow } from '@hexabot-ai/agentic';
+import {
+  issueMessages,
+  validateWorkflow,
+  WorkflowDefinition,
+} from '@hexabot-ai/agentic';
 
 import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
 
@@ -18,7 +22,9 @@ export const parseWorkflowDefinition = (
   });
 
   if (!validation.success) {
-    throw new Error(`Invalid workflow YAML: ${validation.errors.join('; ')}`);
+    throw new Error(
+      `Invalid workflow YAML: ${issueMessages(validation.issues).join('; ')}`,
+    );
   }
 
   return validation.data;

@@ -191,7 +191,7 @@ describe('HexabotWorkflowVersionMcpTools', () => {
       }),
     ).resolves.toEqual({
       valid: true,
-      errors: [],
+      issues: [],
       definition: expect.objectContaining({
         defs: {},
         flow: [],
@@ -338,7 +338,7 @@ describe('HexabotWorkflowVersionMcpTools', () => {
     });
   });
 
-  it('returns structured workflow YAML validation errors', async () => {
+  it('returns structured workflow YAML validation issues', async () => {
     const tools = buildWorkflowVersionTools();
 
     await expect(
@@ -347,7 +347,12 @@ describe('HexabotWorkflowVersionMcpTools', () => {
       }),
     ).resolves.toEqual({
       valid: false,
-      errors: expect.arrayContaining([expect.stringContaining('defs')]),
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'schema',
+          message: expect.stringContaining('defs'),
+        }),
+      ]),
     });
   });
 
@@ -372,8 +377,13 @@ outputs:
       }),
     ).resolves.toEqual({
       valid: false,
-      errors: expect.arrayContaining([
-        expect.stringContaining('unknown_action'),
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'missing_action',
+          actionName: 'unknown_action',
+          path: ['defs', 'missing_action', 'action'],
+          message: expect.stringContaining('unknown_action'),
+        }),
       ]),
     });
   });

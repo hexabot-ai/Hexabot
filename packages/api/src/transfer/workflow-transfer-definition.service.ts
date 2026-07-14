@@ -6,6 +6,7 @@
 
 import {
   isTaskDefinition,
+  issueMessages,
   validateWorkflow,
   type JsonValue,
   type WorkflowDefinition,
@@ -67,7 +68,7 @@ export class WorkflowTransferDefinitionService {
 
     if (!validation.success) {
       throw new BadRequestException(
-        `Invalid workflow YAML: ${validation.errors.join('; ')}`,
+        `Invalid workflow YAML: ${issueMessages(validation.issues).join('; ')}`,
       );
     }
 
