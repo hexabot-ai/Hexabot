@@ -7,8 +7,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import decompress from '@xhmikosr/decompress';
 import axios from 'axios';
-import decompress from 'decompress';
 
 export const downloadAndExtractTemplate = async (
   templateUrl: string,
