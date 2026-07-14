@@ -41,6 +41,7 @@ import {
   type UpdateWorkflowDefinitionStateOptions,
 } from "../utils/workflow-definition-state.utils";
 import { localizeWorkflowIssues } from "../utils/workflow-issue-localization";
+import { createWorkflowValidationActions } from "../utils/workflow-validation.utils";
 
 type UseWorkflowDefinitionStateArgs = {
   workflow?: Workflow;
@@ -186,18 +187,8 @@ export const useWorkflowDefinitionState = ({
     [actionsByName],
   );
   const actionValidationMetadata = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(compileActionsByName).map(
-          ([actionName, actionDefinition]) => [
-            actionName,
-            {
-              supportedBindings: actionDefinition.supportedBindings ?? [],
-            },
-          ],
-        ),
-      ),
-    [compileActionsByName],
+    () => createWorkflowValidationActions(actionsByName),
+    [actionsByName],
   );
   const definitionSignatureRef = useRef("");
   // Single source of truth for the definition lifecycle: validated once, then

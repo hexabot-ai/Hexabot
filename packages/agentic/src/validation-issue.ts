@@ -9,6 +9,8 @@ export type WorkflowValidationIssueCode =
   | 'schema'
   | 'unknown_task'
   | 'missing_action'
+  | 'action_inputs'
+  | 'action_settings'
   | 'binding_registry_required'
   | 'unknown_binding_kind'
   | 'action_required'
@@ -24,9 +26,9 @@ export type WorkflowValidationIssue = {
   message: string;
   /** Path within the YAML document, e.g. ["defs", "my_task", "action"]. */
   path?: Array<string | number>;
-  /** Referenced action name, set for `missing_action` issues. */
+  /** Referenced action name, set for action-specific issues where known. */
   actionName?: string;
-  /** Referenced task id, set for `unknown_task` issues. */
+  /** Referenced task id, set for task-specific issues where known. */
   taskId?: string;
   /** Binding kind involved, set for binding-related issues where known. */
   bindingKind?: string;

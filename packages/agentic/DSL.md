@@ -33,6 +33,7 @@ Each task definition is an entry under `defs` with `kind: task` and has:
 - `inputs`: map of parameters passed to the action. Values can be literals or expressions (prefixed with `=`).
 - `bindings`: optional map of def refs grouped by kind: `<kind>: [<defName>...]` for `multiple: true` kinds, `<kind>: <defName>` for `multiple: false` kinds.
 - `settings`: execution hints (timeout, retries, model choice, temperature, and action-specific options). Settings merge with `defaults.settings`, with task-level keys taking precedence.
+- When an action catalog is supplied to validation, task `inputs` and effective action-specific `settings` are checked against that action's schemas. JSONata expression values defer type checks until runtime, while missing required fields are reported during definition validation.
 
 Task results are stored automatically under `$output.<task>` for downstream steps.
 

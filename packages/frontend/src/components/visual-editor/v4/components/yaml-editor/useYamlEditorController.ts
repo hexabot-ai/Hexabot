@@ -142,10 +142,9 @@ export function useYamlEditorController(
       editorInstance: editorRef.current,
       monacoInstance: monacoRef.current,
       yaml,
-      actions: availableActions,
       issues: definitionIssues,
     });
-  }, [yaml, availableActions, definitionIssues]);
+  }, [yaml, definitionIssues]);
   const beforeMount = useCallback((monacoInstance: Monaco) => {
     ensureYamlLanguageService(monacoInstance);
   }, []);

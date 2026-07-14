@@ -56,14 +56,7 @@ export class WorkflowTransferDefinitionService {
   parseWithLocalCatalog(definitionYml: string): WorkflowDefinition {
     const validation = validateWorkflow(definitionYml, {
       bindingKinds: this.runtimeBindingsService.getRegistry(),
-      actions: Object.fromEntries(
-        Object.entries(this.actionService.getRegistry()).map(
-          ([actionName, action]) => [
-            actionName,
-            { supportedBindings: action.supportedBindings ?? [] },
-          ],
-        ),
-      ),
+      actions: this.actionService.getRegistry(),
     });
 
     if (!validation.success) {

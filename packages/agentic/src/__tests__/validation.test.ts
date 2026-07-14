@@ -532,6 +532,106 @@ describe('validateWorkflow', () => {
   });
 
   describe('structured issues', () => {
+    it('reports missing required action inputs and settings', () => {
+      const workflow = {
+        defs: mergeTaskDefs({
+          send_message_task: {
+            action: 'send_message',
+          },
+        }),
+        flow: [{ do: 'send_message_task' }],
+        outputs: { result: '=$output.send_message_task' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {
+          send_message: {
+            inputSchema: z.strictObject({ recipient: z.string() }),
+            settingSchema: z.strictObject({ channel: z.string() }),
+          },
+        },
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: 'action_inputs',
+              path: ['defs', 'send_message_task', 'inputs', 'recipient'],
+              actionName: 'send_message',
+              taskId: 'send_message_task',
+            }),
+            expect.objectContaining({
+              code: 'action_settings',
+              path: ['defs', 'send_message_task', 'settings', 'channel'],
+              actionName: 'send_message',
+              taskId: 'send_message_task',
+            }),
+          ]),
+        );
+      }
+    });
+
+    it('merges workflow defaults before validating action settings', () => {
+      const workflow = {
+        defaults: {
+          settings: {
+            delivery: { channel: 'sms' },
+          },
+        },
+        defs: mergeTaskDefs({
+          send_message_task: {
+            action: 'send_message',
+            settings: { delivery: { region: 'eu' } },
+          },
+        }),
+        flow: [{ do: 'send_message_task' }],
+        outputs: { result: '=$output.send_message_task' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {
+          send_message: {
+            inputSchema: z.strictObject({}),
+            settingSchema: z.strictObject({
+              delivery: z.strictObject({
+                channel: z.string(),
+                region: z.string(),
+              }),
+            }),
+          },
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('defers action schema type checks for JSONata expressions', () => {
+      const workflow = {
+        defs: mergeTaskDefs({
+          retry_task: {
+            action: 'retry_action',
+            inputs: { retry_count: '=$input.retries' },
+            settings: { threshold: '=$context.threshold' },
+          },
+        }),
+        flow: [{ do: 'retry_task' }],
+        outputs: { result: '=$output.retry_task' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {
+          retry_action: {
+            inputSchema: z.strictObject({ retry_count: z.number() }),
+            settingSchema: z.strictObject({ threshold: z.number() }),
+          },
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
     it('reports missing actions with code, actionName and path', () => {
       const workflow = {
         defs: mergeTaskDefs({

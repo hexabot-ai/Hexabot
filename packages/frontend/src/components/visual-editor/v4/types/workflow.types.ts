@@ -31,7 +31,7 @@ type WorkflowAttributes = EntityAttributes<EntityType.WORKFLOW>;
 
 export type WorkflowIssueCode =
   | WorkflowValidationIssueCode
-  // Frontend-only codes: the catalogs failed to load / compilation threw.
+  // Frontend-only codes: catalog loading and defensive compilation failures.
   | "catalog_error"
   | "compile_error";
 

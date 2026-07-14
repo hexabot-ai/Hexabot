@@ -8,20 +8,11 @@ import type { Monaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { describe, expect, it, vi } from "vitest";
 
-import type { IAction } from "@/types/action.types";
-
 import type { WorkflowIssue } from "../../../types/workflow.types";
 import { YAML_WORKFLOW_VALIDATION_OWNER } from "../constants";
 
 import { applyWorkflowValidationMarkers } from "./validation";
 
-const makeAction = (name: string): IAction =>
-  ({
-    name,
-    inputSchema: {},
-    settingSchema: {},
-    outputSchema: {},
-  }) as IAction;
 const makeEditorMocks = () => {
   const setModelMarkers = vi.fn();
   const model = {} as editor.ITextModel;
@@ -69,7 +60,6 @@ describe("yaml validation markers", () => {
       editorInstance,
       monacoInstance,
       yaml,
-      actions: [makeAction("known_action")],
       issues,
     });
 
@@ -109,12 +99,40 @@ describe("yaml validation markers", () => {
       editorInstance,
       monacoInstance,
       yaml,
-      actions: [makeAction("known_action")],
       issues,
     });
 
     const markers = setModelMarkers.mock.calls[0]?.[2] as editor.IMarkerData[];
 
     expect(markers).toHaveLength(0);
+  });
+
+  it("targets the nearest existing parent for a missing required field", () => {
+    const { setModelMarkers, editorInstance, monacoInstance } =
+      makeEditorMocks();
+    const issues: WorkflowIssue[] = [
+      {
+        actionName: "missing_action",
+        code: "action_inputs",
+        message:
+          'defs.task_alpha.inputs.recipient: requires property "recipient"',
+        path: ["defs", "task_alpha", "inputs", "recipient"],
+        rawMessage:
+          'defs.task_alpha.inputs.recipient: requires property "recipient"',
+        taskId: "task_alpha",
+      },
+    ];
+
+    applyWorkflowValidationMarkers({
+      editorInstance,
+      monacoInstance,
+      yaml,
+      issues,
+    });
+
+    const markers = setModelMarkers.mock.calls[0]?.[2] as editor.IMarkerData[];
+
+    expect(markers).toHaveLength(1);
+    expect(markers[0]?.startLineNumber).toBeGreaterThan(1);
   });
 });

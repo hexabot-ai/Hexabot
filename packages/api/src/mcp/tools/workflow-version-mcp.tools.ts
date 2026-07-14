@@ -272,14 +272,7 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   private getWorkflowValidationActions() {
-    return Object.fromEntries(
-      Object.entries(this.actionService.getRegistry()).map(
-        ([actionName, action]) => [
-          actionName,
-          { supportedBindings: action.supportedBindings ?? [] },
-        ],
-      ),
-    );
+    return this.actionService.getRegistry();
   }
 
   private async requireWorkflowVersionForYaml(args: {
