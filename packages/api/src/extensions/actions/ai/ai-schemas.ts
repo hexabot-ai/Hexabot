@@ -32,6 +32,9 @@ export const DEFAULT_AI_OBJECT_SYSTEM_PROMPT = [
 
 export const DEFAULT_AI_STEP_BUDGET = 10;
 
+// Keep accidental runaway costs bounded while allowing generous headroom.
+export const MAX_AI_STEP_BUDGET = 100;
+
 const aiPromptBaseSchema = z.object({
   input_mode: z
     .enum(['prompt', 'history'])
@@ -211,7 +214,7 @@ export const aiCommonSettingsSchema = z.strictObject({
         hideUntilAdded: true,
       },
     }),
-  stop_step_count: z.int().positive().optional().meta({
+  stop_step_count: z.int().positive().max(MAX_AI_STEP_BUDGET).optional().meta({
     title: 'Stop step count',
     description:
       'Maximum number of agent steps before stopping. Defaults to 10 when tools are available.',

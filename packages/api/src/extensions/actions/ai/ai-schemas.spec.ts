@@ -9,6 +9,8 @@ import {
   DEFAULT_AI_OBJECT_SYSTEM_PROMPT,
   DEFAULT_AI_PROMPT,
   DEFAULT_AI_SYSTEM_PROMPT,
+  DEFAULT_AI_STEP_BUDGET,
+  MAX_AI_STEP_BUDGET,
   aiAgentInputSchema,
   aiGenerateObjectInputSchema,
   aiGenerateObjectSettingsSchema,
@@ -174,6 +176,24 @@ describe('ai_generate_text input schema', () => {
 
 describe('ai generation settings schemas', () => {
   const commonSettings = {};
+
+  it('enforces the AI step budget ceiling', () => {
+    expect(
+      aiGenerateTextSettingsSchema.safeParse({
+        stop_step_count: DEFAULT_AI_STEP_BUDGET,
+      }).success,
+    ).toBe(true);
+    expect(
+      aiGenerateTextSettingsSchema.safeParse({
+        stop_step_count: MAX_AI_STEP_BUDGET,
+      }).success,
+    ).toBe(true);
+    expect(
+      aiGenerateTextSettingsSchema.safeParse({
+        stop_step_count: MAX_AI_STEP_BUDGET + 1,
+      }).success,
+    ).toBe(false);
+  });
 
   it('rejects output_schema for ai_generate_text settings', () => {
     const result = aiGenerateTextSettingsSchema.safeParse({
