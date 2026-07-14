@@ -32,6 +32,8 @@ const runtimeSettingProviderPatterns = [
         'node_modules/@hexabot-ai/api/dist/**/*.settings.js',
         // Community settings groups installed via npm
         'node_modules/hexabot-*/**/*.settings.js',
+        // Community settings groups installed at the workspace root
+        '../../node_modules/hexabot-*/**/*.settings.js',
       ]),
 ] as const;
 

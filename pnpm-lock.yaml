@@ -30,6 +30,13 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      '@hexabot-ai/api':
+        specifier: workspace:*
+        version: link:packages/api
+      '@hexabot-ai/types':
+        specifier: workspace:*
+        version: link:packages/types
     devDependencies:
       '@commitlint/cli':
         specifier: ^19.3.0

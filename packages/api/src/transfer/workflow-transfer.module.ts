@@ -26,6 +26,7 @@ import { WorkflowTransferService } from './workflow-transfer.service';
 @InjectDynamicProviders(
   'node_modules/@hexabot-ai/api/dist/extensions/**/*.workflow-transfer.adapter.js',
   'node_modules/hexabot-*/**/*.workflow-transfer.adapter.js',
+  '../../node_modules/hexabot-*/**/*.workflow-transfer.adapter.js',
   'dist/extensions/**/*.workflow-transfer.adapter.js',
 )
 @Module({

@@ -10,6 +10,7 @@ packages:
 nodeLinker: hoisted
 autoInstallPeers: true
 strictPeerDependencies: false
+ignoreWorkspaceRootCheck: true
 
 allowBuilds:
   '@compodoc/compodoc': true
