@@ -11,6 +11,7 @@ import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
 import { validateWorkflow } from '../dsl.types';
+import { issueMessages } from '../validation-issue';
 
 import { mergeTaskDefs } from './test-helpers';
 
@@ -111,7 +112,7 @@ describe('validateWorkflow', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.issues.length).toBeGreaterThan(0);
     }
   });
 
@@ -132,7 +133,7 @@ describe('validateWorkflow', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.issues.length).toBeGreaterThan(0);
     }
   });
 
@@ -151,7 +152,7 @@ describe('validateWorkflow', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.issues.length).toBeGreaterThan(0);
     }
   });
 
@@ -178,7 +179,7 @@ describe('validateWorkflow', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.errors[0]).toMatch(/non_existent_task/);
+      expect(result.issues[0].message).toMatch(/non_existent_task/);
     }
   });
 
@@ -202,7 +203,9 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((err) => err.includes('Expression strings')),
+        result.issues.some((issue) =>
+          issue.message.includes('Expression strings'),
+        ),
       ).toBe(true);
     }
   });
@@ -292,8 +295,8 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((error) =>
-          error.includes(
+        result.issues.some((issue) =>
+          issue.message.includes(
             'Expected a single def reference string for binding kind "model"',
           ),
         ),
@@ -328,8 +331,8 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((error) =>
-          error.includes(
+        result.issues.some((issue) =>
+          issue.message.includes(
             'Expected an array of def references for binding kind "tools"',
           ),
         ),
@@ -358,7 +361,7 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((error) => error.includes('missing_tool')),
+        result.issues.some((issue) => issue.message.includes('missing_tool')),
       ).toBe(true);
     }
   });
@@ -389,7 +392,9 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((error) => error.includes('cannot be mounted as')),
+        result.issues.some((issue) =>
+          issue.message.includes('cannot be mounted as'),
+        ),
       ).toBe(true);
     }
   });
@@ -419,7 +424,9 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((error) => error.includes('Unknown binding kind')),
+        result.issues.some((issue) =>
+          issue.message.includes('Unknown binding kind'),
+        ),
       ).toBe(true);
     }
   });
@@ -451,8 +458,8 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((error) =>
-          error.includes('defs.agent_step.bindings.mcp_server'),
+        result.issues.some((issue) =>
+          issue.message.includes('defs.agent_step.bindings.mcp_server'),
         ),
       ).toBe(true);
     }
@@ -485,7 +492,7 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((error) => error.includes('bindingKinds')),
+        result.issues.some((issue) => issue.message.includes('bindingKinds')),
       ).toBe(true);
     }
   });
@@ -517,10 +524,221 @@ describe('validateWorkflow', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(
-        result.errors.some((error) =>
-          error.includes('Duplicate def reference'),
+        result.issues.some((issue) =>
+          issue.message.includes('Duplicate def reference'),
         ),
       ).toBe(true);
     }
+  });
+
+  describe('structured issues', () => {
+    it('reports missing required action inputs and settings', () => {
+      const workflow = {
+        defs: mergeTaskDefs({
+          send_message_task: {
+            action: 'send_message',
+          },
+        }),
+        flow: [{ do: 'send_message_task' }],
+        outputs: { result: '=$output.send_message_task' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {
+          send_message: {
+            inputSchema: z.strictObject({ recipient: z.string() }),
+            settingSchema: z.strictObject({ channel: z.string() }),
+          },
+        },
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: 'action_inputs',
+              path: ['defs', 'send_message_task', 'inputs', 'recipient'],
+              actionName: 'send_message',
+              taskId: 'send_message_task',
+            }),
+            expect.objectContaining({
+              code: 'action_settings',
+              path: ['defs', 'send_message_task', 'settings', 'channel'],
+              actionName: 'send_message',
+              taskId: 'send_message_task',
+            }),
+          ]),
+        );
+      }
+    });
+
+    it('merges workflow defaults before validating action settings', () => {
+      const workflow = {
+        defaults: {
+          settings: {
+            delivery: { channel: 'sms' },
+          },
+        },
+        defs: mergeTaskDefs({
+          send_message_task: {
+            action: 'send_message',
+            settings: { delivery: { region: 'eu' } },
+          },
+        }),
+        flow: [{ do: 'send_message_task' }],
+        outputs: { result: '=$output.send_message_task' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {
+          send_message: {
+            inputSchema: z.strictObject({}),
+            settingSchema: z.strictObject({
+              delivery: z.strictObject({
+                channel: z.string(),
+                region: z.string(),
+              }),
+            }),
+          },
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('defers action schema type checks for JSONata expressions', () => {
+      const workflow = {
+        defs: mergeTaskDefs({
+          retry_task: {
+            action: 'retry_action',
+            inputs: { retry_count: '=$input.retries' },
+            settings: { threshold: '=$context.threshold' },
+          },
+        }),
+        flow: [{ do: 'retry_task' }],
+        outputs: { result: '=$output.retry_task' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {
+          retry_action: {
+            inputSchema: z.strictObject({ retry_count: z.number() }),
+            settingSchema: z.strictObject({ threshold: z.number() }),
+          },
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('reports missing actions with code, actionName and path', () => {
+      const workflow = {
+        defs: mergeTaskDefs({
+          agent_step: {
+            action: 'not_installed_action',
+          },
+        }),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {},
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues).toEqual([
+          {
+            code: 'missing_action',
+            message:
+              'defs.agent_step.action: No action implementation provided for "not_installed_action".',
+            path: ['defs', 'agent_step', 'action'],
+            actionName: 'not_installed_action',
+          },
+        ]);
+      }
+    });
+
+    it('reports unknown task references per task with paths', () => {
+      const parsed = parseYaml(fixtureYaml) as Record<string, unknown>;
+      parsed.flow = [
+        { do: 'non_existent_task' },
+        { parallel: { steps: [{ do: 'other_missing_task' }] } },
+        { do: 'non_existent_task' },
+      ];
+
+      const result = validateWorkflow(parsed, { bindingKinds });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const unknownTasks = result.issues.filter(
+          (issue) => issue.code === 'unknown_task',
+        );
+
+        expect(unknownTasks).toEqual([
+          {
+            code: 'unknown_task',
+            message: 'Unknown task(s) referenced in flow: non_existent_task',
+            path: ['flow', 0, 'do'],
+            taskId: 'non_existent_task',
+          },
+          {
+            code: 'unknown_task',
+            message: 'Unknown task(s) referenced in flow: other_missing_task',
+            path: ['flow', 1, 'parallel', 'steps', 0, 'do'],
+            taskId: 'other_missing_task',
+          },
+        ]);
+      }
+    });
+
+    it('reports schema issues with the zod path', () => {
+      const parsed = parseYaml(fixtureYaml) as Record<string, unknown>;
+      parsed.flow = [
+        {
+          loop: {
+            type: 'while',
+            steps: [],
+          },
+        },
+      ];
+
+      const result = validateWorkflow(parsed, { bindingKinds });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues.length).toBeGreaterThan(0);
+        expect(result.issues.every((issue) => issue.code === 'schema')).toBe(
+          true,
+        );
+        expect(result.issues[0].path?.[0]).toBe('flow');
+      }
+    });
+
+    it('derives flat human-readable messages via issueMessages', () => {
+      const workflow = {
+        defs: mergeTaskDefs({
+          agent_step: {
+            action: 'not_installed_action',
+          },
+        }),
+        flow: [{ do: 'agent_step' }, { do: 'ghost_task' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {},
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(issueMessages(result.issues)).toEqual([
+          'Unknown task(s) referenced in flow: ghost_task',
+          'defs.agent_step.action: No action implementation provided for "not_installed_action".',
+        ]);
+      }
+    });
   });
 });

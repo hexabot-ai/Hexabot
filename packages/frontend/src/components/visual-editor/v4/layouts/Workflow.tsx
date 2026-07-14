@@ -7,8 +7,10 @@
 import {
   StepType,
   Workflow as WorkflowHelper,
+  type CompiledStep,
   type JsonValue,
   type Settings,
+  type WorkflowDefinition,
 } from "@hexabot-ai/agentic";
 import {
   ENodeType,
@@ -88,6 +90,7 @@ import {
   createBaseDefinition,
   createTaskName,
 } from "../utils/workflow-definition.utils";
+import { uniqueIssueMessages } from "../utils/workflow-issue-localization";
 import "./workflow-layout.css";
 
 const StyledBox = styled(Box)(() => ({
@@ -135,6 +138,8 @@ export const Workflow = () => {
     definition,
     taskDefinitions,
     flow,
+    definitionStatus,
+    definitionIssues,
     isDefinitionDirty,
     isSaving: isDefinitionSaving,
     isExportingWorkflow,
@@ -171,6 +176,12 @@ export const Workflow = () => {
     useState<ToolFormDrawerTarget | null>(null);
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [menuFlowId, setMenuFlowId] = useState<string | null>(null);
+  // Incremented whenever the graph asks the drawer to open the YAML editor
+  // (e.g. from the error panel CTA); FlowsDrawer reacts to the change.
+  const [yamlOpenRequest, setYamlOpenRequest] = useState(0);
+  const handleOpenYamlEditor = useCallback(() => {
+    setYamlOpenRequest((request) => request + 1);
+  }, []);
   const actionsDrawerId = "workflow-actions-drawer";
   const publishLabel = t("button.publish");
   const unpublishLabel = t("button.unpublish");
@@ -867,24 +878,61 @@ export const Workflow = () => {
     },
     [bindingsByName, definition, updateDefinitionState],
   );
+  // Reasons the workflow cannot be rendered as a graph, shown in place of the
+  // loading spinner. Undefined while loading so a slow catalog fetch keeps
+  // the spinner instead of flashing spurious errors.
+  const graphIssues = useMemo(
+    () =>
+      definitionStatus === "invalid"
+        ? uniqueIssueMessages(definitionIssues)
+        : undefined,
+    [definitionIssues, definitionStatus],
+  );
+  // While the YAML is temporarily invalid (e.g. mid-edit), keep the last
+  // successfully compiled graph rendered behind the error panel instead of
+  // blanking the canvas. Keyed by workflow id so a workflow switch never
+  // shows another workflow's graph.
+  const lastGoodGraphRef = useRef<{
+    workflowId?: string;
+    definition?: WorkflowDefinition;
+    flow?: CompiledStep[];
+  }>({});
+
+  useEffect(() => {
+    if (definitionStatus === "ready") {
+      lastGoodGraphRef.current = { workflowId: workflow?.id, definition, flow };
+    } else if (definitionStatus === "empty") {
+      lastGoodGraphRef.current = {};
+    }
+  }, [definition, definitionStatus, flow, workflow?.id]);
+
+  const lastGoodGraph =
+    definitionStatus === "invalid" &&
+    lastGoodGraphRef.current.workflowId === workflow?.id
+      ? lastGoodGraphRef.current
+      : undefined;
+  const graphDefinition = lastGoodGraph ? lastGoodGraph.definition : definition;
+  const graphFlow = lastGoodGraph ? lastGoodGraph.flow : flow;
   const workflowGraphModel = useMemo(
     () => ({
-      definition,
-      compiledFlow: flow,
+      definition: graphDefinition,
+      compiledFlow: graphFlow,
       actionCatalog: actionsByName,
       bindingCatalog: bindingsByName,
       executionStates,
       layoutDirection: direction,
       activeCodeDefName: activeCodeDef,
+      issues: graphIssues,
     }),
     [
       actionsByName,
       bindingsByName,
-      definition,
+      graphDefinition,
       direction,
       executionStates,
-      flow,
+      graphFlow,
       activeCodeDef,
+      graphIssues,
     ],
   );
   const workflowGraphSelection = useMemo(
@@ -926,10 +974,12 @@ export const Workflow = () => {
       onNodeClick: handleGraphNodeClick,
       onRotate: handleRotate,
       onViewNodeCode: setActive,
+      onOpenYamlEditor: handleOpenYamlEditor,
     }),
     [
       handleAddBinding,
       handleGraphNodeClick,
+      handleOpenYamlEditor,
       handleRemoveBinding,
       handleRotate,
       removeStepAtPath,
@@ -944,6 +994,7 @@ export const Workflow = () => {
         onEdit={handleEditWorkflow}
         activeCodeDef={activeCodeDef}
         onActiveDefChange={setActive}
+        openYamlRequest={yamlOpenRequest}
       />
       <StyledBox>
         <WorkflowGraph

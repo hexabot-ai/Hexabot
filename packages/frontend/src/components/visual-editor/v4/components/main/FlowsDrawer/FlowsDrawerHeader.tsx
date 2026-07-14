@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Box, IconButton, Tooltip, Typography } from "@mui/material";
+import { Badge, Box, IconButton, Tooltip, Typography } from "@mui/material";
 import { ChevronLeft, ChevronRight, Code, History } from "lucide-react";
 
 import { FlowDrawerHeader } from "./styles";
@@ -16,6 +16,7 @@ type FlowsDrawerHeaderProps = {
   yamlLabel: string;
   onToggleYaml: () => void;
   isYamlOpen: boolean;
+  yamlIssueCount?: number;
   versionsLabel: string;
   onToggleVersions: () => void;
   isVersionsOpen: boolean;
@@ -28,6 +29,7 @@ export const FlowsDrawerHeader = ({
   yamlLabel,
   onToggleYaml,
   isYamlOpen,
+  yamlIssueCount = 0,
   versionsLabel,
   onToggleVersions,
   isVersionsOpen,
@@ -58,7 +60,15 @@ export const FlowsDrawerHeader = ({
               color={isYamlOpen ? "primary" : "default"}
               aria-pressed={isYamlOpen}
             >
-              <Code size={16} />
+              <Badge
+                badgeContent={yamlIssueCount}
+                color="error"
+                max={9}
+                overlap="circular"
+                invisible={!yamlIssueCount}
+              >
+                <Code size={16} />
+              </Badge>
             </IconButton>
           </Tooltip>
           <IconButton size="small" onClick={onToggle}>

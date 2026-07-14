@@ -49,6 +49,7 @@ import { EntityType } from "@/services/types";
 
 import { useResizableDrawerSize } from "../../../../../../hooks/useResizableDrawerSize";
 import { useWorkflow } from "../../../hooks/useWorkflow";
+import { uniqueIssueMessages } from "../../../utils/workflow-issue-localization";
 import { YamlEditor } from "../../yaml-editor";
 import { WorkflowMenu } from "../WorkflowMenu";
 
@@ -91,6 +92,7 @@ export const FlowsDrawer = ({
   onEdit,
   activeCodeDef,
   onActiveDefChange,
+  openYamlRequest,
 }: FlowsDrawerProps) => {
   const { t } = useTranslate();
   const formatCron = useCronFormatter();
@@ -106,6 +108,8 @@ export const FlowsDrawer = ({
     isImportingWorkflow,
     exportWorkflow,
     importWorkflowBundle,
+    definitionStatus,
+    definitionIssues,
   } = useWorkflow();
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down("lg"));
@@ -207,6 +211,12 @@ export const FlowsDrawer = ({
     ? t("visual_editor.workflow_versions.hide")
     : t("visual_editor.workflow_versions.show");
   const hasUnsaved = Boolean(selectedFlowId && (isDefinitionDirty || isSaving));
+  // Surfaces definition problems on the YAML toggle even when the drawer is
+  // closed; mirrors what the YAML editor alert and the graph panel display.
+  const yamlIssueCount =
+    selectedFlowId && definitionStatus === "invalid"
+      ? uniqueIssueMessages(definitionIssues).length
+      : 0;
   const matches = useMemo<FlowMatch[]>(() => {
     const list = workflowsList ?? [];
     const getTypeMeta = (flow: Workflow, typeKey: string) => {
@@ -393,6 +403,21 @@ export const FlowsDrawer = ({
     setShowYaml(true);
     // highlight/reveal handled entirely via the highlightDef prop on YamlEditor
   }, [activeCodeDef]);
+
+  // React to external open-YAML requests (e.g. the graph error panel CTA)
+  useEffect(() => {
+    if (!openYamlRequest) return;
+
+    setShowVersions(false);
+    setOpen((prevOpen) => {
+      if (!prevOpen) {
+        setLocalStorage(drawerIsOpenStorage, "true");
+      }
+
+      return true;
+    });
+    setShowYaml(true);
+  }, [openYamlRequest]);
   const handleToggleType = (key: string) =>
     setOpenTypeKeys((prev) =>
       prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
@@ -494,6 +519,7 @@ export const FlowsDrawer = ({
         yamlLabel={yamlToggleLabel}
         onToggleYaml={handleToggleYaml}
         isYamlOpen={showYaml}
+        yamlIssueCount={yamlIssueCount}
         versionsLabel={versionsToggleLabel}
         onToggleVersions={handleToggleVersions}
         isVersionsOpen={showVersions}
@@ -636,6 +662,7 @@ export const FlowsDrawer = ({
           onNew={onNew}
           onToggleYaml={handleToggleYaml}
           isYamlOpen={showYaml}
+          yamlIssueCount={yamlIssueCount}
         />
       )}
       {open && (

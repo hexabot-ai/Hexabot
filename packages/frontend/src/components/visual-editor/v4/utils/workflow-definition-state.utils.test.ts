@@ -6,6 +6,7 @@
 
 import { WorkflowVersionAction } from "@hexabot-ai/types";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import {
   applyWorkflowDefinitionStateUpdate,
@@ -139,5 +140,24 @@ describe("workflow definition state persistence", () => {
       action: WorkflowVersionAction.update,
       definitionYml: NEXT_YAML,
     });
+  });
+
+  it("does not create a version when a required action input is missing", () => {
+    const commitVersion = vi.fn();
+    const committed = commitWorkflowDefinitionUpdate({
+      actions: {
+        noop: {
+          inputSchema: z.strictObject({ value: z.string() }),
+          settingSchema: z.strictObject({}),
+          supportedBindings: [],
+        },
+      },
+      commitVersion,
+      definitionYml: NEXT_YAML,
+      workflowId: "workflow-1",
+    });
+
+    expect(committed).toBe(false);
+    expect(commitVersion).not.toHaveBeenCalled();
   });
 });

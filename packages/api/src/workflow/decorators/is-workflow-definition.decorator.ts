@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { validateWorkflow } from '@hexabot-ai/agentic';
+import { issueMessages, validateWorkflow } from '@hexabot-ai/agentic';
 import {
   registerDecorator,
   type ValidationArguments,
@@ -47,7 +47,7 @@ export const IsWorkflowDefinition =
           });
 
           if (!validation.success) {
-            return `Invalid workflow definition: ${validation.errors.join('; ')}`;
+            return `Invalid workflow definition: ${issueMessages(validation.issues).join('; ')}`;
           }
 
           return 'Invalid workflow definition';

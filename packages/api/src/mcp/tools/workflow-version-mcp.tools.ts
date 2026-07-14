@@ -91,7 +91,7 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_workflow_yaml_validate',
     description:
-      'Validate workflow definition YAML without creating a workflow version.',
+      'Validate workflow definition YAML without creating a workflow version. Returns structured issues (code, message, yaml path) when invalid.',
     parameters: z.object({
       definitionYml: z.string().min(1),
       validateActions: z.boolean().default(true),
@@ -110,10 +110,10 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
     });
 
     if (!validation.success) {
-      return { valid: false, errors: validation.errors };
+      return { valid: false, issues: validation.issues };
     }
 
-    return { valid: true, errors: [], definition: validation.data };
+    return { valid: true, issues: [], definition: validation.data };
   }
 
   @McpPermission('workflowversion', Action.READ)
@@ -272,14 +272,7 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   private getWorkflowValidationActions() {
-    return Object.fromEntries(
-      Object.entries(this.actionService.getRegistry()).map(
-        ([actionName, action]) => [
-          actionName,
-          { supportedBindings: action.supportedBindings ?? [] },
-        ],
-      ),
-    );
+    return this.actionService.getRegistry();
   }
 
   private async requireWorkflowVersionForYaml(args: {

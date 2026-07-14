@@ -5,6 +5,7 @@
  */
 
 import { BadRequestException } from '@nestjs/common';
+import { z } from 'zod';
 
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 import { WorkflowVersionAction } from '@/workflow/types';
@@ -191,7 +192,7 @@ describe('HexabotWorkflowVersionMcpTools', () => {
       }),
     ).resolves.toEqual({
       valid: true,
-      errors: [],
+      issues: [],
       definition: expect.objectContaining({
         defs: {},
         flow: [],
@@ -338,7 +339,7 @@ describe('HexabotWorkflowVersionMcpTools', () => {
     });
   });
 
-  it('returns structured workflow YAML validation errors', async () => {
+  it('returns structured workflow YAML validation issues', async () => {
     const tools = buildWorkflowVersionTools();
 
     await expect(
@@ -347,7 +348,12 @@ describe('HexabotWorkflowVersionMcpTools', () => {
       }),
     ).resolves.toEqual({
       valid: false,
-      errors: expect.arrayContaining([expect.stringContaining('defs')]),
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'schema',
+          message: expect.stringContaining('defs'),
+        }),
+      ]),
     });
   });
 
@@ -372,8 +378,55 @@ outputs:
       }),
     ).resolves.toEqual({
       valid: false,
-      errors: expect.arrayContaining([
-        expect.stringContaining('unknown_action'),
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'missing_action',
+          actionName: 'unknown_action',
+          path: ['defs', 'missing_action', 'action'],
+          message: expect.stringContaining('unknown_action'),
+        }),
+      ]),
+    });
+  });
+
+  it('returns native action schema issues from shared validation', async () => {
+    const actionService = {
+      getRegistry: jest.fn().mockReturnValue({
+        send_message: {
+          inputSchema: z.strictObject({ recipient: z.string() }),
+          settingSchema: z.strictObject({ channel: z.string() }),
+          supportedBindings: [],
+        },
+      }),
+    };
+    const tools = buildWorkflowVersionTools({ actionService });
+
+    await expect(
+      tools.validateWorkflowYaml({
+        definitionYml: `
+defs:
+  send_message_task:
+    kind: task
+    action: send_message
+flow:
+  - do: send_message_task
+outputs:
+  result: "=true"
+`,
+      }),
+    ).resolves.toEqual({
+      valid: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'action_inputs',
+          actionName: 'send_message',
+          path: ['defs', 'send_message_task', 'inputs', 'recipient'],
+        }),
+        expect.objectContaining({
+          code: 'action_settings',
+          actionName: 'send_message',
+          path: ['defs', 'send_message_task', 'settings', 'channel'],
+        }),
       ]),
     });
   });

@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Box, IconButton, Tooltip } from "@mui/material";
+import { Badge, Box, IconButton, Tooltip } from "@mui/material";
 import { Code, Plus, Search, Upload } from "lucide-react";
 import type { ReactElement } from "react";
 
@@ -22,6 +22,7 @@ type FlowsDrawerCollapsedActionsProps = {
   onNew?: () => void;
   onToggleYaml: () => void;
   isYamlOpen: boolean;
+  yamlIssueCount?: number;
 };
 
 export const FlowsDrawerCollapsedActions = ({
@@ -38,6 +39,7 @@ export const FlowsDrawerCollapsedActions = ({
   onNew,
   onToggleYaml,
   isYamlOpen,
+  yamlIssueCount = 0,
 }: FlowsDrawerCollapsedActionsProps) => (
   <Box
     display="flex"
@@ -59,7 +61,15 @@ export const FlowsDrawerCollapsedActions = ({
         color={isYamlOpen ? "primary" : "default"}
         aria-pressed={isYamlOpen}
       >
-        <Code size={16} />
+        <Badge
+          badgeContent={yamlIssueCount}
+          color="error"
+          max={9}
+          overlap="circular"
+          invisible={!yamlIssueCount}
+        >
+          <Code size={16} />
+        </Badge>
       </IconButton>
     </Tooltip>
     <Tooltip title={importWorkflowLabel}>

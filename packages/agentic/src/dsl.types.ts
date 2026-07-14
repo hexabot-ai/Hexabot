@@ -11,6 +11,8 @@ import { z } from 'zod';
 import type { BindingKindSchemas } from './bindings/base-binding';
 import { validateAndResolveBindings } from './bindings/base-binding';
 import { SNAKE_CASE_REGEX } from './utils/naming';
+import { type WorkflowValidationIssue } from './validation-issue';
+import { mergeSettings } from './workflow-values';
 
 export const ExpressionStringSchema = z
   .string()
@@ -357,6 +359,8 @@ export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
 
 export type WorkflowValidationActionMetadata = {
   supportedBindings?: readonly string[];
+  inputSchema?: z.ZodTypeAny;
+  settingSchema?: z.ZodTypeAny;
 };
 
 export type ValidateWorkflowOptions = {
@@ -366,37 +370,66 @@ export type ValidateWorkflowOptions = {
 
 export type WorkflowValidationResult =
   | { success: true; data: WorkflowDefinition }
-  | { success: false; errors: string[] };
+  | { success: false; issues: WorkflowValidationIssue[] };
 
-const collectTaskReferences = (steps: FlowStep[]): string[] => {
-  const refs: string[] = [];
+type TaskReference = {
+  taskId: string;
+  path: Array<string | number>;
+};
 
-  for (const step of steps) {
+const collectTaskReferences = (
+  steps: FlowStep[],
+  basePath: Array<string | number> = ['flow'],
+): TaskReference[] => {
+  const refs: TaskReference[] = [];
+
+  steps.forEach((step, index) => {
+    const stepPath = [...basePath, index];
+
     if ('do' in step) {
-      refs.push(step.do);
-      continue;
+      refs.push({ taskId: step.do, path: [...stepPath, 'do'] });
+
+      return;
     }
 
     if ('parallel' in step) {
-      refs.push(...collectTaskReferences(step.parallel.steps));
-      continue;
+      refs.push(
+        ...collectTaskReferences(step.parallel.steps, [
+          ...stepPath,
+          'parallel',
+          'steps',
+        ]),
+      );
+
+      return;
     }
 
     if ('conditional' in step) {
-      for (const branch of step.conditional.when) {
-        if ('condition' in branch) {
-          refs.push(...collectTaskReferences(branch.steps));
-        } else if ('else' in branch) {
-          refs.push(...collectTaskReferences(branch.steps));
-        }
-      }
-      continue;
+      step.conditional.when.forEach((branch, branchIndex) => {
+        refs.push(
+          ...collectTaskReferences(branch.steps, [
+            ...stepPath,
+            'conditional',
+            'when',
+            branchIndex,
+            'steps',
+          ]),
+        );
+      });
+
+      return;
     }
 
     if ('loop' in step) {
-      refs.push(...collectTaskReferences(step.loop.steps));
+      refs.push(
+        ...collectTaskReferences(step.loop.steps, [
+          ...stepPath,
+          'loop',
+          'steps',
+        ]),
+      );
     }
-  }
+  });
 
   return refs;
 };
@@ -414,12 +447,157 @@ export const extractTaskDefinitions = (defs: DefDefinitions): TaskDefinitions =>
     return tasks;
   }, {});
 
-const formatZodErrors = (issues: z.ZodIssue[]): string[] =>
-  issues.map((issue) => {
+const EXECUTION_SETTING_KEYS = new Set(Object.keys(BaseSettingsSchema.shape));
+const isExpressionString = (value: unknown): boolean =>
+  typeof value === 'string' && value.startsWith('=');
+const toIssuePath = (path: readonly PropertyKey[]): Array<string | number> =>
+  path.filter(
+    (segment): segment is string | number =>
+      typeof segment === 'string' || typeof segment === 'number',
+  );
+const getValueAtPath = (
+  value: unknown,
+  path: Array<string | number>,
+): unknown => {
+  let current = value;
+
+  for (const segment of path) {
+    if (current === null || typeof current !== 'object') {
+      return undefined;
+    }
+
+    current = (current as Record<string | number, unknown>)[segment];
+  }
+
+  return current;
+};
+const extractActionSettings = (settings: unknown): Record<string, unknown> => {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(settings).filter(
+      ([key]) => !EXECUTION_SETTING_KEYS.has(key),
+    ),
+  );
+};
+const toActionSchemaIssues = ({
+  actionName,
+  code,
+  payload,
+  schema,
+  section,
+  taskId,
+}: {
+  actionName: string;
+  code: 'action_inputs' | 'action_settings';
+  payload: unknown;
+  schema: z.ZodTypeAny;
+  section: 'inputs' | 'settings';
+  taskId: string;
+}): WorkflowValidationIssue[] => {
+  const result = schema.safeParse(payload);
+
+  if (result.success) {
+    return [];
+  }
+
+  return result.error.issues.flatMap<WorkflowValidationIssue>((issue) => {
+    const issuePath = toIssuePath(issue.path);
+
+    // Expressions are resolved immediately before action execution, so their
+    // eventual runtime type cannot be checked while validating the definition.
+    if (isExpressionString(getValueAtPath(payload, issuePath))) {
+      return [];
+    }
+
+    const path = ['defs', taskId, section, ...issuePath];
+
+    return [
+      {
+        actionName,
+        code,
+        message: `${path.join('.')}: ${issue.message}`,
+        path,
+        taskId,
+      },
+    ];
+  });
+};
+const validateTaskActionSchemas = (
+  definition: WorkflowDefinition,
+  actions?: Record<string, WorkflowValidationActionMetadata>,
+): WorkflowValidationIssue[] => {
+  if (!actions) {
+    return [];
+  }
+
+  const issues: WorkflowValidationIssue[] = [];
+  const taskDefinitions = extractTaskDefinitions(definition.defs);
+
+  for (const [taskId, task] of Object.entries(taskDefinitions)) {
+    const action = actions[task.action];
+
+    // Missing actions are reported by binding validation and have no schemas
+    // available for payload validation.
+    if (!action) {
+      continue;
+    }
+
+    if (action.inputSchema) {
+      issues.push(
+        ...toActionSchemaIssues({
+          actionName: task.action,
+          code: 'action_inputs',
+          payload: task.inputs ?? {},
+          schema: action.inputSchema,
+          section: 'inputs',
+          taskId,
+        }),
+      );
+    }
+
+    if (action.settingSchema) {
+      const effectiveSettings = mergeSettings(
+        definition.defaults?.settings,
+        task.settings,
+      );
+
+      issues.push(
+        ...toActionSchemaIssues({
+          actionName: task.action,
+          code: 'action_settings',
+          payload: extractActionSettings(effectiveSettings),
+          schema: action.settingSchema,
+          section: 'settings',
+          taskId,
+        }),
+      );
+    }
+  }
+
+  return issues;
+};
+const toSchemaIssues = (zodIssues: z.ZodIssue[]): WorkflowValidationIssue[] =>
+  zodIssues.map((issue) => {
     const path = issue.path.join('.') || '<root>';
 
-    return `${path}: ${issue.message}`;
+    return {
+      code: 'schema',
+      message: `${path}: ${issue.message}`,
+      path: issue.path.filter(
+        (segment): segment is string | number =>
+          typeof segment === 'string' || typeof segment === 'number',
+      ),
+    };
   });
+const invalidWorkflow = (
+  issues: WorkflowValidationIssue[],
+): WorkflowValidationResult => ({
+  success: false,
+  issues,
+});
 
 export function validateWorkflow(
   input: string | unknown,
@@ -434,30 +612,38 @@ export function validateWorkflow(
       const message =
         error instanceof Error ? error.message : 'Unknown YAML parse error';
 
-      return {
-        success: false,
-        errors: ['Unable to parse workflow YAML', message],
-      };
+      return invalidWorkflow([
+        { code: 'yaml_parse', message: 'Unable to parse workflow YAML' },
+        { code: 'yaml_parse', message },
+      ]);
     }
   }
 
   const parsed = WorkflowDefinitionSchema.safeParse(candidate);
 
   if (!parsed.success) {
-    return { success: false, errors: formatZodErrors(parsed.error.issues) };
+    return invalidWorkflow(toSchemaIssues(parsed.error.issues));
   }
 
-  const errors: string[] = [];
+  const issues: WorkflowValidationIssue[] = [];
   const taskDefinitions = extractTaskDefinitions(parsed.data.defs);
-  const referencedTasks = new Set(collectTaskReferences(parsed.data.flow));
-  const missingTasks = Array.from(referencedTasks).filter(
-    (task) => !Object.prototype.hasOwnProperty.call(taskDefinitions, task),
-  );
+  const reportedMissingTasks = new Set<string>();
 
-  if (missingTasks.length > 0) {
-    errors.push(
-      `Unknown task(s) referenced in flow: ${missingTasks.join(', ')}`,
-    );
+  for (const { taskId, path } of collectTaskReferences(parsed.data.flow)) {
+    if (
+      Object.prototype.hasOwnProperty.call(taskDefinitions, taskId) ||
+      reportedMissingTasks.has(taskId)
+    ) {
+      continue;
+    }
+
+    reportedMissingTasks.add(taskId);
+    issues.push({
+      code: 'unknown_task',
+      message: `Unknown task(s) referenced in flow: ${taskId}`,
+      path,
+      taskId,
+    });
   }
 
   const bindingValidation = validateAndResolveBindings(parsed.data, {
@@ -465,12 +651,11 @@ export function validateWorkflow(
     actions: options?.actions,
   });
 
-  if (bindingValidation.errors.length > 0) {
-    errors.push(...bindingValidation.errors);
-  }
+  issues.push(...bindingValidation.issues);
+  issues.push(...validateTaskActionSchemas(parsed.data, options?.actions));
 
-  if (errors.length > 0) {
-    return { success: false, errors };
+  if (issues.length > 0) {
+    return invalidWorkflow(issues);
   }
 
   return { success: true, data: parsed.data };

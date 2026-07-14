@@ -27,6 +27,8 @@ type WorkflowBindingsCatalogContextValue = {
   bindingKinds: BindingKindSchemas;
   isLoading: boolean;
   isFetching: boolean;
+  isSuccess: boolean;
+  isError: boolean;
 };
 
 const WorkflowBindingsCatalogContext =
@@ -37,6 +39,8 @@ export const WorkflowBindingsProvider = ({ children }: PropsWithChildren) => {
     data: bindings = {},
     isLoading,
     isFetching,
+    isSuccess,
+    isError,
   } = useApiClientQuery("getWorkflowBindings");
   const bindingsByName = useMemo(
     () =>
@@ -70,7 +74,15 @@ export const WorkflowBindingsProvider = ({ children }: PropsWithChildren) => {
 
   return (
     <WorkflowBindingsCatalogContext.Provider
-      value={{ bindings, bindingsByName, bindingKinds, isLoading, isFetching }}
+      value={{
+        bindings,
+        bindingsByName,
+        bindingKinds,
+        isLoading,
+        isFetching,
+        isSuccess,
+        isError,
+      }}
     >
       {children}
     </WorkflowBindingsCatalogContext.Provider>

@@ -5,16 +5,12 @@
  */
 
 import {
-  compileWorkflow,
   DEFAULT_RETRY_SETTINGS,
   DEFAULT_TIMEOUT_MS,
-  type CompiledStep,
   type TaskDefinition,
-  type WorkflowCompileOptions,
   type WorkflowDefinition,
   extractTaskDefinitions,
   isSnakeCaseName,
-  validateWorkflow,
   toSnakeCase,
 } from "@hexabot-ai/agentic";
 import { parse as parseYaml } from "yaml";
@@ -90,32 +86,4 @@ export const extractTaskIdsFromYaml = (yaml: string): string[] => {
   } catch {
     return [];
   }
-};
-
-export const getDefinition = (
-  yaml: string,
-  options: WorkflowCompileOptions,
-): { definition: WorkflowDefinition; flow: CompiledStep[] } => {
-  const actionValidationMetadata = Object.fromEntries(
-    Object.entries(options.actions).map(([actionName, actionDefinition]) => [
-      actionName,
-      {
-        supportedBindings: actionDefinition.supportedBindings ?? [],
-      },
-    ]),
-  );
-  const validation = validateWorkflow(yaml, {
-    bindingKinds: options.bindingKinds,
-    actions: actionValidationMetadata,
-  });
-
-  if (!validation.success) {
-    throw new Error(
-      `Workflow validation failed: ${validation.errors.join("; ")}`,
-    );
-  }
-
-  const { definition, flow } = compileWorkflow(validation.data, options);
-
-  return { definition, flow };
 };

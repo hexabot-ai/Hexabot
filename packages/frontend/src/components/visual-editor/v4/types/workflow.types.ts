@@ -8,6 +8,8 @@ import type {
   CompiledStep,
   TaskDefinition,
   WorkflowDefinition,
+  WorkflowValidationIssue,
+  WorkflowValidationIssueCode,
 } from "@hexabot-ai/agentic";
 import type {
   FlowStepPath,
@@ -26,6 +28,35 @@ import type { EntityAttributes } from "@/types/base.types";
 import type { UpdateWorkflowDefinitionStateOptions } from "../utils/workflow-definition-state.utils";
 
 type WorkflowAttributes = EntityAttributes<EntityType.WORKFLOW>;
+
+export type WorkflowIssueCode =
+  | WorkflowValidationIssueCode
+  // Frontend-only codes: catalog loading and defensive compilation failures.
+  | "catalog_error"
+  | "compile_error";
+
+/**
+ * A workflow definition problem ready for display: `message` is localized,
+ * `rawMessage` keeps the original validator string (Monaco markers, debug).
+ */
+export type WorkflowIssue = Omit<WorkflowValidationIssue, "code"> & {
+  code: WorkflowIssueCode;
+  rawMessage: string;
+};
+
+/**
+ * Raw issue as produced by validation, before localization. Same shape as the
+ * agentic issue but widened to include frontend-only codes.
+ */
+export type RawWorkflowIssue = Omit<WorkflowValidationIssue, "code"> & {
+  code: WorkflowIssueCode;
+};
+
+export type WorkflowDefinitionStatus =
+  | "loading"
+  | "empty"
+  | "invalid"
+  | "ready";
 type UpdateWorkflowDefinitionState = (
   nextDefinition: string | WorkflowDefinition,
   options?: UpdateWorkflowDefinitionStateOptions,
@@ -77,7 +108,8 @@ export interface IWorkflowContext {
   removeStepAtPath: (stepPath: FlowStepPath, nodeId?: string) => void;
   definition?: WorkflowDefinition;
   flow?: CompiledStep[];
-  definitionErrors: string[];
+  definitionStatus: WorkflowDefinitionStatus;
+  definitionIssues: WorkflowIssue[];
   taskDefinitions: Record<string, TaskDefinition>;
   taskIds: string[];
 }

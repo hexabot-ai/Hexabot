@@ -51,12 +51,16 @@ export const getRangeForPath = (
     return directRange;
   }
 
-  if (path.length > 0) {
-    const parentNode = doc.getIn(path.slice(0, -1), true) as Node | undefined;
-    const parentRange = getRangeFromNode(parentNode, lineCounter);
+  // Required fields may not have a YAML node, and their whole section may be
+  // absent too. Walk upward until an existing owner node can be highlighted.
+  for (let pathLength = path.length - 1; pathLength > 0; pathLength -= 1) {
+    const ancestorNode = doc.getIn(path.slice(0, pathLength), true) as
+      | Node
+      | undefined;
+    const ancestorRange = getRangeFromNode(ancestorNode, lineCounter);
 
-    if (parentRange) {
-      return parentRange;
+    if (ancestorRange) {
+      return ancestorRange;
     }
   }
 

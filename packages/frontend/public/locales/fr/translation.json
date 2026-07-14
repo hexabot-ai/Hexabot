@@ -781,6 +781,12 @@
     "updated_at": "{{val, datetime, dateFormat}}"
   },
   "visual_editor": {
+    "workflow_graph": {
+      "invalid_workflow": "Ce workflow ne peut pas être affiché",
+      "missing_action": "L'action « {{0}} » n'est pas disponible sur ce serveur. Installez ou activez l'extension qui la fournit, puis redémarrez l'API.",
+      "catalog_error": "Le catalogue d'actions n'a pas pu être chargé depuis le serveur. Vérifiez que l'API est en cours d'exécution, puis rechargez la page.",
+      "open_yaml_editor": "Ouvrir l'éditeur YAML"
+    },
     "flows_drawer": {
       "title": "Flux",
       "search_placeholder": "Rechercher par nom ou description",

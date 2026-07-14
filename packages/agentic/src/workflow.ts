@@ -19,6 +19,7 @@ import {
   type FlowStep,
 } from './dsl.types';
 import { safeRenameTaskInDefinition as renameTaskInDefinition } from './utils/workflow-definition';
+import { issueMessages } from './validation-issue';
 import {
   compileWorkflow,
   type WorkflowCompileOptions,
@@ -123,7 +124,7 @@ export class Workflow {
     });
     if (!validation.success) {
       throw new Error(
-        `Workflow validation failed: ${validation.errors.join('; ')}`,
+        `Workflow validation failed: ${issueMessages(validation.issues).join('; ')}`,
       );
     }
 
@@ -143,7 +144,7 @@ export class Workflow {
     });
     if (!validation.success) {
       throw new Error(
-        `Workflow validation failed: ${validation.errors.join('; ')}`,
+        `Workflow validation failed: ${issueMessages(validation.issues).join('; ')}`,
       );
     }
 

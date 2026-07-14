@@ -20,6 +20,7 @@ import type {
   WorkflowDefinition,
 } from './dsl.types';
 import { extractTaskDefinitions as extractTaskDefinitionsFromDefs } from './dsl.types';
+import { issueMessages } from './validation-issue';
 import { StepType } from './workflow-event-emitter';
 import type {
   CompiledMapping,
@@ -158,9 +159,9 @@ const compileTasks = (
     actions: options.actions,
   });
 
-  if (bindingValidation.errors.length > 0) {
+  if (bindingValidation.issues.length > 0) {
     throw new Error(
-      `Workflow bindings validation failed: ${bindingValidation.errors.join('; ')}`,
+      `Workflow bindings validation failed: ${issueMessages(bindingValidation.issues).join('; ')}`,
     );
   }
 

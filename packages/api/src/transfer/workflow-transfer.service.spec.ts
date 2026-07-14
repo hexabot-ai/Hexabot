@@ -230,7 +230,7 @@ describe('WorkflowTransferService', () => {
     jest.spyOn(actionService, 'getRegistry').mockReturnValue({
       retrieve_rag_content: {
         supportedBindings: [],
-        inputSchema: z.strictObject({}),
+        inputSchema: z.looseObject({}),
         settingSchema: z.strictObject({
           content_type_id: z
             .string()
@@ -241,7 +241,7 @@ describe('WorkflowTransferService', () => {
       send_list: {
         supportedBindings: [],
         inputSchema: z.strictObject({
-          content: z.strictObject({
+          content: z.looseObject({
             contentType: z
               .string()
               .optional()
