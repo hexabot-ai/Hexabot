@@ -143,6 +143,10 @@ export const Workflow = () => {
     setGraphSelection,
     updateDefinitionState,
     persistDefinition,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     publishVersion,
     unpublishVersion,
     addConditionalStep,
@@ -962,6 +966,12 @@ export const Workflow = () => {
               workflow={workflow}
               onEdit={handleEditWorkflow}
               onOpenMenu={handleOpenMenu}
+              onUndo={undo}
+              onRedo={redo}
+              undoDisabled={!canUndo}
+              redoDisabled={!canRedo}
+              undoLabel={t("button.undo")}
+              redoLabel={t("button.redo")}
               onSave={persistDefinition}
               saveDisabled={!definition || !isDefinitionDirty}
               saveLoading={isDefinitionSaving}

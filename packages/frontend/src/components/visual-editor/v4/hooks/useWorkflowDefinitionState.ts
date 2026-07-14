@@ -36,6 +36,8 @@ import {
 } from "../utils/workflow-definition-state.utils";
 import { getDefinition } from "../utils/workflow-definition.utils";
 
+import { useWorkflowVersionNavigation } from "./useWorkflowVersionNavigation";
+
 type UseWorkflowDefinitionStateArgs = {
   workflow?: Workflow;
 };
@@ -385,6 +387,22 @@ export const useWorkflowDefinitionState = ({
     },
     [updateWorkflowVersion, workflow?.id],
   );
+  const revertLocalEdits = useCallback(() => {
+    updateDefinitionState(currentVersion?.definitionYml ?? "");
+  }, [currentVersion?.definitionYml, updateDefinitionState]);
+  const isSaving =
+    isCommitting ||
+    isPublishing ||
+    isPublishingVersion ||
+    isUnpublishing ||
+    isUpdatingVersionMessage;
+  const { undo, redo, canUndo, canRedo } = useWorkflowVersionNavigation({
+    workflow,
+    currentVersion,
+    isDefinitionDirty,
+    isSaving,
+    revertLocalEdits,
+  });
 
   useEffect(() => {
     // currentVersion is `null` when workflow genuinely has no version.
@@ -413,11 +431,10 @@ export const useWorkflowDefinitionState = ({
     updateVersionMessage,
     isDefinitionDirty,
     updateWorkflow,
-    isSaving:
-      isCommitting ||
-      isPublishing ||
-      isPublishingVersion ||
-      isUnpublishing ||
-      isUpdatingVersionMessage,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    isSaving,
   };
 };

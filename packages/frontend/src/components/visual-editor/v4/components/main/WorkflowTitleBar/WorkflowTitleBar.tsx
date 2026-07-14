@@ -20,6 +20,7 @@ import { TitleBarCard } from "./TitleBarCard";
 import { WorkflowMetaInfo } from "./WorkflowMetaInfo";
 import { WorkflowSaveButton } from "./WorkflowSaveButton";
 import { WorkflowSettingsButton } from "./WorkflowSettingsButton";
+import { WorkflowUndoRedoButtons } from "./WorkflowUndoRedoButtons";
 
 type WorkflowTitleBarProps = {
   workflow: Workflow;
@@ -28,6 +29,12 @@ type WorkflowTitleBarProps = {
   onOpenSettings?: () => void;
   settingsLabel: string;
   settingsDisabled?: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  undoLabel: string;
+  redoLabel: string;
+  undoDisabled?: boolean;
+  redoDisabled?: boolean;
   onSave?: () => void;
   saveLabel: string;
   saveDisabled?: boolean;
@@ -43,6 +50,12 @@ export const WorkflowTitleBar = ({
   onOpenSettings,
   settingsLabel,
   settingsDisabled = false,
+  onUndo,
+  onRedo,
+  undoLabel,
+  redoLabel,
+  undoDisabled = false,
+  redoDisabled = false,
   onSave,
   saveLabel,
   saveDisabled = false,
@@ -144,6 +157,15 @@ export const WorkflowTitleBar = ({
           />
         </Box>
       </TitleBarCard>
+
+      <WorkflowUndoRedoButtons
+        undoLabel={undoLabel}
+        redoLabel={redoLabel}
+        onUndo={onUndo}
+        onRedo={onRedo}
+        undoDisabled={undoDisabled}
+        redoDisabled={redoDisabled}
+      />
 
       <WorkflowSaveButton
         label={saveLabel}
