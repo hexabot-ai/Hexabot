@@ -28,6 +28,7 @@ export type WorkflowGraphHostContextValue = {
   onAddBinding?: (payload: WorkflowBindingAddPayload) => void;
   onRemoveBinding?: (payload: WorkflowBindingRemovePayload) => void;
   onViewNodeCode?: (defName: string) => void;
+  onOpenYamlEditor?: () => void;
   activeCodeDefName?: string;
 };
 

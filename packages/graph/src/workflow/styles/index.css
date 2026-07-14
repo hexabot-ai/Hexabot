@@ -2,6 +2,7 @@
 @import url("./button-edge.css");
 @import url("./node.css");
 @import url("./workflow-insert-menu.css");
+@import url("./workflow-error-state.css");
 
 .workflow-graph .react-flow__handle.connectable {
   border-color: var(--workflow-accent);

@@ -72,6 +72,7 @@ import { applyWorkflowExecutionStatesToNodes } from "../utils/workflow-runtime-n
 
 import { WorkflowControls } from "./WorkflowControls";
 import { WorkflowEmptyState } from "./WorkflowEmptyState";
+import { WorkflowErrorState } from "./WorkflowErrorState";
 import { WorkflowInsertContextMenu } from "./WorkflowInsertContextMenu";
 import { WorkflowLoadingState } from "./WorkflowLoadingState";
 
@@ -83,6 +84,13 @@ export type WorkflowGraphModel = {
   executionStates: WorkflowExecutionStateMap;
   layoutDirection?: ResizeControlDirection;
   activeCodeDefName?: string;
+  /**
+   * Human-readable reasons why the workflow could not be compiled (missing
+   * actions, validation errors, …). When set, a blocking error panel is
+   * overlaid on the canvas — over the last-good graph when the host keeps
+   * providing one via `compiledFlow`, or over the empty canvas otherwise.
+   */
+  issues?: string[];
 };
 
 export type WorkflowGraphSelection = {
@@ -109,6 +117,7 @@ export type WorkflowGraphCallbacks = {
   onRemoveBinding?: (payload: WorkflowBindingRemovePayload) => void;
   onRotate: (nextDirection: "horizontal" | "vertical") => Promise<boolean>;
   onViewNodeCode?: (defName: string) => void;
+  onOpenYamlEditor?: () => void;
 };
 
 export type WorkflowGraphColorMode = "light" | "dark" | "system";
@@ -226,6 +235,7 @@ const areWorkflowGraphPropsEqual = (
   previous.model.executionStates === next.model.executionStates &&
   previous.model.layoutDirection === next.model.layoutDirection &&
   previous.model.activeCodeDefName === next.model.activeCodeDefName &&
+  areStringArraysEqual(previous.model.issues, next.model.issues) &&
   areStringArraysEqual(
     previous.selection.selectedNodeIds,
     next.selection.selectedNodeIds,
@@ -245,7 +255,8 @@ const areWorkflowGraphPropsEqual = (
   previous.callbacks.onAddBinding === next.callbacks.onAddBinding &&
   previous.callbacks.onRemoveBinding === next.callbacks.onRemoveBinding &&
   previous.callbacks.onRotate === next.callbacks.onRotate &&
-  previous.callbacks.onViewNodeCode === next.callbacks.onViewNodeCode;
+  previous.callbacks.onViewNodeCode === next.callbacks.onViewNodeCode &&
+  previous.callbacks.onOpenYamlEditor === next.callbacks.onOpenYamlEditor;
 const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
   (
     {
@@ -334,10 +345,12 @@ const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
         onAddBinding: callbacks.onAddBinding,
         onRemoveBinding: callbacks.onRemoveBinding,
         onViewNodeCode: callbacks.onViewNodeCode,
+        onOpenYamlEditor: callbacks.onOpenYamlEditor,
         activeCodeDefName: model.activeCodeDefName,
       }),
       [
         callbacks.onAddBinding,
+        callbacks.onOpenYamlEditor,
         callbacks.onRemoveBinding,
         callbacks.onRemoveStep,
         callbacks.onViewNodeCode,
@@ -434,7 +447,11 @@ const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
             {isEmptyWorkflow && insertion?.onInsertAtRoot ? (
               <WorkflowEmptyState onInsert={insertion.onInsertAtRoot} />
             ) : null}
-            {isLoading ? <WorkflowLoadingState /> : null}
+            {model.issues?.length ? (
+              <WorkflowErrorState issues={model.issues} />
+            ) : isLoading ? (
+              <WorkflowLoadingState />
+            ) : null}
             {children}
             <WorkflowInsertContextMenu
               id="workflow-insert-menu"
