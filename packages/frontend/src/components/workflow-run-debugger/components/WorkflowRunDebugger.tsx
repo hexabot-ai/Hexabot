@@ -11,7 +11,7 @@ import Stack from "@mui/material/Stack";
 import { FC, useEffect, useMemo, useState } from "react";
 
 import { useFind } from "@/hooks/crud/useFind";
-import { useGetFromCache } from "@/hooks/crud/useGet";
+import { useGet, useGetFromCache } from "@/hooks/crud/useGet";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType, Format } from "@/services/types";
 
@@ -78,9 +78,22 @@ export const WorkflowRunDebugger: FC<WorkflowRunDebuggerProps> = ({
     setSelectedRunId(runId ?? latestRun?.id);
   }, [runId, latestRun?.id]);
 
+  // Subscribe reactively to the selected run's item cache. The live-update hook
+  // merges each step into `[item, WORKFLOW_RUN, runId]` via `setQueryData`, but
+  // the `useFind` collection reads that cache non-reactively, so item merges
+  // alone never re-render this component. Observing the item query here ensures
+  // every incremental step update is reflected in real time.
+  const { data: liveSelectedRun } = useGet(
+    selectedRunId ?? "",
+    { entity: EntityType.WORKFLOW_RUN, format: Format.FULL },
+    { enabled: Boolean(selectedRunId) },
+  );
   const selectedRun = useMemo(
-    () => workflowRuns.find((run) => run.id === selectedRunId) ?? latestRun,
-    [latestRun, selectedRunId, workflowRuns],
+    () =>
+      liveSelectedRun ??
+      workflowRuns.find((run) => run.id === selectedRunId) ??
+      latestRun,
+    [latestRun, liveSelectedRun, selectedRunId, workflowRuns],
   );
   const selectedStep = useMemo(() => {
     if (!selectedStepId) return null;
