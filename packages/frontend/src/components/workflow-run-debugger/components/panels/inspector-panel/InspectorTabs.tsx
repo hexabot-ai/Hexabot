@@ -16,7 +16,7 @@ import { EntityType } from "@/services/types";
 import { formatDurationMs } from "@/utils/date";
 
 import { formatRunTimestamp, getInitiatorName } from "../../../utils";
-import { getDurationLabel } from "../step-trace-panel/utils";
+import { getStepDuration } from "../step-trace-panel/utils";
 
 import type { OverviewLabels } from "./overview.types";
 import { OverviewContainer } from "./OverviewContainer";
@@ -143,7 +143,9 @@ export const InspectorTabs = ({ run, step }: InspectorTabsProps) => {
     return t("label.yes");
   }, [inspectedError, t]);
   const hasError = Boolean(inspectedError);
-  const stepDurationLabel = step ? getDurationLabel(step) : "-";
+  const stepDurationLabel = step
+    ? formatDurationMs(getStepDuration(step))
+    : "-";
   const statusLabels = useMemo(
     () => ({
       completed: t("label.step_trace.status_completed"),
