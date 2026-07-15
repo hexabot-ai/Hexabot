@@ -27,9 +27,4 @@ i18n
     },
   });
 
-i18n.services.formatter?.add("dateFormat", (value, lng, options) =>
-  new Intl.DateTimeFormat(lng, options?.formatParams?.val).format(
-    new Date(options?.date || value),
-  ),
-);
 export default i18n;

@@ -22,7 +22,7 @@ dayjs.extend(localizedFormat);
 dayjs.extend(duration);
 
 export const getDateTimeFormatter = (date: Date) => ({
-  date,
+  val: date,
   formatParams: {
     val: DATE_TIME_FORMAT,
   },

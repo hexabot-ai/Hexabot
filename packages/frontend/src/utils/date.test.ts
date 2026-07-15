@@ -6,7 +6,33 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatDurationMs } from "./date";
+import i18n from "@/i18n/config";
+
+import { formatDurationMs, getDateTimeFormatter } from "./date";
+
+describe("getDateTimeFormatter", () => {
+  it("formats datetime translations instead of exposing interpolation syntax", () => {
+    i18n.addResourceBundle(
+      "en",
+      "translation",
+      {
+        datetime: {
+          created_at: "{{val, datetime}}",
+        },
+      },
+      true,
+      true,
+    );
+
+    const formatted = i18n.t(
+      "datetime.created_at",
+      getDateTimeFormatter(new Date("2026-07-15T10:30:00Z")),
+    );
+
+    expect(formatted).not.toContain("{{");
+    expect(formatted).toContain("2026");
+  });
+});
 
 describe("formatDurationMs", () => {
   it("formats empty and millisecond values", () => {

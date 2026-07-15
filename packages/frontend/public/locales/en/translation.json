@@ -781,8 +781,8 @@
     "reset": "Forgot your password?"
   },
   "datetime": {
-    "created_at": "{{val, datetime, dateFormat}}",
-    "updated_at": "{{val, datetime, dateFormat}}"
+    "created_at": "{{val, datetime}}",
+    "updated_at": "{{val, datetime}}"
   },
   "visual_editor": {
     "workflow_graph": {
