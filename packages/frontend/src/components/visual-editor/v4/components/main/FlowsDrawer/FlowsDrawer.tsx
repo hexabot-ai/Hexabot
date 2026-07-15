@@ -404,9 +404,10 @@ export const FlowsDrawer = ({
     // highlight/reveal handled entirely via the highlightDef prop on YamlEditor
   }, [activeCodeDef]);
 
-  // React to external open-YAML requests (e.g. the graph error panel CTA)
+  // React to external open-YAML requests (e.g. the graph error panel). The
+  // requested line, when present, is revealed by the YAML editor itself.
   useEffect(() => {
-    if (!openYamlRequest) return;
+    if (!openYamlRequest?.nonce) return;
 
     setShowVersions(false);
     setOpen((prevOpen) => {
@@ -417,7 +418,7 @@ export const FlowsDrawer = ({
       return true;
     });
     setShowYaml(true);
-  }, [openYamlRequest]);
+  }, [openYamlRequest?.nonce]);
   const handleToggleType = (key: string) =>
     setOpenTypeKeys((prev) =>
       prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key],
@@ -533,6 +534,7 @@ export const FlowsDrawer = ({
                 <YamlEditor
                   onHighlightClear={onActiveDefChange}
                   highlightDef={activeCodeDef}
+                  revealTarget={openYamlRequest}
                 />
               </YamlEditorContainer>
             </>

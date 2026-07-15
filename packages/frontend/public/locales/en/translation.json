@@ -787,9 +787,14 @@
   "visual_editor": {
     "workflow_graph": {
       "invalid_workflow": "This workflow can't be displayed",
+      "invalid_workflow_hint": "Fix the issues below in the YAML editor to restore the graph.",
+      "issue_count_one": "{{count}} issue",
+      "issue_count_other": "{{count}} issues",
       "missing_action": "The \"{{0}}\" action is not available on this server. Install or enable the extension that provides it, then restart the API.",
       "catalog_error": "The action catalog could not be loaded from the server. Check that the API is running, then reload the page.",
-      "open_yaml_editor": "Open YAML editor"
+      "open_yaml_editor": "Open YAML editor",
+      "go_to_line": "Go to line {{0}} in the YAML editor",
+      "line_label": "Line {{0}}"
     },
     "flows_drawer": {
       "title": "Flows",
@@ -1021,8 +1026,7 @@
     },
     "yaml_editor": {
       "show": "Show YAML editor",
-      "hide": "Hide YAML editor",
-      "validation_title": "Workflow definition has errors"
+      "hide": "Hide YAML editor"
     },
     "guided_tour": {
       "workflow_name_prefix": "My first workflow",

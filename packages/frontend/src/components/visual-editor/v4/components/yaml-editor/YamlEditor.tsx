@@ -5,32 +5,35 @@
  */
 
 import Editor, { Monaco } from "@monaco-editor/react";
-import { Alert, AlertTitle, useColorScheme } from "@mui/material";
+import { useColorScheme } from "@mui/material";
 
 import { handleEditorWillMount } from "@/app-components/inputs/JsonataFormulaField/monaco";
-import { useTranslate } from "@/hooks/useTranslate";
-
-import { uniqueIssueMessages } from "../../utils/workflow-issue-localization";
 
 import { YAML_EDITOR_OPTIONS } from "./constants";
-import { useYamlEditorController } from "./useYamlEditorController";
+import {
+  useYamlEditorController,
+  type YamlEditorRevealTarget,
+} from "./useYamlEditorController";
 
 import "./yaml.worker";
 
 type YamlEditorProps = {
   onHighlightClear?: () => void;
   highlightDef?: string;
+  revealTarget?: YamlEditorRevealTarget;
 };
 
 export function YamlEditor({
   onHighlightClear,
   highlightDef,
+  revealTarget,
 }: YamlEditorProps) {
-  const { value, definitionIssues, onChange, beforeMount, onMount } =
-    useYamlEditorController(onHighlightClear, highlightDef);
+  const { value, onChange, beforeMount, onMount } = useYamlEditorController(
+    onHighlightClear,
+    highlightDef,
+    revealTarget,
+  );
   const { mode } = useColorScheme();
-  const { t } = useTranslate();
-  const issueMessages = uniqueIssueMessages(definitionIssues);
 
   return (
     <div className="yaml-editor nokey">
@@ -50,18 +53,6 @@ export function YamlEditor({
           options={YAML_EDITOR_OPTIONS}
         />
       </div>
-      {issueMessages.length > 0 ? (
-        <Alert severity="error" className="yaml-editor__alert">
-          <AlertTitle>
-            {t("visual_editor.yaml_editor.validation_title")}
-          </AlertTitle>
-          <ul className="yaml-editor__error-list">
-            {issueMessages.map((issueMessage) => (
-              <li key={issueMessage}>{issueMessage}</li>
-            ))}
-          </ul>
-        </Alert>
-      ) : null}
     </div>
   );
 }

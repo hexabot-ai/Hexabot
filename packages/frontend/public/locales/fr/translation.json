@@ -785,9 +785,14 @@
   "visual_editor": {
     "workflow_graph": {
       "invalid_workflow": "Ce workflow ne peut pas être affiché",
+      "invalid_workflow_hint": "Corrigez les problèmes ci-dessous dans l'éditeur YAML pour restaurer le graphe.",
+      "issue_count_one": "{{count}} problème",
+      "issue_count_other": "{{count}} problèmes",
       "missing_action": "L'action « {{0}} » n'est pas disponible sur ce serveur. Installez ou activez l'extension qui la fournit, puis redémarrez l'API.",
       "catalog_error": "Le catalogue d'actions n'a pas pu être chargé depuis le serveur. Vérifiez que l'API est en cours d'exécution, puis rechargez la page.",
-      "open_yaml_editor": "Ouvrir l'éditeur YAML"
+      "open_yaml_editor": "Ouvrir l'éditeur YAML",
+      "go_to_line": "Aller à la ligne {{0}} dans l'éditeur YAML",
+      "line_label": "Ligne {{0}}"
     },
     "flows_drawer": {
       "title": "Flux",
@@ -1019,8 +1024,7 @@
     },
     "yaml_editor": {
       "show": "Afficher l'éditeur YAML",
-      "hide": "Masquer l'éditeur YAML",
-      "validation_title": "La définition du workflow contient des erreurs"
+      "hide": "Masquer l'éditeur YAML"
     },
     "guided_tour": {
       "workflow_name_prefix": "Mon premier workflow",

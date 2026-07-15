@@ -10,16 +10,19 @@ import type { LucideIcon } from "lucide-react";
 
 import type { TTranslationKeys } from "@/i18n/i18n.types";
 
+import type { YamlEditorRevealTarget } from "../../yaml-editor/useYamlEditorController";
+
 export type FlowsDrawerProps = {
   onNew?: () => void;
   onEdit?: (workflow: Workflow) => void;
   activeCodeDef?: string;
   onActiveDefChange?: () => void;
   /**
-   * External request to open the YAML editor panel (e.g. from the graph
-   * error panel CTA). Every increment opens the drawer on the YAML view.
+   * External request to open the YAML editor panel (e.g. from the graph error
+   * panel). `nonce` changes on every request so repeat clicks re-open/re-reveal;
+   * `line`, when set, is revealed in the editor.
    */
-  openYamlRequest?: number;
+  openYamlRequest?: YamlEditorRevealTarget;
 };
 
 export type FlowTypeKey = WorkflowType | string;

@@ -14,12 +14,3 @@
   flex: 1;
   min-height: 0;
 }
-
-.yaml-editor__alert {
-  margin: 0.5rem;
-}
-
-.yaml-editor__error-list {
-  margin: 0;
-  padding-left: 1.25rem;
-}
