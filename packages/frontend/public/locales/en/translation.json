@@ -474,7 +474,7 @@
     "status": "Status",
     "closed": "Closed",
     "duration": "Duration",
-    "latency_ms": "Latency (ms)",
+    "latency": "Latency",
     "tool_count": "Tool Count",
     "error": "Error",
     "operations": "Operations",

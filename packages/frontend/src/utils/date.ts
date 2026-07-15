@@ -78,19 +78,17 @@ export const formatDurationMs = (
 ): string => {
   if (durationMs == null) return "-";
 
-  const diffMs = Math.max(0, durationMs);
-  const dur = dayjs.duration(diffMs);
-  const h = Math.floor(dur.asHours());
-  const m = dur.minutes();
-  const s = dur.seconds();
+  const ms = Math.max(0, durationMs);
 
-  if (h > 0) {
-    return `${h}h${separator}${m}m${separator}${s}s`;
-  }
+  if (ms < 1000) return `${ms}ms`;
 
-  if (m > 0) {
-    return `${m}m${separator}${s}s`;
-  }
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+
+  if (h > 0) return `${h}h${separator}${m}m${separator}${s}s`;
+  if (m > 0) return `${m}m${separator}${s}s`;
 
   return `${s}s`;
 };

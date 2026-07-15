@@ -17,7 +17,7 @@ import {
 
 import { useTranslate } from "@/hooks/useTranslate";
 import { IMcpServerDiagnostics } from "@/types/mcp-server.types";
-import { formatSmartDate } from "@/utils/date";
+import { formatDurationMs, formatSmartDate } from "@/utils/date";
 
 import { ServerDetailsCard } from "./ServerDetailsCard";
 import { SummaryGrid } from "./SummaryGrid";
@@ -52,8 +52,8 @@ export const DiagnosticsResultSection = ({
               }
             />
             <SummaryItem
-              label={t("label.latency_ms")}
-              value={`${diagnostics.latencyMs}ms`}
+              label={t("label.latency")}
+              value={formatDurationMs(diagnostics.latencyMs)}
             />
             <SummaryItem
               label={t("label.checked_at")}

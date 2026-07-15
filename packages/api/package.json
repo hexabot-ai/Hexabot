@@ -127,7 +127,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@compodoc/compodoc": "^1.2.1",
+    "@compodoc/compodoc": "^2.0.0",
     "@hexabot-ai/frontend": "workspace:*",
     "@nestjs/cli": "^11.0.21",
     "@nestjs/schematics": "^11.1.0",

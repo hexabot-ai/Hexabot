@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import i18n from "@/i18n/config";
 
-import { getDateTimeFormatter } from "./date";
+import { formatDurationMs, getDateTimeFormatter } from "./date";
 
 describe("getDateTimeFormatter", () => {
   it("formats datetime translations instead of exposing interpolation syntax", () => {
@@ -31,5 +31,23 @@ describe("getDateTimeFormatter", () => {
 
     expect(formatted).not.toContain("{{");
     expect(formatted).toContain("2026");
+  });
+});
+
+describe("formatDurationMs", () => {
+  it("formats empty and millisecond values", () => {
+    expect(formatDurationMs(null)).toBe("-");
+    expect(formatDurationMs(undefined)).toBe("-");
+    expect(formatDurationMs(250)).toBe("250ms");
+  });
+
+  it("formats seconds, minutes, and hours", () => {
+    expect(formatDurationMs(25000)).toBe("25s");
+    expect(formatDurationMs(61000)).toBe("1m 1s");
+    expect(formatDurationMs(3661000)).toBe("1h 1m 1s");
+  });
+
+  it("uses a custom separator", () => {
+    expect(formatDurationMs(61000, "")).toBe("1m1s");
   });
 });
