@@ -8,6 +8,7 @@ export { WorkflowGraph } from "./components/WorkflowGraph";
 export type {
   WorkflowGraphColorMode,
   WorkflowGraphHandle,
+  WorkflowGraphIssue,
   WorkflowGraphProps,
 } from "./components/WorkflowGraph";
 export * from "./contexts/workflow-graph-host.context";

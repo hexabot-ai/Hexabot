@@ -76,6 +76,16 @@ import { WorkflowErrorState } from "./WorkflowErrorState";
 import { WorkflowInsertContextMenu } from "./WorkflowInsertContextMenu";
 import { WorkflowLoadingState } from "./WorkflowLoadingState";
 
+/**
+ * A single reason the workflow could not be compiled. `line` is the 1-based
+ * YAML line the issue maps to, when the host can resolve one, enabling a
+ * jump-to-line link in the error panel.
+ */
+export type WorkflowGraphIssue = {
+  message: string;
+  line?: number;
+};
+
 export type WorkflowGraphModel = {
   definition?: WorkflowDefinition;
   compiledFlow?: CompiledStep[];
@@ -85,12 +95,12 @@ export type WorkflowGraphModel = {
   layoutDirection?: ResizeControlDirection;
   activeCodeDefName?: string;
   /**
-   * Human-readable reasons why the workflow could not be compiled (missing
-   * actions, validation errors, …). When set, a blocking error panel is
-   * overlaid on the canvas — over the last-good graph when the host keeps
-   * providing one via `compiledFlow`, or over the empty canvas otherwise.
+   * Reasons why the workflow could not be compiled (missing actions, validation
+   * errors, …). When set, a blocking error panel is overlaid on the canvas —
+   * over the last-good graph when the host keeps providing one via
+   * `compiledFlow`, or over the empty canvas otherwise.
    */
-  issues?: string[];
+  issues?: WorkflowGraphIssue[];
 };
 
 export type WorkflowGraphSelection = {
@@ -117,7 +127,7 @@ export type WorkflowGraphCallbacks = {
   onRemoveBinding?: (payload: WorkflowBindingRemovePayload) => void;
   onRotate: (nextDirection: "horizontal" | "vertical") => Promise<boolean>;
   onViewNodeCode?: (defName: string) => void;
-  onOpenYamlEditor?: () => void;
+  onOpenYamlEditor?: (line?: number) => void;
 };
 
 export type WorkflowGraphColorMode = "light" | "dark" | "system";
@@ -202,6 +212,24 @@ const areStringArraysEqual = (
 
   return left.every((value, index) => value === right[index]);
 };
+const areWorkflowIssuesEqual = (
+  left: readonly WorkflowGraphIssue[] | undefined,
+  right: readonly WorkflowGraphIssue[] | undefined,
+): boolean => {
+  if (left === right) {
+    return true;
+  }
+
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+
+  return left.every(
+    (issue, index) =>
+      issue.message === right[index].message &&
+      issue.line === right[index].line,
+  );
+};
 const isSameViewportState = (
   left: ViewportState | null | undefined,
   right: ViewportState | null | undefined,
@@ -235,7 +263,7 @@ const areWorkflowGraphPropsEqual = (
   previous.model.executionStates === next.model.executionStates &&
   previous.model.layoutDirection === next.model.layoutDirection &&
   previous.model.activeCodeDefName === next.model.activeCodeDefName &&
-  areStringArraysEqual(previous.model.issues, next.model.issues) &&
+  areWorkflowIssuesEqual(previous.model.issues, next.model.issues) &&
   areStringArraysEqual(
     previous.selection.selectedNodeIds,
     next.selection.selectedNodeIds,

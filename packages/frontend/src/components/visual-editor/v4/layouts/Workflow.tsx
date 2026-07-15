@@ -90,7 +90,7 @@ import {
   createBaseDefinition,
   createTaskName,
 } from "../utils/workflow-definition.utils";
-import { uniqueIssueMessages } from "../utils/workflow-issue-localization";
+import { uniqueIssueLocations } from "../utils/workflow-issue-locations";
 import "./workflow-layout.css";
 
 const StyledBox = styled(Box)(() => ({
@@ -180,11 +180,15 @@ export const Workflow = () => {
     useState<ToolFormDrawerTarget | null>(null);
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const [menuFlowId, setMenuFlowId] = useState<string | null>(null);
-  // Incremented whenever the graph asks the drawer to open the YAML editor
-  // (e.g. from the error panel CTA); FlowsDrawer reacts to the change.
-  const [yamlOpenRequest, setYamlOpenRequest] = useState(0);
-  const handleOpenYamlEditor = useCallback(() => {
-    setYamlOpenRequest((request) => request + 1);
+  // Bumped whenever the graph asks the drawer to open the YAML editor (error
+  // panel CTA or a per-error line link). `nonce` changes every request so
+  // repeat clicks re-fire; `line` (when set) is revealed in the editor.
+  const [yamlOpenRequest, setYamlOpenRequest] = useState<{
+    nonce: number;
+    line?: number;
+  }>({ nonce: 0 });
+  const handleOpenYamlEditor = useCallback((line?: number) => {
+    setYamlOpenRequest((prev) => ({ nonce: prev.nonce + 1, line }));
   }, []);
   const actionsDrawerId = "workflow-actions-drawer";
   const publishLabel = t("button.publish");
@@ -888,9 +892,9 @@ export const Workflow = () => {
   const graphIssues = useMemo(
     () =>
       definitionStatus === "invalid"
-        ? uniqueIssueMessages(definitionIssues)
+        ? uniqueIssueLocations(yaml, definitionIssues)
         : undefined,
-    [definitionIssues, definitionStatus],
+    [definitionIssues, definitionStatus, yaml],
   );
   // While the YAML is temporarily invalid (e.g. mid-edit), keep the last
   // successfully compiled graph rendered behind the error panel instead of

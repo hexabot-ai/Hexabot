@@ -25,9 +25,20 @@ import { applyWorkflowValidationMarkers } from "./validation/validation";
 
 const HIGHLIGHT_CLASS = "workflow-yaml-node-def-highlight";
 
+/**
+ * Request to reveal a specific line in the editor. `nonce` changes on every
+ * request so repeat clicks on the same line re-trigger the reveal; `line` is
+ * a 1-based line number (undefined = just open, no reveal).
+ */
+export type YamlEditorRevealTarget = {
+  nonce: number;
+  line?: number;
+};
+
 export function useYamlEditorController(
   onHighlightClear?: () => void,
   highlightDef?: string,
+  revealTarget?: YamlEditorRevealTarget,
 ) {
   const { yaml, definitionIssues, updateDefinitionState, taskIds } =
     useWorkflow();
@@ -44,10 +55,42 @@ export function useYamlEditorController(
   const rangeRef = useRef<{ startLine: number; endLine: number } | null>(null);
   const onHighlightClearRef = useRef(onHighlightClear);
   const highlightDefRef = useRef(highlightDef);
+  const revealTargetRef = useRef(revealTarget);
+  // Nonce of the reveal request already applied, so each request reveals once.
+  const appliedRevealNonceRef = useRef<number | undefined>(undefined);
 
   onHighlightClearRef.current = onHighlightClear;
   highlightDefRef.current = highlightDef;
+  revealTargetRef.current = revealTarget;
 
+  const revealLine = useCallback((line: number) => {
+    const editorInstance = editorRef.current;
+    const monacoInstance = monacoRef.current;
+
+    if (!editorInstance || !monacoInstance) return;
+
+    const model = editorInstance.getModel();
+
+    if (!model) return;
+
+    const clamped = Math.min(Math.max(line, 1), model.getLineCount());
+
+    editorInstance.revealLineInCenter(
+      clamped,
+      monacoInstance.editor.ScrollType.Immediate,
+    );
+    editorInstance.setPosition({ lineNumber: clamped, column: 1 });
+    editorInstance.focus();
+  }, []);
+  const applyPendingReveal = useCallback(() => {
+    const target = revealTargetRef.current;
+
+    if (!target || target.line === undefined) return;
+    if (appliedRevealNonceRef.current === target.nonce) return;
+
+    appliedRevealNonceRef.current = target.nonce;
+    revealLine(target.line);
+  }, [revealLine]);
   const clearHighlight = useCallback((notify = false) => {
     if (editorRef.current) {
       decorationsRef.current = editorRef.current.deltaDecorations(
@@ -156,6 +199,9 @@ export function useYamlEditorController(
       if (highlightDefRef.current) {
         setHighlight(highlightDefRef.current);
       }
+      // Apply a reveal request queued while the editor was still unmounted
+      // (e.g. the drawer just opened from a graph error line click).
+      applyPendingReveal();
       editorInstance.onMouseDown((e) => {
         const { startLine, endLine } = rangeRef.current ?? {};
 
@@ -168,12 +214,19 @@ export function useYamlEditorController(
         clearHighlight(true);
       });
     },
-    [applyAllMarkers, setHighlight, clearHighlight],
+    [applyAllMarkers, applyPendingReveal, setHighlight, clearHighlight],
   );
 
   useEffect(() => {
     applyAllMarkers();
   }, [applyAllMarkers]);
+
+  // Reveal a newly requested line once the editor is already mounted.
+  useEffect(() => {
+    if (!editorRef.current) return;
+
+    applyPendingReveal();
+  }, [revealTarget?.nonce, applyPendingReveal]);
 
   useDebouncedEffect(
     () => {
@@ -225,5 +278,5 @@ export function useYamlEditorController(
     };
   }, []);
 
-  return { value: yaml, definitionIssues, onChange, beforeMount, onMount };
+  return { value: yaml, onChange, beforeMount, onMount };
 }
