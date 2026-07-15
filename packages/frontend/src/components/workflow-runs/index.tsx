@@ -130,7 +130,7 @@ export const WorkflowRuns = ({
           sortable: false,
           disableColumnMenu: true,
           headerAlign: "left",
-          valueGetter: (_value, row) => formatDurationMs(row.duration),
+          valueGetter: (_value, { duration }) => formatDurationMs(duration),
         },
         {
           flex: 1,

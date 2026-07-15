@@ -13,12 +13,12 @@ export const getStepOrder = (id: string): number => {
   return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
 };
 
-export const getDurationLabel = (step: StepExecutionRecord): string => {
+export const getStepDuration = (step: StepExecutionRecord): number => {
   const candidate = (step as StepExecutionRecord & { duration?: number })
     .duration;
 
   if (typeof candidate === "number" && Number.isFinite(candidate)) {
-    return `${Math.round(candidate)}ms`;
+    return candidate;
   }
 
   if (
@@ -27,8 +27,8 @@ export const getDurationLabel = (step: StepExecutionRecord): string => {
     typeof step.endedAt === "number" &&
     Number.isFinite(step.endedAt)
   ) {
-    return `${Math.round(Math.max(0, step.endedAt - step.startedAt))}ms`;
+    return Math.max(0, step.endedAt - step.startedAt);
   }
 
-  return "—";
+  return 0;
 };

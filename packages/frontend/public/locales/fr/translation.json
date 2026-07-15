@@ -473,7 +473,7 @@
     "status": "Statut",
     "closed": "Fermé",
     "duration": "Durée",
-    "latency_ms": "Latence (ms)",
+    "latency": "Latence",
     "tool_count": "Nombre d'outils",
     "error": "Erreur",
     "operations": "Opérations",

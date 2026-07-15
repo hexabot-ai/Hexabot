@@ -11,9 +11,10 @@ import { alpha, useColorScheme, useTheme } from "@mui/material/styles";
 import type { KeyboardEvent } from "react";
 
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
+import { formatDurationMs } from "@/utils/date";
 
 import { ActionStatusIndicator } from "./ActionStatusIndicator";
-import { getDurationLabel } from "./utils";
+import { getStepDuration } from "./utils";
 
 type StepTraceItemProps = {
   step: StepExecutionRecord;
@@ -167,7 +168,7 @@ export const StepTraceItem = ({
       <Box display="flex" alignItems="center" gap={1.5} justifySelf="end">
         <ActionStatusIndicator status={step.status} />
         <Typography variant="caption" color="text.secondary">
-          {getDurationLabel(step)}
+          {formatDurationMs(getStepDuration(step))}
         </Typography>
       </Box>
     </Paper>
