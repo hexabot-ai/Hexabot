@@ -6,6 +6,7 @@
 
 import type { Monaco } from "@monaco-editor/react";
 import type { IDisposable, IPosition, editor } from "monaco-editor";
+import type { JSONSchema } from "monaco-yaml";
 
 import type { IAction } from "@/types/action.types";
 
@@ -130,6 +131,127 @@ const buildActionCompletionItems = (
     documentation: action.description || undefined,
   }));
 };
+const INPUTS_KEY_PATTERN = /^\s*inputs:\s*(#.*)?$/;
+const ACTION_KEY_PATTERN = /^\s*action:\s*(\S+)/;
+const MAP_KEY_PATTERN = /^\s*([A-Za-z0-9_-]+):/;
+/**
+ * Walks upward from `position` to find the enclosing task's `action:` value,
+ * but only when `position` sits directly inside that task's `inputs:` block.
+ */
+const findEnclosingInputsAction = (
+  model: editor.ITextModel,
+  position: IPosition,
+  currentIndent: number,
+): string | null => {
+  let lineNum = position.lineNumber - 1;
+  let inputsIndent: number | null = null;
+
+  // 1. Walk up to find the parent 'inputs:' key
+  while (lineNum >= 1) {
+    const line = model.getLineContent(lineNum--);
+
+    if (isCommentOrBlank(line)) continue;
+
+    const indent = countIndent(line);
+
+    if (indent < currentIndent) {
+      if (INPUTS_KEY_PATTERN.test(line)) inputsIndent = indent;
+      break;
+    }
+  }
+
+  if (inputsIndent === null) return null;
+
+  // 2. Walk up from the inputs key to find its sibling 'action:' key
+  while (lineNum >= 1) {
+    const line = model.getLineContent(lineNum--);
+
+    if (isCommentOrBlank(line)) continue;
+
+    const indent = countIndent(line);
+
+    if (indent < inputsIndent) break;
+    if (indent === inputsIndent) {
+      const match = line.match(ACTION_KEY_PATTERN);
+
+      if (match) return match[1];
+    }
+  }
+
+  return null;
+};
+const collectSiblingKeys = (
+  model: editor.ITextModel,
+  position: IPosition,
+  indent: number,
+) => {
+  const keys = new Set<string>();
+
+  for (let i = 1; i <= model.getLineCount(); i++) {
+    if (i === position.lineNumber) continue;
+    const line = model.getLineContent(i);
+
+    if (countIndent(line) === indent) {
+      const match = line.match(MAP_KEY_PATTERN);
+
+      if (match) keys.add(match[1]);
+    }
+  }
+
+  return keys;
+};
+const buildInputsCompletionItems = (
+  monacoInstance: Monaco,
+  model: editor.ITextModel,
+  position: IPosition,
+  actions?: IAction[],
+) => {
+  if (!actions?.length) return [];
+
+  const lineContent = model.getLineContent(position.lineNumber);
+  const linePrefix = lineContent.slice(0, position.column - 1);
+
+  // Early exit if the line is a comment or already contains a colon
+  if (lineContent.trim().startsWith("#") || linePrefix.includes(":")) {
+    return [];
+  }
+
+  const currentIndent = countIndent(linePrefix);
+  const actionName = findEnclosingInputsAction(model, position, currentIndent);
+
+  if (!actionName) return [];
+
+  const action = actions.find((a) => a.name === actionName);
+  const properties = (action?.inputSchema as JSONSchema | undefined)
+    ?.properties;
+
+  if (!properties) return [];
+
+  const { startColumn, endColumn } = model.getWordUntilPosition(position);
+  const range = {
+    startLineNumber: position.lineNumber,
+    endLineNumber: position.lineNumber,
+    startColumn,
+    endColumn,
+  };
+  const existingKeys = collectSiblingKeys(model, position, currentIndent);
+
+  return Object.entries(properties)
+    .filter(([key, schema]) => !existingKeys.has(key) && schema !== false)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, schema]) => {
+      const propSchema = typeof schema === "object" ? schema : undefined;
+
+      return {
+        label: key,
+        kind: monacoInstance.languages.CompletionItemKind.Field,
+        insertText: `${key}: `,
+        range,
+        detail: propSchema?.type ? String(propSchema.type) : "Task input",
+        documentation: propSchema?.description || propSchema?.title,
+      };
+    });
+};
 
 export const registerYamlCompletionProvider = (
   monacoInstance: Monaco,
@@ -155,6 +277,12 @@ export const registerYamlCompletionProvider = (
           position,
           getActions?.(),
         );
+        const inputsSuggestions = buildInputsCompletionItems(
+          monacoInstance,
+          model,
+          position,
+          getActions?.(),
+        );
         const includeBaseSuggestions = context?.triggerCharacter !== ":";
 
         return {
@@ -162,6 +290,7 @@ export const registerYamlCompletionProvider = (
             ...(includeBaseSuggestions ? suggestions : []),
             ...taskSuggestions,
             ...actionSuggestions,
+            ...inputsSuggestions,
           ],
         };
       },
