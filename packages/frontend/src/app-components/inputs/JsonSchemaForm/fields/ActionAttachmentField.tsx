@@ -71,6 +71,8 @@ export const ActionAttachmentField = ({
   required,
   disabled,
   readonly,
+  rawErrors,
+  registry,
 }: FieldProps) => {
   const { t } = useTranslate();
   const options =
@@ -83,6 +85,13 @@ export const ActionAttachmentField = ({
   const description = getDescription(schema as RJSFSchema);
   const currentAttachment = getAttachmentValue(formData);
   const isReadOnly = disabled || readonly;
+  const hasError =
+    Boolean(rawErrors?.length) ||
+    Boolean(
+      registry.formContext?.validateOnMount &&
+        required &&
+        !currentAttachment?.id,
+    );
   const handleChange = (id: string | null, mimeType: string | null) => {
     const path = fieldPathId.path as FieldPathList;
 
@@ -110,6 +119,8 @@ export const ActionAttachmentField = ({
         accept={ATTACHMENT_ACCEPT}
         enableMediaLibrary={!isReadOnly}
         size={128}
+        error={hasError}
+        helperText={rawErrors?.[0]}
         onChange={handleChange}
         resourceRef={resourceRef}
       />

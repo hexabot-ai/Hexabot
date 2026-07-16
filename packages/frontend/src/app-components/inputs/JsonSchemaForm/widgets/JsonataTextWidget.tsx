@@ -46,6 +46,7 @@ export const JsonataTextWidget = ({
   required,
   disabled,
   readonly,
+  rawErrors,
   value,
   onChange,
   onBlur,
@@ -150,6 +151,7 @@ export const JsonataTextWidget = ({
       onFocus={(next) => onFocus?.(id, normalizeValue(next))}
       globalsSchema={globalsSchema}
       disabled={disabled || readonly}
+      error={Boolean(rawErrors?.length)}
       enableExpressionAssist
       onExpressionStateChange={reportAllowedExpressionState}
       fullWidth

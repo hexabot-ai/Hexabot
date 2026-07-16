@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
+import validator from "@/utils/rjsf-zod-validator";
 
 import { buildContentParams, buildContentSchema } from "./content.schema.utils";
 
@@ -53,6 +54,11 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
     [formData, schema],
   );
   const [hasVisibleErrors, setHasVisibleErrors] = useState(false);
+  const [validateOnSubmit, setValidateOnSubmit] = useState(false);
+  const hasValidationErrors = useMemo(
+    () => !validator.isValid(schema, formData, schema),
+    [schema, formData],
+  );
   const { mutate: createContent } = useCreate(EntityType.CONTENT);
   const { mutate: updateContent } = useUpdate(EntityType.CONTENT);
   const options = {
@@ -66,7 +72,9 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
     },
   };
   const onSubmitForm = () => {
-    if (hasVisibleErrors) {
+    setValidateOnSubmit(true);
+
+    if (hasVisibleErrors || hasValidationErrors) {
       return;
     }
 
@@ -93,10 +101,17 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
   const canSubmit = useMemo(() => {
     return (
       hasVisibleErrors ||
+      (validateOnSubmit && hasValidationErrors) ||
       isMatch(defaultFormData, formData) ||
       Boolean(WrapperProps?.confirmButtonProps?.disabled)
     );
-  }, [formData, hasVisibleErrors, WrapperProps?.confirmButtonProps?.disabled]);
+  }, [
+    formData,
+    hasValidationErrors,
+    hasVisibleErrors,
+    validateOnSubmit,
+    WrapperProps?.confirmButtonProps?.disabled,
+  ]);
 
   return (
     <Wrapper
@@ -112,6 +127,7 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
         formData={formData}
         onFormDataChange={setFormData}
         onVisibleErrorsChange={setHasVisibleErrors}
+        validateOnMount={validateOnSubmit}
         enableJsonataTextWidget={false}
         idPrefix={content ? `content-${content.id}` : "content-new"}
       />

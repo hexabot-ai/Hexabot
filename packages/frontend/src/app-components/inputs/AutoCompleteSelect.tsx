@@ -44,6 +44,7 @@ type AutoCompleteSelectProps<
   onSearch?: (keywords: string) => void;
   inputLabelSx?: unknown;
   error?: boolean;
+  required?: boolean;
   helperText?: string | null | undefined;
   noOptionsWarning?: string;
   isDisabledWhenEmpty?: boolean;
@@ -66,6 +67,7 @@ const AutoCompleteSelect = <
     onSearch,
     inputLabelSx,
     error,
+    required,
     helperText,
     isOptionEqualToValue = (option, value) =>
       option?.[idKey] === value?.[idKey],
@@ -165,6 +167,7 @@ const AutoCompleteSelect = <
             label={label}
             onChange={(e) => handleSearch(e.target.value)}
             error={error}
+            required={required}
             helperText={helperText}
             slotProps={{
               inputLabel: {

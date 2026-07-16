@@ -4,14 +4,19 @@
  * Full terms: see LICENSE.md.
  */
 
-import { AttachmentResourceRef, type Attachment } from "@hexabot-ai/types";
-import { Action } from "@hexabot-ai/types";
+import {
+  Action,
+  AttachmentResourceRef,
+  type Attachment,
+} from "@hexabot-ai/types";
 import { Box, FormHelperText, FormLabel } from "@mui/material";
 import { ReactNode, forwardRef } from "react";
 
 import { useGet } from "@/hooks/crud/useGet";
 import { useHasPermission } from "@/hooks/useHasPermission";
 import { EntityType } from "@/services/types";
+
+import { labelTooltipInputLabelSx } from "../inputs/JsonSchemaForm/widgets/shared";
 
 import AttachmentThumbnail from "./AttachmentThumbnail";
 import AttachmentUploader from "./AttachmentUploader";
@@ -67,8 +72,9 @@ const AttachmentInput = forwardRef<HTMLDivElement, AttachmentThumbnailProps>(
       <Box ref={ref}>
         <FormLabel
           component="label"
+          error={error}
           required={required}
-          style={{ display: "inline-block", marginBottom: 1 }}
+          sx={labelTooltipInputLabelSx}
         >
           {label}
         </FormLabel>
@@ -83,6 +89,7 @@ const AttachmentInput = forwardRef<HTMLDivElement, AttachmentThumbnailProps>(
           <AttachmentUploader
             accept={accept}
             enableMediaLibrary={enableMediaLibrary}
+            error={error}
             onChange={handleChange}
             resourceRef={resourceRef}
           />

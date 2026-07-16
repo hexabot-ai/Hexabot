@@ -9,6 +9,10 @@ import { getDefaultFormState, RJSFSchema, UiSchema } from "@rjsf/utils";
 import { JSONSchema7 } from "json-schema";
 import { JSONSchema } from "monaco-yaml";
 
+import {
+  makeDefaultSchemaNode,
+  toJsonSchema,
+} from "@/app-components/inputs/JsonSchemaObjectBuilder";
 import { isRecord } from "@/utils/object";
 import validator from "@/utils/rjsf-zod-validator";
 
@@ -25,8 +29,26 @@ export const getSchemaDefaults = <T extends Record<string, JsonValue>>(
 ): T | undefined => {
   try {
     const defaults = computeDefaultFormState<T>(schema as RJSFSchema);
+    let next = normalizeDefaults(defaults) as T | undefined;
 
-    return normalizeDefaults(defaults) as T;
+    // JsonSchemaObjectField only syncs its value once the user edits the
+    // builder, so seed its fields with the builder's default schema
+    for (const [key, property] of Object.entries(
+      getSchemaProperties(schema) ?? {},
+    )) {
+      if (
+        isRecord(property) &&
+        property["ui:field"] === "JsonSchemaObjectField" &&
+        next?.[key] === undefined
+      ) {
+        next = {
+          ...(next ?? {}),
+          [key]: toJsonSchema(makeDefaultSchemaNode("object")),
+        } as T;
+      }
+    }
+
+    return next;
   } catch {
     return undefined;
   }

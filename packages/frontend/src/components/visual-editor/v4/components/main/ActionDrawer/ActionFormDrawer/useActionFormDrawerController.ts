@@ -334,7 +334,6 @@ export const useActionFormDrawerController = ({
     setValidateActionSchemas(true);
     setActionSettingsData(data);
   };
-  const isAttachmentAction = actionSchema?.name === "send_attachment";
   const handleSave = () => {
     const currentDefinition =
       definition ?? (isCreateMode && workflow ? createBaseDefinition() : null);
@@ -346,12 +345,11 @@ export const useActionFormDrawerController = ({
     setValidateActionSchemas(true);
 
     if (
-      (isAttachmentAction &&
-        (hasSchemaValidationErrors(actionSchema.inputSchema, inputData) ||
-          hasSchemaValidationErrors(
-            actionSchema.settingSchema,
-            actionSettingsData,
-          ))) ||
+      hasSchemaValidationErrors(actionSchema.inputSchema, inputData) ||
+      hasSchemaValidationErrors(
+        actionSchema.settingSchema,
+        actionSettingsData,
+      ) ||
       hasInputVisibleErrors ||
       hasActionSettingsVisibleErrors ||
       hasExecutionSettingsVisibleErrors
@@ -480,7 +478,7 @@ export const useActionFormDrawerController = ({
   };
   const canSaveDefinition = Boolean(definition || (isCreateMode && workflow));
   const hasActionSchemaValidationErrors =
-    actionSchema && isAttachmentAction && validateActionSchemas
+    actionSchema && validateActionSchemas
       ? hasSchemaValidationErrors(actionSchema.inputSchema, inputData) ||
         hasSchemaValidationErrors(
           actionSchema.settingSchema,
@@ -530,7 +528,7 @@ export const useActionFormDrawerController = ({
     },
     inputData,
     isUsingWorkflowExecutionDefaults,
-    validateActionSchemas: isAttachmentAction && validateActionSchemas,
+    validateActionSchemas,
     onExecutionSettingsDataChange: setExecutionSettingsData,
     onExecutionSettingsModeChange: handleExecutionSettingsModeChange,
     onExecutionSettingsVisibleErrorsChange:

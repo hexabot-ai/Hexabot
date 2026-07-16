@@ -19,6 +19,8 @@ import * as React from "react";
 
 import { useTranslate } from "@/hooks/useTranslate";
 
+import { labelTooltipInputLabelSx } from "../JsonSchemaForm/widgets/shared";
+
 import {
   ensureExpressionPrefix,
   isExpressionValue,
@@ -66,6 +68,7 @@ export function JsonataFormulaField(props: JsonataFormulaFieldProps) {
     onFocus,
     globalsSchema,
     disabled,
+    error = false,
     helperText,
     fullWidth,
     minHeightPx = 36,
@@ -435,7 +438,7 @@ export function JsonataFormulaField(props: JsonataFormulaFieldProps) {
       triggerSuggestions: false,
     });
   };
-  const showError = Boolean(validationMessage);
+  const showError = error || Boolean(validationMessage);
   const { mode } = useColorScheme();
   const showAssistIcon = enableExpressionAssist;
   const showModeIcon = !showAssistIcon && isJsonataMode;
@@ -453,22 +456,7 @@ export function JsonataFormulaField(props: JsonataFormulaFieldProps) {
       variant="standard"
     >
       {label ? (
-        <FormLabel
-          sx={{
-            mb: 0.5,
-            fontSize: 13,
-            color: "text.secondary",
-            display: "inline-flex",
-            alignItems: "center",
-            "& .MuiFormLabel-asterisk": {
-              order: 2,
-            },
-            "& .action-field-label-icon": {
-              order: 3,
-            },
-          }}
-          required={required}
-        >
+        <FormLabel sx={labelTooltipInputLabelSx} required={required}>
           {label}
         </FormLabel>
       ) : null}
