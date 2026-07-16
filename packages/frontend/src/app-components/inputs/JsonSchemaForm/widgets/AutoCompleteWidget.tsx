@@ -59,6 +59,7 @@ const AutoCompleteWidgetWrapper = ({
   label?: ReactNode;
   inputLabelSx?: unknown;
   error?: boolean;
+  required?: boolean;
   value: any;
   entity?: keyof IEntityMapTypes;
   multiple?: boolean;
@@ -150,6 +151,7 @@ export const AutoCompleteWidget = ({
   uiSchema,
   onChange,
   rawErrors,
+  required,
   registry,
 }: WidgetProps) => {
   const description = getDescription(schema as RJSFSchema, options);
@@ -222,6 +224,7 @@ export const AutoCompleteWidget = ({
         routeParams={dependencyQueryConfig.routeParams}
         queryEnabled={dependencyQueryConfig.queryEnabled}
         error={Boolean(rawErrors?.length)}
+        required={required}
         onChange={onChange}
         {...props}
       />
