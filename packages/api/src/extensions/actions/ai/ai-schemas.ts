@@ -11,6 +11,25 @@ export const DEFAULT_AI_PROMPT = '=$input.text';
 
 export const DEFAULT_AI_MESSAGES_LIMIT = 4;
 
+export const DEFAULT_AI_SYSTEM_PROMPT = 'You are a helpful assistant.';
+
+/**
+ * Actions that request structured output need a system prompt that keeps the
+ * model on the schema; a conversational persona makes it answer in prose and
+ * the object comes back empty.
+ */
+export const DEFAULT_AI_OBJECT_SYSTEM_PROMPT = [
+  'You are a structured data extraction engine.',
+  'Read the input and return a single JSON object that conforms exactly to the requested output schema.',
+  '',
+  'Rules:',
+  '- Extract values only from the input. Never invent, guess, or complete missing information.',
+  '- Respect every type, enum, format, and constraint declared in the schema.',
+  '- Omit optional fields you cannot ground in the input instead of filling them with placeholders.',
+  '- Normalize values (trim whitespace, canonical casing, ISO 8601 for dates) without changing their meaning.',
+  '- Return only the object: no prose, no explanation, no fields outside the schema.',
+].join('\n');
+
 const aiPromptBaseSchema = z.object({
   input_mode: z
     .enum(['prompt', 'history'])
@@ -56,7 +75,7 @@ const aiPromptBaseSchema = z.object({
         },
       },
     }),
-  system: z.string().default('You are a helpful assistant.').optional().meta({
+  system: z.string().default(DEFAULT_AI_SYSTEM_PROMPT).optional().meta({
     title: 'System',
     description:
       'Optional system instruction prepended to the prompt or message history.',
@@ -67,11 +86,21 @@ const aiPromptOnlySchema = z.strictObject({
     title: 'Prompt',
     description: 'Prompt text to send directly to the model.',
   }),
-  system: z.string().default('You are a helpful assistant.').optional().meta({
+  system: z.string().default(DEFAULT_AI_SYSTEM_PROMPT).optional().meta({
     title: 'System',
     description: 'Optional system instruction prepended to the prompt.',
   }),
 });
+const aiObjectSystemField = z
+  .string()
+  .default(DEFAULT_AI_OBJECT_SYSTEM_PROMPT)
+  .optional()
+  .meta({
+    title: 'System',
+    description:
+      'System instruction prepended to the input. It should keep the model focused on filling the output schema.',
+    'ui:widget': 'textarea',
+  });
 
 export const aiPromptSchema = aiPromptBaseSchema;
 
@@ -239,13 +268,17 @@ export const aiGenerateReplyOutputSchema = aiGenerateTextOutputSchema;
 
 export const aiGenerateReplySettingsSchema = aiCommonSettingsSchema;
 
-export const aiGenerateObjectInputSchema = aiPromptOnlySchema;
+export const aiGenerateObjectInputSchema = aiPromptOnlySchema.extend({
+  system: aiObjectSystemField,
+});
 
 export const aiGenerateObjectOutputSchema = aiObjectOutputSchema;
 
 export const aiGenerateObjectSettingsSchema = aiObjectSettingsSchema;
 
-export const aiInferObjectInputSchema = aiPromptSchema;
+export const aiInferObjectInputSchema = aiPromptSchema.extend({
+  system: aiObjectSystemField,
+});
 
 export const aiInferObjectOutputSchema = aiObjectOutputSchema;
 
