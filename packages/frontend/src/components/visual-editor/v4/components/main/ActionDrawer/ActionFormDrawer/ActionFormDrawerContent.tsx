@@ -24,6 +24,7 @@ export type ActionFormDrawerContentProps = {
   actionSettingsData: Record<string, unknown>;
   executionSettingsData: Record<string, unknown>;
   isUsingWorkflowExecutionDefaults: boolean;
+  validateActionSchemas: boolean;
   panelKeyBase: string;
   emptyStateLabel: string;
   onInputDataChange: (data: Record<string, unknown>) => void;
@@ -42,6 +43,7 @@ export const ActionFormDrawerContent = ({
   actionSettingsData,
   executionSettingsData,
   isUsingWorkflowExecutionDefaults,
+  validateActionSchemas,
   panelKeyBase,
   emptyStateLabel,
   onInputDataChange,
@@ -80,6 +82,7 @@ export const ActionFormDrawerContent = ({
           emptyLabel={t("visual_editor.actions_drawer.form.empty_schema.input")}
           expressionPolicy="input-default"
           headerAction={<DynamicValueHelp />}
+          validateOnMount={validateActionSchemas}
         />
       ) : null}
       {hasSettingsSchema ? (
@@ -99,6 +102,7 @@ export const ActionFormDrawerContent = ({
           )}
           expressionPolicy="opt-in"
           headerAction={<DynamicValueHelp />}
+          validateOnMount={validateActionSchemas}
         />
       ) : null}
       <ExecutionSettingsPanel

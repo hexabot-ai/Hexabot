@@ -37,6 +37,7 @@ export const ActionFormDrawer = ({
     actionSettingsData,
     executionSettingsData,
     isUsingWorkflowExecutionDefaults,
+    validateActionSchemas,
     panelKeyBase,
     emptyStateLabel,
     onInputDataChange,
@@ -59,6 +60,7 @@ export const ActionFormDrawer = ({
       actionSettingsData={actionSettingsData}
       executionSettingsData={executionSettingsData}
       isUsingWorkflowExecutionDefaults={isUsingWorkflowExecutionDefaults}
+      validateActionSchemas={validateActionSchemas}
       panelKeyBase={panelKeyBase}
       emptyStateLabel={emptyStateLabel}
       onInputDataChange={onInputDataChange}

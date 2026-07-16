@@ -260,6 +260,7 @@ export const JsonSchemaForm = <
         expressionFieldStates,
         expressionPolicy,
         formData: liveFormData,
+        validateOnMount,
         reportExpressionFieldState,
         reportFieldVisibleError,
       }}
