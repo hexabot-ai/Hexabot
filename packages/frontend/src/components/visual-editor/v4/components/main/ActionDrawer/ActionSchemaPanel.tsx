@@ -31,6 +31,7 @@ export type ActionSchemaPanelProps = {
   uiSchema?: UiSchema;
   expressionPolicy?: ExpressionPolicy;
   headerAction?: ReactNode;
+  validateOnMount?: boolean;
 };
 
 export const ActionSchemaPanel = ({
@@ -44,6 +45,7 @@ export const ActionSchemaPanel = ({
   uiSchema,
   expressionPolicy = "input-default",
   headerAction,
+  validateOnMount,
 }: ActionSchemaPanelProps) => (
   <Accordion variant="elevation" defaultExpanded>
     <AccordionSummary>
@@ -78,6 +80,7 @@ export const ActionSchemaPanel = ({
           uiSchema={uiSchema}
           idPrefix={`action-${panelKey}`}
           expressionPolicy={expressionPolicy}
+          validateOnMount={validateOnMount}
         />
       ) : (
         <Typography variant="body2" color="text.secondary">

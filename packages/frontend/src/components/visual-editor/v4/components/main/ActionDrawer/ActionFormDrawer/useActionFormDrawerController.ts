@@ -17,6 +17,7 @@ import {
   type WorkflowDefinition,
 } from "@hexabot-ai/agentic";
 import type { FlowStepPath } from "@hexabot-ai/graph";
+import type { RJSFSchema } from "@rjsf/utils";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -26,6 +27,7 @@ import {
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
 import { useTranslate } from "@/hooks/useTranslate";
 import type { IAction } from "@/types/action.types";
+import validator from "@/utils/rjsf-zod-validator";
 
 import { useWorkflow } from "../../../../hooks/useWorkflow";
 import { useSelectedActionNode } from "../../../../hooks/useWorkflowSelection";
@@ -44,6 +46,7 @@ type UseActionFormDrawerControllerResult = {
   headerProps: ActionFormDrawerHeaderProps;
   inputData: Record<string, unknown>;
   isUsingWorkflowExecutionDefaults: boolean;
+  validateActionSchemas: boolean;
   onExecutionSettingsDataChange: (data: Record<string, unknown>) => void;
   onExecutionSettingsModeChange: (useWorkflowDefaults: boolean) => void;
   onExecutionSettingsVisibleErrorsChange: (hasVisibleErrors: boolean) => void;
@@ -82,6 +85,15 @@ const EXECUTION_SETTING_KEYS = new Set(Object.keys(BaseSettingsSchema.shape));
 const DEFAULT_WORKFLOW_EXECUTION_SETTINGS: Partial<Settings> = {
   timeout_ms: DEFAULT_TIMEOUT_MS,
   retries: { ...DEFAULT_RETRY_SETTINGS },
+};
+const hasSchemaValidationErrors = (
+  schema: unknown,
+  data: Record<string, unknown>,
+): boolean => {
+  return (
+    Boolean(schema) &&
+    !validator.isValid(schema as RJSFSchema, data, schema as RJSFSchema)
+  );
 };
 const splitTaskSettings = (
   settings: Record<string, unknown> | undefined,
@@ -150,6 +162,7 @@ export const useActionFormDrawerController = ({
   const [hasInputVisibleErrors, setHasInputVisibleErrors] = useState(false);
   const [hasActionSettingsVisibleErrors, setHasActionSettingsVisibleErrors] =
     useState(false);
+  const [validateActionSchemas, setValidateActionSchemas] = useState(false);
   const [
     hasExecutionSettingsVisibleErrors,
     setHasExecutionSettingsVisibleErrors,
@@ -202,6 +215,7 @@ export const useActionFormDrawerController = ({
       setInputData({});
       setActionSettingsData({});
       setExecutionSettingsData({});
+      setValidateActionSchemas(false);
 
       return;
     }
@@ -227,6 +241,7 @@ export const useActionFormDrawerController = ({
       setActionSettingsData(actionSettings);
       setExecutionSettingsData(resolvedExecutionSettings);
       setIsUsingWorkflowExecutionDefaults(!hasExecutionOverride);
+      setValidateActionSchemas(false);
       setHasExecutionSettingsVisibleErrors(false);
 
       return;
@@ -236,6 +251,7 @@ export const useActionFormDrawerController = ({
       setInputData({});
       setActionSettingsData({});
       setExecutionSettingsData({});
+      setValidateActionSchemas(false);
 
       return;
     }
@@ -255,6 +271,7 @@ export const useActionFormDrawerController = ({
     setActionSettingsData(actionSettings);
     setExecutionSettingsData(resolvedExecutionSettings);
     setIsUsingWorkflowExecutionDefaults(!hasExecutionOverride);
+    setValidateActionSchemas(false);
     setHasExecutionSettingsVisibleErrors(false);
     // Hydrate only when opening the drawer or selecting a different node.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -309,6 +326,15 @@ export const useActionFormDrawerController = ({
       isUsingWorkflowExecutionDefaults ? false : hasVisibleErrors,
     );
   };
+  const handleInputDataChange = (data: Record<string, unknown>) => {
+    setValidateActionSchemas(true);
+    setInputData(data);
+  };
+  const handleActionSettingsDataChange = (data: Record<string, unknown>) => {
+    setValidateActionSchemas(true);
+    setActionSettingsData(data);
+  };
+  const isAttachmentAction = actionSchema?.name === "send_attachment";
   const handleSave = () => {
     const currentDefinition =
       definition ?? (isCreateMode && workflow ? createBaseDefinition() : null);
@@ -317,7 +343,15 @@ export const useActionFormDrawerController = ({
       return;
     }
 
+    setValidateActionSchemas(true);
+
     if (
+      (isAttachmentAction &&
+        (hasSchemaValidationErrors(actionSchema.inputSchema, inputData) ||
+          hasSchemaValidationErrors(
+            actionSchema.settingSchema,
+            actionSettingsData,
+          ))) ||
       hasInputVisibleErrors ||
       hasActionSettingsVisibleErrors ||
       hasExecutionSettingsVisibleErrors
@@ -445,7 +479,16 @@ export const useActionFormDrawerController = ({
     handleSaveClose();
   };
   const canSaveDefinition = Boolean(definition || (isCreateMode && workflow));
+  const hasActionSchemaValidationErrors =
+    actionSchema && isAttachmentAction && validateActionSchemas
+      ? hasSchemaValidationErrors(actionSchema.inputSchema, inputData) ||
+        hasSchemaValidationErrors(
+          actionSchema.settingSchema,
+          actionSettingsData,
+        )
+      : false;
   const saveDisabled =
+    hasActionSchemaValidationErrors ||
     hasInputVisibleErrors ||
     hasActionSettingsVisibleErrors ||
     hasExecutionSettingsVisibleErrors ||
@@ -487,13 +530,14 @@ export const useActionFormDrawerController = ({
     },
     inputData,
     isUsingWorkflowExecutionDefaults,
+    validateActionSchemas: isAttachmentAction && validateActionSchemas,
     onExecutionSettingsDataChange: setExecutionSettingsData,
     onExecutionSettingsModeChange: handleExecutionSettingsModeChange,
     onExecutionSettingsVisibleErrorsChange:
       handleExecutionSettingsVisibleErrorsChange,
-    onInputDataChange: setInputData,
+    onInputDataChange: handleInputDataChange,
     onInputVisibleErrorsChange: setHasInputVisibleErrors,
-    onActionSettingsDataChange: setActionSettingsData,
+    onActionSettingsDataChange: handleActionSettingsDataChange,
     onActionSettingsVisibleErrorsChange: setHasActionSettingsVisibleErrors,
     onClose: () => {
       onClose?.("cancel");
