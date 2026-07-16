@@ -39,7 +39,6 @@
     "Maximum number of agent steps before stopping.": "Maximum number of agent steps before stopping.",
     "Maximum number of tokens to generate in the output.": "Maximum number of tokens to generate in the output.",
     "Nucleus sampling probability mass to consider.": "Nucleus sampling probability mass to consider.",
-    "Optional system instruction prepended to the prompt.": "Optional system instruction prepended to the prompt.",
     "Output schema": "Output schema",
     "Penalty for introducing new topics or tokens.": "Penalty for introducing new topics or tokens.",
     "Penalty for repeating tokens frequently.": "Penalty for repeating tokens frequently.",
@@ -55,6 +54,7 @@
     "Stop tool call": "Stop tool call",
     "Stop when the specified tool call is triggered.": "Stop when the specified tool call is triggered.",
     "System": "System",
+    "System instruction prepended to the input. It should keep the model focused on filling the output schema.": "System instruction prepended to the input. It should keep the model focused on filling the output schema.",
     "Temperature": "Temperature",
     "Top K": "Top K",
     "Top P": "Top P"
@@ -130,7 +130,6 @@
     "Messages limit": "Messages limit",
     "Nucleus sampling probability mass to consider.": "Nucleus sampling probability mass to consider.",
     "Number of most recent conversation messages to include instead of a prompt.": "Number of most recent conversation messages to include instead of a prompt.",
-    "Optional system instruction prepended to the prompt or message history.": "Optional system instruction prepended to the prompt or message history.",
     "Output schema": "Output schema",
     "Penalty for introducing new topics or tokens.": "Penalty for introducing new topics or tokens.",
     "Penalty for repeating tokens frequently.": "Penalty for repeating tokens frequently.",
@@ -146,6 +145,7 @@
     "Stop tool call": "Stop tool call",
     "Stop when the specified tool call is triggered.": "Stop when the specified tool call is triggered.",
     "System": "System",
+    "System instruction prepended to the input. It should keep the model focused on filling the output schema.": "System instruction prepended to the input. It should keep the model focused on filling the output schema.",
     "Temperature": "Temperature",
     "Top K": "Top K",
     "Top P": "Top P"

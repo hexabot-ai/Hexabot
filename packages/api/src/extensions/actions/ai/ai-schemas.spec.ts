@@ -6,8 +6,11 @@
 
 import {
   DEFAULT_AI_MESSAGES_LIMIT,
+  DEFAULT_AI_OBJECT_SYSTEM_PROMPT,
   DEFAULT_AI_PROMPT,
+  DEFAULT_AI_SYSTEM_PROMPT,
   aiAgentInputSchema,
+  aiGenerateObjectInputSchema,
   aiGenerateObjectSettingsSchema,
   aiGenerateReplyInputSchema,
   aiGenerateReplySettingsSchema,
@@ -109,6 +112,33 @@ describe('ai prompt schemas', () => {
     expect(aiInferObjectInputSchema.parse(historyInput).messages_limit).toBe(
       DEFAULT_AI_MESSAGES_LIMIT,
     );
+  });
+});
+
+describe('structured output system prompts', () => {
+  it.each([
+    ['ai_infer_object', aiInferObjectInputSchema],
+    ['ai_generate_object', aiGenerateObjectInputSchema],
+  ])('defaults %s system to the structured output prompt', (_name, schema) => {
+    const system = schema.parse({}).system;
+
+    expect(system).toBe(DEFAULT_AI_OBJECT_SYSTEM_PROMPT);
+    expect(system).not.toBe(DEFAULT_AI_SYSTEM_PROMPT);
+  });
+
+  it('keeps the conversational default for text-producing actions', () => {
+    expect(aiGenerateReplyInputSchema.parse({}).system).toBe(
+      DEFAULT_AI_SYSTEM_PROMPT,
+    );
+    expect(aiGenerateTextInputSchema.parse({}).system).toBe(
+      DEFAULT_AI_SYSTEM_PROMPT,
+    );
+  });
+
+  it('keeps a user-provided system prompt', () => {
+    const system = 'Extract only the invoice total.';
+
+    expect(aiInferObjectInputSchema.parse({ system }).system).toBe(system);
   });
 });
 

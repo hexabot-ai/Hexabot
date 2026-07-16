@@ -39,7 +39,6 @@
     "Maximum number of agent steps before stopping.": "Nombre maximal d'étapes de l'agent avant l'arrêt.",
     "Maximum number of tokens to generate in the output.": "Nombre maximal de tokens à générer en sortie.",
     "Nucleus sampling probability mass to consider.": "Masse de probabilité à considérer pour l'échantillonnage nucleus (Top P).",
-    "Optional system instruction prepended to the prompt.": "Instruction système optionnelle ajoutée avant le prompt.",
     "Output schema": "Schéma de sortie",
     "Penalty for introducing new topics or tokens.": "Pénalité pour l'introduction de nouveaux sujets ou tokens.",
     "Penalty for repeating tokens frequently.": "Pénalité pour la répétition fréquente de tokens.",
@@ -55,6 +54,7 @@
     "Stop tool call": "Appel d'outil d'arrêt",
     "Stop when the specified tool call is triggered.": "Arrête lorsque l'appel d'outil spécifié est déclenché.",
     "System": "Système",
+    "System instruction prepended to the input. It should keep the model focused on filling the output schema.": "Instruction système ajoutée avant l'entrée. Elle doit garder le modèle concentré sur le remplissage du schéma de sortie.",
     "Temperature": "Température",
     "Top K": "Top K",
     "Top P": "Top P"
@@ -130,7 +130,6 @@
     "Messages limit": "Limite de messages",
     "Nucleus sampling probability mass to consider.": "Masse de probabilité à considérer pour l'échantillonnage nucleus (Top P).",
     "Number of most recent conversation messages to include instead of a prompt.": "Nombre de messages de conversation les plus récents à inclure au lieu d'un prompt.",
-    "Optional system instruction prepended to the prompt or message history.": "Instruction système optionnelle ajoutée avant le prompt ou l'historique des messages.",
     "Output schema": "Schéma de sortie",
     "Penalty for introducing new topics or tokens.": "Pénalité pour l'introduction de nouveaux sujets ou tokens.",
     "Penalty for repeating tokens frequently.": "Pénalité pour la répétition fréquente de tokens.",
@@ -146,6 +145,7 @@
     "Stop tool call": "Appel d'outil d'arrêt",
     "Stop when the specified tool call is triggered.": "Arrête lorsque l'appel d'outil spécifié est déclenché.",
     "System": "Système",
+    "System instruction prepended to the input. It should keep the model focused on filling the output schema.": "Instruction système ajoutée avant l'entrée. Elle doit garder le modèle concentré sur le remplissage du schéma de sortie.",
     "Temperature": "Température",
     "Top K": "Top K",
     "Top P": "Top P"
