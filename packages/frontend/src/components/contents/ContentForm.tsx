@@ -18,12 +18,9 @@ import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
+import validator from "@/utils/rjsf-zod-validator";
 
-import {
-  buildContentParams,
-  buildContentSchema,
-  hasMissingRequiredFileFields,
-} from "./content.schema.utils";
+import { buildContentParams, buildContentSchema } from "./content.schema.utils";
 
 export type ContentFormData = Record<string, unknown> & {
   contentType: string;
@@ -58,9 +55,9 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
   );
   const [hasVisibleErrors, setHasVisibleErrors] = useState(false);
   const [validateOnSubmit, setValidateOnSubmit] = useState(false);
-  const hasMissingRequiredFiles = useMemo(
-    () => hasMissingRequiredFileFields(contentType?.schema, formData),
-    [contentType?.schema, formData],
+  const hasValidationErrors = useMemo(
+    () => !validator.isValid(schema, formData, schema),
+    [schema, formData],
   );
   const { mutate: createContent } = useCreate(EntityType.CONTENT);
   const { mutate: updateContent } = useUpdate(EntityType.CONTENT);
@@ -77,7 +74,7 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
   const onSubmitForm = () => {
     setValidateOnSubmit(true);
 
-    if (hasVisibleErrors || hasMissingRequiredFiles) {
+    if (hasVisibleErrors || hasValidationErrors) {
       return;
     }
 
@@ -104,13 +101,13 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
   const canSubmit = useMemo(() => {
     return (
       hasVisibleErrors ||
-      (validateOnSubmit && hasMissingRequiredFiles) ||
+      (validateOnSubmit && hasValidationErrors) ||
       isMatch(defaultFormData, formData) ||
       Boolean(WrapperProps?.confirmButtonProps?.disabled)
     );
   }, [
     formData,
-    hasMissingRequiredFiles,
+    hasValidationErrors,
     hasVisibleErrors,
     validateOnSubmit,
     WrapperProps?.confirmButtonProps?.disabled,

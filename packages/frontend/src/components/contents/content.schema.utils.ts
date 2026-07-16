@@ -19,21 +19,15 @@ export type ContentField = {
 };
 
 export type ContentSchemaProperties = Record<string, ContentField>;
-const isMissingFileValue = (value: unknown) => {
-  if (!value || typeof value !== "object") {
-    return true;
-  }
-
-  const id = (value as { payload?: { id?: unknown } }).payload?.id;
-
-  return typeof id !== "string" || id.trim().length === 0;
-};
 const buildStringFieldSchema = (title: string): RJSFSchema => ({
   type: "string",
   title,
   default: "",
 });
-const buildFileFieldSchema = (title: string): RJSFSchema => ({
+const buildFileFieldSchema = (
+  title: string,
+  isRequired: boolean,
+): RJSFSchema => ({
   type: "object",
   title,
   properties: {
@@ -41,13 +35,17 @@ const buildFileFieldSchema = (title: string): RJSFSchema => ({
     payload: {
       type: "object",
       properties: {
-        id: {
-          anyOf: [{ type: "string" }, { type: "null" }],
-        },
+        id: isRequired
+          ? { type: "string", minLength: 1 }
+          : {
+              anyOf: [{ type: "string" }, { type: "null" }],
+            },
       },
+      ...(isRequired ? { required: ["id"] } : {}),
       additionalProperties: true,
     },
   },
+  ...(isRequired ? { required: ["payload"] } : {}),
   default: {},
   additionalProperties: true,
 });
@@ -57,7 +55,6 @@ const CONTENT_FIELD_SCHEMA_FACTORIES: Partial<
   boolean: (title) => ({ type: "boolean", title, default: false }),
   textarea: buildStringFieldSchema,
   uri: (title) => ({ type: "string", format: "uri", title, default: "" }),
-  file: buildFileFieldSchema,
   html: buildStringFieldSchema,
   string: buildStringFieldSchema,
 };
@@ -90,12 +87,15 @@ const CONTENT_FIELD_UI_SCHEMAS: Partial<
 const buildContentFieldSchema = (
   propertyKey: string,
   property: ContentField,
-  includeUiSchema = false,
+  requiredFields: Set<string>,
 ): RJSFSchema => {
   const fieldTitle = property.title || propertyKey;
   const schemaFactory =
     CONTENT_FIELD_SCHEMA_FACTORIES[property.type] ?? buildStringFieldSchema;
-  const baseFieldSchema = schemaFactory(fieldTitle);
+  const baseFieldSchema =
+    property.type === "file"
+      ? buildFileFieldSchema(fieldTitle, requiredFields.has(propertyKey))
+      : schemaFactory(fieldTitle);
   const fieldSchema = REQUIRED_NON_EMPTY_FIELD_TYPES.has(property.type)
     ? {
         ...baseFieldSchema,
@@ -105,35 +105,29 @@ const buildContentFieldSchema = (
             : 1,
       }
     : baseFieldSchema;
-
-  if (!includeUiSchema) {
-    return fieldSchema;
-  }
-
   const fieldUiSchema = CONTENT_FIELD_UI_SCHEMAS[property.type];
 
   return fieldUiSchema ? { ...fieldSchema, ...fieldUiSchema } : fieldSchema;
 };
-const transformContentSchema = (
-  rjsfSchema: RJSFSchema,
-  includeUiSchema = false,
-) => {
+
+export const buildContentSchema = (rjsfSchema: RJSFSchema) => {
   const properties = getSchemaProperties<ContentSchemaProperties>(rjsfSchema);
+  const requiredFields = new Set(
+    Array.isArray(rjsfSchema?.required) ? rjsfSchema.required : [],
+  );
   const schemaProperties: Record<string, RJSFSchema> = {
-    contentType: includeUiSchema
-      ? {
-          type: "string",
-          title: "contentType",
-          "ui:widget": "hidden",
-        }
-      : { type: "string", title: "contentType" },
+    contentType: {
+      type: "string",
+      title: "contentType",
+      "ui:widget": "hidden",
+    },
   };
 
   for (const [propertyKey, property] of Object.entries(properties || {})) {
     schemaProperties[propertyKey] = buildContentFieldSchema(
       propertyKey,
       property,
-      includeUiSchema,
+      requiredFields,
     );
   }
 
@@ -142,26 +136,6 @@ const transformContentSchema = (
     properties: schemaProperties,
     required: rjsfSchema?.["required"] || [],
   } as RJSFSchema;
-};
-
-export const buildContentSchema = (rjsfSchema: RJSFSchema) =>
-  transformContentSchema(rjsfSchema, true);
-
-export const hasMissingRequiredFileFields = (
-  rjsfSchema: RJSFSchema | undefined,
-  formData: Record<string, unknown>,
-) => {
-  const requiredFields = new Set(
-    Array.isArray(rjsfSchema?.required) ? rjsfSchema.required : [],
-  );
-  const properties = getSchemaProperties<ContentSchemaProperties>(rjsfSchema);
-
-  return Object.entries(properties || {}).some(
-    ([propertyKey, property]) =>
-      requiredFields.has(propertyKey) &&
-      property.type === "file" &&
-      isMissingFileValue(formData[propertyKey]),
-  );
 };
 
 export const buildContentParams = ({
