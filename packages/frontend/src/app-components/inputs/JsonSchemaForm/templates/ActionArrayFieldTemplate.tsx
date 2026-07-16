@@ -51,7 +51,13 @@ export const ActionArrayFieldTemplate = (props: ArrayFieldTemplateProps) => {
           <Typography
             variant="subtitle2"
             component="span"
-            sx={{ display: "inline-flex", alignItems: "center" }}
+            sx={{
+              display: "inline-flex",
+              alignItems: "center",
+              "& .action-field-label-icon": {
+                order: 3,
+              },
+            }}
           >
             <LabelWithTooltip
               label={titleLabel}
@@ -59,7 +65,7 @@ export const ActionArrayFieldTemplate = (props: ArrayFieldTemplateProps) => {
               iconSize={14}
             />
             {required && titleLabel ? (
-              <Box component="span" aria-hidden ml={0.25}>
+              <Box component="span" aria-hidden ml={0.25} sx={{ order: 2 }}>
                 *
               </Box>
             ) : null}

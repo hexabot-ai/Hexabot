@@ -19,6 +19,15 @@ export type ContentField = {
 };
 
 export type ContentSchemaProperties = Record<string, ContentField>;
+const isMissingFileValue = (value: unknown) => {
+  if (!value || typeof value !== "object") {
+    return true;
+  }
+
+  const id = (value as { payload?: { id?: unknown } }).payload?.id;
+
+  return typeof id !== "string" || id.trim().length === 0;
+};
 const buildStringFieldSchema = (title: string): RJSFSchema => ({
   type: "string",
   title,
@@ -137,6 +146,23 @@ const transformContentSchema = (
 
 export const buildContentSchema = (rjsfSchema: RJSFSchema) =>
   transformContentSchema(rjsfSchema, true);
+
+export const hasMissingRequiredFileFields = (
+  rjsfSchema: RJSFSchema | undefined,
+  formData: Record<string, unknown>,
+) => {
+  const requiredFields = new Set(
+    Array.isArray(rjsfSchema?.required) ? rjsfSchema.required : [],
+  );
+  const properties = getSchemaProperties<ContentSchemaProperties>(rjsfSchema);
+
+  return Object.entries(properties || {}).some(
+    ([propertyKey, property]) =>
+      requiredFields.has(propertyKey) &&
+      property.type === "file" &&
+      isMissingFileValue(formData[propertyKey]),
+  );
+};
 
 export const buildContentParams = ({
   title,

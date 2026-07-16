@@ -33,6 +33,7 @@ export const ActionCheckboxWidget = (props: WidgetProps) => {
     label: fieldLabel = "",
     hideLabel,
     autofocus,
+    rawErrors,
     onChange,
     onBlur,
     onFocus,
@@ -78,6 +79,7 @@ export const ActionCheckboxWidget = (props: WidgetProps) => {
           name={htmlName || id}
           checked={checked}
           required={required}
+          color={rawErrors?.length ? "error" : "primary"}
           disabled={disabled || readonly}
           autoFocus={autofocus}
           onChange={(_, nextChecked) => onChange(nextChecked)}

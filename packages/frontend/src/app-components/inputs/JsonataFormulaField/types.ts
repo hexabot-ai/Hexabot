@@ -72,6 +72,7 @@ export type JsonataFormulaFieldProps = {
   globalsSchema?: GlobalsSchema;
 
   disabled?: boolean;
+  error?: boolean;
   helperText?: React.ReactNode;
   fullWidth?: boolean;
 

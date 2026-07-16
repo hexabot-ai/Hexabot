@@ -35,11 +35,13 @@ export const AutoCompleteFieldWrapper = ({
   nestedArrayItemValue = "",
   title,
   value,
+  error,
   onChange,
 }: Rjsf["uiSchema"]["ui:options"] & {
   id: string;
   title?: string;
   value: any;
+  error?: boolean;
   entity: keyof IEntityMapTypes;
   onChange: (e: SyntheticEvent<Element, Event>, value: any) => void;
 }) => {
@@ -70,7 +72,9 @@ export const AutoCompleteFieldWrapper = ({
       options={hasOptions ? options : []}
       disabled={!hasOptions}
       onChange={onChange}
-      renderInput={(props) => <TextField {...props} label={title} />}
+      renderInput={(props) => (
+        <TextField {...props} error={error} label={title} />
+      )}
       getOptionLabel={(option) =>
         option.charAt(0).toUpperCase() + option.slice(1)
       }
@@ -85,6 +89,7 @@ export const AutoCompleteField = ({
   registry,
   fieldPathId,
   onChange,
+  rawErrors,
 }: FieldProps) => {
   const { entity, idFormPath, ...props } = (uiSchema?.["ui:options"] ??
     {}) as Rjsf["uiSchema"]["ui:options"];
@@ -103,6 +108,7 @@ export const AutoCompleteField = ({
       title={schema.title}
       value={formData}
       entity={normalizeEntity(entity)}
+      error={Boolean(rawErrors?.length)}
       onChange={handleChange}
       {...props}
     />

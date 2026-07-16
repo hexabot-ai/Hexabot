@@ -19,7 +19,11 @@ import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
 
-import { buildContentParams, buildContentSchema } from "./content.schema.utils";
+import {
+  buildContentParams,
+  buildContentSchema,
+  hasMissingRequiredFileFields,
+} from "./content.schema.utils";
 
 export type ContentFormData = Record<string, unknown> & {
   contentType: string;
@@ -53,6 +57,11 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
     [formData, schema],
   );
   const [hasVisibleErrors, setHasVisibleErrors] = useState(false);
+  const [validateOnSubmit, setValidateOnSubmit] = useState(false);
+  const hasMissingRequiredFiles = useMemo(
+    () => hasMissingRequiredFileFields(contentType?.schema, formData),
+    [contentType?.schema, formData],
+  );
   const { mutate: createContent } = useCreate(EntityType.CONTENT);
   const { mutate: updateContent } = useUpdate(EntityType.CONTENT);
   const options = {
@@ -66,7 +75,9 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
     },
   };
   const onSubmitForm = () => {
-    if (hasVisibleErrors) {
+    setValidateOnSubmit(true);
+
+    if (hasVisibleErrors || hasMissingRequiredFiles) {
       return;
     }
 
@@ -93,10 +104,17 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
   const canSubmit = useMemo(() => {
     return (
       hasVisibleErrors ||
+      (validateOnSubmit && hasMissingRequiredFiles) ||
       isMatch(defaultFormData, formData) ||
       Boolean(WrapperProps?.confirmButtonProps?.disabled)
     );
-  }, [formData, hasVisibleErrors, WrapperProps?.confirmButtonProps?.disabled]);
+  }, [
+    formData,
+    hasMissingRequiredFiles,
+    hasVisibleErrors,
+    validateOnSubmit,
+    WrapperProps?.confirmButtonProps?.disabled,
+  ]);
 
   return (
     <Wrapper
@@ -112,6 +130,7 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
         formData={formData}
         onFormDataChange={setFormData}
         onVisibleErrorsChange={setHasVisibleErrors}
+        validateOnMount={validateOnSubmit}
         enableJsonataTextWidget={false}
         idPrefix={content ? `content-${content.id}` : "content-new"}
       />

@@ -29,17 +29,20 @@ import { EntityType } from "@/services/types";
 import { AttachmentFormDialog } from "./AttachmentFormDialog";
 import AttachmentThumbnail from "./AttachmentThumbnail";
 
-const FileUploadLabel = styled("label")(
-  ({ isDragOver }: { isDragOver: boolean }) => `
+const FileUploadLabel = styled("label")<{
+  error?: boolean;
+  isDragOver: boolean;
+}>(
+  ({ error, isDragOver, theme }) => `
   position: relative;
   cursor: pointer;
   text-align: center;
   display: flex;
   width: 100%;
   height: 256px;
-  border: 2px dashed #b0b0b0;
+  border: 2px dashed ${error ? theme.palette.error.main : theme.palette.grey[400]};
   border-radius: 15px;
-  transition: all 0.4s ease-in-out;
+  transition: opacity 0.4s ease-in-out;
   &:hover p,
   &:hover svg,
   & img {
@@ -72,6 +75,7 @@ export type FileUploadProps = {
   imageButton?: boolean;
   accept: string;
   enableMediaLibrary?: boolean;
+  error?: boolean;
   onChange?: (data?: Attachment | null) => void;
   onUploadComplete?: () => void;
   resourceRef: AttachmentResourceRef;
@@ -80,6 +84,7 @@ export type FileUploadProps = {
 const AttachmentUploader: FC<FileUploadProps> = ({
   accept,
   enableMediaLibrary,
+  error,
   onChange,
   onUploadComplete,
   resourceRef,
@@ -159,6 +164,7 @@ const AttachmentUploader: FC<FileUploadProps> = ({
           />
           <FileUploadLabel
             htmlFor={`file-upload${uid}`}
+            error={error}
             isDragOver={isDragOver}
             onMouseEnter={() => setIsDragOver(true)}
             onMouseLeave={() => setIsDragOver(false)}

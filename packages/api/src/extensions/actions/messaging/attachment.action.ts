@@ -6,7 +6,6 @@
 
 import {
   attachmentPayloadSchema,
-  FileType,
   stdQuickReplySchema,
 } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
@@ -25,7 +24,9 @@ import {
 
 const attachmentInputSchema = z.object({
   attachment: attachmentPayloadSchema
-    .default({ payload: { id: null }, type: FileType.image })
+    .extend({
+      payload: z.object({ id: z.string().min(1) }),
+    })
     .meta({
       title: 'Attachment',
       description: 'File attachment submitted via an Attachment action',
