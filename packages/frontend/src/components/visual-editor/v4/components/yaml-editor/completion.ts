@@ -14,41 +14,29 @@ import { extractDefinitionNamesByKind } from "../../utils/workflow-definition.ut
 
 import { WORKFLOW_YAML_SCHEMA } from "./schema";
 
-const asSchema = (schema: boolean | JSONSchema | undefined) =>
-  schema && typeof schema === "object" ? schema : undefined;
-const getProperties = (schema: JSONSchema) => (schema.properties ??= {});
+const asSchema = (schema: unknown): JSONSchema => {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema))
+    throw new TypeError("Expected an object JSON schema");
+
+  return schema;
+};
+const getProperty = (schema: JSONSchema, key: string) =>
+  asSchema(schema.properties?.[key]);
 const extendSchema = (
   schema: JSONSchema,
-  extension: JSONSchema,
-): JSONSchema => ({
-  ...schema,
-  ...extension,
-  required: schema.required,
-  properties: { ...schema.properties, ...extension.properties },
-});
+  ...extensions: JSONSchema[]
+): JSONSchema =>
+  Object.assign({}, schema, ...extensions, {
+    required: schema.required,
+    properties: Object.assign(
+      {},
+      schema.properties,
+      ...extensions.map(({ properties }) => properties),
+    ),
+  });
 const enumSchema = (values: readonly string[]): JSONSchema => ({
   type: "string",
   ...(values.length ? { enum: [...values].sort() } : {}),
-});
-const createReferences = (
-  kinds: readonly string[],
-  bindings: WorkflowBindingsCatalog,
-  defs: Record<string, unknown>,
-): JSONSchema => ({
-  type: "object",
-  additionalProperties: false,
-  properties: Object.fromEntries(
-    kinds.map((kind) => {
-      const reference = enumSchema(extractDefinitionNamesByKind(defs, kind));
-
-      return [
-        kind,
-        bindings[kind]?.multiple
-          ? { type: "array", items: reference }
-          : reference,
-      ];
-    }),
-  ),
 });
 
 export const buildWorkflowYamlSchema = (
@@ -57,68 +45,84 @@ export const buildWorkflowYamlSchema = (
   defs: Record<string, unknown> = {},
 ): JSONSchema => {
   const schema = structuredClone(WORKFLOW_YAML_SCHEMA);
-  const defsSchema = asSchema(schema.properties?.defs);
-  const definitionNames = asSchema(defsSchema?.propertyNames);
-  const definitionSchema = asSchema(defsSchema?.additionalProperties);
-  const [taskSchema, bindingSchema] =
-    definitionSchema?.anyOf?.map(asSchema) ?? [];
+  const createReference = (kind: string): JSONSchema => {
+    const reference = enumSchema(extractDefinitionNamesByKind(defs, kind));
 
-  if (definitionNames) definitionNames.doNotSuggest = true;
+    return bindings[kind]?.multiple
+      ? { type: "array", items: reference }
+      : reference;
+  };
+  const createReferences = (kinds: readonly string[]): JSONSchema => ({
+    type: "object",
+    additionalProperties: false,
+    properties: Object.fromEntries(
+      kinds.map((kind) => [kind, createReference(kind)]),
+    ),
+  });
+  const defsSchema = getProperty(schema, "defs");
+  const definitionSchema = asSchema(defsSchema.additionalProperties);
+  const [taskSchema, bindingSchema] = definitionSchema.anyOf!.map(asSchema);
+  const bindingSettings = getProperty(bindingSchema, "settings");
+  const inputs = getProperty(taskSchema, "inputs");
+  const settings = getProperty(taskSchema, "settings");
+  const actionSchema = enumSchema(actions.map(({ name }) => name));
+  const { action: _action, ...bindingProperties } = bindingSchema.properties!;
 
-  if (definitionSchema && taskSchema && bindingSchema) {
-    const bindingSettings = asSchema(getProperties(bindingSchema).settings)!;
-    const inputs = asSchema(getProperties(taskSchema).inputs)!;
-    const settings = asSchema(getProperties(taskSchema).settings)!;
-    const actionSchema = enumSchema(actions.map(({ name }) => name));
-    const actionVariants = actions.map((action) =>
-      extendSchema(taskSchema, {
-        properties: {
-          action: { type: "string", const: action.name },
-          inputs: extendSchema(inputs, action.inputSchema),
-          settings: extendSchema(settings, action.settingSchema),
-          bindings: createReferences(action.supportedBindings, bindings, defs),
+  asSchema(defsSchema.propertyNames).doNotSuggest = true;
+
+  const actionVariants = actions.map((action) =>
+    extendSchema(taskSchema, {
+      properties: {
+        action: { type: "string", const: action.name },
+        inputs: extendSchema(inputs, action.inputSchema),
+        settings: extendSchema(settings, action.settingSchema),
+        bindings: createReferences(action.supportedBindings),
+      },
+    }),
+  );
+  const bindingVariants = Object.entries(bindings).flatMap(([kind, binding]) =>
+    (binding.actionPolicy === "required" && actions.length
+      ? actions
+      : [undefined]
+    ).map((action) =>
+      extendSchema(
+        { ...bindingSchema, properties: bindingProperties },
+        {
+          properties: {
+            kind: { type: "string", const: kind },
+            settings: extendSchema(
+              bindingSettings,
+              binding.schema,
+              action?.settingSchema ?? {},
+            ),
+            bindings: createReferences(
+              action?.supportedBindings ?? binding.supportedBindings ?? [],
+            ),
+            ...(binding.actionPolicy !== "forbidden" && {
+              action: action
+                ? { type: "string", const: action.name }
+                : actionSchema,
+            }),
+          },
         },
-      }),
-    );
-    const bindingVariants = Object.entries(bindings).map(([kind, binding]) => {
-      const variant = extendSchema(bindingSchema, {
-        properties: {
-          kind: { type: "string", const: kind },
-          settings: extendSchema(bindingSettings, binding.schema),
-          bindings: createReferences(
-            binding.supportedBindings ?? [],
-            bindings,
-            defs,
-          ),
-        },
-      });
-      const properties = getProperties(variant);
+      ),
+    ),
+  );
 
-      if (binding.actionPolicy === "forbidden") delete properties.action;
-      else properties.action = actionSchema;
+  definitionSchema.anyOf = [
+    ...(actionVariants.length ? actionVariants : [taskSchema]),
+    ...(bindingVariants.length ? bindingVariants : [bindingSchema]),
+  ];
 
-      return variant;
-    });
+  const flowItem = asSchema(getProperty(schema, "flow").items);
+  const flowStep = schema.definitions![flowItem.$ref!.split("/").at(-1)!];
+  const doStep = flowStep
+    .anyOf!.map(asSchema)
+    .find(({ properties }) => properties?.do)!;
 
-    definitionSchema.anyOf = [
-      ...(actionVariants.length ? actionVariants : [taskSchema]),
-      ...(bindingVariants.length ? bindingVariants : [bindingSchema]),
-    ];
-  }
-
-  const flowSchema = asSchema(schema.properties?.flow);
-  const flowItem = Array.isArray(flowSchema?.items)
-    ? undefined
-    : asSchema(flowSchema?.items);
-  const flowStepName = flowItem?.$ref?.split("/").at(-1);
-  const doStep = asSchema(schema.definitions?.[flowStepName ?? ""])
-    ?.anyOf?.map(asSchema)
-    .find((candidate) => candidate?.properties?.do);
-
-  if (doStep)
-    getProperties(doStep).do = enumSchema(
-      extractDefinitionNamesByKind(defs, TASK_KIND),
-    );
+  doStep.properties!.do = enumSchema(
+    extractDefinitionNamesByKind(defs, TASK_KIND),
+  );
 
   return schema;
 };

@@ -122,13 +122,14 @@ describe("YAML completion schema", () => {
       getDefinitionSchema(schema, "memory").properties?.settings,
     );
     const toolSettings = asSchema(
-      getDefinitionSchema(schema, "tools").properties?.settings,
+      getDefinitionSchema(schema, "tools", "ai_agent").properties?.settings,
     );
 
     expect(memorySettings.properties).toHaveProperty("definition_id");
     expect(memorySettings.properties).not.toHaveProperty("api_key");
     expect(memorySettings.required).toBeUndefined();
     expect(toolSettings.properties).toHaveProperty("api_key");
+    expect(toolSettings.properties).toHaveProperty("max_output_tokens");
     expect(toolSettings.properties).not.toHaveProperty("definition_id");
   });
 
