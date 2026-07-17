@@ -5,8 +5,8 @@
  */
 
 import { WorkflowVersionAction } from "@hexabot-ai/types";
+import type { ChipProps } from "@mui/material";
 import { useTheme } from "@mui/material";
-import { alpha } from "@mui/material/styles";
 import { useCallback } from "react";
 
 import { useTranslate } from "@/hooks/useTranslate";
@@ -20,7 +20,7 @@ export const useWorkflowVersionActionMeta = () => {
       const fallback = {
         label: t("visual_editor.workflow_versions.actions.unknown"),
         color: theme.palette.text.secondary,
-        background: alpha(theme.palette.text.secondary, 0.12),
+        chipColor: "default" as ChipProps["color"],
       };
 
       switch (action) {
@@ -28,25 +28,25 @@ export const useWorkflowVersionActionMeta = () => {
           return {
             label: t("visual_editor.workflow_versions.actions.create"),
             color: theme.palette.success.main,
-            background: alpha(theme.palette.success.main, 0.12),
+            chipColor: "success" as ChipProps["color"],
           };
         case WorkflowVersionAction.update:
           return {
             label: t("visual_editor.workflow_versions.actions.update"),
             color: theme.palette.info.main,
-            background: alpha(theme.palette.info.main, 0.12),
+            chipColor: "info" as ChipProps["color"],
           };
         case WorkflowVersionAction.restore:
           return {
             label: t("visual_editor.workflow_versions.actions.restore"),
             color: theme.palette.warning.main,
-            background: alpha(theme.palette.warning.main, 0.12),
+            chipColor: "warning" as ChipProps["color"],
           };
         case WorkflowVersionAction.import:
           return {
             label: t("visual_editor.workflow_versions.actions.import"),
             color: theme.palette.secondary.main,
-            background: alpha(theme.palette.secondary.main, 0.12),
+            chipColor: "secondary" as ChipProps["color"],
           };
         default:
           return fallback;

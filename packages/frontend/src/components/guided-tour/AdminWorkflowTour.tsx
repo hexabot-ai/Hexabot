@@ -202,12 +202,7 @@ const AdminWorkflowTourTooltip = ({
                   color="primary"
                   label={`${index + 1}/${size}`}
                   size="small"
-                  sx={{
-                    flexShrink: 0,
-                    fontWeight: 700,
-                    height: 24,
-                  }}
-                  variant="outlined"
+                  sx={{ flexShrink: 0 }}
                 />
               </Stack>
               <Typography

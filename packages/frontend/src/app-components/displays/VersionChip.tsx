@@ -22,7 +22,5 @@ export const VersionChip = ({ version, ...rest }: VersionChipProps) => {
 
   if (!resolvedLabel) return null;
 
-  return (
-    <Chip size="small" variant="outlined" label={resolvedLabel} {...rest} />
-  );
+  return <Chip size="small" label={resolvedLabel} {...rest} />;
 };

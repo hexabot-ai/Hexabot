@@ -370,7 +370,6 @@ function SchemaNodeEditor<C extends JsonSchemaOptionContext = "default">({
             {readOnly && isRootNode && (
               <Chip
                 size="small"
-                variant="outlined"
                 icon={<LockIcon size={14} />}
                 label={t("label.read_only", { defaultValue: "Read only" })}
               />

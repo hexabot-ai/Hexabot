@@ -234,7 +234,6 @@ export const McpTokensPanel = () => {
                         color={statusColorByStatus[status]}
                         label={t(`label.mcp_token_status_${status}`)}
                         size="small"
-                        variant={status === "active" ? "filled" : "outlined"}
                       />
                     </TableCell>
                     <TableCell align="right">
