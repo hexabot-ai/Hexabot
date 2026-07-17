@@ -115,7 +115,6 @@ export interface IWorkflowContext {
   definitionStatus: WorkflowDefinitionStatus;
   definitionIssues: WorkflowIssue[];
   taskDefinitions: Record<string, TaskDefinition>;
-  taskIds: string[];
 }
 
 export interface WorkflowContextProps {
