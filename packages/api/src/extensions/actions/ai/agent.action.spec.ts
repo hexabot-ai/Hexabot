@@ -4,10 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
+import { BaseSettingsSchema, mergeSettings } from '@hexabot-ai/agentic';
 import { ToolLoopAgent, hasToolCall, stepCountIs } from 'ai';
 
 import { ActionService } from '@/actions/actions.service';
-import { toDraft07JsonSchema } from '@/utils/helpers/zod';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import { AiAgentAction } from './agent.action';
@@ -139,21 +139,87 @@ describe('AiAgentAction', () => {
     expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(10);
   });
 
+  it('uses a workflow-global step budget and lets a per-step value win', async () => {
+    const provider = Object.assign(
+      jest.fn().mockReturnValue('model-instance'),
+      {
+        languageModel: jest.fn(),
+      },
+    );
+    const actionsService = {
+      get: jest.fn().mockReturnValue({
+        description: 'demo tool',
+        inputSchema: {},
+        outputSchema: {},
+        run: jest.fn(),
+      }),
+    };
+    const context = createContext({ actions: actionsService });
+    const bindings = {
+      ...createModelBindings(),
+      tools: {
+        search: { action: 'search_action' },
+      },
+    } as any;
+
+    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+    jest.spyOn(action as any, 'createModel').mockReturnValue('model-instance');
+    toolLoopAgentGenerateMock.mockResolvedValue({
+      text: 'Done',
+      finishReason: 'stop',
+      rawFinishReason: 'stop',
+      steps: [],
+    } as any);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'use the tools' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+        ...mergeSettings({ stop_step_count: 20 }),
+      } as any,
+      context,
+      bindings,
+    });
+
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(20);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'use the tools' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+        ...mergeSettings({ stop_step_count: 20 }, { stop_step_count: 5 }),
+      } as any,
+      context,
+      bindings,
+    });
+
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(5);
+  });
+
   it('advertises a visible default 10-step budget in the form schema', () => {
-    const jsonSchema = toDraft07JsonSchema(aiAgentSettingsSchema) as {
+    const workflowJsonSchema = BaseSettingsSchema.toJSONSchema({
+      target: 'draft-07',
+    }) as {
       properties?: Record<string, Record<string, any>>;
     };
-    const stopStepCount = jsonSchema.properties?.stop_step_count;
+    const actionJsonSchema = aiAgentSettingsSchema.toJSONSchema({
+      target: 'draft-07',
+    }) as {
+      properties?: Record<string, Record<string, any>>;
+    };
+    const stopStepCount = workflowJsonSchema.properties?.stop_step_count;
 
-    expect(aiAgentSettingsSchema.parse({})).not.toHaveProperty(
-      'stop_step_count',
-    );
+    expect(BaseSettingsSchema.parse({})).not.toHaveProperty('stop_step_count');
     expect(stopStepCount).toEqual(
       expect.objectContaining({
         default: 10,
+        maximum: 100,
+        title: 'Stop step count',
       }),
     );
-    expect(stopStepCount?.['ui:options']?.hideUntilAdded).toBeUndefined();
+    expect(actionJsonSchema.properties).not.toHaveProperty('stop_step_count');
   });
 
   it('creates a ToolLoopAgent, runs it, and normalizes the response', async () => {

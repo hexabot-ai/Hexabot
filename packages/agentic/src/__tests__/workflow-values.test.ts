@@ -5,7 +5,12 @@
  */
 
 import { BaseWorkflowContext } from '../context';
-import type { Settings } from '../dsl.types';
+import {
+  BaseSettingsSchema,
+  DEFAULT_STEP_BUDGET,
+  MAX_STEP_BUDGET,
+  type Settings,
+} from '../dsl.types';
 import { EventEmitterLike } from '../workflow-event-emitter';
 import {
   compileValue,
@@ -130,6 +135,7 @@ describe('workflow values', () => {
     const merged = mergeSettings(
       {
         timeout_ms: 10,
+        stop_step_count: 20,
         retries: {
           enabled: true,
           max_attempts: 3,
@@ -144,6 +150,7 @@ describe('workflow values', () => {
         },
       } satisfies Partial<Settings>,
       {
+        stop_step_count: 5,
         retries: {
           enabled: true,
           max_attempts: 5,
@@ -160,6 +167,7 @@ describe('workflow values', () => {
 
     expect(merged).toEqual({
       timeout_ms: 10,
+      stop_step_count: 5,
       retries: {
         enabled: true,
         max_attempts: 5,
@@ -173,5 +181,32 @@ describe('workflow values', () => {
         options: { temperature: 0.5, top_p: 0.9 },
       },
     });
+  });
+
+  it('parses the workflow step budget and enforces its ceiling', () => {
+    const jsonSchema = BaseSettingsSchema.toJSONSchema({
+      target: 'draft-07',
+    }) as {
+      properties?: Record<string, Record<string, unknown>>;
+    };
+
+    expect(
+      BaseSettingsSchema.safeParse({
+        stop_step_count: MAX_STEP_BUDGET,
+      }).success,
+    ).toBe(true);
+    expect(
+      BaseSettingsSchema.safeParse({
+        stop_step_count: MAX_STEP_BUDGET + 1,
+      }).success,
+    ).toBe(false);
+    expect(BaseSettingsSchema.parse({})).not.toHaveProperty('stop_step_count');
+    expect(jsonSchema.properties?.stop_step_count).toEqual(
+      expect.objectContaining({
+        default: DEFAULT_STEP_BUDGET,
+        maximum: MAX_STEP_BUDGET,
+        title: 'Stop step count',
+      }),
+    );
   });
 });
