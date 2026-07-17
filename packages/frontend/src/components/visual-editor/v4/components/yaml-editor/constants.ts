@@ -6,23 +6,9 @@
 
 import type { editor } from "monaco-editor";
 
-import type { YamlCompletionSuggestion } from "./types";
-
-export const YAML_LANGUAGE_ID = "yaml";
 export const YAML_VALIDATION_OWNER = "yaml-validation";
 export const YAML_WORKFLOW_VALIDATION_OWNER = "yaml-workflow-validation";
 export const YAML_VALIDATION_DEBOUNCE_MS = 300;
-
-export const YAML_COMPLETION_TRIGGER_CHARACTERS = [
-  "-",
-  " ",
-  "\n",
-  ":",
-] as const;
-
-export const YAML_COMPLETION_SUGGESTIONS: YamlCompletionSuggestion[] = [
-  // noop
-];
 
 export const YAML_EDITOR_OPTIONS: editor.IStandaloneEditorConstructionOptions =
   {
@@ -37,4 +23,6 @@ export const YAML_EDITOR_OPTIONS: editor.IStandaloneEditorConstructionOptions =
     renderLineHighlight: "line",
     quickSuggestions: true,
     suggestOnTriggerCharacters: true,
+    suggest: { showClasses: false },
+    fixedOverflowWidgets: true,
   };

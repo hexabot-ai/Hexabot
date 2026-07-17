@@ -72,18 +72,21 @@ export const createTaskName = (
 
   return candidate;
 };
-export const extractTaskIdsFromYaml = (yaml: string): string[] => {
+export const extractDefsFromYaml = (yaml: string): Record<string, unknown> => {
   try {
     const parsed = parseYaml(yaml);
 
-    if (!isRecord(parsed) || !isRecord(parsed.defs)) {
-      return [];
-    }
-
-    return Object.keys(
-      extractTaskDefinitions(parsed.defs as WorkflowDefinition["defs"]),
-    ).sort();
+    return isRecord(parsed) && isRecord(parsed.defs) ? parsed.defs : {};
   } catch {
-    return [];
+    return {};
   }
 };
+export const extractDefinitionNamesByKind = (
+  defs: Record<string, unknown>,
+  kind: string,
+): string[] =>
+  Object.keys(defs).filter((name) => {
+    const definition = defs[name];
+
+    return isRecord(definition) && definition.kind === kind;
+  });

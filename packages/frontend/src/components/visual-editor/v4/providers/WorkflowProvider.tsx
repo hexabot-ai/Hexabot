@@ -45,7 +45,6 @@ import type { WorkflowContextProps } from "../types/workflow.types";
 import {
   createBaseDefinition,
   createTaskName,
-  extractTaskIdsFromYaml,
 } from "../utils/workflow-definition.utils";
 
 type TaskInputs = NonNullable<TaskDefinition["inputs"]>;
@@ -118,7 +117,6 @@ export const WorkflowProvider: React.FC<WorkflowContextProps> = ({
     () => extractTaskDefinitions(definition?.defs ?? {}),
     [definition?.defs],
   );
-  const taskIds = useMemo(() => extractTaskIdsFromYaml(yaml), [yaml]);
   const addActionStep = useCallback(
     (action: IAction, insertPath?: FlowStepPath | null) => {
       const baseDefinition = definition ?? createBaseDefinition();
@@ -485,7 +483,6 @@ export const WorkflowProvider: React.FC<WorkflowContextProps> = ({
         definitionStatus,
         definitionIssues,
         taskDefinitions,
-        taskIds,
       }}
     >
       {children}

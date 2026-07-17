@@ -26,7 +26,12 @@ const YAML_SCHEMA_OPTIONS = {
 
 let yamlService: MonacoYaml | null = null;
 
-export const ensureYamlLanguageService = (monacoInstance: Monaco) => {
+export const ensureYamlLanguageService = (
+  monacoInstance: Monaco,
+  schema: typeof WORKFLOW_YAML_SCHEMA,
+) => {
+  YAML_SCHEMA_OPTIONS.schemas[0].schema = schema;
+
   if (!yamlService) {
     yamlService = configureMonacoYaml(monacoInstance, YAML_SCHEMA_OPTIONS);
 

@@ -5,15 +5,17 @@
  */
 
 import type { Monaco } from "@monaco-editor/react";
-import type { IDisposable, editor } from "monaco-editor";
+import type { editor } from "monaco-editor";
 import { useCallback, useEffect, useRef } from "react";
 import { isScalar, parseDocument, type YAMLMap } from "yaml";
 
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
+import { useWorkflowBindingsCatalog } from "@/contexts/workflow-bindings.context";
 
 import { useWorkflow } from "../../hooks/useWorkflow";
+import { extractDefsFromYaml } from "../../utils/workflow-definition.utils";
 
-import { registerYamlCompletionProvider } from "./completion";
+import { buildWorkflowYamlSchema } from "./completion";
 import {
   YAML_VALIDATION_DEBOUNCE_MS,
   YAML_WORKFLOW_VALIDATION_OWNER,
@@ -40,17 +42,11 @@ export function useYamlEditorController(
   highlightDef?: string,
   revealTarget?: YamlEditorRevealTarget,
 ) {
-  const { yaml, definitionIssues, updateDefinitionState, taskIds } =
-    useWorkflow();
-  const {
-    actions = [],
-    isLoading: actionsLoading,
-    isError: actionsError,
-  } = useWorkflowActionsCatalog();
-  const availableActions = actionsLoading || actionsError ? undefined : actions;
+  const { yaml, definitionIssues, updateDefinitionState } = useWorkflow();
+  const { actions = [] } = useWorkflowActionsCatalog();
+  const { bindings } = useWorkflowBindingsCatalog();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
-  const completionDisposableRef = useRef<IDisposable | null>(null);
   const decorationsRef = useRef<string[]>([]);
   const rangeRef = useRef<{ startLine: number; endLine: number } | null>(null);
   const onHighlightClearRef = useRef(onHighlightClear);
@@ -188,9 +184,15 @@ export function useYamlEditorController(
       issues: definitionIssues,
     });
   }, [yaml, definitionIssues]);
-  const beforeMount = useCallback((monacoInstance: Monaco) => {
-    ensureYamlLanguageService(monacoInstance);
-  }, []);
+  const beforeMount = useCallback(
+    (monacoInstance: Monaco) => {
+      ensureYamlLanguageService(
+        monacoInstance,
+        buildWorkflowYamlSchema(actions, bindings, extractDefsFromYaml(yaml)),
+      );
+    },
+    [actions, bindings, yaml],
+  );
   const onMount = useCallback(
     (editorInstance: editor.IStandaloneCodeEditor, monacoInstance: Monaco) => {
       editorRef.current = editorInstance;
@@ -239,22 +241,10 @@ export function useYamlEditorController(
   );
 
   useEffect(() => {
-    const monaco = monacoRef.current;
+    if (!monacoRef.current) return;
 
-    if (!monaco) return;
-
-    completionDisposableRef.current?.dispose();
-    completionDisposableRef.current = registerYamlCompletionProvider(
-      monaco,
-      () => availableActions,
-      () => taskIds,
-    );
-
-    return () => {
-      completionDisposableRef.current?.dispose();
-      completionDisposableRef.current = null;
-    };
-  }, [availableActions, taskIds]);
+    beforeMount(monacoRef.current);
+  }, [beforeMount]);
 
   // React to highlightDef changes after the editor is already mounted
   useEffect(() => {
