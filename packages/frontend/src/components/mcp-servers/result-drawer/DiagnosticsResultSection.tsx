@@ -47,7 +47,6 @@ export const DiagnosticsResultSection = ({
                     diagnostics.ok ? t("label.enabled") : t("label.disabled")
                   }
                   color={diagnostics.ok ? "success" : "error"}
-                  variant={diagnostics.ok ? "filled" : "outlined"}
                 />
               }
             />

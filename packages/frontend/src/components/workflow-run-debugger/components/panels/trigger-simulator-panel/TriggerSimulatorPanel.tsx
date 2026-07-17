@@ -113,7 +113,6 @@ export const TriggerSimulatorPanel = ({
           <Stack direction="row" alignItems="center" spacing={0.5}>
             <Chip
               size="small"
-              variant="outlined"
               color="success"
               icon={<Webhook size={14} />}
               label={t("label.webhook_enabled")}

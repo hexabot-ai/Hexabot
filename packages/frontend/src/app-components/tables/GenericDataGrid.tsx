@@ -98,7 +98,7 @@ export const GenericDataGrid = <
           title={headerI18nTitle && t(headerI18nTitle)}
           chip={
             headerTitleChip ? (
-              <Chip label={headerTitleChip} size="medium" variant="outlined" />
+              <Chip label={headerTitleChip} size="medium" />
             ) : null
           }
           headerLeftButtons={headerLeftButtons}

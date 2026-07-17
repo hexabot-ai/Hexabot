@@ -93,31 +93,35 @@ export const dataDisplayCustomizations: Components<Theme> = {
       },
     },
   },
+  // Single source of truth for chip/badge styling: sizing and typography apply
+  // to every variant so filled and outlined chips stay visually consistent,
+  // while "outlined" (the default) renders as a soft tinted badge.
   MuiChip: {
     defaultProps: {
       variant: "outlined",
+    },
+    styleOverrides: {
+      root: {
+        fontWeight: 600,
+      },
     },
     variants: [
       {
         props: {
           size: "small",
-          variant: "outlined",
         },
         style: {
           height: 18,
           fontSize: 10,
-          fontWeight: 600,
-          backgroundColor: "rgb(from currentColor r g b / 0.05)",
         },
       },
       {
         props: {
-          size: "medium",
           variant: "outlined",
         },
         style: {
-          fontWeight: 600,
-          backgroundColor: "rgb(from currentColor r g b / 0.05)",
+          backgroundColor: "rgb(from currentColor r g b / 0.08)",
+          borderColor: "rgb(from currentColor r g b / 0.4)",
         },
       },
     ],

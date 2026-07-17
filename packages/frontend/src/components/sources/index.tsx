@@ -216,12 +216,7 @@ export const Sources = () => {
               {channelLabel}
             </Typography>
             {isSystemSource ? (
-              <Chip
-                color="default"
-                label={t("label.system")}
-                size="small"
-                variant="outlined"
-              />
+              <Chip color="default" label={t("label.system")} size="small" />
             ) : null}
             {!isLoadingChannels && !isRegisteredChannel ? (
               <Tooltip
@@ -231,7 +226,6 @@ export const Sources = () => {
                   color="error"
                   label={t("label.unregistered")}
                   size="small"
-                  variant="outlined"
                 />
               </Tooltip>
             ) : null}

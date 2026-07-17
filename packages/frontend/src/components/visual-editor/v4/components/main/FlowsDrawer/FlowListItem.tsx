@@ -112,13 +112,7 @@ export const FlowListItem = ({
               <Chip
                 size="small"
                 label={match.typeMeta.badge}
-                sx={{
-                  color: "text.secondary",
-                  borderColor: "divider",
-                  bgcolor: "background.paper",
-                  flexShrink: 0,
-                }}
-                variant="outlined"
+                sx={{ flexShrink: 0 }}
               />
             )}
           </Stack>

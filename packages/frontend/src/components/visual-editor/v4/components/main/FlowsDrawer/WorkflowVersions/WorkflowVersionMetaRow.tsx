@@ -4,6 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
+import type { ChipProps } from "@mui/material";
 import { Button, Chip, Stack, Typography, useTheme } from "@mui/material";
 import { CloudOff, CloudUpload, Pencil, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,7 +16,7 @@ type WorkflowVersionMetaRowProps = {
   versionNumber: number;
   timeLabel: string;
   exactDate?: string;
-  actionMeta: { label: string; color: string; background: string };
+  actionMeta: { label: string; color: string; chipColor: ChipProps["color"] };
   isCurrent: boolean;
   isPublished: boolean;
   createdByLabel: string;
@@ -137,11 +138,7 @@ export const WorkflowVersionMetaRow = ({
           <Chip
             size="small"
             label={actionMeta.label}
-            sx={{
-              color: actionMeta.color,
-              backgroundColor: actionMeta.background,
-              borderColor: actionMeta.color,
-            }}
+            color={actionMeta.chipColor}
           />
           {isCurrent && (
             <Chip
