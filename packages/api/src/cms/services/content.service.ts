@@ -48,6 +48,15 @@ export class ContentService extends BaseOrmService<ContentOrmEntity> {
   }
 
   /**
+   * Checks whether RAG retrieval is enabled at the settings level.
+   *
+   * @returns True when rag_settings.enabled is on.
+   */
+  async isRagEnabled(): Promise<boolean> {
+    return await this.ragRetrieverService.isEnabled();
+  }
+
+  /**
    * Performs a text search on the content repository.
    *
    * @param query - The text query to search for.

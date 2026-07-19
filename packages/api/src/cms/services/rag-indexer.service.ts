@@ -103,8 +103,7 @@ export class RagIndexerService {
       return;
     }
 
-    const embeddingIndex =
-      await this.embeddingBackendService.getEmbeddingIndex();
+    const embeddingIndex = await this.getEmbeddingIndexOrNull();
     const lexicalIndex = await this.embeddingBackendService.getLexicalIndex();
     const contents = await this.contentService.findAndPopulate({
       ...(settings.index_only_active_content
@@ -226,7 +225,7 @@ export class RagIndexerService {
     }
 
     if (typeof existingHash !== 'undefined') {
-      await lexicalIndex.deleteRefDoc(contentId, true);
+      await this.removeContentFromLexicalIndex(contentId, lexicalIndex);
     }
 
     await lexicalIndex.docStore.addDocuments([document], true);
@@ -265,7 +264,33 @@ export class RagIndexerService {
       await embeddingIndex.deleteRefDoc(contentId);
     }
 
-    await lexicalIndex.deleteRefDoc(contentId, true);
+    await this.removeContentFromLexicalIndex(contentId, lexicalIndex);
+  }
+
+  /**
+   * Removes a content document from the lexical keyword index.
+   *
+   * Documents are inserted into the lexical index manually (raw document plus
+   * keyword table entries), so no ref-doc info is registered and
+   * `KeywordTableIndex.deleteRefDoc` would silently no-op. Removal must
+   * mirror the manual insertion instead.
+   * @param contentId Content identifier.
+   * @param lexicalIndex Lexical index instance.
+   * @returns Resolves when lexical removal completes.
+   */
+  private async removeContentFromLexicalIndex(
+    contentId: string,
+    lexicalIndex: KeywordTableIndex,
+  ): Promise<void> {
+    for (const [keyword, nodeIds] of lexicalIndex.indexStruct.table) {
+      nodeIds.delete(contentId);
+      if (nodeIds.size === 0) {
+        lexicalIndex.indexStruct.table.delete(keyword);
+      }
+    }
+
+    await lexicalIndex.docStore.deleteDocument(contentId, false);
+    await lexicalIndex.indexStore?.addIndexStruct(lexicalIndex.indexStruct);
   }
 
   /**

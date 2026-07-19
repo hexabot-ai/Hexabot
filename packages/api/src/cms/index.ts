@@ -22,6 +22,8 @@ export * from './dto/menu.dto';
 
 export * from './entities/content-type.entity';
 
+export * from './errors/rag.errors';
+
 export * from './entities/content.entity';
 
 export * from './entities/menu.entity';

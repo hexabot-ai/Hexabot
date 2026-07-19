@@ -16,9 +16,11 @@ import {
   UpdateEntityEvent,
 } from '@/utils/types/entity-event.types';
 
+import { ContentTypeOrmEntity } from '../entities/content-type.entity';
 import { ContentOrmEntity } from '../entities/content.entity';
 import { RagHit, RagQueryOptions } from '../types/rag';
 
+import { ContentService } from './content.service';
 import { RagBackendService } from './rag-backend.service';
 import { RagIndexerService } from './rag-indexer.service';
 import { RagRetrieverService } from './rag-retriever.service';
@@ -29,10 +31,19 @@ export class RagService {
 
   private manualReindexPromise?: Promise<void>;
 
+  /**
+   * Content ids captured at content type preDelete, keyed by content type id.
+   * Deleting a content type cascade-deletes its contents at the database
+   * level without per-content postDelete hooks, so ids must be captured
+   * while the rows still exist and cleaned from indexes after deletion.
+   */
+  private readonly pendingContentTypeDeletions = new Map<string, string[]>();
+
   constructor(
     private readonly retrieverService: RagRetrieverService,
     private readonly indexerService: RagIndexerService,
     private readonly embeddingBackendService: RagBackendService,
+    private readonly contentService: ContentService,
     private readonly settingService: SettingService,
     private readonly logger: LoggerService,
   ) {}
@@ -151,7 +162,7 @@ export class RagService {
     event: UpdateEntityEvent<ContentOrmEntity>,
   ): Promise<void> {
     const contentId = event.entity?.id;
-    if (!contentId || !event.entity.status) {
+    if (!contentId) {
       return;
     }
 
@@ -184,6 +195,79 @@ export class RagService {
       this.logger.error('Unable to remove deleted content from index', error, {
         contentId,
       });
+    }
+  }
+
+  /**
+   * Captures content ids of a content type before it is deleted.
+   *
+   * Content rows are cascade-deleted with their content type at the
+   * database level, which bypasses per-content postDelete hooks, so the
+   * ids must be captured while the rows still exist.
+   * @param event Pre-delete event payload.
+   * @returns Resolves when capture completes.
+   */
+  @OnEvent('hook:contentType:preDelete')
+  async handleContentTypeDeleting(
+    event: DeleteEntityEvent<ContentTypeOrmEntity>,
+  ): Promise<void> {
+    const contentTypeId = event.databaseEntity?.id;
+    if (!contentTypeId) {
+      return;
+    }
+
+    const settings = await this.settingService.getSettings();
+    if (!settings.rag_settings.enabled) {
+      return;
+    }
+
+    try {
+      const contents = await this.contentService.find({
+        where: { contentType: { id: contentTypeId } },
+      });
+      this.pendingContentTypeDeletions.set(
+        contentTypeId,
+        contents.map(({ id }) => id),
+      );
+    } catch (error) {
+      this.logger.error(
+        'Unable to capture content ids before content type deletion',
+        error,
+        { contentTypeId },
+      );
+    }
+  }
+
+  /**
+   * Removes contents of a deleted content type from RAG indexes.
+   * @param event Remove event payload.
+   * @returns Resolves when event handling completes.
+   */
+  @OnEvent('hook:contentType:postDelete')
+  async handleContentTypeDeleted(
+    event: DeleteEntityEvent<ContentTypeOrmEntity>,
+  ): Promise<void> {
+    const contentTypeId = event.entity?.id;
+    if (!contentTypeId) {
+      return;
+    }
+
+    const contentIds = this.pendingContentTypeDeletions.get(contentTypeId);
+    this.pendingContentTypeDeletions.delete(contentTypeId);
+    if (!contentIds?.length) {
+      return;
+    }
+
+    for (const contentId of contentIds) {
+      try {
+        await this.removeContentIndex(contentId);
+      } catch (error) {
+        this.logger.error(
+          'Unable to remove content of deleted content type from index',
+          error,
+          { contentId, contentTypeId },
+        );
+      }
     }
   }
 

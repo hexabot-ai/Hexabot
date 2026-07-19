@@ -52,23 +52,63 @@ export const ragSettingsSchema = z
       description: 'Default retrieval mode used for RAG queries.',
       'ui:widget': 'select',
     }),
-    embedding_provider: z.string().default('openai').meta({
-      title: 'Embedding provider',
-      description: 'Provider used to generate embedding vectors.',
-    }),
-    embedding_model: z.string().default('text-embedding-3-small').meta({
-      title: 'Embedding model',
-      description: 'Embedding model identifier used by the selected provider.',
-    }),
-    embedding_api_key: z.string().default('').meta({
-      title: 'Embedding API key',
-      description: 'API key used by the configured embedding provider.',
-      'ui:widget': 'password',
-    }),
-    embedding_base_url: z.url().default('').meta({
-      title: 'Embedding base URL',
-      description: 'Custom base URL used for embedding API requests.',
-    }),
+    embedding_provider: z
+      .string()
+      .default('openai')
+      .meta({
+        title: 'Embedding provider',
+        description: 'Provider used to generate embedding vectors.',
+        'ui:options': {
+          showWhen: {
+            field: 'default_mode',
+            equals: 'embedding',
+          },
+        },
+      }),
+    embedding_model: z
+      .string()
+      .default('text-embedding-3-small')
+      .meta({
+        title: 'Embedding model',
+        description:
+          'Embedding model identifier used by the selected provider.',
+        'ui:options': {
+          showWhen: {
+            field: 'default_mode',
+            equals: 'embedding',
+          },
+        },
+      }),
+    embedding_api_key: z
+      .string()
+      .default('')
+      .meta({
+        title: 'Embedding API key',
+        description: 'API key used by the configured embedding provider.',
+        'ui:widget': 'password',
+        'ui:options': {
+          showWhen: {
+            field: 'default_mode',
+            equals: 'embedding',
+          },
+        },
+      }),
+    embedding_base_url: z
+      .string()
+      .refine((value) => value === '' || z.url().safeParse(value).success, {
+        error: 'Must be a valid URL or empty.',
+      })
+      .default('')
+      .meta({
+        title: 'Embedding base URL',
+        description: 'Custom base URL used for embedding API requests.',
+        'ui:options': {
+          showWhen: {
+            field: 'default_mode',
+            equals: 'embedding',
+          },
+        },
+      }),
     embedding_dimensions: z
       .number()
       .int()
@@ -80,6 +120,10 @@ export const ragSettingsSchema = z
         description: 'Number of dimensions expected for embedding vectors.',
         'ui:options': {
           step: 1,
+          showWhen: {
+            field: 'default_mode',
+            equals: 'embedding',
+          },
         },
       }),
     top_k: z

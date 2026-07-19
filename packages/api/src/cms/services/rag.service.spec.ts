@@ -10,6 +10,8 @@ import { config } from '@/config';
 import { LoggerService } from '@/logger/logger.service';
 import { SettingService } from '@/setting/services/setting.service';
 
+import { RagEmbeddingNotConfiguredError } from '../errors/rag.errors';
+
 import { ContentService } from './content.service';
 import { RagBackendService } from './rag-backend.service';
 import { RagIndexerService } from './rag-indexer.service';
@@ -41,6 +43,9 @@ jest.mock('llamaindex', () => {
     getDocumentHash: jest.fn(async (docId: string) =>
       simpleKeywordHashes.get(docId),
     ),
+    deleteDocument: jest.fn(async (docId: string) => {
+      simpleKeywordHashes.delete(docId);
+    }),
     addDocuments: jest.fn(
       async (documents: Array<{ id_: string; hash: string }>) => {
         for (const document of documents) {
@@ -65,6 +70,9 @@ jest.mock('llamaindex', () => {
     getDocumentHash: jest.fn(async (docId: string) =>
       rakeKeywordHashes.get(docId),
     ),
+    deleteDocument: jest.fn(async (docId: string) => {
+      rakeKeywordHashes.delete(docId);
+    }),
     addDocuments: jest.fn(
       async (documents: Array<{ id_: string; hash: string }>) => {
         for (const document of documents) {
@@ -355,11 +363,13 @@ const llamaindexMock = jest.requireMock('llamaindex') as {
     rakeKeywordDeleteRefDoc: jest.Mock;
     simpleKeywordDocStore: {
       getDocumentHash: jest.Mock;
+      deleteDocument: jest.Mock;
       addDocuments: jest.Mock;
       getAllRefDocInfo: jest.Mock;
     };
     rakeKeywordDocStore: {
       getDocumentHash: jest.Mock;
+      deleteDocument: jest.Mock;
       addDocuments: jest.Mock;
       getAllRefDocInfo: jest.Mock;
     };
@@ -409,8 +419,7 @@ const keywordSimpleRetrieveMock = llamaindexMock.__mocks.keywordSimpleRetrieve;
 const keywordRakeRetrieveMock = llamaindexMock.__mocks.keywordRakeRetrieve;
 const simpleKeywordAsRetrieverMock =
   llamaindexMock.__mocks.simpleKeywordAsRetriever;
-const simpleKeywordDeleteRefDocMock =
-  llamaindexMock.__mocks.simpleKeywordDeleteRefDoc;
+const simpleKeywordDocStoreMock = llamaindexMock.__mocks.simpleKeywordDocStore;
 const simpleKeywordHashes = llamaindexMock.__mocks.simpleKeywordHashes;
 const rakeKeywordHashes = llamaindexMock.__mocks.rakeKeywordHashes;
 const vectorStoreIndexInitMock = llamaindexMock.VectorStoreIndex.init;
@@ -432,7 +441,7 @@ const postgresIndexStoreConstructorMock =
 const withEmbedModelMock = coreGlobalMock.__mocks.withEmbedModel;
 
 type ContentServiceMock = jest.Mocked<
-  Pick<ContentService, 'findOneAndPopulate' | 'findAndPopulate'>
+  Pick<ContentService, 'findOneAndPopulate' | 'findAndPopulate' | 'find'>
 >;
 
 type SettingServiceMock = jest.Mocked<Pick<SettingService, 'getSettings'>>;
@@ -472,6 +481,7 @@ describe('RagService', () => {
     contentService = {
       findOneAndPopulate: jest.fn(),
       findAndPopulate: jest.fn().mockResolvedValue([]),
+      find: jest.fn().mockResolvedValue([]),
     };
     settingService = {
       getSettings: jest.fn().mockResolvedValue(makeSettings()),
@@ -500,6 +510,7 @@ describe('RagService', () => {
       retrieverService,
       indexerService,
       backendService,
+      contentService as unknown as ContentService,
       settingService as unknown as SettingService,
       logger as unknown as LoggerService,
     );
@@ -737,6 +748,46 @@ describe('RagService', () => {
     ]);
   });
 
+  it('reports RAG enablement from settings', async () => {
+    await expect(retrieverService.isEnabled()).resolves.toBe(true);
+
+    settingService.getSettings.mockResolvedValue(
+      makeSettings({ enabled: false }),
+    );
+
+    await expect(retrieverService.isEnabled()).resolves.toBe(false);
+  });
+
+  it('returns empty hits when RAG is disabled', async () => {
+    settingService.getSettings.mockResolvedValue(
+      makeSettings({ enabled: false }),
+    );
+
+    await expect(service.retrieve('product')).resolves.toEqual([]);
+    expect(simpleKeywordAsRetrieverMock).not.toHaveBeenCalled();
+    expect(asRetrieverMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects embedding retrieval with a typed error when the API key is missing', async () => {
+    settingService.getSettings.mockResolvedValue(
+      makeSettings({ embedding_api_key: '' }),
+    );
+
+    await expect(
+      service.retrieve('product', { mode: 'embedding' }),
+    ).rejects.toBeInstanceOf(RagEmbeddingNotConfiguredError);
+  });
+
+  it('rejects embedding retrieval with a typed error when the provider is missing', async () => {
+    settingService.getSettings.mockResolvedValue(
+      makeSettings({ embedding_provider: '' }),
+    );
+
+    await expect(
+      service.retrieve('product', { mode: 'embedding' }),
+    ).rejects.toBeInstanceOf(RagEmbeddingNotConfiguredError);
+  });
+
   it('initializes sqlite backend with persisted local store', async () => {
     await service.retrieve('query', {
       mode: 'embedding',
@@ -862,9 +913,9 @@ describe('RagService', () => {
     await service.removeContentIndex('content-1');
 
     expect(deleteRefDocMock).toHaveBeenCalledWith('content-1');
-    expect(simpleKeywordDeleteRefDocMock).toHaveBeenCalledWith(
+    expect(simpleKeywordDocStoreMock.deleteDocument).toHaveBeenCalledWith(
       'content-1',
-      true,
+      false,
     );
     expect(insertNodesMock).toHaveBeenCalledTimes(1);
     expect(setDocumentHashMock).toHaveBeenCalledTimes(1);
@@ -971,12 +1022,84 @@ describe('RagService', () => {
     await service.upsertContentIndex('content-1');
 
     expect(deleteRefDocMock).toHaveBeenCalledWith('content-1');
-    expect(simpleKeywordDeleteRefDocMock).toHaveBeenCalledWith(
+    expect(simpleKeywordDocStoreMock.deleteDocument).toHaveBeenCalledWith(
       'content-1',
-      true,
+      false,
     );
     expect(insertNodesMock).not.toHaveBeenCalled();
   });
+  it('reindexes content on update even when it was deactivated', async () => {
+    const upsertSpy = jest
+      .spyOn(indexerService, 'upsertContentIndex')
+      .mockResolvedValue(undefined);
+
+    await service.handleContentUpdated({
+      entity: { id: 'content-1', status: false },
+    } as any);
+
+    expect(upsertSpy).toHaveBeenCalledWith('content-1');
+  });
+
+  it('removes contents of a deleted content type from indexes', async () => {
+    contentService.find.mockResolvedValue([
+      { id: 'content-1' },
+      { id: 'content-2' },
+    ] as any);
+    const removeSpy = jest
+      .spyOn(indexerService, 'removeContentIndex')
+      .mockResolvedValue(undefined);
+
+    await service.handleContentTypeDeleting({
+      databaseEntity: { id: 'ct-1' },
+    } as any);
+    await service.handleContentTypeDeleted({ entity: { id: 'ct-1' } } as any);
+
+    expect(contentService.find).toHaveBeenCalledWith({
+      where: { contentType: { id: 'ct-1' } },
+    });
+    expect(removeSpy).toHaveBeenCalledTimes(2);
+    expect(removeSpy).toHaveBeenCalledWith('content-1');
+    expect(removeSpy).toHaveBeenCalledWith('content-2');
+  });
+
+  it('skips content type deletion capture when RAG is disabled', async () => {
+    settingService.getSettings.mockResolvedValue(
+      makeSettings({ enabled: false }),
+    );
+    const removeSpy = jest
+      .spyOn(indexerService, 'removeContentIndex')
+      .mockResolvedValue(undefined);
+
+    await service.handleContentTypeDeleting({
+      databaseEntity: { id: 'ct-1' },
+    } as any);
+    await service.handleContentTypeDeleted({ entity: { id: 'ct-1' } } as any);
+
+    expect(contentService.find).not.toHaveBeenCalled();
+    expect(removeSpy).not.toHaveBeenCalled();
+  });
+
+  it('prunes lexical keyword table entries when content is removed', async () => {
+    const lexicalIndex = await backendService.getLexicalIndex();
+    lexicalIndex.indexStruct.table.clear();
+    lexicalIndex.indexStruct.table.set('quixotic', new Set(['content-1']));
+    lexicalIndex.indexStruct.table.set(
+      'gadget',
+      new Set(['content-1', 'content-2']),
+    );
+
+    await service.removeContentIndex('content-1');
+
+    expect(lexicalIndex.indexStruct.table.has('quixotic')).toBe(false);
+    expect([...(lexicalIndex.indexStruct.table.get('gadget') ?? [])]).toEqual([
+      'content-2',
+    ]);
+    expect(simpleKeywordDocStoreMock.deleteDocument).toHaveBeenCalledWith(
+      'content-1',
+      false,
+    );
+  });
+
   it('processes reindex with concurrency limit and reports failed items', async () => {
     settingService.getSettings.mockResolvedValue(
       makeSettings({ default_mode: 'embedding' }),
@@ -1011,6 +1134,37 @@ describe('RagService', () => {
       { contentId: 'content-3' },
     );
     expect(deleteRefDocMock).toHaveBeenCalledTimes(9);
+  });
+
+  it('continues lexical-only reindex when embedding is not configured', async () => {
+    settingService.getSettings.mockResolvedValue(
+      makeSettings({ embedding_api_key: '' }),
+    );
+    contentService.findAndPopulate.mockResolvedValue([
+      {
+        id: 'content-1',
+        title: 'Product A',
+        status: true,
+        properties: { summary: 'Great product' },
+        contentType: {
+          id: 'ct-1',
+          schema: {
+            properties: {
+              summary: { title: 'Summary' },
+            },
+          },
+        },
+      },
+    ] as any);
+
+    await expect(service.reindexAll()).resolves.toBeUndefined();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Unable to initialize embedding index. Continuing lexical indexing only.',
+      expect.any(Error),
+    );
+    expect(insertNodesMock).not.toHaveBeenCalled();
+    expect(simpleKeywordHashes.size).toBeGreaterThan(0);
   });
 
   it('does not trigger full reindex during embedding retrieval', async () => {

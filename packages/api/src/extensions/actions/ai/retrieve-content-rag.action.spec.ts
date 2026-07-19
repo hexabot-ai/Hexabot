@@ -5,6 +5,7 @@
  */
 
 import { ActionService } from '@/actions/actions.service';
+import { RagEmbeddingNotConfiguredError } from '@/cms';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import { RetrieveRagContentAction } from './retrieve-content-rag.action';
@@ -12,8 +13,9 @@ import { RetrieveRagContentAction } from './retrieve-content-rag.action';
 describe('RetrieveRagContentAction', () => {
   let actionService: ActionService;
   let action: InstanceType<typeof RetrieveRagContentAction>;
-  let contentService: { retrieve: jest.Mock };
+  let contentService: { retrieve: jest.Mock; isRagEnabled: jest.Mock };
   let contentTypeService: { findOne: jest.Mock };
+  let loggerService: { warn: jest.Mock };
   let context: WorkflowRuntimeContext;
 
   beforeEach(() => {
@@ -22,14 +24,19 @@ describe('RetrieveRagContentAction', () => {
     action = new RetrieveRagContentAction(actionService);
     contentService = {
       retrieve: jest.fn(),
+      isRagEnabled: jest.fn().mockResolvedValue(true),
     };
     contentTypeService = {
       findOne: jest.fn().mockResolvedValue({ id: 'ct-1' }),
+    };
+    loggerService = {
+      warn: jest.fn(),
     };
     context = {
       services: {
         content: contentService,
         contentType: contentTypeService,
+        logger: loggerService,
       },
     } as unknown as WorkflowRuntimeContext;
   });
@@ -121,6 +128,75 @@ describe('RetrieveRagContentAction', () => {
     ).rejects.toThrow('Content type with id "missing-content-type" not found');
 
     expect(contentService.retrieve).not.toHaveBeenCalled();
+  });
+
+  it('returns a warning instead of empty hits when RAG is disabled', async () => {
+    contentService.isRagEnabled.mockResolvedValue(false);
+
+    const result = await action.execute({
+      input: { query: 'product' },
+      context,
+      settings: {
+        include_inactive: false,
+      } as any,
+      bindings: {} as any,
+    });
+
+    expect(result).toEqual({
+      hits: [],
+      text: '',
+      warning:
+        'RAG is disabled. Enable it in Settings > RAG (rag_settings.enabled) to retrieve content.',
+    });
+    expect(contentService.retrieve).not.toHaveBeenCalled();
+    expect(loggerService.warn).toHaveBeenCalledWith(
+      expect.stringContaining('RAG is disabled'),
+    );
+  });
+
+  it('returns a warning when embedding retrieval is not configured', async () => {
+    contentService.retrieve.mockRejectedValue(
+      new RagEmbeddingNotConfiguredError(
+        'Missing RAG embedding API key. Set rag_settings.embedding_api_key.',
+      ),
+    );
+
+    const result = await action.execute({
+      input: { query: 'product' },
+      context,
+      settings: {
+        mode: 'embedding',
+        include_inactive: false,
+      } as any,
+      bindings: {} as any,
+    });
+
+    expect(result).toEqual({
+      hits: [],
+      text: '',
+      warning: expect.stringContaining('rag_settings.embedding_api_key'),
+    });
+    expect(loggerService.warn).toHaveBeenCalledWith(
+      expect.stringContaining('rag_settings.embedding_api_key'),
+    );
+  });
+
+  it('rethrows non-configuration retrieval errors', async () => {
+    contentService.retrieve.mockRejectedValue(
+      new Error('Unable to initialize RAG embedding index.'),
+    );
+
+    await expect(
+      action.execute({
+        input: { query: 'product' },
+        context,
+        settings: {
+          mode: 'embedding',
+          include_inactive: false,
+        } as any,
+        bindings: {} as any,
+      }),
+    ).rejects.toThrow('Unable to initialize RAG embedding index.');
   });
 
   it('throws when required content services are missing from context', async () => {

@@ -161,6 +161,8 @@
     "Query used to retrieve CMS content through RAG.": "Requête utilisée pour récupérer du contenu CMS via le RAG.",
     "Retrieval mode used to search indexed content.": "Mode de récupération utilisé pour rechercher dans le contenu indexé.",
     "Retrieves RAG content from knowledge base using lexical or embedding mode for AI tool usage.": "Récupère du contenu RAG depuis la base de connaissances en mode lexical ou vectoriel (embeddings) pour l'usage des outils IA.",
+    "Warning": "Avertissement",
+    "Warning explaining why retrieval was skipped (e.g. RAG disabled or embedding not configured).": "Avertissement expliquant pourquoi la récupération a été ignorée (ex. RAG désactivé ou embeddings non configurés).",
     "When enabled, retrieval can include inactive content in results.": "Lorsqu'elle est activée, la récupération peut inclure du contenu inactif dans les résultats."
   }
 }
