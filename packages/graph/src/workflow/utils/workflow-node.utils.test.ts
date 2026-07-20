@@ -3221,6 +3221,148 @@ describe("buildNodesAndEdges", () => {
     expect(Math.abs(chainedCenter - parallelCenter)).toBeLessThan(1);
   });
 
+  it("keeps a nested single-branch loop compact when its task has attachments", async () => {
+    const loop = (
+      id: string,
+      taskName: string,
+      trailingTaskName?: string,
+    ): CompiledLoopStep => ({
+      id,
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [
+        taskStep(`${id}.loop.0:${taskName}`, taskName),
+        ...(trailingTaskName
+          ? [taskStep(`${id}.loop.1:${trailingTaskName}`, trailingTaskName)]
+          : []),
+      ],
+    });
+    const targetLoop = loop("root.branch.2.3:loop", "agent_nested");
+    const conditional: CompiledConditionalStep = {
+      id: "root:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "root:conditional:when:0",
+          condition: { kind: "literal", value: false },
+          steps: [loop("root.branch.0.0:loop", "agent_top", "message_top")],
+        },
+        {
+          id: "root:conditional:when:1",
+          condition: { kind: "literal", value: false },
+          steps: [
+            taskStep("root.branch.1.0:agent_middle", "agent_middle"),
+            taskStep("root.branch.1.1:message_middle", "message_middle"),
+          ],
+        },
+        {
+          id: "root:conditional:when:2",
+          steps: [
+            loop("root.branch.2.0:loop", "agent_bottom", "message_bottom"),
+            taskStep("root.branch.2.1:agent_before", "agent_before"),
+            taskStep("root.branch.2.2:message_before", "message_before"),
+            targetLoop,
+            taskStep("root.branch.2.4:agent_after", "agent_after"),
+            taskStep("root.branch.2.5:agent_after_2", "agent_after_2"),
+            taskStep("root.branch.2.6:message_after", "message_after"),
+          ],
+        },
+      ],
+    };
+    const agentNames = [
+      "agent_root",
+      "agent_top",
+      "agent_middle",
+      "agent_bottom",
+      "agent_before",
+      "agent_nested",
+      "agent_after",
+      "agent_after_2",
+    ];
+    const tasks: TestTaskDefinitions = {
+      ...Object.fromEntries(
+        agentNames.map((name) => [
+          name,
+          { action: "agent_action", settings: {} },
+        ]),
+      ),
+      ...baseTasks([
+        "message_top",
+        "message_middle",
+        "message_bottom",
+        "message_before",
+        "message_after",
+      ]),
+    };
+    const graph = await buildGraph({
+      flow: [taskStep("0:agent_root", "agent_root"), conditional],
+      tasks,
+      actionCatalog: createActionCatalog({
+        agent_action: ["tools", "mcp", "model", "memory"],
+      }),
+      bindingCatalog: createBindingCatalog([
+        { kind: "tools", multiple: true },
+        { kind: "mcp", multiple: true },
+        { kind: "model", multiple: false },
+        { kind: "memory", multiple: false },
+      ]),
+    });
+    const operator = graph.nodes.find(
+      (node) => node.id === createStepNodeId(targetLoop.id, "operator"),
+    );
+    const task = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createStepNodeId("root.branch.2.3:loop.loop.0:agent_nested", "task"),
+    );
+    const attachments = graph.nodes.filter(
+      (node) => getNodeOwnerDefName(node) === "agent_nested",
+    );
+    const group = graph.nodes.find(
+      (node) => node.id === createGroupId(targetLoop.id),
+    );
+    const outerGroup = graph.nodes.find(
+      (node) => node.id === createGroupId(conditional.id),
+    );
+    const end = graph.nodes.find((node) => node.id === END_INDICATOR_ID);
+
+    expect(operator).toBeDefined();
+    expect(task).toBeDefined();
+    expect(attachments).toHaveLength(4);
+    expect(group).toBeDefined();
+    expect(outerGroup).toBeDefined();
+    expect(end).toBeDefined();
+
+    const bundleSpans = [task!, ...attachments].map((node) =>
+      getNodeSpreadSpan(node, "horizontal"),
+    );
+    const bundleCenter =
+      (Math.min(...bundleSpans.map(({ leading }) => leading)) +
+        Math.max(...bundleSpans.map(({ trailing }) => trailing))) /
+      2;
+    const operatorCenter = getNodeSpreadCenter(operator!, "horizontal");
+    const groupSpan = getNodeSpreadSpan(group, "horizontal");
+    const outerGroupSpan = getNodeSpreadSpan(outerGroup, "horizontal");
+    const contentBottom = Math.max(
+      ...graph.nodes
+        .filter((node) => node.type !== ENodeType.GROUP)
+        .map((node) => getNodeSpreadSpan(node, "horizontal").trailing),
+    );
+
+    expect(Math.abs(bundleCenter - operatorCenter)).toBeLessThan(1);
+    expect(groupSpan.trailing - groupSpan.leading).toBeLessThan(500);
+    expect(outerGroupSpan.trailing - contentBottom).toBeLessThanOrEqual(24);
+    expect(getNodeSpreadCenter(end!, "horizontal")).toBe(
+      getNodeSpreadCenter(outerGroup!, "horizontal"),
+    );
+  });
+
   it("pulls each trailing branch placeholder to a uniform flow gap after its content", async () => {
     // Regression: ELK layers every branch's trailing "+" near the flow's
     // convergence point, so a short branch ended with a link stretching across

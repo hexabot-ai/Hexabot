@@ -11,8 +11,7 @@ import type { GroupMeta } from "../graph-builder/types";
 
 import {
   appendMapValue,
-  getAxisCenter,
-  getGraphNodeDimensions,
+  getPositionedNodeAxisBounds,
   isHorizontalDirection,
   type LayoutContext,
   translateSpread,
@@ -54,13 +53,14 @@ export const alignGroupChainAxes = (
   );
   const isGroupNode = (id: string) =>
     nodesById.get(id)?.type === ENodeType.GROUP;
+  const isOperatorNode = (id: string) =>
+    nodesById.get(id)?.type === ENodeType.OPERATOR;
   const isPlaceholderNode = (id: string) =>
     nodesById.get(id)?.type === ENodeType.BRANCH_PLACEHOLDER;
   const isTaskNode = (id: string) => nodesById.get(id)?.type === ENodeType.TASK;
-  // Links continuing a branch's sequence: from a group or a plain step to the
-  // next sibling group/step sequenced within the same branch, or to the
-  // branch's trailing placeholder that ends it. Hidden edges are the direct
-  // duplicates of group overlay links — skipping them keeps one link per hop.
+  // Links continuing a branch's sequence: from a single-branch operator, group,
+  // or plain step to the next group/step, or to the trailing placeholder.
+  // Hidden edges are direct duplicates of group overlay links, so skip them.
   const overlaySuccessors = new Map<string, string[]>();
   const overlayPredecessors = new Map<string, string[]>();
 
@@ -68,7 +68,9 @@ export const alignGroupChainAxes = (
     if (
       isAttachmentEdge(edge) ||
       edge.hidden ||
-      (!isGroupNode(edge.source) && !isTaskNode(edge.source)) ||
+      (!isGroupNode(edge.source) &&
+        !isOperatorNode(edge.source) &&
+        !isTaskNode(edge.source)) ||
       (!isGroupNode(edge.target) &&
         !isPlaceholderNode(edge.target) &&
         !isTaskNode(edge.target))
@@ -113,19 +115,25 @@ export const alignGroupChainAxes = (
 
     return ids;
   };
-  const groupCenter = (groupId: string): number | undefined => {
-    const overlay = nodesById.get(groupId);
+  const getSpreadCenter = (nodeIds: Iterable<string>): number | undefined => {
+    const bounds = [...nodeIds].flatMap((nodeId) => {
+      const result = getPositionedNodeAxisBounds(
+        nodeId,
+        positions,
+        nodesById,
+        ctx,
+        isVertical,
+        "spread",
+      );
 
-    if (!overlay) {
-      return;
-    }
+      return result ? [result] : [];
+    });
 
-    return getAxisCenter(
-      positions.get(groupId) ?? overlay.position,
-      getGraphNodeDimensions(overlay, ctx),
-      isVertical,
-      "spread",
-    );
+    return bounds.length
+      ? (Math.min(...bounds.map(({ leading }) => leading)) +
+          Math.max(...bounds.map(({ trailing }) => trailing))) /
+          2
+      : undefined;
   };
   const moveNodeSpread = (nodeId: string, delta: number) => {
     const node = nodesById.get(nodeId);
@@ -170,15 +178,20 @@ export const alignGroupChainAxes = (
   };
   const visited = new Set<string>();
 
-  overlaySuccessors.forEach((_successors, rootId) => {
-    // A chain root is a group fed by a non-group spine (an operator branch
-    // handle, the start indicator, or leading plain steps), so nothing pulls
-    // it — align the rest of the chain onto its axis.
-    if (!isGroupNode(rootId) || hasUpstreamGroupInSpine(rootId)) {
+  overlaySuccessors.forEach((rootSuccessors, rootId) => {
+    // Group roots align sibling group chains. A one-output operator additionally
+    // aligns its sole branch bundle; fan-out operators remain symmetry-owned.
+    const isSingleBranchOperator =
+      isOperatorNode(rootId) && rootSuccessors.length === 1;
+
+    if (
+      (!isGroupNode(rootId) && !isSingleBranchOperator) ||
+      hasUpstreamGroupInSpine(rootId)
+    ) {
       return;
     }
 
-    const anchorAxis = groupCenter(rootId);
+    const anchorAxis = getSpreadCenter([rootId]);
 
     if (anchorAxis === undefined) {
       return;
@@ -206,7 +219,7 @@ export const alignGroupChainAxes = (
       const nextGroup = groups.get(nextId);
 
       if (nextGroup) {
-        const nextCenter = groupCenter(nextId);
+        const nextCenter = getSpreadCenter([nextId]);
 
         if (nextCenter !== undefined) {
           const delta = anchorAxis - nextCenter;
@@ -226,21 +239,18 @@ export const alignGroupChainAxes = (
       const nextNode = nodesById.get(nextId);
 
       if (nextNode) {
-        const delta =
-          anchorAxis -
-          getAxisCenter(
-            positions.get(nextId) ?? nextNode.position,
-            getGraphNodeDimensions(nextNode, ctx),
-            isVertical,
-            "spread",
-          );
+        const alignedNodeIds = collectNodeIdsWithAttachmentDescendants(
+          [nextId],
+          attachmentChildrenByParent,
+          nodesById,
+        );
+        const nextCenter = getSpreadCenter(
+          isSingleBranchOperator ? alignedNodeIds : [nextId],
+        );
+        const delta = anchorAxis - (nextCenter ?? anchorAxis);
 
         if (Math.abs(delta) >= 1) {
-          collectNodeIdsWithAttachmentDescendants(
-            [nextId],
-            attachmentChildrenByParent,
-            nodesById,
-          ).forEach((id) => moveNodeSpread(id, delta));
+          alignedNodeIds.forEach((id) => moveNodeSpread(id, delta));
         }
       }
 

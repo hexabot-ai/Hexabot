@@ -156,13 +156,21 @@ export const buildNodesAndEdges = async ({
     edges: projected.edges,
     // Finally, straighten any chain of sibling groups sequenced inside a branch
     // (e.g. Parallel → Conditional → Conditional) onto a single spread axis.
-    nodes: alignGroupChainAxes(
-      boundaryAlignedNodes,
+    nodes: alignAllNodesToStartAxis(
+      withFreshGroupNodes(
+        alignGroupChainAxes(
+          boundaryAlignedNodes,
+          projected.edges,
+          traversal.groups,
+          { config },
+        ),
+        traversal.groups,
+        config,
+        attachmentEdges,
+      ),
       projected.edges,
       traversal.groups,
-      {
-        config,
-      },
+      { config },
     ),
   };
 };
