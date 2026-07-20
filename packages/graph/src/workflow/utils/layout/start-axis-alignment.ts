@@ -14,14 +14,18 @@ import {
 import type { GroupMeta } from "../graph-builder/types";
 import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 
+import { FLOW_LAYER_GAP } from "./constants";
 import {
   average,
   getAxisCenter,
   getBoundsSpreadCenter,
+  getFlowCoordinate,
+  getFlowSize,
   getGraphNodeDimensions,
   isHorizontalDirection,
   type LayoutContext,
   translateSpread,
+  withFlowCoordinate,
 } from "./geometry";
 import {
   buildAttachmentMaps,
@@ -212,7 +216,7 @@ export const alignAllNodesToStartAxis = (
     ).forEach((childId) => deltas.set(childId, delta));
   });
 
-  return nodes.map((node) => {
+  const alignedNodes = nodes.map((node) => {
     const delta = deltas.get(node.id);
 
     if (delta === undefined || delta === 0) {
@@ -222,6 +226,34 @@ export const alignAllNodesToStartAxis = (
     return {
       ...node,
       position: translateSpread(node.position, isVertical, delta),
+    };
+  });
+
+  return alignedNodes.map((node) => {
+    const isStart = node.id === START_INDICATOR_ID;
+    const edge = isStart
+      ? edges.find((edge) => edge.source === node.id && !edge.hidden)
+      : node.id === END_INDICATOR_ID
+        ? edges.find((edge) => edge.target === node.id && !edge.hidden)
+        : undefined;
+    const boundaryId = isStart ? edge?.target : edge?.source;
+    const boundary = boundaryId ? nodesById.get(boundaryId) : undefined;
+
+    if (!boundary) {
+      return node;
+    }
+
+    const flowCoordinate = isStart
+      ? getFlowCoordinate(boundary.position, isVertical) -
+        FLOW_LAYER_GAP -
+        getFlowSize(getGraphNodeDimensions(node, ctx), isVertical)
+      : getFlowCoordinate(boundary.position, isVertical) +
+        getFlowSize(getGraphNodeDimensions(boundary, ctx), isVertical) +
+        FLOW_LAYER_GAP;
+
+    return {
+      ...node,
+      position: withFlowCoordinate(node.position, isVertical, flowCoordinate),
     };
   });
 };

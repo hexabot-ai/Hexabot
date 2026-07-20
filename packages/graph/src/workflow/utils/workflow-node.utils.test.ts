@@ -1896,9 +1896,7 @@ describe("buildNodesAndEdges", () => {
   }
 
   for (const direction of ["horizontal", "vertical"] as const) {
-    it(`does not push Stop past the last main-flow node when a branch has wide attachment rows in ${direction} mode`, async () => {
-      // Regression: wide binding rows inflated Stop/placeholder gaps; keep
-      // them at the visible card's FLOW_LAYER_GAP spacing.
+    it(`keeps Stop after the last main-flow node with wide attachment rows in ${direction} mode`, async () => {
       const conditionalStep: CompiledConditionalStep = {
         id: "0:conditional",
         label: "conditional",
@@ -1963,24 +1961,14 @@ describe("buildNodesAndEdges", () => {
         width: 0,
         height: 0,
       };
-      const bpDims = NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions ?? {
-        width: 0,
-        height: 0,
-      };
       const endLeading =
         direction === "vertical" ? endNode!.position.y : endNode!.position.x;
       const lastNodeTrailing =
         direction === "vertical"
           ? lastMainFlowNode!.position.y + taskDims.height
           : lastMainFlowNode!.position.x + taskDims.width;
-      const bpFlowSize =
-        direction === "vertical" ? bpDims.height : bpDims.width;
 
       expect(endLeading).toBeGreaterThanOrEqual(lastNodeTrailing);
-      // Attachments must not inflate either last-node -> placeholder -> Stop gap.
-      expect(endLeading).toBeLessThanOrEqual(
-        lastNodeTrailing + 2 * FLOW_LAYER_GAP + bpFlowSize + 1,
-      );
     });
   }
 
@@ -2497,6 +2485,51 @@ describe("buildNodesAndEdges", () => {
     expect(Math.abs(placeholderCenterY - referenceAxis)).toBeLessThan(1);
     expect(Math.abs(afterCenterY - referenceAxis)).toBeLessThan(1);
   });
+
+  it.each([
+    ["horizontal", "grouped"],
+    ["horizontal", "ungrouped"],
+    ["vertical", "grouped"],
+    ["vertical", "ungrouped"],
+  ] as const)(
+    "keeps standard Start/Stop link spacing in %s mode (%s)",
+    async (direction, grouping) => {
+      const grouped = grouping === "grouped";
+      const step = grouped
+        ? nestedConditionalStep("0:conditional")
+        : taskStep("0:agent", "agent");
+      const graph = await buildGraph({
+        flow: [step],
+        tasks: grouped
+          ? {}
+          : { agent: { action: "agent_action", settings: {} } },
+        direction,
+      });
+      const boundaryId = grouped
+        ? createGroupId(step.id)
+        : createStepNodeId(step.id, "task");
+      const flowAxis = direction === "vertical" ? "y" : "x";
+      const flowSize = direction === "vertical" ? "height" : "width";
+      const indicatorSize =
+        NODE_METRICS[ENodeType.INDICATOR]?.dimensions[flowSize] ?? 0;
+      const findNode = (id: string) =>
+        graph.nodes.find((node) => node.id === id)!;
+      const start = findNode(START_INDICATOR_ID);
+      const end = findNode(END_INDICATOR_ID);
+      const boundary = findNode(boundaryId);
+      const boundarySize =
+        (grouped
+          ? (boundary.style as { width?: number; height?: number })[flowSize]
+          : NODE_METRICS[boundary.type]?.dimensions[flowSize]) ?? 0;
+
+      expect(
+        boundary.position[flowAxis] - start.position[flowAxis] - indicatorSize,
+      ).toBe(FLOW_LAYER_GAP);
+      expect(
+        end.position[flowAxis] - boundary.position[flowAxis] - boundarySize,
+      ).toBe(FLOW_LAYER_GAP);
+    },
+  );
 
   it("aligns start/stop with group bounding-box center in horizontal mode (group ports at 50%)", async () => {
     // When a group contains AI agent with binding attachments below the operator,
