@@ -131,9 +131,17 @@ export const buildNodesAndEdges = async ({
         // chained group a long way onto its chain root's axis, and packing
         // with the pre-alignment bounds would reserve that group's old
         // position as a permanent oversized gap between sibling branches.
-        alignGroupChainAxes(symmetricNodes, projected.edges, traversal.groups, {
+        withFreshGroupNodes(
+          alignGroupChainAxes(
+            symmetricNodes,
+            projected.edges,
+            traversal.groups,
+            { config },
+          ),
+          traversal.groups,
           config,
-        }),
+          attachmentEdges,
+        ),
         projected.edges,
         traversal.groups,
         { config },

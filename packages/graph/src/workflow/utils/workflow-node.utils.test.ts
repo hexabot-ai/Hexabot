@@ -3331,6 +3331,40 @@ describe("buildNodesAndEdges", () => {
       (node) => node.id === createGroupId(conditional.id),
     );
     const end = graph.nodes.find((node) => node.id === END_INDICATOR_ID);
+    const middleAgent = graph.nodes.find(
+      (node) =>
+        node.id === createStepNodeId("root.branch.1.0:agent_middle", "task"),
+    );
+    const middleMessage = graph.nodes.find(
+      (node) =>
+        node.id === createStepNodeId("root.branch.1.1:message_middle", "task"),
+    );
+    const middlePlaceholder = graph.nodes.find(
+      (node) =>
+        node.id === createPlaceholderNodeId(conditional.id, "conditional", 1),
+    );
+    const middleAttachments = graph.nodes.filter(
+      (node) => getNodeOwnerDefName(node) === "agent_middle",
+    );
+    const branchSpans = [0, 1, 2].map((branchIndex) => {
+      const placeholderId = createPlaceholderNodeId(
+        conditional.id,
+        "conditional",
+        branchIndex,
+      );
+      const spans = graph.nodes
+        .filter(
+          (node) =>
+            node.id.includes(`root.branch.${branchIndex}`) ||
+            node.id === placeholderId,
+        )
+        .map((node) => getNodeSpreadSpan(node, "horizontal"));
+
+      return {
+        leading: Math.min(...spans.map(({ leading }) => leading)),
+        trailing: Math.max(...spans.map(({ trailing }) => trailing)),
+      };
+    });
 
     expect(operator).toBeDefined();
     expect(task).toBeDefined();
@@ -3360,6 +3394,29 @@ describe("buildNodesAndEdges", () => {
     expect(outerGroupSpan.trailing - contentBottom).toBeLessThanOrEqual(24);
     expect(getNodeSpreadCenter(end!, "horizontal")).toBe(
       getNodeSpreadCenter(outerGroup!, "horizontal"),
+    );
+    expect(getNodeSpreadCenter(middlePlaceholder!, "horizontal")).toBe(
+      getNodeSpreadCenter(middleMessage!, "horizontal"),
+    );
+    expect(getNodeSpreadCenter(middleMessage!, "horizontal")).toBe(
+      getNodeSpreadCenter(middleAgent!, "horizontal"),
+    );
+    const taskWidth = NODE_METRICS[ENodeType.TASK]?.dimensions.width ?? 0;
+    const sourceTrailing = Math.max(
+      getNodeRight(middleAgent!),
+      ...middleAttachments.map(getNodeRight),
+    );
+
+    expect(sourceTrailing).toBeGreaterThan(getNodeRight(middleAgent!));
+    expect(middleMessage!.position.x - sourceTrailing).toBe(FLOW_LAYER_GAP);
+    expect(
+      middlePlaceholder!.position.x - middleMessage!.position.x - taskWidth,
+    ).toBe(FLOW_LAYER_GAP);
+    expect(branchSpans[1].leading - branchSpans[0].trailing).toBe(
+      BRANCH_SPREAD_GAP,
+    );
+    expect(branchSpans[2].leading - branchSpans[1].trailing).toBe(
+      BRANCH_SPREAD_GAP,
     );
   });
 

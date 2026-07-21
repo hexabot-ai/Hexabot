@@ -9,11 +9,13 @@ import type { Edge } from "@xyflow/react";
 import { ENodeType, type GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
 
+import { FLOW_LAYER_GAP } from "./constants";
 import {
   appendMapValue,
   getPositionedNodeAxisBounds,
   isHorizontalDirection,
   type LayoutContext,
+  translateFlow,
   translateSpread,
 } from "./geometry";
 import {
@@ -115,16 +117,18 @@ export const alignGroupChainAxes = (
 
     return ids;
   };
+  const getBounds = (nodeId: string, axis: "flow" | "spread") =>
+    getPositionedNodeAxisBounds(
+      nodeId,
+      positions,
+      nodesById,
+      ctx,
+      isVertical,
+      axis,
+    );
   const getSpreadCenter = (nodeIds: Iterable<string>): number | undefined => {
     const bounds = [...nodeIds].flatMap((nodeId) => {
-      const result = getPositionedNodeAxisBounds(
-        nodeId,
-        positions,
-        nodesById,
-        ctx,
-        isVertical,
-        "spread",
-      );
+      const result = getBounds(nodeId, "spread");
 
       return result ? [result] : [];
     });
@@ -183,9 +187,13 @@ export const alignGroupChainAxes = (
     // aligns its sole branch bundle; fan-out operators remain symmetry-owned.
     const isSingleBranchOperator =
       isOperatorNode(rootId) && rootSuccessors.length === 1;
+    const isBranchRootTask =
+      isTaskNode(rootId) &&
+      rootSuccessors.length === 1 &&
+      (overlayPredecessors.get(rootId) ?? []).some(isOperatorNode);
 
     if (
-      (!isGroupNode(rootId) && !isSingleBranchOperator) ||
+      (!isGroupNode(rootId) && !isSingleBranchOperator && !isBranchRootTask) ||
       hasUpstreamGroupInSpine(rootId)
     ) {
       return;
@@ -239,6 +247,42 @@ export const alignGroupChainAxes = (
       const nextNode = nodesById.get(nextId);
 
       if (nextNode) {
+        const targetSuccessors = overlaySuccessors.get(nextId) ?? [];
+        const trailingPlaceholderId = targetSuccessors[0];
+
+        if (
+          isBranchRootTask &&
+          isTaskNode(nextId) &&
+          attachmentChildrenByParent.has(currentId) &&
+          !attachmentChildrenByParent.has(nextId) &&
+          targetSuccessors.length === 1 &&
+          isPlaceholderNode(targetSuccessors[0])
+        ) {
+          const sourceTrailing = [
+            ...collectNodeIdsWithAttachmentDescendants(
+              [currentId],
+              attachmentChildrenByParent,
+              nodesById,
+            ),
+          ].reduce(
+            (trailing, id) =>
+              Math.max(trailing, getBounds(id, "flow")?.trailing ?? -Infinity),
+            -Infinity,
+          );
+          const targetLeading = getBounds(nextId, "flow")?.leading;
+
+          if (targetLeading !== undefined) {
+            const delta = sourceTrailing + FLOW_LAYER_GAP - targetLeading;
+
+            [nextId, trailingPlaceholderId].forEach((id) =>
+              positions.set(
+                id,
+                translateFlow(positions.get(id)!, isVertical, delta),
+              ),
+            );
+          }
+        }
+
         const alignedNodeIds = collectNodeIdsWithAttachmentDescendants(
           [nextId],
           attachmentChildrenByParent,
