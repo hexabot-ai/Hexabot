@@ -125,19 +125,6 @@ export const alignAllNodesToStartAxis = (
 
     return getBoundsSpreadCenter(getNodesBounds(memberNodes), isVertical);
   };
-  const getNodeBundleCenter = (node: GraphNode) =>
-    getBoundsSpreadCenter(
-      getNodesBounds(
-        [
-          ...collectNodeIdsWithAttachmentDescendants(
-            [node.id],
-            attachmentChildrenByParent,
-            nodesById,
-          ),
-        ].map((id) => nodesById.get(id)!),
-      ),
-      isVertical,
-    );
   // Compute targetAxis from the content reference centers.
   // Walk all nodes once (skipping attachment children, indicators, and GROUP
   // overlay nodes) and collect the bounding-box center of each top-level group
@@ -174,7 +161,14 @@ export const alignAllNodesToStartAxis = (
       return;
     }
 
-    referenceCenters.push(getNodeBundleCenter(node));
+    referenceCenters.push(
+      getAxisCenter(
+        node.position,
+        getGraphNodeDimensions(node, ctx),
+        isVertical,
+        "spread",
+      ),
+    );
   });
 
   // Fall back to Start's own center when there are no content nodes.
@@ -209,7 +203,12 @@ export const alignAllNodesToStartAxis = (
       return;
     }
 
-    const nodeCenter = getNodeBundleCenter(node);
+    const nodeCenter = getAxisCenter(
+      node.position,
+      getGraphNodeDimensions(node, ctx),
+      isVertical,
+      "spread",
+    );
     const delta = targetAxis - nodeCenter;
 
     if (delta === 0) {

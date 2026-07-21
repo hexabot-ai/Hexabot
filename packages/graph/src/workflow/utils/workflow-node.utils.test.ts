@@ -689,6 +689,7 @@ describe("buildNodesAndEdges", () => {
     const ownerBindingNode = graph.nodes.find(
       (node) => getNodeTitle(node) === "ai_generate_reply_2",
     );
+    const taskNode = graph.nodes.find((node) => node.type === ENodeType.TASK)!;
     const nestedPlaceholderNodes = graph.nodes.filter(
       (node) =>
         node.type === ENodeType.BINDING_PLACEHOLDER &&
@@ -696,18 +697,15 @@ describe("buildNodesAndEdges", () => {
     );
     const start = graph.nodes.find((node) => node.id === START_INDICATOR_ID)!;
     const end = graph.nodes.find((node) => node.id === END_INDICATOR_ID)!;
-    const bundleSpans = graph.nodes
-      .filter((node) => node.id !== start.id && node.id !== end.id)
-      .map((node) => getNodeSpreadSpan(node, "horizontal"));
-    const bundleCenter =
-      (Math.min(...bundleSpans.map(({ leading }) => leading)) +
-        Math.max(...bundleSpans.map(({ trailing }) => trailing))) /
-      2;
 
     expect(ownerBindingNode).toBeDefined();
     expect(nestedPlaceholderNodes.length).toBeGreaterThan(0);
-    expect(getNodeSpreadCenter(start, "horizontal")).toBe(bundleCenter);
-    expect(getNodeSpreadCenter(end, "horizontal")).toBe(bundleCenter);
+    expect(getNodeSpreadCenter(start, "horizontal")).toBe(
+      getNodeSpreadCenter(taskNode, "horizontal"),
+    );
+    expect(getNodeSpreadCenter(end, "horizontal")).toBe(
+      getNodeSpreadCenter(taskNode, "horizontal"),
+    );
 
     if (!ownerBindingNode) {
       return;
@@ -2558,19 +2556,12 @@ describe("buildNodesAndEdges", () => {
       ).toBe(FLOW_LAYER_GAP);
 
       if (!grouped) {
-        const bundleSpans = graph.nodes
-          .filter(
-            (node) =>
-              node.id === boundaryId || getNodeOwnerDefName(node) === "agent",
-          )
-          .map((node) => getNodeSpreadSpan(node, direction));
-        const bundleCenter =
-          (Math.min(...bundleSpans.map(({ leading }) => leading)) +
-            Math.max(...bundleSpans.map(({ trailing }) => trailing))) /
-          2;
-
-        expect(bundleCenter).toBe(getNodeSpreadCenter(start, direction));
-        expect(bundleCenter).toBe(getNodeSpreadCenter(end, direction));
+        expect(getNodeSpreadCenter(boundary, direction)).toBe(
+          getNodeSpreadCenter(start, direction),
+        );
+        expect(getNodeSpreadCenter(boundary, direction)).toBe(
+          getNodeSpreadCenter(end, direction),
+        );
       }
     },
   );
