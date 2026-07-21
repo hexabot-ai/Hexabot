@@ -32,6 +32,7 @@ import {
   createStepNodeId,
 } from "./graph-builder/id-factory";
 import { BRANCH_SPREAD_GAP, FLOW_LAYER_GAP } from "./layout/constants";
+import { alignGroupChainAxes } from "./layout/group-chain-alignment";
 import { tightenTrailingPlaceholders } from "./layout/trailing-placeholder-flow";
 import {
   buildNodesAndEdges,
@@ -3549,6 +3550,99 @@ describe("buildNodesAndEdges", () => {
     expect(getNodeSpreadCenter(result[1], "horizontal")).toBe(
       getNodeSpreadCenter(result[0], "horizontal"),
     );
+  });
+
+  it("compacts oversized links along a terminal group chain", () => {
+    const nodes = [
+      {
+        id: "source-group",
+        type: ENodeType.GROUP,
+        position: { x: 0, y: 0 },
+        style: { width: 700, height: 200 },
+        data: {},
+      },
+      {
+        id: "source-member",
+        type: ENodeType.TASK,
+        position: { x: 20, y: 20 },
+        data: {},
+      },
+      {
+        id: "call-workflow",
+        type: ENodeType.TASK,
+        position: { x: 1000, y: 57 },
+        data: {},
+      },
+      {
+        id: "target-group",
+        type: ENodeType.GROUP,
+        position: { x: 1600, y: 0 },
+        style: { width: 900, height: 200 },
+        data: {},
+      },
+      {
+        id: "target-member",
+        type: ENodeType.TASK,
+        position: { x: 1620, y: 20 },
+        data: {},
+      },
+    ] as GraphNode[];
+    const config = getWorkflowDefaultConfig("horizontal");
+    const result = alignGroupChainAxes(
+      nodes,
+      [
+        {
+          id: "between-groups",
+          source: "source-group",
+          target: "call-workflow",
+        },
+        {
+          id: "into-target-group",
+          source: "call-workflow",
+          target: "target-group",
+        },
+      ],
+      new Map([
+        [
+          "source-group",
+          {
+            id: "source-group",
+            operatorType: StepType.Loop,
+            level: 1,
+            memberNodeIds: new Set(["source-member"]),
+          },
+        ],
+        [
+          "target-group",
+          {
+            id: "target-group",
+            operatorType: StepType.Parallel,
+            level: 1,
+            memberNodeIds: new Set(["target-member"]),
+          },
+        ],
+      ]),
+      { config },
+    );
+    const sourceMember = result.find((node) => node.id === "source-member")!;
+    const callWorkflow = result.find((node) => node.id === "call-workflow")!;
+    const targetMember = result.find((node) => node.id === "target-member")!;
+    const taskWidth = NODE_METRICS[ENodeType.TASK]!.dimensions.width;
+    const sourcePadding = config.highlights[StepType.Loop]?.padding ?? 0;
+    const targetPadding = config.highlights[StepType.Parallel]?.padding ?? 0;
+
+    expect(
+      callWorkflow.position.x -
+        sourceMember.position.x -
+        taskWidth -
+        sourcePadding / 2,
+    ).toBe(FLOW_LAYER_GAP);
+    expect(
+      targetMember.position.x -
+        targetPadding / 2 -
+        callWorkflow.position.x -
+        taskWidth,
+    ).toBe(FLOW_LAYER_GAP);
   });
 
   it("pulls each trailing branch placeholder to a uniform flow gap after its content", async () => {

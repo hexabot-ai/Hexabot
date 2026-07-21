@@ -126,6 +126,28 @@ export const alignGroupChainAxes = (
       isVertical,
       axis,
     );
+  const getGroupFlowBounds = (group: GroupMeta) => {
+    const memberBounds = [...collectSubtreeIds(group)]
+      .filter((id) => id !== group.id)
+      .flatMap((id) => {
+        const bounds = getBounds(id, "flow");
+
+        return bounds ? [bounds] : [];
+      });
+
+    if (!memberBounds.length) {
+      return getBounds(group.id, "flow");
+    }
+
+    const padding = ctx.config?.highlights?.[group.operatorType]?.padding ?? 0;
+
+    return {
+      leading:
+        Math.min(...memberBounds.map(({ leading }) => leading)) - padding / 2,
+      trailing:
+        Math.max(...memberBounds.map(({ trailing }) => trailing)) + padding / 2,
+    };
+  };
   const getSpreadCenter = (nodeIds: Iterable<string>): number | undefined => {
     const bounds = [...nodeIds].flatMap((nodeId) => {
       const result = getBounds(nodeId, "spread");
@@ -230,6 +252,57 @@ export const alignGroupChainAxes = (
       visited.add(nextId);
 
       const nextGroup = groups.get(nextId);
+      const nextNode = nodesById.get(nextId);
+      const nextSuccessors = overlaySuccessors.get(nextId) ?? [];
+
+      if (
+        !attachmentChildrenByParent.has(nextId) &&
+        (nextGroup || isPlaceholderNode(nextId) || nextSuccessors.length === 1)
+      ) {
+        const sourceIds = isPlaceholderNode(nextId)
+          ? new Set([currentId])
+          : collectNodeIdsWithAttachmentDescendants(
+              [currentId],
+              attachmentChildrenByParent,
+              nodesById,
+            );
+        const sourceGroup = groups.get(currentId);
+        const sourceTrailing = sourceGroup
+          ? getGroupFlowBounds(sourceGroup)?.trailing
+          : [...sourceIds].reduce(
+              (trailing, id) =>
+                Math.max(
+                  trailing,
+                  getBounds(id, "flow")?.trailing ?? -Infinity,
+                ),
+              -Infinity,
+            );
+        const targetLeading = nextGroup
+          ? getGroupFlowBounds(nextGroup)?.leading
+          : getBounds(nextId, "flow")?.leading;
+        const flowDelta =
+          sourceTrailing === undefined || targetLeading === undefined
+            ? 0
+            : sourceTrailing + FLOW_LAYER_GAP - targetLeading;
+
+        if (flowDelta < -0.5) {
+          const movedIds = nextGroup
+            ? collectSubtreeIds(nextGroup)
+            : collectNodeIdsWithAttachmentDescendants(
+                [nextId],
+                attachmentChildrenByParent,
+                nodesById,
+              );
+
+          movedIds.forEach((id) => {
+            const position = positions.get(id);
+
+            if (position) {
+              positions.set(id, translateFlow(position, isVertical, flowDelta));
+            }
+          });
+        }
+      }
 
       if (nextGroup) {
         const nextCenter = getSpreadCenter([nextId]);
@@ -249,37 +322,7 @@ export const alignGroupChainAxes = (
 
       // A plain step sequenced between groups, or the trailing placeholder
       // that ends the chain: center it (and its attachments) on the axis.
-      const nextNode = nodesById.get(nextId);
-
       if (nextNode) {
-        const trailingPlaceholderId = (overlaySuccessors.get(nextId) ?? [])[0];
-
-        if (isBranchRootTask && isTaskNode(nextId)) {
-          const sourceTrailing = [
-            ...collectNodeIdsWithAttachmentDescendants(
-              [currentId],
-              attachmentChildrenByParent,
-              nodesById,
-            ),
-          ].reduce(
-            (trailing, id) =>
-              Math.max(trailing, getBounds(id, "flow")?.trailing ?? -Infinity),
-            -Infinity,
-          );
-          const targetLeading = getBounds(nextId, "flow")?.leading;
-
-          if (targetLeading !== undefined) {
-            const delta = sourceTrailing + FLOW_LAYER_GAP - targetLeading;
-
-            [nextId, trailingPlaceholderId].forEach((id) =>
-              positions.set(
-                id,
-                translateFlow(positions.get(id)!, isVertical, delta),
-              ),
-            );
-          }
-        }
-
         const alignedNodeIds = collectNodeIdsWithAttachmentDescendants(
           [nextId],
           attachmentChildrenByParent,
