@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import { NODE_METRICS } from "../constants/workflow.constants";
 import {
   ENodeType,
+  type GraphNode,
   type INodeConfig,
   type WorkflowAction,
   type WorkflowBindingDefinition,
@@ -31,6 +32,7 @@ import {
   createStepNodeId,
 } from "./graph-builder/id-factory";
 import { BRANCH_SPREAD_GAP, FLOW_LAYER_GAP } from "./layout/constants";
+import { tightenTrailingPlaceholders } from "./layout/trailing-placeholder-flow";
 import {
   buildNodesAndEdges,
   getWorkflowDefaultConfig,
@@ -3510,6 +3512,42 @@ describe("buildNodesAndEdges", () => {
     );
     expect(branchSpans[2].leading - branchSpans[1].trailing).toBe(
       BRANCH_SPREAD_GAP,
+    );
+  });
+
+  it("aligns a trailing placeholder with an attachment-bearing task", () => {
+    const nodes = [
+      { id: "task", type: ENodeType.TASK, position: { x: 0, y: 64 }, data: {} },
+      {
+        id: "placeholder",
+        type: ENodeType.BRANCH_PLACEHOLDER,
+        position: { x: 442, y: 0 },
+        data: {},
+      },
+      {
+        id: "attachment",
+        type: ENodeType.BINDING_PLACEHOLDER,
+        position: { x: 0, y: 350 },
+        data: {},
+      },
+    ] as GraphNode[];
+    const result = tightenTrailingPlaceholders(
+      nodes,
+      [
+        { id: "flow", source: "task", target: "placeholder" },
+        {
+          id: "attachment",
+          source: "task",
+          target: "attachment",
+          sourceHandle: "bindingOut-0-1-tools",
+        },
+      ],
+      new Map(),
+      { config: getWorkflowDefaultConfig("horizontal") },
+    );
+
+    expect(getNodeSpreadCenter(result[1], "horizontal")).toBe(
+      getNodeSpreadCenter(result[0], "horizontal"),
     );
   });
 
