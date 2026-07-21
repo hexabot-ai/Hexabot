@@ -694,9 +694,20 @@ describe("buildNodesAndEdges", () => {
         node.type === ENodeType.BINDING_PLACEHOLDER &&
         getNodeOwnerDefName(node) === "ai_generate_reply_2",
     );
+    const start = graph.nodes.find((node) => node.id === START_INDICATOR_ID)!;
+    const end = graph.nodes.find((node) => node.id === END_INDICATOR_ID)!;
+    const bundleSpans = graph.nodes
+      .filter((node) => node.id !== start.id && node.id !== end.id)
+      .map((node) => getNodeSpreadSpan(node, "horizontal"));
+    const bundleCenter =
+      (Math.min(...bundleSpans.map(({ leading }) => leading)) +
+        Math.max(...bundleSpans.map(({ trailing }) => trailing))) /
+      2;
 
     expect(ownerBindingNode).toBeDefined();
     expect(nestedPlaceholderNodes.length).toBeGreaterThan(0);
+    expect(getNodeSpreadCenter(start, "horizontal")).toBe(bundleCenter);
+    expect(getNodeSpreadCenter(end, "horizontal")).toBe(bundleCenter);
 
     if (!ownerBindingNode) {
       return;
@@ -2436,6 +2447,9 @@ describe("buildNodesAndEdges", () => {
     const operatorNode = graph.nodes.find(
       (node) => node.id === createStepNodeId("0:loop", "operator"),
     );
+    const agentNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("0.loop.0:agent", "task"),
+    );
     const loopPlaceholder = graph.nodes.find(
       (node) => node.id === createPlaceholderNodeId("0:loop", "loop", 0),
     );
@@ -2446,6 +2460,7 @@ describe("buildNodesAndEdges", () => {
     expect(startNode).toBeDefined();
     expect(endNode).toBeDefined();
     expect(operatorNode).toBeDefined();
+    expect(agentNode).toBeDefined();
     expect(loopPlaceholder).toBeDefined();
     expect(afterNode).toBeDefined();
 
@@ -2477,15 +2492,16 @@ describe("buildNodesAndEdges", () => {
       | undefined;
     const groupCenterY = loopGroup!.position.y + (groupStyle?.height ?? 0) / 2;
     const operatorCenterY = operatorNode!.position.y + operatorDims.height / 2;
+    const agentCenterY = agentNode!.position.y + taskDims.height / 2;
     const placeholderCenterY =
       loopPlaceholder!.position.y + placeholderDims.height / 2;
     const afterCenterY = afterNode!.position.y + taskDims.height / 2;
 
-    // Group ports are at the group's visual center (50%), so the loop boundary
-    // nodes and next task must share that same horizontal axis.
+    // Group ports are at the group's visual center (50%), while the trailing
+    // placeholder stays on its task card's axis to keep their link linear.
     expect(Math.abs(groupCenterY - referenceAxis)).toBeLessThan(1);
     expect(Math.abs(operatorCenterY - referenceAxis)).toBeLessThan(1);
-    expect(Math.abs(placeholderCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(placeholderCenterY - agentCenterY)).toBeLessThan(1);
     expect(Math.abs(afterCenterY - referenceAxis)).toBeLessThan(1);
   });
 
@@ -2507,6 +2523,15 @@ describe("buildNodesAndEdges", () => {
           ? {}
           : { agent: { action: "agent_action", settings: {} } },
         direction,
+        actionCatalog: createActionCatalog({
+          agent_action: ["tools", "mcp", "model", "memory"],
+        }),
+        bindingCatalog: createBindingCatalog([
+          "tools",
+          "mcp",
+          { kind: "model", multiple: false },
+          { kind: "memory", multiple: false },
+        ]),
       });
       const boundaryId = grouped
         ? createGroupId(step.id)
@@ -2531,6 +2556,22 @@ describe("buildNodesAndEdges", () => {
       expect(
         end.position[flowAxis] - boundary.position[flowAxis] - boundarySize,
       ).toBe(FLOW_LAYER_GAP);
+
+      if (!grouped) {
+        const bundleSpans = graph.nodes
+          .filter(
+            (node) =>
+              node.id === boundaryId || getNodeOwnerDefName(node) === "agent",
+          )
+          .map((node) => getNodeSpreadSpan(node, direction));
+        const bundleCenter =
+          (Math.min(...bundleSpans.map(({ leading }) => leading)) +
+            Math.max(...bundleSpans.map(({ trailing }) => trailing))) /
+          2;
+
+        expect(bundleCenter).toBe(getNodeSpreadCenter(start, direction));
+        expect(bundleCenter).toBe(getNodeSpreadCenter(end, direction));
+      }
     },
   );
 
@@ -3352,8 +3393,9 @@ describe("buildNodesAndEdges", () => {
           id: "root:conditional:when:1",
           condition: { kind: "literal", value: false },
           steps: [
-            taskStep("root.branch.1.0:agent_middle", "agent_middle"),
-            taskStep("root.branch.1.1:message_middle", "message_middle"),
+            taskStep("root.branch.1.0:before_middle", "before_middle"),
+            taskStep("root.branch.1.1:agent_middle", "agent_middle"),
+            taskStep("root.branch.1.2:message_middle", "message_middle"),
           ],
         },
         {
@@ -3387,6 +3429,8 @@ describe("buildNodesAndEdges", () => {
           { action: "agent_action", settings: {} },
         ]),
       ),
+      agent_middle: { action: "memory_agent_action", settings: {} },
+      before_middle: { action: "memory_agent_action", settings: {} },
       ...baseTasks([
         "message_top",
         "before_top",
@@ -3401,6 +3445,7 @@ describe("buildNodesAndEdges", () => {
       tasks,
       actionCatalog: createActionCatalog({
         agent_action: ["tools", "mcp", "model", "memory"],
+        memory_agent_action: ["memory"],
       }),
       bindingCatalog: createBindingCatalog([
         { kind: "tools", multiple: true },
@@ -3427,13 +3472,17 @@ describe("buildNodesAndEdges", () => {
       (node) => node.id === createGroupId(conditional.id),
     );
     const end = graph.nodes.find((node) => node.id === END_INDICATOR_ID);
+    const middleBefore = graph.nodes.find(
+      (node) =>
+        node.id === createStepNodeId("root.branch.1.0:before_middle", "task"),
+    );
     const middleAgent = graph.nodes.find(
       (node) =>
-        node.id === createStepNodeId("root.branch.1.0:agent_middle", "task"),
+        node.id === createStepNodeId("root.branch.1.1:agent_middle", "task"),
     );
     const middleMessage = graph.nodes.find(
       (node) =>
-        node.id === createStepNodeId("root.branch.1.1:message_middle", "task"),
+        node.id === createStepNodeId("root.branch.1.2:message_middle", "task"),
     );
     const middlePlaceholder = graph.nodes.find(
       (node) =>
@@ -3441,6 +3490,9 @@ describe("buildNodesAndEdges", () => {
     );
     const middleAttachments = graph.nodes.filter(
       (node) => getNodeOwnerDefName(node) === "agent_middle",
+    );
+    const middleBeforeAttachments = graph.nodes.filter(
+      (node) => getNodeOwnerDefName(node) === "before_middle",
     );
     const branchSpans = [0, 1, 2].map((branchIndex) => {
       const placeholderId = createPlaceholderNodeId(
@@ -3468,6 +3520,7 @@ describe("buildNodesAndEdges", () => {
     expect(group).toBeDefined();
     expect(outerGroup).toBeDefined();
     expect(end).toBeDefined();
+    expect(middleBefore).toBeDefined();
 
     const bundleSpans = [task!, ...attachments].map((node) =>
       getNodeSpreadSpan(node, "horizontal"),
@@ -3487,23 +3540,41 @@ describe("buildNodesAndEdges", () => {
 
     expect(Math.abs(bundleCenter - operatorCenter)).toBeLessThan(1);
     expect(groupSpan.trailing - groupSpan.leading).toBeLessThan(500);
-    expect(outerGroupSpan.trailing - contentBottom).toBeLessThanOrEqual(24);
+    expect(outerGroupSpan.trailing - contentBottom).toBeLessThanOrEqual(48);
     expect(getNodeSpreadCenter(end!, "horizontal")).toBe(
       getNodeSpreadCenter(outerGroup!, "horizontal"),
     );
     expect(getNodeSpreadCenter(middlePlaceholder!, "horizontal")).toBe(
       getNodeSpreadCenter(middleMessage!, "horizontal"),
     );
-    expect(getNodeSpreadCenter(middleMessage!, "horizontal")).toBe(
-      getNodeSpreadCenter(middleAgent!, "horizontal"),
-    );
     const taskWidth = NODE_METRICS[ENodeType.TASK]?.dimensions.width ?? 0;
     const sourceTrailing = Math.max(
       getNodeRight(middleAgent!),
       ...middleAttachments.map(getNodeRight),
     );
+    const middleBundleSpans = [middleAgent!, ...middleAttachments].map((node) =>
+      getNodeSpreadSpan(node, "horizontal"),
+    );
+    const middleBundleCenter =
+      (middleBundleSpans[0].leading + middleBundleSpans.at(-1)!.trailing) / 2;
+    const middleBeforeBundleSpans = [
+      middleBefore!,
+      ...middleBeforeAttachments,
+    ].map((node) => getNodeSpreadSpan(node, "horizontal"));
+    const middleBeforeBundleCenter =
+      (middleBeforeBundleSpans[0].leading +
+        middleBeforeBundleSpans.at(-1)!.trailing) /
+      2;
 
-    expect(sourceTrailing).toBeGreaterThan(getNodeRight(middleAgent!));
+    expect(middleAttachments).toHaveLength(1);
+    expect(middleBeforeAttachments).toHaveLength(1);
+    expect(middleBeforeBundleCenter).toBe(middleBundleCenter);
+    expect(getNodeSpreadCenter(middleMessage!, "horizontal")).toBe(
+      middleBundleCenter,
+    );
+    expect(middleMessage!.position.x - getNodeRight(middleAgent!)).toBe(
+      middleAgent!.position.x - getNodeRight(middleBefore!),
+    );
     expect(middleMessage!.position.x - sourceTrailing).toBe(FLOW_LAYER_GAP);
     expect(
       middlePlaceholder!.position.x - middleMessage!.position.x - taskWidth,
@@ -3677,7 +3748,14 @@ describe("buildNodesAndEdges", () => {
     };
     const graph = await buildGraph({
       flow: [rootConditional],
-      tasks: baseTasks(["solo", "one", "two", "three"]),
+      tasks: {
+        ...baseTasks(["solo", "one", "two", "three"]),
+        solo: { action: "memory_agent_action", settings: {} },
+      },
+      actionCatalog: createActionCatalog({
+        memory_agent_action: ["memory"],
+      }),
+      bindingCatalog: createBindingCatalog(["memory"]),
     });
     const nodeById = (nodeId: string) => {
       const node = graph.nodes.find((candidate) => candidate.id === nodeId);
@@ -3703,6 +3781,12 @@ describe("buildNodesAndEdges", () => {
     const groupGap = placeholderX(2) - nestedGroupRightEdge;
 
     expect(Math.abs(shortGap - FLOW_LAYER_GAP)).toBeLessThan(1);
+    expect(
+      getNodeSpreadCenter(
+        nodeById(createPlaceholderNodeId("0:root", "conditional", 0)),
+        "horizontal",
+      ),
+    ).toBe(getNodeSpreadCenter(soloNode, "horizontal"));
     expect(Math.abs(longGap - FLOW_LAYER_GAP)).toBeLessThan(1);
     expect(Math.abs(groupGap - FLOW_LAYER_GAP)).toBeLessThan(1);
   });

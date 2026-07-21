@@ -212,12 +212,7 @@ export const alignGroupChainAxes = (
     const isBranchRootTask =
       isTaskNode(rootId) &&
       rootSuccessors.length === 1 &&
-      (overlayPredecessors.get(rootId) ?? []).some(isOperatorNode) &&
-      attachmentChildrenByParent.has(rootId) &&
-      isTaskNode(rootSuccessors[0]) &&
-      !attachmentChildrenByParent.has(rootSuccessors[0]) &&
-      (overlaySuccessors.get(rootSuccessors[0]) ?? []).length === 1 &&
-      isPlaceholderNode((overlaySuccessors.get(rootSuccessors[0]) ?? [])[0]);
+      (overlayPredecessors.get(rootId) ?? []).some(isOperatorNode);
 
     if (
       (!isGroupNode(rootId) && !isSingleBranchOperator && !isBranchRootTask) ||
@@ -226,7 +221,13 @@ export const alignGroupChainAxes = (
       return;
     }
 
-    const anchorAxis = getSpreadCenter([rootId]);
+    const anchorAxis = getSpreadCenter(
+      collectNodeIdsWithAttachmentDescendants(
+        [rootId],
+        attachmentChildrenByParent,
+        nodesById,
+      ),
+    );
 
     if (anchorAxis === undefined) {
       return;
@@ -256,8 +257,9 @@ export const alignGroupChainAxes = (
       const nextSuccessors = overlaySuccessors.get(nextId) ?? [];
 
       if (
-        !attachmentChildrenByParent.has(nextId) &&
-        (nextGroup || isPlaceholderNode(nextId) || nextSuccessors.length === 1)
+        nextGroup ||
+        isPlaceholderNode(nextId) ||
+        nextSuccessors.length === 1
       ) {
         const sourceIds = isPlaceholderNode(nextId)
           ? new Set([currentId])
@@ -267,6 +269,13 @@ export const alignGroupChainAxes = (
               nodesById,
             );
         const sourceGroup = groups.get(currentId);
+        const targetIds = nextGroup
+          ? collectSubtreeIds(nextGroup)
+          : collectNodeIdsWithAttachmentDescendants(
+              [nextId],
+              attachmentChildrenByParent,
+              nodesById,
+            );
         const sourceTrailing = sourceGroup
           ? getGroupFlowBounds(sourceGroup)?.trailing
           : [...sourceIds].reduce(
@@ -279,22 +288,18 @@ export const alignGroupChainAxes = (
             );
         const targetLeading = nextGroup
           ? getGroupFlowBounds(nextGroup)?.leading
-          : getBounds(nextId, "flow")?.leading;
+          : [...targetIds].reduce(
+              (leading, id) =>
+                Math.min(leading, getBounds(id, "flow")?.leading ?? Infinity),
+              Infinity,
+            );
         const flowDelta =
           sourceTrailing === undefined || targetLeading === undefined
             ? 0
             : sourceTrailing + FLOW_LAYER_GAP - targetLeading;
 
         if (flowDelta < -0.5) {
-          const movedIds = nextGroup
-            ? collectSubtreeIds(nextGroup)
-            : collectNodeIdsWithAttachmentDescendants(
-                [nextId],
-                attachmentChildrenByParent,
-                nodesById,
-              );
-
-          movedIds.forEach((id) => {
+          targetIds.forEach((id) => {
             const position = positions.get(id);
 
             if (position) {
@@ -320,18 +325,19 @@ export const alignGroupChainAxes = (
         continue;
       }
 
-      // A plain step sequenced between groups, or the trailing placeholder
-      // that ends the chain: center it (and its attachments) on the axis.
+      // Center plain-step bundles on the chain axis; keep a trailing
+      // placeholder on its predecessor's card axis so their link stays linear.
       if (nextNode) {
         const alignedNodeIds = collectNodeIdsWithAttachmentDescendants(
           [nextId],
           attachmentChildrenByParent,
           nodesById,
         );
-        const nextCenter = getSpreadCenter(
-          isSingleBranchOperator ? alignedNodeIds : [nextId],
-        );
-        const delta = anchorAxis - (nextCenter ?? anchorAxis);
+        const nextCenter = getSpreadCenter(alignedNodeIds);
+        const targetAxis = isPlaceholderNode(nextId)
+          ? (getSpreadCenter([currentId]) ?? anchorAxis)
+          : anchorAxis;
+        const delta = targetAxis - (nextCenter ?? targetAxis);
 
         if (Math.abs(delta) >= 1) {
           alignedNodeIds.forEach((id) => moveNodeSpread(id, delta));
