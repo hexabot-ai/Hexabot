@@ -9,11 +9,13 @@ import type { Edge } from "@xyflow/react";
 import { ENodeType, type GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
 
+import { FLOW_LAYER_GAP } from "./constants";
 import {
   appendMapValue,
   getPositionedNodeAxisBounds,
   isHorizontalDirection,
   type LayoutContext,
+  translateFlow,
   translateSpread,
 } from "./geometry";
 import {
@@ -115,16 +117,40 @@ export const alignGroupChainAxes = (
 
     return ids;
   };
+  const getBounds = (nodeId: string, axis: "flow" | "spread") =>
+    getPositionedNodeAxisBounds(
+      nodeId,
+      positions,
+      nodesById,
+      ctx,
+      isVertical,
+      axis,
+    );
+  const getGroupFlowBounds = (group: GroupMeta) => {
+    const memberBounds = [...collectSubtreeIds(group)]
+      .filter((id) => id !== group.id)
+      .flatMap((id) => {
+        const bounds = getBounds(id, "flow");
+
+        return bounds ? [bounds] : [];
+      });
+
+    if (!memberBounds.length) {
+      return getBounds(group.id, "flow");
+    }
+
+    const padding = ctx.config?.highlights?.[group.operatorType]?.padding ?? 0;
+
+    return {
+      leading:
+        Math.min(...memberBounds.map(({ leading }) => leading)) - padding / 2,
+      trailing:
+        Math.max(...memberBounds.map(({ trailing }) => trailing)) + padding / 2,
+    };
+  };
   const getSpreadCenter = (nodeIds: Iterable<string>): number | undefined => {
     const bounds = [...nodeIds].flatMap((nodeId) => {
-      const result = getPositionedNodeAxisBounds(
-        nodeId,
-        positions,
-        nodesById,
-        ctx,
-        isVertical,
-        "spread",
-      );
+      const result = getBounds(nodeId, "spread");
 
       return result ? [result] : [];
     });
@@ -183,15 +209,25 @@ export const alignGroupChainAxes = (
     // aligns its sole branch bundle; fan-out operators remain symmetry-owned.
     const isSingleBranchOperator =
       isOperatorNode(rootId) && rootSuccessors.length === 1;
+    const isBranchRootTask =
+      isTaskNode(rootId) &&
+      rootSuccessors.length === 1 &&
+      (overlayPredecessors.get(rootId) ?? []).some(isOperatorNode);
 
     if (
-      (!isGroupNode(rootId) && !isSingleBranchOperator) ||
+      (!isGroupNode(rootId) && !isSingleBranchOperator && !isBranchRootTask) ||
       hasUpstreamGroupInSpine(rootId)
     ) {
       return;
     }
 
-    const anchorAxis = getSpreadCenter([rootId]);
+    const anchorAxis = getSpreadCenter(
+      collectNodeIdsWithAttachmentDescendants(
+        [rootId],
+        attachmentChildrenByParent,
+        nodesById,
+      ),
+    );
 
     if (anchorAxis === undefined) {
       return;
@@ -217,6 +253,68 @@ export const alignGroupChainAxes = (
       visited.add(nextId);
 
       const nextGroup = groups.get(nextId);
+      const nextNode = nodesById.get(nextId);
+      const nextSuccessors = overlaySuccessors.get(nextId) ?? [];
+
+      if (
+        nextGroup ||
+        isPlaceholderNode(nextId) ||
+        nextSuccessors.length === 1 ||
+        (isTaskNode(nextId) &&
+          edges.some(
+            (edge) =>
+              !edge.hidden &&
+              edge.source === nextId &&
+              nodesById.get(edge.target)?.type === ENodeType.INDICATOR,
+          ))
+      ) {
+        const sourceIds = isPlaceholderNode(nextId)
+          ? new Set([currentId])
+          : collectNodeIdsWithAttachmentDescendants(
+              [currentId],
+              attachmentChildrenByParent,
+              nodesById,
+            );
+        const sourceGroup = groups.get(currentId);
+        const targetIds = nextGroup
+          ? collectSubtreeIds(nextGroup)
+          : collectNodeIdsWithAttachmentDescendants(
+              [nextId],
+              attachmentChildrenByParent,
+              nodesById,
+            );
+        const sourceTrailing = sourceGroup
+          ? getGroupFlowBounds(sourceGroup)?.trailing
+          : [...sourceIds].reduce(
+              (trailing, id) =>
+                Math.max(
+                  trailing,
+                  getBounds(id, "flow")?.trailing ?? -Infinity,
+                ),
+              -Infinity,
+            );
+        const targetLeading = nextGroup
+          ? getGroupFlowBounds(nextGroup)?.leading
+          : [...targetIds].reduce(
+              (leading, id) =>
+                Math.min(leading, getBounds(id, "flow")?.leading ?? Infinity),
+              Infinity,
+            );
+        const flowDelta =
+          sourceTrailing === undefined || targetLeading === undefined
+            ? 0
+            : sourceTrailing + FLOW_LAYER_GAP - targetLeading;
+
+        if (flowDelta < -0.5) {
+          targetIds.forEach((id) => {
+            const position = positions.get(id);
+
+            if (position) {
+              positions.set(id, translateFlow(position, isVertical, flowDelta));
+            }
+          });
+        }
+      }
 
       if (nextGroup) {
         const nextCenter = getSpreadCenter([nextId]);
@@ -234,20 +332,19 @@ export const alignGroupChainAxes = (
         continue;
       }
 
-      // A plain step sequenced between groups, or the trailing placeholder
-      // that ends the chain: center it (and its attachments) on the axis.
-      const nextNode = nodesById.get(nextId);
-
+      // Center plain-step bundles on the chain axis; keep a trailing
+      // placeholder on its predecessor's card axis so their link stays linear.
       if (nextNode) {
         const alignedNodeIds = collectNodeIdsWithAttachmentDescendants(
           [nextId],
           attachmentChildrenByParent,
           nodesById,
         );
-        const nextCenter = getSpreadCenter(
-          isSingleBranchOperator ? alignedNodeIds : [nextId],
-        );
-        const delta = anchorAxis - (nextCenter ?? anchorAxis);
+        const nextCenter = getSpreadCenter(alignedNodeIds);
+        const targetAxis = isPlaceholderNode(nextId)
+          ? (getSpreadCenter([currentId]) ?? anchorAxis)
+          : anchorAxis;
+        const delta = targetAxis - (nextCenter ?? targetAxis);
 
         if (Math.abs(delta) >= 1) {
           alignedNodeIds.forEach((id) => moveNodeSpread(id, delta));

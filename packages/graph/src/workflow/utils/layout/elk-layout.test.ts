@@ -45,24 +45,33 @@ it.each([
   ["vertical", "grouped"],
   ["vertical", "ungrouped"],
 ] as const)(
-  "does not offset attachment-inflated nodes in %s mode (%s)",
+  "centers attachment-inflated nodes only on the flow axis in %s mode (%s)",
   async (direction, grouping) => {
     const grouped = grouping === "grouped";
     const nodes = [
       node("agent", ENodeType.TASK, grouped),
       node("tool-1", ENodeType.BINDING_MULTI, grouped),
       node("tool-2", ENodeType.BINDING_MULTI, grouped),
+      node("tool-3", ENodeType.BINDING_MULTI, grouped),
+      node("tool-4", ENodeType.BINDING_MULTI, grouped),
     ];
-    const edges: Edge[] = ["tool-1", "tool-2"].map((target, index) => ({
-      id: `agent-${target}`,
-      source: "agent",
-      target,
-      sourceHandle: `bindingOut-${index}-2-tools`,
-    }));
+    const edges: Edge[] = ["tool-1", "tool-2", "tool-3", "tool-4"].map(
+      (target, index) => ({
+        id: `agent-${target}`,
+        source: "agent",
+        target,
+        sourceHandle: `bindingOut-${index}-4-tools`,
+      }),
+    );
     const result = await layoutNodesWithElk(nodes, edges, {
       config: getWorkflowDefaultConfig(direction),
     });
 
-    expect(result[0]?.position).toEqual({ x: 10, y: 20 });
+    expect(result[0]?.position[direction === "vertical" ? "x" : "y"]).toBe(
+      direction === "vertical" ? 10 : 20,
+    );
+    expect(
+      result[0]?.position[direction === "vertical" ? "y" : "x"],
+    ).toBeGreaterThan(direction === "vertical" ? 20 : 10);
   },
 );
