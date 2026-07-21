@@ -43,6 +43,16 @@ export class RagRetrieverService {
   ) {}
 
   /**
+   * Checks whether RAG retrieval is enabled at the settings level.
+   * @returns True when rag_settings.enabled is on.
+   */
+  async isEnabled(): Promise<boolean> {
+    const settings = await this.settingService.getSettings();
+
+    return settings.rag_settings.enabled;
+  }
+
+  /**
    * Retrieves RAG hits using the requested retrieval mode.
    * @param query Query text.
    * @param options Retrieval options.

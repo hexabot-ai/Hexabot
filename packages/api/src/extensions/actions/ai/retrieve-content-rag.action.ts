@@ -7,7 +7,11 @@
 import { z } from 'zod';
 
 import { createAction } from '@/actions/create-action';
-import { RagMode, RagQueryOptions } from '@/cms';
+import {
+  RagEmbeddingNotConfiguredError,
+  RagMode,
+  RagQueryOptions,
+} from '@/cms';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 import { workflowResourceRef } from '@/workflow/resource-refs';
 
@@ -58,6 +62,11 @@ const contentRagHitSchema = z.strictObject({
 const retrieveRagContentOutputSchema = z.strictObject({
   hits: z.array(contentRagHitSchema),
   text: z.string(),
+  warning: z.string().optional().meta({
+    title: 'Warning',
+    description:
+      'Warning explaining why retrieval was skipped (e.g. RAG disabled or embedding not configured).',
+  }),
 });
 
 type RetrieveRagContentInput = z.infer<typeof retrieveRagContentInputSchema>;
@@ -82,12 +91,20 @@ export const RetrieveRagContentAction = createAction<
   outputSchema: retrieveRagContentOutputSchema,
   settingsSchema: retrieveRagContentSettingsSchema,
   async execute({ input, context, settings }) {
-    const { content, contentType } = context.services;
+    const { content, contentType, logger } = context.services;
 
     if (!content || !contentType) {
       throw new Error(
         'Content RAG services are missing from the workflow context.',
       );
+    }
+
+    if (!(await content.isRagEnabled())) {
+      const warning =
+        'RAG is disabled. Enable it in Settings > RAG (rag_settings.enabled) to retrieve content.';
+      logger?.warn(`retrieve_rag_content: ${warning}`);
+
+      return { hits: [], text: '', warning };
     }
 
     const contentTypeId = settings.content_type_id?.trim();
@@ -104,9 +121,21 @@ export const RetrieveRagContentAction = createAction<
       ...(contentTypeId ? { contentTypeId } : {}),
       includeInactive: settings.include_inactive ?? false,
     };
-    const hits = await content.retrieve(input.query, options);
 
-    return { hits, text: hits.map(({ text }) => text).join('\n\n') };
+    try {
+      const hits = await content.retrieve(input.query, options);
+
+      return { hits, text: hits.map(({ text }) => text).join('\n\n') };
+    } catch (error) {
+      if (error instanceof RagEmbeddingNotConfiguredError) {
+        const warning = `RAG embedding retrieval is not configured: ${error.message} You can also switch this action to lexical mode.`;
+        logger?.warn(`retrieve_rag_content: ${warning}`);
+
+        return { hits: [], text: '', warning };
+      }
+
+      throw error;
+    }
   },
 });
 

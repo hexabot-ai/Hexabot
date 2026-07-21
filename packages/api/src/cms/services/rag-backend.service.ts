@@ -29,6 +29,8 @@ import { config } from '@/config';
 import { LoggerService } from '@/logger/logger.service';
 import { SettingService } from '@/setting/services/setting.service';
 
+import { RagEmbeddingNotConfiguredError } from '../errors/rag.errors';
+
 import {
   isKeywordTableDeserializationError,
   recoverKeywordIndexFromRawStore,
@@ -286,13 +288,13 @@ export class RagBackendService implements OnModuleInit {
    */
   private validateEmbeddingSettings(ragSettings: RagSettings): void {
     if (!ragSettings.embedding_provider) {
-      throw new Error(
+      throw new RagEmbeddingNotConfiguredError(
         `Unsupported embedding provider "${ragSettings.embedding_provider}".`,
       );
     }
 
     if (!ragSettings.embedding_api_key) {
-      throw new Error(
+      throw new RagEmbeddingNotConfiguredError(
         'Missing RAG embedding API key. Set rag_settings.embedding_api_key.',
       );
     }

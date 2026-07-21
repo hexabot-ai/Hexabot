@@ -161,6 +161,8 @@
     "Query used to retrieve CMS content through RAG.": "Query used to retrieve CMS content through RAG.",
     "Retrieval mode used to search indexed content.": "Retrieval mode used to search indexed content.",
     "Retrieves RAG content from knowledge base using lexical or embedding mode for AI tool usage.": "Retrieves RAG content from knowledge base using lexical or embedding mode for AI tool usage.",
+    "Warning": "Warning",
+    "Warning explaining why retrieval was skipped (e.g. RAG disabled or embedding not configured).": "Warning explaining why retrieval was skipped (e.g. RAG disabled or embedding not configured).",
     "When enabled, retrieval can include inactive content in results.": "When enabled, retrieval can include inactive content in results."
   }
 }
