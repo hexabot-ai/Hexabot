@@ -16,6 +16,7 @@ export type BindingActionPolicy = 'forbidden' | 'optional' | 'required';
 
 export type BindingValidationActionMetadata = {
   supportedBindings?: readonly string[];
+  settingSchema?: z.ZodTypeAny;
 };
 
 export type BindingKindDescriptor<
@@ -341,6 +342,17 @@ export const validateAndResolveBindings = (
     }
 
     parsedSettingsByDefName.set(defName, parsedPayload.data);
+
+    const actionSchema = defDefinition.action
+      ? actions?.[defDefinition.action]?.settingSchema
+      : undefined;
+    const actionParsed = actionSchema?.safeParse(defDefinition.settings);
+
+    if (actionParsed && !actionParsed.success) {
+      issues.push(
+        ...toBindingSettingsIssues(actionParsed.error.issues, defName),
+      );
+    }
   }
 
   for (const [defName, defDefinition] of Object.entries(defs)) {
