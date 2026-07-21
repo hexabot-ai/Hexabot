@@ -259,7 +259,14 @@ export const alignGroupChainAxes = (
       if (
         nextGroup ||
         isPlaceholderNode(nextId) ||
-        nextSuccessors.length === 1
+        nextSuccessors.length === 1 ||
+        (isTaskNode(nextId) &&
+          edges.some(
+            (edge) =>
+              !edge.hidden &&
+              edge.source === nextId &&
+              nodesById.get(edge.target)?.type === ENodeType.INDICATOR,
+          ))
       ) {
         const sourceIds = isPlaceholderNode(nextId)
           ? new Set([currentId])

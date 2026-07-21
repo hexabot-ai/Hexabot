@@ -3657,6 +3657,12 @@ describe("buildNodesAndEdges", () => {
         position: { x: 1620, y: 20 },
         data: {},
       },
+      {
+        id: "stop",
+        type: ENodeType.INDICATOR,
+        position: { x: 1600, y: 57 },
+        data: {},
+      },
     ] as GraphNode[];
     const config = getWorkflowDefaultConfig("horizontal");
     const result = alignGroupChainAxes(
@@ -3713,6 +3719,36 @@ describe("buildNodesAndEdges", () => {
         targetPadding / 2 -
         callWorkflow.position.x -
         taskWidth,
+    ).toBe(FLOW_LAYER_GAP);
+
+    const terminalResult = alignGroupChainAxes(
+      nodes,
+      [
+        { id: "from-group", source: "source-group", target: "call-workflow" },
+        { id: "to-stop", source: "call-workflow", target: "stop" },
+      ],
+      new Map([
+        [
+          "source-group",
+          {
+            id: "source-group",
+            operatorType: StepType.Loop,
+            level: 1,
+            memberNodeIds: new Set(["source-member"]),
+          },
+        ],
+      ]),
+      { config },
+    );
+    const terminalTask = terminalResult.find(
+      (node) => node.id === "call-workflow",
+    )!;
+
+    expect(
+      terminalTask.position.x -
+        sourceMember.position.x -
+        taskWidth -
+        sourcePadding / 2,
     ).toBe(FLOW_LAYER_GAP);
   });
 
