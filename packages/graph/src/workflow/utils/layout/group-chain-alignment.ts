@@ -190,7 +190,12 @@ export const alignGroupChainAxes = (
     const isBranchRootTask =
       isTaskNode(rootId) &&
       rootSuccessors.length === 1 &&
-      (overlayPredecessors.get(rootId) ?? []).some(isOperatorNode);
+      (overlayPredecessors.get(rootId) ?? []).some(isOperatorNode) &&
+      attachmentChildrenByParent.has(rootId) &&
+      isTaskNode(rootSuccessors[0]) &&
+      !attachmentChildrenByParent.has(rootSuccessors[0]) &&
+      (overlaySuccessors.get(rootSuccessors[0]) ?? []).length === 1 &&
+      isPlaceholderNode((overlaySuccessors.get(rootSuccessors[0]) ?? [])[0]);
 
     if (
       (!isGroupNode(rootId) && !isSingleBranchOperator && !isBranchRootTask) ||
@@ -247,17 +252,9 @@ export const alignGroupChainAxes = (
       const nextNode = nodesById.get(nextId);
 
       if (nextNode) {
-        const targetSuccessors = overlaySuccessors.get(nextId) ?? [];
-        const trailingPlaceholderId = targetSuccessors[0];
+        const trailingPlaceholderId = (overlaySuccessors.get(nextId) ?? [])[0];
 
-        if (
-          isBranchRootTask &&
-          isTaskNode(nextId) &&
-          attachmentChildrenByParent.has(currentId) &&
-          !attachmentChildrenByParent.has(nextId) &&
-          targetSuccessors.length === 1 &&
-          isPlaceholderNode(targetSuccessors[0])
-        ) {
+        if (isBranchRootTask && isTaskNode(nextId)) {
           const sourceTrailing = [
             ...collectNodeIdsWithAttachmentDescendants(
               [currentId],

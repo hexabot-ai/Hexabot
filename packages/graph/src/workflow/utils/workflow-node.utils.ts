@@ -166,8 +166,18 @@ export const buildNodesAndEdges = async ({
     // (e.g. Parallel → Conditional → Conditional) onto a single spread axis.
     nodes: alignAllNodesToStartAxis(
       withFreshGroupNodes(
-        alignGroupChainAxes(
-          boundaryAlignedNodes,
+        symmetrizeBranchSiblings(
+          withFreshGroupNodes(
+            alignGroupChainAxes(
+              boundaryAlignedNodes,
+              projected.edges,
+              traversal.groups,
+              { config },
+            ),
+            traversal.groups,
+            config,
+            attachmentEdges,
+          ),
           projected.edges,
           traversal.groups,
           { config },

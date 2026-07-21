@@ -3158,6 +3158,95 @@ describe("buildNodesAndEdges", () => {
     expect(gapBelow).toBeLessThanOrEqual(BRANCH_SPREAD_GAP + 1);
   });
 
+  it("keeps sibling group chains separated after final axis alignment", async () => {
+    const topParallel: CompiledParallelStep = {
+      id: "root.branch.0.2:parallel",
+      label: "parallel",
+      type: StepType.Parallel,
+      strategy: "wait_any",
+      steps: [
+        taskStep("root.branch.0.2.parallel.0:http", "http"),
+        taskStep("root.branch.0.2.parallel.1:quick", "quick"),
+        taskStep("root.branch.0.2.parallel.2:text", "text"),
+      ],
+    };
+    const lowerConditional: CompiledConditionalStep = {
+      id: "root.branch.1.1:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "root.branch.1.1:when:0",
+          condition: { kind: "literal", value: true },
+          steps: [taskStep("root.branch.1.1.branch.0.0:agent", "agent")],
+        },
+        { id: "root.branch.1.1:when:1", steps: [] },
+      ],
+    };
+    const lowerLoop: CompiledLoopStep = {
+      id: "root.branch.1.0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "while",
+      while: { kind: "literal", value: false },
+      steps: [taskStep("root.branch.1.0.loop.0:lower", "lower")],
+    };
+    const root: CompiledConditionalStep = {
+      id: "root:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "root:when:0",
+          condition: { kind: "literal", value: true },
+          steps: [
+            nestedConditionalStep("root.branch.0.0:conditional"),
+            taskStep("root.branch.0.1:between", "between"),
+            topParallel,
+          ],
+        },
+        {
+          id: "root:when:1",
+          condition: { kind: "literal", value: false },
+          steps: [lowerLoop, lowerConditional],
+        },
+        {
+          id: "root:when:2",
+          steps: [taskStep("root.branch.2.0:last", "last")],
+        },
+      ],
+    };
+    const graph = await buildGraph({
+      flow: [root],
+      tasks: {
+        ...baseTasks(["http", "quick", "text", "between", "last"]),
+        agent: { action: "agent_action", settings: {} },
+        lower: { action: "agent_action", settings: {} },
+      },
+      actionCatalog: createActionCatalog({
+        agent_action: ["tools", "mcp", "model", "memory"],
+      }),
+      bindingCatalog: createBindingCatalog([
+        "tools",
+        "mcp",
+        { kind: "model", multiple: false },
+        { kind: "memory", multiple: false },
+      ]),
+    });
+    const topSpan = getNodeSpreadSpan(
+      graph.nodes.find((node) => node.id === createGroupId(topParallel.id)),
+      "horizontal",
+    );
+    const lowerSpan = getNodeSpreadSpan(
+      graph.nodes.find(
+        (node) => node.id === createGroupId(lowerConditional.id),
+      ),
+      "horizontal",
+    );
+
+    expect(lowerSpan.leading - topSpan.trailing).toBe(BRANCH_SPREAD_GAP);
+  });
+
   it("aligns a plain step sequenced between two groups inside a branch onto the chain axis", async () => {
     // Regression: alignGroupChainAxes used to break its chain walk at plain
     // (non-group) steps, so a task sequenced between a parallel group and a
@@ -3251,7 +3340,10 @@ describe("buildNodesAndEdges", () => {
         {
           id: "root:conditional:when:0",
           condition: { kind: "literal", value: false },
-          steps: [loop("root.branch.0.0:loop", "agent_top", "message_top")],
+          steps: [
+            taskStep("root.branch.0.0:before_top", "before_top"),
+            loop("root.branch.0.1:loop", "agent_top", "message_top"),
+          ],
         },
         {
           id: "root:conditional:when:1",
@@ -3294,6 +3386,7 @@ describe("buildNodesAndEdges", () => {
       ),
       ...baseTasks([
         "message_top",
+        "before_top",
         "message_middle",
         "message_bottom",
         "message_before",
