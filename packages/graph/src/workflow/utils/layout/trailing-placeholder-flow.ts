@@ -15,11 +15,14 @@ import {
   appendMapValue,
   getFlowCoordinate,
   getFlowSize,
+  getSpreadCoordinate,
+  getSpreadSize,
   isHorizontalDirection,
   withFlowCoordinate,
+  withSpreadCoordinate,
   type LayoutContext,
 } from "./geometry";
-import { isAttachmentEdge } from "./graph-maps";
+import { buildAttachmentMaps, isAttachmentEdge } from "./graph-maps";
 
 /**
  * ELK pushes every branch's trailing "+" placeholder into a shared layer near
@@ -40,6 +43,10 @@ export const tightenTrailingPlaceholders = (
 ): GraphNode[] => {
   const isVertical = !isHorizontalDirection(ctx);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const { childrenByParent: attachmentChildrenByParent } = buildAttachmentMaps(
+    edges,
+    nodesById,
+  );
   const visibleSourcesByTarget = new Map<string, string[]>();
   const directSourcesByTarget = new Map<string, string[]>();
 
@@ -119,15 +126,39 @@ export const tightenTrailingPlaceholders = (
 
     const targetFlow = flowEnd + FLOW_LAYER_GAP;
     const currentFlow = getFlowCoordinate(node.position, isVertical);
+    const sourceNode = nodesById.get(sources[0]);
+    const shouldAlignSpread =
+      sourceNode?.type === ENodeType.TASK &&
+      attachmentChildrenByParent.has(sources[0]);
 
-    if (Math.abs(currentFlow - targetFlow) < 0.5) {
+    if (Math.abs(currentFlow - targetFlow) < 0.5 && !shouldAlignSpread) {
       return;
     }
 
-    tightenedPositions.set(
-      node.id,
-      withFlowCoordinate(node.position, isVertical, targetFlow),
-    );
+    let position =
+      Math.abs(currentFlow - targetFlow) < 0.5
+        ? node.position
+        : withFlowCoordinate(node.position, isVertical, targetFlow);
+
+    if (shouldAlignSpread) {
+      const sourceSize = getSpreadSize(
+        getWorkflowNodeDimensions(sourceNode.type, ctx.config),
+        isVertical,
+      );
+      const placeholderSize = getSpreadSize(
+        getWorkflowNodeDimensions(node.type, ctx.config),
+        isVertical,
+      );
+
+      position = withSpreadCoordinate(
+        position,
+        isVertical,
+        getSpreadCoordinate(sourceNode.position, isVertical) +
+          (sourceSize - placeholderSize) / 2,
+      );
+    }
+
+    tightenedPositions.set(node.id, position);
   });
 
   nodes.forEach((node) => {

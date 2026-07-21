@@ -231,15 +231,15 @@ const toElk = (nodes: GraphNode[], edges: Edge[], ctx: LayoutContext) => {
       const dimensions =
         layoutDimensions.get(node.id) ?? resolveLayoutDimensions(node.id);
       const sourceDimensions = getWorkflowNodeDimensions(node.type, ctx.config);
+      const flowOffset = Math.max(
+        0,
+        (getFlowSize(dimensions, isVertical) -
+          getFlowSize(sourceDimensions, isVertical)) /
+          2,
+      );
       const offset = isVertical
-        ? {
-            x: Math.max(0, dimensions.width - sourceDimensions.width),
-            y: Math.max(0, (dimensions.height - sourceDimensions.height) / 2),
-          }
-        : {
-            x: Math.max(0, (dimensions.width - sourceDimensions.width) / 2),
-            y: 0,
-          };
+        ? { x: 0, y: flowOffset }
+        : { x: flowOffset, y: 0 };
 
       nodeOffsets.set(node.id, offset);
 

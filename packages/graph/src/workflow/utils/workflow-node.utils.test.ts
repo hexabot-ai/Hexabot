@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import { NODE_METRICS } from "../constants/workflow.constants";
 import {
   ENodeType,
+  type GraphNode,
   type INodeConfig,
   type WorkflowAction,
   type WorkflowBindingDefinition,
@@ -31,6 +32,8 @@ import {
   createStepNodeId,
 } from "./graph-builder/id-factory";
 import { BRANCH_SPREAD_GAP, FLOW_LAYER_GAP } from "./layout/constants";
+import { alignGroupChainAxes } from "./layout/group-chain-alignment";
+import { tightenTrailingPlaceholders } from "./layout/trailing-placeholder-flow";
 import {
   buildNodesAndEdges,
   getWorkflowDefaultConfig,
@@ -686,14 +689,23 @@ describe("buildNodesAndEdges", () => {
     const ownerBindingNode = graph.nodes.find(
       (node) => getNodeTitle(node) === "ai_generate_reply_2",
     );
+    const taskNode = graph.nodes.find((node) => node.type === ENodeType.TASK)!;
     const nestedPlaceholderNodes = graph.nodes.filter(
       (node) =>
         node.type === ENodeType.BINDING_PLACEHOLDER &&
         getNodeOwnerDefName(node) === "ai_generate_reply_2",
     );
+    const start = graph.nodes.find((node) => node.id === START_INDICATOR_ID)!;
+    const end = graph.nodes.find((node) => node.id === END_INDICATOR_ID)!;
 
     expect(ownerBindingNode).toBeDefined();
     expect(nestedPlaceholderNodes.length).toBeGreaterThan(0);
+    expect(getNodeSpreadCenter(start, "horizontal")).toBe(
+      getNodeSpreadCenter(taskNode, "horizontal"),
+    );
+    expect(getNodeSpreadCenter(end, "horizontal")).toBe(
+      getNodeSpreadCenter(taskNode, "horizontal"),
+    );
 
     if (!ownerBindingNode) {
       return;
@@ -1896,9 +1908,7 @@ describe("buildNodesAndEdges", () => {
   }
 
   for (const direction of ["horizontal", "vertical"] as const) {
-    it(`does not push Stop past the last main-flow node when a branch has wide attachment rows in ${direction} mode`, async () => {
-      // Regression: wide binding rows inflated Stop/placeholder gaps; keep
-      // them at the visible card's FLOW_LAYER_GAP spacing.
+    it(`keeps Stop after the last main-flow node with wide attachment rows in ${direction} mode`, async () => {
       const conditionalStep: CompiledConditionalStep = {
         id: "0:conditional",
         label: "conditional",
@@ -1963,24 +1973,14 @@ describe("buildNodesAndEdges", () => {
         width: 0,
         height: 0,
       };
-      const bpDims = NODE_METRICS[ENodeType.BRANCH_PLACEHOLDER]?.dimensions ?? {
-        width: 0,
-        height: 0,
-      };
       const endLeading =
         direction === "vertical" ? endNode!.position.y : endNode!.position.x;
       const lastNodeTrailing =
         direction === "vertical"
           ? lastMainFlowNode!.position.y + taskDims.height
           : lastMainFlowNode!.position.x + taskDims.width;
-      const bpFlowSize =
-        direction === "vertical" ? bpDims.height : bpDims.width;
 
       expect(endLeading).toBeGreaterThanOrEqual(lastNodeTrailing);
-      // Attachments must not inflate either last-node -> placeholder -> Stop gap.
-      expect(endLeading).toBeLessThanOrEqual(
-        lastNodeTrailing + 2 * FLOW_LAYER_GAP + bpFlowSize + 1,
-      );
     });
   }
 
@@ -2445,6 +2445,9 @@ describe("buildNodesAndEdges", () => {
     const operatorNode = graph.nodes.find(
       (node) => node.id === createStepNodeId("0:loop", "operator"),
     );
+    const agentNode = graph.nodes.find(
+      (node) => node.id === createStepNodeId("0.loop.0:agent", "task"),
+    );
     const loopPlaceholder = graph.nodes.find(
       (node) => node.id === createPlaceholderNodeId("0:loop", "loop", 0),
     );
@@ -2455,6 +2458,7 @@ describe("buildNodesAndEdges", () => {
     expect(startNode).toBeDefined();
     expect(endNode).toBeDefined();
     expect(operatorNode).toBeDefined();
+    expect(agentNode).toBeDefined();
     expect(loopPlaceholder).toBeDefined();
     expect(afterNode).toBeDefined();
 
@@ -2486,17 +2490,81 @@ describe("buildNodesAndEdges", () => {
       | undefined;
     const groupCenterY = loopGroup!.position.y + (groupStyle?.height ?? 0) / 2;
     const operatorCenterY = operatorNode!.position.y + operatorDims.height / 2;
+    const agentCenterY = agentNode!.position.y + taskDims.height / 2;
     const placeholderCenterY =
       loopPlaceholder!.position.y + placeholderDims.height / 2;
     const afterCenterY = afterNode!.position.y + taskDims.height / 2;
 
-    // Group ports are at the group's visual center (50%), so the loop boundary
-    // nodes and next task must share that same horizontal axis.
+    // Group ports are at the group's visual center (50%), while the trailing
+    // placeholder stays on its task card's axis to keep their link linear.
     expect(Math.abs(groupCenterY - referenceAxis)).toBeLessThan(1);
     expect(Math.abs(operatorCenterY - referenceAxis)).toBeLessThan(1);
-    expect(Math.abs(placeholderCenterY - referenceAxis)).toBeLessThan(1);
+    expect(Math.abs(placeholderCenterY - agentCenterY)).toBeLessThan(1);
     expect(Math.abs(afterCenterY - referenceAxis)).toBeLessThan(1);
   });
+
+  it.each([
+    ["horizontal", "grouped"],
+    ["horizontal", "ungrouped"],
+    ["vertical", "grouped"],
+    ["vertical", "ungrouped"],
+  ] as const)(
+    "keeps standard Start/Stop link spacing in %s mode (%s)",
+    async (direction, grouping) => {
+      const grouped = grouping === "grouped";
+      const step = grouped
+        ? nestedConditionalStep("0:conditional")
+        : taskStep("0:agent", "agent");
+      const graph = await buildGraph({
+        flow: [step],
+        tasks: grouped
+          ? {}
+          : { agent: { action: "agent_action", settings: {} } },
+        direction,
+        actionCatalog: createActionCatalog({
+          agent_action: ["tools", "mcp", "model", "memory"],
+        }),
+        bindingCatalog: createBindingCatalog([
+          "tools",
+          "mcp",
+          { kind: "model", multiple: false },
+          { kind: "memory", multiple: false },
+        ]),
+      });
+      const boundaryId = grouped
+        ? createGroupId(step.id)
+        : createStepNodeId(step.id, "task");
+      const flowAxis = direction === "vertical" ? "y" : "x";
+      const flowSize = direction === "vertical" ? "height" : "width";
+      const indicatorSize =
+        NODE_METRICS[ENodeType.INDICATOR]?.dimensions[flowSize] ?? 0;
+      const findNode = (id: string) =>
+        graph.nodes.find((node) => node.id === id)!;
+      const start = findNode(START_INDICATOR_ID);
+      const end = findNode(END_INDICATOR_ID);
+      const boundary = findNode(boundaryId);
+      const boundarySize =
+        (grouped
+          ? (boundary.style as { width?: number; height?: number })[flowSize]
+          : NODE_METRICS[boundary.type]?.dimensions[flowSize]) ?? 0;
+
+      expect(
+        boundary.position[flowAxis] - start.position[flowAxis] - indicatorSize,
+      ).toBe(FLOW_LAYER_GAP);
+      expect(
+        end.position[flowAxis] - boundary.position[flowAxis] - boundarySize,
+      ).toBe(FLOW_LAYER_GAP);
+
+      if (!grouped) {
+        expect(getNodeSpreadCenter(boundary, direction)).toBe(
+          getNodeSpreadCenter(start, direction),
+        );
+        expect(getNodeSpreadCenter(boundary, direction)).toBe(
+          getNodeSpreadCenter(end, direction),
+        );
+      }
+    },
+  );
 
   it("aligns start/stop with group bounding-box center in horizontal mode (group ports at 50%)", async () => {
     // When a group contains AI agent with binding attachments below the operator,
@@ -3125,6 +3193,95 @@ describe("buildNodesAndEdges", () => {
     expect(gapBelow).toBeLessThanOrEqual(BRANCH_SPREAD_GAP + 1);
   });
 
+  it("keeps sibling group chains separated after final axis alignment", async () => {
+    const topParallel: CompiledParallelStep = {
+      id: "root.branch.0.2:parallel",
+      label: "parallel",
+      type: StepType.Parallel,
+      strategy: "wait_any",
+      steps: [
+        taskStep("root.branch.0.2.parallel.0:http", "http"),
+        taskStep("root.branch.0.2.parallel.1:quick", "quick"),
+        taskStep("root.branch.0.2.parallel.2:text", "text"),
+      ],
+    };
+    const lowerConditional: CompiledConditionalStep = {
+      id: "root.branch.1.1:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "root.branch.1.1:when:0",
+          condition: { kind: "literal", value: true },
+          steps: [taskStep("root.branch.1.1.branch.0.0:agent", "agent")],
+        },
+        { id: "root.branch.1.1:when:1", steps: [] },
+      ],
+    };
+    const lowerLoop: CompiledLoopStep = {
+      id: "root.branch.1.0:loop",
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "while",
+      while: { kind: "literal", value: false },
+      steps: [taskStep("root.branch.1.0.loop.0:lower", "lower")],
+    };
+    const root: CompiledConditionalStep = {
+      id: "root:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "root:when:0",
+          condition: { kind: "literal", value: true },
+          steps: [
+            nestedConditionalStep("root.branch.0.0:conditional"),
+            taskStep("root.branch.0.1:between", "between"),
+            topParallel,
+          ],
+        },
+        {
+          id: "root:when:1",
+          condition: { kind: "literal", value: false },
+          steps: [lowerLoop, lowerConditional],
+        },
+        {
+          id: "root:when:2",
+          steps: [taskStep("root.branch.2.0:last", "last")],
+        },
+      ],
+    };
+    const graph = await buildGraph({
+      flow: [root],
+      tasks: {
+        ...baseTasks(["http", "quick", "text", "between", "last"]),
+        agent: { action: "agent_action", settings: {} },
+        lower: { action: "agent_action", settings: {} },
+      },
+      actionCatalog: createActionCatalog({
+        agent_action: ["tools", "mcp", "model", "memory"],
+      }),
+      bindingCatalog: createBindingCatalog([
+        "tools",
+        "mcp",
+        { kind: "model", multiple: false },
+        { kind: "memory", multiple: false },
+      ]),
+    });
+    const topSpan = getNodeSpreadSpan(
+      graph.nodes.find((node) => node.id === createGroupId(topParallel.id)),
+      "horizontal",
+    );
+    const lowerSpan = getNodeSpreadSpan(
+      graph.nodes.find(
+        (node) => node.id === createGroupId(lowerConditional.id),
+      ),
+      "horizontal",
+    );
+
+    expect(lowerSpan.leading - topSpan.trailing).toBe(BRANCH_SPREAD_GAP);
+  });
+
   it("aligns a plain step sequenced between two groups inside a branch onto the chain axis", async () => {
     // Regression: alignGroupChainAxes used to break its chain walk at plain
     // (non-group) steps, so a task sequenced between a parallel group and a
@@ -3188,6 +3345,404 @@ describe("buildNodesAndEdges", () => {
     expect(Math.abs(chainedCenter - parallelCenter)).toBeLessThan(1);
   });
 
+  it("keeps a nested single-branch loop compact when its task has attachments", async () => {
+    const loop = (
+      id: string,
+      taskName: string,
+      trailingTaskName?: string,
+    ): CompiledLoopStep => ({
+      id,
+      label: "loop",
+      type: StepType.Loop,
+      loopType: "for_each",
+      forEach: {
+        item: "item",
+        in: { kind: "literal", value: [] },
+      },
+      steps: [
+        taskStep(`${id}.loop.0:${taskName}`, taskName),
+        ...(trailingTaskName
+          ? [taskStep(`${id}.loop.1:${trailingTaskName}`, trailingTaskName)]
+          : []),
+      ],
+    });
+    const targetLoop = loop("root.branch.2.3:loop", "agent_nested");
+    const conditional: CompiledConditionalStep = {
+      id: "root:conditional",
+      label: "conditional",
+      type: StepType.Conditional,
+      branches: [
+        {
+          id: "root:conditional:when:0",
+          condition: { kind: "literal", value: false },
+          steps: [
+            taskStep("root.branch.0.0:before_top", "before_top"),
+            loop("root.branch.0.1:loop", "agent_top", "message_top"),
+          ],
+        },
+        {
+          id: "root:conditional:when:1",
+          condition: { kind: "literal", value: false },
+          steps: [
+            taskStep("root.branch.1.0:before_middle", "before_middle"),
+            taskStep("root.branch.1.1:agent_middle", "agent_middle"),
+            taskStep("root.branch.1.2:message_middle", "message_middle"),
+          ],
+        },
+        {
+          id: "root:conditional:when:2",
+          steps: [
+            loop("root.branch.2.0:loop", "agent_bottom", "message_bottom"),
+            taskStep("root.branch.2.1:agent_before", "agent_before"),
+            taskStep("root.branch.2.2:message_before", "message_before"),
+            targetLoop,
+            taskStep("root.branch.2.4:agent_after", "agent_after"),
+            taskStep("root.branch.2.5:agent_after_2", "agent_after_2"),
+            taskStep("root.branch.2.6:message_after", "message_after"),
+          ],
+        },
+      ],
+    };
+    const agentNames = [
+      "agent_root",
+      "agent_top",
+      "agent_middle",
+      "agent_bottom",
+      "agent_before",
+      "agent_nested",
+      "agent_after",
+      "agent_after_2",
+    ];
+    const tasks: TestTaskDefinitions = {
+      ...Object.fromEntries(
+        agentNames.map((name) => [
+          name,
+          { action: "agent_action", settings: {} },
+        ]),
+      ),
+      agent_middle: { action: "memory_agent_action", settings: {} },
+      before_middle: { action: "memory_agent_action", settings: {} },
+      ...baseTasks([
+        "message_top",
+        "before_top",
+        "message_middle",
+        "message_bottom",
+        "message_before",
+        "message_after",
+      ]),
+    };
+    const graph = await buildGraph({
+      flow: [taskStep("0:agent_root", "agent_root"), conditional],
+      tasks,
+      actionCatalog: createActionCatalog({
+        agent_action: ["tools", "mcp", "model", "memory"],
+        memory_agent_action: ["memory"],
+      }),
+      bindingCatalog: createBindingCatalog([
+        { kind: "tools", multiple: true },
+        { kind: "mcp", multiple: true },
+        { kind: "model", multiple: false },
+        { kind: "memory", multiple: false },
+      ]),
+    });
+    const operator = graph.nodes.find(
+      (node) => node.id === createStepNodeId(targetLoop.id, "operator"),
+    );
+    const task = graph.nodes.find(
+      (node) =>
+        node.id ===
+        createStepNodeId("root.branch.2.3:loop.loop.0:agent_nested", "task"),
+    );
+    const attachments = graph.nodes.filter(
+      (node) => getNodeOwnerDefName(node) === "agent_nested",
+    );
+    const group = graph.nodes.find(
+      (node) => node.id === createGroupId(targetLoop.id),
+    );
+    const outerGroup = graph.nodes.find(
+      (node) => node.id === createGroupId(conditional.id),
+    );
+    const end = graph.nodes.find((node) => node.id === END_INDICATOR_ID);
+    const middleBefore = graph.nodes.find(
+      (node) =>
+        node.id === createStepNodeId("root.branch.1.0:before_middle", "task"),
+    );
+    const middleAgent = graph.nodes.find(
+      (node) =>
+        node.id === createStepNodeId("root.branch.1.1:agent_middle", "task"),
+    );
+    const middleMessage = graph.nodes.find(
+      (node) =>
+        node.id === createStepNodeId("root.branch.1.2:message_middle", "task"),
+    );
+    const middlePlaceholder = graph.nodes.find(
+      (node) =>
+        node.id === createPlaceholderNodeId(conditional.id, "conditional", 1),
+    );
+    const middleAttachments = graph.nodes.filter(
+      (node) => getNodeOwnerDefName(node) === "agent_middle",
+    );
+    const middleBeforeAttachments = graph.nodes.filter(
+      (node) => getNodeOwnerDefName(node) === "before_middle",
+    );
+    const branchSpans = [0, 1, 2].map((branchIndex) => {
+      const placeholderId = createPlaceholderNodeId(
+        conditional.id,
+        "conditional",
+        branchIndex,
+      );
+      const spans = graph.nodes
+        .filter(
+          (node) =>
+            node.id.includes(`root.branch.${branchIndex}`) ||
+            node.id === placeholderId,
+        )
+        .map((node) => getNodeSpreadSpan(node, "horizontal"));
+
+      return {
+        leading: Math.min(...spans.map(({ leading }) => leading)),
+        trailing: Math.max(...spans.map(({ trailing }) => trailing)),
+      };
+    });
+
+    expect(operator).toBeDefined();
+    expect(task).toBeDefined();
+    expect(attachments).toHaveLength(4);
+    expect(group).toBeDefined();
+    expect(outerGroup).toBeDefined();
+    expect(end).toBeDefined();
+    expect(middleBefore).toBeDefined();
+
+    const bundleSpans = [task!, ...attachments].map((node) =>
+      getNodeSpreadSpan(node, "horizontal"),
+    );
+    const bundleCenter =
+      (Math.min(...bundleSpans.map(({ leading }) => leading)) +
+        Math.max(...bundleSpans.map(({ trailing }) => trailing))) /
+      2;
+    const operatorCenter = getNodeSpreadCenter(operator!, "horizontal");
+    const groupSpan = getNodeSpreadSpan(group, "horizontal");
+    const outerGroupSpan = getNodeSpreadSpan(outerGroup, "horizontal");
+    const contentBottom = Math.max(
+      ...graph.nodes
+        .filter((node) => node.type !== ENodeType.GROUP)
+        .map((node) => getNodeSpreadSpan(node, "horizontal").trailing),
+    );
+
+    expect(Math.abs(bundleCenter - operatorCenter)).toBeLessThan(1);
+    expect(groupSpan.trailing - groupSpan.leading).toBeLessThan(500);
+    expect(outerGroupSpan.trailing - contentBottom).toBeLessThanOrEqual(48);
+    expect(getNodeSpreadCenter(end!, "horizontal")).toBe(
+      getNodeSpreadCenter(outerGroup!, "horizontal"),
+    );
+    expect(getNodeSpreadCenter(middlePlaceholder!, "horizontal")).toBe(
+      getNodeSpreadCenter(middleMessage!, "horizontal"),
+    );
+    const taskWidth = NODE_METRICS[ENodeType.TASK]?.dimensions.width ?? 0;
+    const sourceTrailing = Math.max(
+      getNodeRight(middleAgent!),
+      ...middleAttachments.map(getNodeRight),
+    );
+    const middleBundleSpans = [middleAgent!, ...middleAttachments].map((node) =>
+      getNodeSpreadSpan(node, "horizontal"),
+    );
+    const middleBundleCenter =
+      (middleBundleSpans[0].leading + middleBundleSpans.at(-1)!.trailing) / 2;
+    const middleBeforeBundleSpans = [
+      middleBefore!,
+      ...middleBeforeAttachments,
+    ].map((node) => getNodeSpreadSpan(node, "horizontal"));
+    const middleBeforeBundleCenter =
+      (middleBeforeBundleSpans[0].leading +
+        middleBeforeBundleSpans.at(-1)!.trailing) /
+      2;
+
+    expect(middleAttachments).toHaveLength(1);
+    expect(middleBeforeAttachments).toHaveLength(1);
+    expect(middleBeforeBundleCenter).toBe(middleBundleCenter);
+    expect(getNodeSpreadCenter(middleMessage!, "horizontal")).toBe(
+      middleBundleCenter,
+    );
+    expect(middleMessage!.position.x - getNodeRight(middleAgent!)).toBe(
+      middleAgent!.position.x - getNodeRight(middleBefore!),
+    );
+    expect(middleMessage!.position.x - sourceTrailing).toBe(FLOW_LAYER_GAP);
+    expect(
+      middlePlaceholder!.position.x - middleMessage!.position.x - taskWidth,
+    ).toBe(FLOW_LAYER_GAP);
+    expect(branchSpans[1].leading - branchSpans[0].trailing).toBe(
+      BRANCH_SPREAD_GAP,
+    );
+    expect(branchSpans[2].leading - branchSpans[1].trailing).toBe(
+      BRANCH_SPREAD_GAP,
+    );
+  });
+
+  it("aligns a trailing placeholder with an attachment-bearing task", () => {
+    const nodes = [
+      { id: "task", type: ENodeType.TASK, position: { x: 0, y: 64 }, data: {} },
+      {
+        id: "placeholder",
+        type: ENodeType.BRANCH_PLACEHOLDER,
+        position: { x: 442, y: 0 },
+        data: {},
+      },
+      {
+        id: "attachment",
+        type: ENodeType.BINDING_PLACEHOLDER,
+        position: { x: 0, y: 350 },
+        data: {},
+      },
+    ] as GraphNode[];
+    const result = tightenTrailingPlaceholders(
+      nodes,
+      [
+        { id: "flow", source: "task", target: "placeholder" },
+        {
+          id: "attachment",
+          source: "task",
+          target: "attachment",
+          sourceHandle: "bindingOut-0-1-tools",
+        },
+      ],
+      new Map(),
+      { config: getWorkflowDefaultConfig("horizontal") },
+    );
+
+    expect(getNodeSpreadCenter(result[1], "horizontal")).toBe(
+      getNodeSpreadCenter(result[0], "horizontal"),
+    );
+  });
+
+  it("compacts oversized links along a terminal group chain", () => {
+    const nodes = [
+      {
+        id: "source-group",
+        type: ENodeType.GROUP,
+        position: { x: 0, y: 0 },
+        style: { width: 700, height: 200 },
+        data: {},
+      },
+      {
+        id: "source-member",
+        type: ENodeType.TASK,
+        position: { x: 20, y: 20 },
+        data: {},
+      },
+      {
+        id: "call-workflow",
+        type: ENodeType.TASK,
+        position: { x: 1000, y: 57 },
+        data: {},
+      },
+      {
+        id: "target-group",
+        type: ENodeType.GROUP,
+        position: { x: 1600, y: 0 },
+        style: { width: 900, height: 200 },
+        data: {},
+      },
+      {
+        id: "target-member",
+        type: ENodeType.TASK,
+        position: { x: 1620, y: 20 },
+        data: {},
+      },
+      {
+        id: "stop",
+        type: ENodeType.INDICATOR,
+        position: { x: 1600, y: 57 },
+        data: {},
+      },
+    ] as GraphNode[];
+    const config = getWorkflowDefaultConfig("horizontal");
+    const result = alignGroupChainAxes(
+      nodes,
+      [
+        {
+          id: "between-groups",
+          source: "source-group",
+          target: "call-workflow",
+        },
+        {
+          id: "into-target-group",
+          source: "call-workflow",
+          target: "target-group",
+        },
+      ],
+      new Map([
+        [
+          "source-group",
+          {
+            id: "source-group",
+            operatorType: StepType.Loop,
+            level: 1,
+            memberNodeIds: new Set(["source-member"]),
+          },
+        ],
+        [
+          "target-group",
+          {
+            id: "target-group",
+            operatorType: StepType.Parallel,
+            level: 1,
+            memberNodeIds: new Set(["target-member"]),
+          },
+        ],
+      ]),
+      { config },
+    );
+    const sourceMember = result.find((node) => node.id === "source-member")!;
+    const callWorkflow = result.find((node) => node.id === "call-workflow")!;
+    const targetMember = result.find((node) => node.id === "target-member")!;
+    const taskWidth = NODE_METRICS[ENodeType.TASK]!.dimensions.width;
+    const sourcePadding = config.highlights[StepType.Loop]?.padding ?? 0;
+    const targetPadding = config.highlights[StepType.Parallel]?.padding ?? 0;
+
+    expect(
+      callWorkflow.position.x -
+        sourceMember.position.x -
+        taskWidth -
+        sourcePadding / 2,
+    ).toBe(FLOW_LAYER_GAP);
+    expect(
+      targetMember.position.x -
+        targetPadding / 2 -
+        callWorkflow.position.x -
+        taskWidth,
+    ).toBe(FLOW_LAYER_GAP);
+
+    const terminalResult = alignGroupChainAxes(
+      nodes,
+      [
+        { id: "from-group", source: "source-group", target: "call-workflow" },
+        { id: "to-stop", source: "call-workflow", target: "stop" },
+      ],
+      new Map([
+        [
+          "source-group",
+          {
+            id: "source-group",
+            operatorType: StepType.Loop,
+            level: 1,
+            memberNodeIds: new Set(["source-member"]),
+          },
+        ],
+      ]),
+      { config },
+    );
+    const terminalTask = terminalResult.find(
+      (node) => node.id === "call-workflow",
+    )!;
+
+    expect(
+      terminalTask.position.x -
+        sourceMember.position.x -
+        taskWidth -
+        sourcePadding / 2,
+    ).toBe(FLOW_LAYER_GAP);
+  });
+
   it("pulls each trailing branch placeholder to a uniform flow gap after its content", async () => {
     // Regression: ELK layers every branch's trailing "+" near the flow's
     // convergence point, so a short branch ended with a link stretching across
@@ -3220,7 +3775,14 @@ describe("buildNodesAndEdges", () => {
     };
     const graph = await buildGraph({
       flow: [rootConditional],
-      tasks: baseTasks(["solo", "one", "two", "three"]),
+      tasks: {
+        ...baseTasks(["solo", "one", "two", "three"]),
+        solo: { action: "memory_agent_action", settings: {} },
+      },
+      actionCatalog: createActionCatalog({
+        memory_agent_action: ["memory"],
+      }),
+      bindingCatalog: createBindingCatalog(["memory"]),
     });
     const nodeById = (nodeId: string) => {
       const node = graph.nodes.find((candidate) => candidate.id === nodeId);
@@ -3246,6 +3808,12 @@ describe("buildNodesAndEdges", () => {
     const groupGap = placeholderX(2) - nestedGroupRightEdge;
 
     expect(Math.abs(shortGap - FLOW_LAYER_GAP)).toBeLessThan(1);
+    expect(
+      getNodeSpreadCenter(
+        nodeById(createPlaceholderNodeId("0:root", "conditional", 0)),
+        "horizontal",
+      ),
+    ).toBe(getNodeSpreadCenter(soloNode, "horizontal"));
     expect(Math.abs(longGap - FLOW_LAYER_GAP)).toBeLessThan(1);
     expect(Math.abs(groupGap - FLOW_LAYER_GAP)).toBeLessThan(1);
   });
