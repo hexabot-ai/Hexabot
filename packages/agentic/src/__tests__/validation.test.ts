@@ -632,6 +632,39 @@ describe('validateWorkflow', () => {
       expect(result.success).toBe(true);
     });
 
+    it('validates settings of non-task (bound) defs against their action schema', () => {
+      const buildWorkflow = (settings: Record<string, unknown>) => ({
+        defs: {
+          retrieve_rag_content: {
+            kind: 'tools',
+            action: 'retrieve_rag_content',
+            settings,
+          },
+        },
+        flow: [],
+        outputs: {},
+      });
+      const options = {
+        bindingKinds,
+        actions: {
+          retrieve_rag_content: {
+            settingSchema: z.strictObject({
+              include_inactive: z.boolean().optional(),
+            }),
+          },
+        },
+      };
+
+      expect(
+        validateWorkflow(buildWorkflow({ include_inactivdse: false }), options)
+          .success,
+      ).toBe(false);
+      expect(
+        validateWorkflow(buildWorkflow({ include_inactive: false }), options)
+          .success,
+      ).toBe(true);
+    });
+
     it('reports missing actions with code, actionName and path', () => {
       const workflow = {
         defs: mergeTaskDefs({
