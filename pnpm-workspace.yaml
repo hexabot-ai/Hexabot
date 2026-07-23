@@ -32,6 +32,7 @@ overrides:
   "brace-expansion": ">=5.0.7"
   "dompurify": "3.4.12"
   "engine.io": "6.6.9"
+  "fast-uri": "^3.1.4"
   "glob": "13.0.6"
   "immutable": ">=5.1.8"
   "ip-address": "10.1.1"
