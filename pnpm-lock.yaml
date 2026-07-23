@@ -149,7 +149,7 @@ importers:
         version: 1.29.0(zod@4.3.6)
       '@nestjs/axios':
         specifier: ^4.0.1
-        version: 4.0.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(axios@1.17.0)(rxjs@7.8.2)
+        version: 4.0.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(axios@1.18.1)(rxjs@7.8.2)
       '@nestjs/cache-manager':
         specifier: ^3.1.2
         version: 3.1.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(cache-manager@7.2.4)(keyv@5.5.3)(rxjs@7.8.2)
@@ -208,8 +208,8 @@ importers:
         specifier: ^0.5.0
         version: 0.5.0
       axios:
-        specifier: ^1.17.0
-        version: 1.17.0
+        specifier: ^1.18.1
+        version: 1.18.1
       bcryptjs:
         specifier: ^3.0.2
         version: 3.0.2
@@ -501,8 +501,8 @@ importers:
         specifier: ^11.1.3
         version: 11.1.3
       axios:
-        specifier: ^1.17.0
-        version: 1.17.0
+        specifier: ^1.18.1
+        version: 1.18.1
       chalk:
         specifier: ^5.3.0
         version: 5.6.2
@@ -637,8 +637,8 @@ importers:
         specifier: ^12.10.0
         version: 12.10.0(@types/react@18.3.2)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       axios:
-        specifier: ^1.17.0
-        version: 1.17.0
+        specifier: ^1.18.1
+        version: 1.18.1
       dayjs:
         specifier: ^1.11.13
         version: 1.11.18
@@ -5027,8 +5027,8 @@ packages:
     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
     engines: {node: '>= 0.4'}
 
-  axios@1.17.0:
-    resolution: {integrity: sha512-J8SwNxprqqpbfenehxWYXE7CW+wM1BB4w3+N+g+/Wx40xM4rsLrfPmHHxSWIxJLYDgSY/HqlFPIYb2/S3rxafw==}
+  axios@1.18.1:
+    resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
 
   b4a@1.8.1:
     resolution: {integrity: sha512-aiqre1Nr0B/6DgE2N5vwTc+2/oQZ4Wh1t4NznYY4E00y8LCt6NqdRv81so00oo27D8MVKTpUa/MwUUtBLXCoDw==}
@@ -12289,10 +12289,10 @@ snapshots:
       '@tybys/wasm-util': 0.10.2
     optional: true
 
-  '@nestjs/axios@4.0.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(axios@1.17.0)(rxjs@7.8.2)':
+  '@nestjs/axios@4.0.1(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(axios@1.18.1)(rxjs@7.8.2)':
     dependencies:
       '@nestjs/common': 11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      axios: 1.17.0
+      axios: 1.18.1
       rxjs: 7.8.2
 
   '@nestjs/cache-manager@3.1.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(cache-manager@7.2.4)(keyv@5.5.3)(rxjs@7.8.2)':
@@ -14980,7 +14980,7 @@ snapshots:
     dependencies:
       possible-typed-array-names: 1.1.0
 
-  axios@1.17.0:
+  axios@1.18.1:
     dependencies:
       follow-redirects: 1.16.0
       form-data: 4.0.6
@@ -16730,7 +16730,7 @@ snapshots:
       call-bound: 1.0.4
       define-properties: 1.2.1
       functions-have-names: 1.2.3
-      hasown: 2.0.2
+      hasown: 2.0.4
       is-callable: 1.2.7
 
   functions-have-names@1.2.3: {}
@@ -17274,7 +17274,7 @@ snapshots:
       call-bound: 1.0.4
       gopd: 1.2.0
       has-tostringtag: 1.0.2
-      hasown: 2.0.2
+      hasown: 2.0.4
 
   is-set@2.0.3: {}
 
