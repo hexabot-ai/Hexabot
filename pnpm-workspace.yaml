@@ -13,11 +13,11 @@ strictPeerDependencies: false
 ignoreWorkspaceRootCheck: true
 
 allowBuilds:
-  '@compodoc/compodoc': true
-  '@nestjs/core': true
-  '@parcel/watcher': true
-  '@scarf/scarf': true
-  '@swc/core': true
+  "@compodoc/compodoc": true
+  "@nestjs/core": true
+  "@parcel/watcher": true
+  "@scarf/scarf": true
+  "@swc/core": true
   better-sqlite3: true
   esbuild: true
   protobufjs: true
@@ -29,7 +29,7 @@ overrides:
   "@opentelemetry/core": "2.8.0"
   "@types/node": "^22.7.4"
   "ajv@8": "8.20.0"
-  "dompurify": "3.4.11"
+  "dompurify": "3.4.12"
   "glob": "13.0.6"
   "ip-address": "10.1.1"
   "js-yaml": "4.2.0"

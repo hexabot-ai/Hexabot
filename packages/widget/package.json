@@ -25,7 +25,7 @@
   "dependencies": {
     "chroma-js": "^3.2.0",
     "dayjs": "^1.11.12",
-    "dompurify": "^3.4.9",
+    "dompurify": "^3.4.12",
     "emoji-js": "^3.8.0",
     "lucide-react": "^0.562.0",
     "marked": "14.0.0",
