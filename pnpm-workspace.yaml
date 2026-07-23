@@ -42,6 +42,7 @@ overrides:
   "minimatch": "10.2.5"
   "nestjs-auditlog>@opentelemetry/auto-instrumentations-node": "0.75.0"
   "nestjs-auditlog>@opentelemetry/sdk-node": "0.217.0"
+  "@opentelemetry/propagator-jaeger": ">=2.9.0"
   "openai>zod": "^3.23.8"
   "picomatch": "4.0.4"
   "protobufjs": "7.6.3"
