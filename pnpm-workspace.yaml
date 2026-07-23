@@ -33,6 +33,7 @@ overrides:
   "dompurify": "3.4.12"
   "engine.io": "6.6.9"
   "glob": "13.0.6"
+  "immutable": ">=5.1.8"
   "ip-address": "10.1.1"
   "js-yaml": "4.3.0"
   "jsonata": "^2.2.0"
