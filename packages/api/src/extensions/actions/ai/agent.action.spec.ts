@@ -4,12 +4,14 @@
  * Full terms: see LICENSE.md.
  */
 
+import { BaseSettingsSchema, mergeSettings } from '@hexabot-ai/agentic';
 import { ToolLoopAgent, hasToolCall, stepCountIs } from 'ai';
 
 import { ActionService } from '@/actions/actions.service';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import { AiAgentAction } from './agent.action';
+import { aiAgentSettingsSchema } from './ai-schemas';
 
 jest.mock('ai', () => {
   const generateFn = jest.fn();
@@ -90,6 +92,134 @@ describe('AiAgentAction', () => {
     toolLoopAgentGenerateMock.mockReset();
     actionService = { register: jest.fn() } as unknown as ActionService;
     action = new AiAgentAction(actionService);
+  });
+
+  it('defaults tool-enabled agent runs to an explicit 10-step budget', async () => {
+    const provider = Object.assign(
+      jest.fn().mockReturnValue('model-instance'),
+      {
+        languageModel: jest.fn(),
+      },
+    );
+    const actionsService = {
+      get: jest.fn().mockReturnValue({
+        description: 'demo tool',
+        inputSchema: {},
+        outputSchema: {},
+        run: jest.fn(),
+      }),
+    };
+    const context = createContext({ actions: actionsService });
+
+    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+    jest.spyOn(action as any, 'createModel').mockReturnValue('model-instance');
+    toolLoopAgentGenerateMock.mockResolvedValue({
+      text: 'Done',
+      finishReason: 'stop',
+      rawFinishReason: 'stop',
+      steps: [],
+    } as any);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'use the tools' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+      } as any,
+      context,
+      bindings: {
+        ...createModelBindings(),
+        tools: {
+          search: { action: 'search_action' },
+          translate: { action: 'translate_action' },
+        },
+      } as any,
+    });
+
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(10);
+  });
+
+  it('uses a workflow-global step budget and lets a per-step value win', async () => {
+    const provider = Object.assign(
+      jest.fn().mockReturnValue('model-instance'),
+      {
+        languageModel: jest.fn(),
+      },
+    );
+    const actionsService = {
+      get: jest.fn().mockReturnValue({
+        description: 'demo tool',
+        inputSchema: {},
+        outputSchema: {},
+        run: jest.fn(),
+      }),
+    };
+    const context = createContext({ actions: actionsService });
+    const bindings = {
+      ...createModelBindings(),
+      tools: {
+        search: { action: 'search_action' },
+      },
+    } as any;
+
+    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+    jest.spyOn(action as any, 'createModel').mockReturnValue('model-instance');
+    toolLoopAgentGenerateMock.mockResolvedValue({
+      text: 'Done',
+      finishReason: 'stop',
+      rawFinishReason: 'stop',
+      steps: [],
+    } as any);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'use the tools' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+        ...mergeSettings({ stop_step_count: 20 }),
+      } as any,
+      context,
+      bindings,
+    });
+
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(20);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'use the tools' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+        ...mergeSettings({ stop_step_count: 20 }, { stop_step_count: 5 }),
+      } as any,
+      context,
+      bindings,
+    });
+
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(5);
+  });
+
+  it('advertises a visible default 10-step budget in the form schema', () => {
+    const workflowJsonSchema = BaseSettingsSchema.toJSONSchema({
+      target: 'draft-07',
+    }) as {
+      properties?: Record<string, Record<string, any>>;
+    };
+    const actionJsonSchema = aiAgentSettingsSchema.toJSONSchema({
+      target: 'draft-07',
+    }) as {
+      properties?: Record<string, Record<string, any>>;
+    };
+    const stopStepCount = workflowJsonSchema.properties?.stop_step_count;
+
+    expect(BaseSettingsSchema.parse({})).not.toHaveProperty('stop_step_count');
+    expect(stopStepCount).toEqual(
+      expect.objectContaining({
+        default: 10,
+        maximum: 100,
+        title: 'Stop step count',
+      }),
+    );
+    expect(actionJsonSchema.properties).not.toHaveProperty('stop_step_count');
   });
 
   it('creates a ToolLoopAgent, runs it, and normalizes the response', async () => {
@@ -213,7 +343,7 @@ describe('AiAgentAction', () => {
       'search',
       'translate',
     ]);
-    expect(stepCountIsMock).toHaveBeenCalledWith(3);
+    expect(stepCountIsMock).toHaveBeenCalledWith(10);
     await (agentOptions.tools as any).search.execute({ query: 'hello' });
     expect(toolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
       scope: 'web',
@@ -362,6 +492,273 @@ describe('AiAgentAction', () => {
     expect(agentOptions.instructions).toContain('- Name: Ada');
   });
 
+  it('uses the default 10-step budget with MCP and memory tools', async () => {
+    const provider = Object.assign(
+      jest.fn().mockReturnValue('model-instance'),
+      {
+        languageModel: jest.fn(),
+      },
+    );
+    const actionsService = {
+      get: jest.fn().mockReturnValue({
+        description: 'update memory',
+        inputSchema: {},
+        outputSchema: {},
+        run: jest.fn(),
+      }),
+    };
+    const mcpClientPool = {
+      buildToolSet: jest.fn().mockResolvedValue({
+        calendar__check_availability: {},
+        calendar__create_event: {},
+        calendar__attach_meet: {},
+      }),
+    };
+    const context = createContext({
+      actions: actionsService,
+      mcp: mcpClientPool,
+    });
+    (context as any).memoryStore = {
+      definitionCache: new Map([
+        [
+          'appointment_schedule',
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            name: 'Appointment Schedule',
+            slug: 'appointment_schedule',
+          },
+        ],
+      ]),
+      instances: {
+        appointment_schedule: {
+          fields: jest.fn().mockReturnValue([]),
+        },
+      },
+      buildUpdateMemorySchema: jest.fn().mockReturnValue({}),
+    };
+
+    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+    jest.spyOn(action as any, 'createModel').mockReturnValue('model-instance');
+    toolLoopAgentGenerateMock.mockResolvedValue({
+      text: 'Done',
+      finishReason: 'stop',
+      rawFinishReason: 'stop',
+      steps: [],
+    } as any);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'schedule an appointment' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+      } as any,
+      context,
+      bindings: {
+        ...createModelBindings(),
+        memory: {
+          schedule: {
+            settings: {
+              definition_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            },
+          },
+        },
+        mcp: {
+          calendar: {
+            settings: {
+              server_id: '11111111-1111-4111-8111-111111111111',
+            },
+          },
+        },
+      } as any,
+    });
+
+    const agentOptions = ToolLoopAgentMock.mock.calls[0][0] as any;
+
+    expect(Object.keys(agentOptions.tools)).toEqual([
+      'calendar__check_availability',
+      'calendar__create_event',
+      'calendar__attach_meet',
+      'update_memory',
+    ]);
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(10);
+  });
+
+  it('keeps the default at 10 when more than 9 tools are available', async () => {
+    const provider = Object.assign(
+      jest.fn().mockReturnValue('model-instance'),
+      {
+        languageModel: jest.fn(),
+      },
+    );
+    const actionsService = {
+      get: jest.fn().mockReturnValue({
+        description: 'update memory',
+        inputSchema: {},
+        outputSchema: {},
+        run: jest.fn(),
+      }),
+    };
+    const mcpClientPool = {
+      buildToolSet: jest
+        .fn()
+        .mockResolvedValue(
+          Object.fromEntries(
+            Array.from({ length: 12 }, (_, i) => [
+              `calendar__tool_${i + 1}`,
+              {},
+            ]),
+          ),
+        ),
+    };
+    const context = createContext({
+      actions: actionsService,
+      mcp: mcpClientPool,
+    });
+    (context as any).memoryStore = {
+      definitionCache: new Map([
+        [
+          'appointment_schedule',
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            name: 'Appointment Schedule',
+            slug: 'appointment_schedule',
+          },
+        ],
+      ]),
+      instances: {
+        appointment_schedule: {
+          fields: jest.fn().mockReturnValue([]),
+        },
+      },
+      buildUpdateMemorySchema: jest.fn().mockReturnValue({}),
+    };
+
+    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+    jest.spyOn(action as any, 'createModel').mockReturnValue('model-instance');
+    toolLoopAgentGenerateMock.mockResolvedValue({
+      text: 'Done',
+      finishReason: 'stop',
+      rawFinishReason: 'stop',
+      steps: [],
+    } as any);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'schedule an appointment' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+      } as any,
+      context,
+      bindings: {
+        ...createModelBindings(),
+        memory: {
+          schedule: {
+            settings: {
+              definition_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            },
+          },
+        },
+        mcp: {
+          calendar: {
+            settings: {
+              server_id: '11111111-1111-4111-8111-111111111111',
+            },
+          },
+        },
+      } as any,
+    });
+
+    const agentOptions = ToolLoopAgentMock.mock.calls[0][0] as any;
+
+    expect(Object.keys(agentOptions.tools)).toHaveLength(13);
+    expect(agentOptions.tools).toHaveProperty('update_memory');
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(10);
+  });
+
+  it('lets an explicit stop_step_count override the default budget', async () => {
+    const provider = Object.assign(
+      jest.fn().mockReturnValue('model-instance'),
+      {
+        languageModel: jest.fn(),
+      },
+    );
+    const actionsService = {
+      get: jest.fn().mockReturnValue({
+        description: 'update memory',
+        inputSchema: {},
+        outputSchema: {},
+        run: jest.fn(),
+      }),
+    };
+    const mcpClientPool = {
+      buildToolSet: jest.fn().mockResolvedValue({
+        calendar__check_availability: {},
+        calendar__create_event: {},
+        calendar__attach_meet: {},
+      }),
+    };
+    const context = createContext({
+      actions: actionsService,
+      mcp: mcpClientPool,
+    });
+    (context as any).memoryStore = {
+      definitionCache: new Map([
+        [
+          'appointment_schedule',
+          {
+            id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            name: 'Appointment Schedule',
+            slug: 'appointment_schedule',
+          },
+        ],
+      ]),
+      instances: {
+        appointment_schedule: {
+          fields: jest.fn().mockReturnValue([]),
+        },
+      },
+      buildUpdateMemorySchema: jest.fn().mockReturnValue({}),
+    };
+
+    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+    jest.spyOn(action as any, 'createModel').mockReturnValue('model-instance');
+    toolLoopAgentGenerateMock.mockResolvedValue({
+      text: 'Done',
+      finishReason: 'stop',
+      rawFinishReason: 'stop',
+      steps: [],
+    } as any);
+
+    await action.execute({
+      input: { input_mode: 'prompt', prompt: 'schedule an appointment' },
+      settings: {
+        timeout_ms: 0,
+        retries: defaultRetries,
+        stop_step_count: 3,
+      } as any,
+      context,
+      bindings: {
+        ...createModelBindings(),
+        memory: {
+          schedule: {
+            settings: {
+              definition_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            },
+          },
+        },
+        mcp: {
+          calendar: {
+            settings: {
+              server_id: '11111111-1111-4111-8111-111111111111',
+            },
+          },
+        },
+      } as any,
+    });
+
+    expect(stepCountIsMock.mock.calls.at(-1)?.[0]).toBe(3);
+  });
+
   it('combines stop conditions when provided in settings', async () => {
     const provider = Object.assign(
       jest.fn().mockReturnValue('model-instance'),
@@ -493,7 +890,7 @@ describe('AiAgentAction', () => {
       'search',
       'planner__lookup',
     ]);
-    expect(stepCountIsMock).toHaveBeenCalledWith(3);
+    expect(stepCountIsMock).toHaveBeenCalledWith(10);
     await agentOptions.tools.search.execute({ query: 'hello' });
     expect(actionToolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
       locale: 'en',

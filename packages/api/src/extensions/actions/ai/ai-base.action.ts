@@ -32,7 +32,11 @@ import {
   resolveMessageContent,
   type PromptPayload,
 } from './ai-prompt.helpers';
-import { AiCommonSettings, AiPromptInput } from './ai-schemas';
+import {
+  AiCommonSettings,
+  AiPromptInput,
+  DEFAULT_AI_STEP_BUDGET,
+} from './ai-schemas';
 
 export type { AiCommonSettings, AiPromptInput } from './ai-schemas';
 
@@ -630,10 +634,9 @@ export abstract class AiBaseAction<
     const stopConditions: Array<
       ReturnType<typeof stepCountIs> | ReturnType<typeof hasToolCall>
     > = [];
-    // By default the default step count would be the max number of tools
-    // that could be called + 1 step pour generating the output
-    const defaultStepCount = tools ? 1 + Object.keys(tools).length : 0;
-    const resolvedStepCount = settings.stop_step_count ?? defaultStepCount;
+    const hasTools = Boolean(tools && Object.keys(tools).length > 0);
+    const resolvedStepCount =
+      settings.stop_step_count ?? (hasTools ? DEFAULT_AI_STEP_BUDGET : 0);
 
     if (resolvedStepCount > 0) {
       stopConditions.push(stepCountIs(resolvedStepCount));

@@ -4,11 +4,15 @@
  * Full terms: see LICENSE.md.
  */
 
+import { BaseSettingsSchema } from '@hexabot-ai/agentic';
+
 import {
   DEFAULT_AI_MESSAGES_LIMIT,
   DEFAULT_AI_OBJECT_SYSTEM_PROMPT,
   DEFAULT_AI_PROMPT,
   DEFAULT_AI_SYSTEM_PROMPT,
+  DEFAULT_AI_STEP_BUDGET,
+  MAX_AI_STEP_BUDGET,
   aiAgentInputSchema,
   aiGenerateObjectInputSchema,
   aiGenerateObjectSettingsSchema,
@@ -174,6 +178,34 @@ describe('ai_generate_text input schema', () => {
 
 describe('ai generation settings schemas', () => {
   const commonSettings = {};
+
+  it('enforces the AI step budget ceiling', () => {
+    const jsonSchema = BaseSettingsSchema.toJSONSchema({
+      target: 'draft-07',
+    }) as {
+      properties?: Record<string, Record<string, unknown>>;
+    };
+
+    expect(
+      BaseSettingsSchema.safeParse({
+        stop_step_count: DEFAULT_AI_STEP_BUDGET,
+      }).success,
+    ).toBe(true);
+    expect(
+      BaseSettingsSchema.safeParse({
+        stop_step_count: MAX_AI_STEP_BUDGET,
+      }).success,
+    ).toBe(true);
+    expect(
+      BaseSettingsSchema.safeParse({
+        stop_step_count: MAX_AI_STEP_BUDGET + 1,
+      }).success,
+    ).toBe(false);
+    expect(BaseSettingsSchema.parse({})).not.toHaveProperty('stop_step_count');
+    expect(jsonSchema.properties?.stop_step_count?.default).toBe(
+      DEFAULT_AI_STEP_BUDGET,
+    );
+  });
 
   it('rejects output_schema for ai_generate_text settings', () => {
     const result = aiGenerateTextSettingsSchema.safeParse({

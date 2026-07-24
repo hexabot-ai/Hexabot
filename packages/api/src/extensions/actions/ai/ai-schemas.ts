@@ -7,6 +7,11 @@
 import { JsonValueSchema } from '@hexabot-ai/agentic';
 import { z } from 'zod';
 
+export {
+  DEFAULT_STEP_BUDGET as DEFAULT_AI_STEP_BUDGET,
+  MAX_STEP_BUDGET as MAX_AI_STEP_BUDGET,
+} from '@hexabot-ai/agentic';
+
 export const DEFAULT_AI_PROMPT = '=$input.text';
 
 export const DEFAULT_AI_MESSAGES_LIMIT = 4;
@@ -205,17 +210,6 @@ export const aiCommonSettingsSchema = z.strictObject({
     .meta({
       title: 'Seed',
       description: 'Seed for deterministic sampling when supported.',
-      'ui:options': {
-        hideUntilAdded: true,
-      },
-    }),
-  stop_step_count: z
-    .int()
-    .positive()
-    .optional()
-    .meta({
-      title: 'Stop step count',
-      description: 'Maximum number of agent steps before stopping.',
       'ui:options': {
         hideUntilAdded: true,
       },
