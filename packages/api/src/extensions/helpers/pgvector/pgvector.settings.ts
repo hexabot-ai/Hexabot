@@ -63,7 +63,7 @@ export const pgvectorSettingsSchema = z
       .meta({
         title: 'Embedding dimensions',
         description:
-          'Expected number of numeric values in every embedding vector.',
+          "Requested embedding size for providers that support dimension reduction (e.g. OpenAI). Other providers ignore it and use the model's native dimension.",
         'ui:options': {
           step: 1,
         },

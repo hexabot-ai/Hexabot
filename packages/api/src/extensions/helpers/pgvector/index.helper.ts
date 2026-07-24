@@ -88,6 +88,8 @@ export default class PgvectorRagHelper
 
   private infrastructureWarningLogged = false;
 
+  private dimensionMismatchWarned = false;
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly credentialService: CredentialService,
@@ -185,6 +187,9 @@ export default class PgvectorRagHelper
           'index_only_active_content',
         ].includes(setting.label)
       ) {
+        // The model/provider/dimension request may have changed; re-evaluate
+        // the "requested dimension not honored" warning on the next embed.
+        this.dimensionMismatchWarned = false;
         await this.store.enqueueAll();
       }
       this.wakeWorker();
@@ -407,8 +412,10 @@ export default class PgvectorRagHelper
       abortSignal: AbortSignal.timeout(EMBEDDING_TIMEOUT_MS),
       ...(providerOptions ? { providerOptions } : {}),
     });
+    const embedding = this.validateEmbedding(result.embedding);
+    this.warnIfRequestedDimensionIgnored(settings, embedding.length);
 
-    return this.validateEmbedding(result.embedding, settings);
+    return embedding;
   }
 
   private async embedChunks(
@@ -429,9 +436,25 @@ export default class PgvectorRagHelper
       );
     }
 
-    return result.embeddings.map((embedding) =>
-      this.validateEmbedding(embedding, settings),
+    const embeddings = result.embeddings.map((embedding) =>
+      this.validateEmbedding(embedding),
     );
+    // The stored chunks of one document must share a dimension so cosine search
+    // can compare them against a query vector of the same size.
+    const dimension = embeddings[0]?.length;
+    if (
+      dimension !== undefined &&
+      embeddings.some((embedding) => embedding.length !== dimension)
+    ) {
+      throw new RagHelperConfigurationError(
+        'The embedding endpoint returned vectors of inconsistent dimensions.',
+      );
+    }
+    if (dimension !== undefined) {
+      this.warnIfRequestedDimensionIgnored(settings, dimension);
+    }
+
+    return embeddings;
   }
 
   private getEmbeddingProviderOptions(
@@ -613,24 +636,51 @@ export default class PgvectorRagHelper
     return aliases[normalized] ?? normalized;
   }
 
-  private validateEmbedding(
-    embedding: number[],
-    settings: PgvectorSettings,
-  ): number[] {
-    if (embedding.length !== settings.embedding_dimensions) {
-      throw new RagHelperConfigurationError(
-        `Embedding dimension mismatch: expected ${settings.embedding_dimensions}, received ${embedding.length}.`,
-      );
-    }
+  /**
+   * Validates the structure of an embedding vector. The dimension is treated as
+   * an output of the model, not a value the operator must match: consistency
+   * between the query vector and the stored chunks is guaranteed by the profile
+   * hash (which includes provider, model, and requested dimensions), so we only
+   * reject empty, non-finite, or all-zero vectors here.
+   */
+  private validateEmbedding(embedding: number[]): number[] {
     if (
+      embedding.length === 0 ||
       embedding.some((value) => !Number.isFinite(value)) ||
       !embedding.some((value) => value !== 0)
     ) {
       throw new RagHelperConfigurationError(
-        'The embedding endpoint returned an invalid or zero vector.',
+        'The embedding endpoint returned an invalid, empty, or zero vector.',
       );
     }
 
     return embedding;
+  }
+
+  /**
+   * The "Embedding dimensions" setting is only a *request*: providers that
+   * support dimension reduction (e.g. OpenAI) honor it, others return their
+   * model's native size. When a non-zero request is not honored we log once so
+   * the discrepancy is visible without failing indexing or retrieval.
+   */
+  private warnIfRequestedDimensionIgnored(
+    settings: PgvectorSettings,
+    actualDimension: number,
+  ): void {
+    const requested = settings.embedding_dimensions;
+    if (
+      this.dimensionMismatchWarned ||
+      !requested ||
+      requested === actualDimension
+    ) {
+      return;
+    }
+    this.dimensionMismatchWarned = true;
+    this.logger.warn(
+      `The embedding model returned ${actualDimension}-dimensional vectors, ` +
+        `but "Embedding dimensions" is set to ${requested}. The requested size ` +
+        `is only applied by providers that support dimension reduction; the ` +
+        `model's ${actualDimension}-dimensional output is being used.`,
+    );
   }
 }

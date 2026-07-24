@@ -60,13 +60,21 @@ const createHelper = (type: 'postgres' | 'better-sqlite3' = 'postgres') => {
     save: jest.fn().mockResolvedValue(true),
     fail: jest.fn(),
   };
+  const logger = {
+    log: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+    verbose: jest.fn(),
+  };
   (helper as unknown as { store: unknown }).store = store;
   (helper as unknown as { settingService: unknown }).settingService = {
     getSettings: jest.fn().mockResolvedValue(validSettings),
   };
+  (helper as unknown as { logger: unknown }).logger = logger;
   (helper as unknown as { wakeWorker: jest.Mock }).wakeWorker = jest.fn();
 
-  return { credentialService, helper, store };
+  return { credentialService, helper, store, logger };
 };
 
 describe('PgvectorRagHelper', () => {
@@ -193,11 +201,28 @@ describe('PgvectorRagHelper', () => {
     expect(store.assertInfrastructure).not.toHaveBeenCalled();
   });
 
-  it('rejects dimension mismatches and zero vectors', async () => {
+  it('accepts an embedding whose size differs from the requested dimension', async () => {
+    const { helper, store, logger } = createHelper();
+    // "embedding_dimensions" is 2 but the model returns a 3-dim vector: this is
+    // a request the provider did not honor, not an error.
+    (embed as jest.Mock).mockResolvedValueOnce({ embedding: [1, 2, 3] });
+
+    await expect(helper.retrieve('query')).resolves.toEqual([]);
+    expect(store.search).toHaveBeenCalledWith(
+      [1, 2, 3],
+      expect.any(String),
+      expect.objectContaining({ status: true }),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Embedding dimensions'),
+    );
+  });
+
+  it('rejects empty and zero vectors', async () => {
     const { helper } = createHelper();
-    (embed as jest.Mock).mockResolvedValueOnce({ embedding: [1] });
+    (embed as jest.Mock).mockResolvedValueOnce({ embedding: [] });
     await expect(helper.retrieve('query')).rejects.toThrow(
-      'Embedding dimension mismatch',
+      /invalid, empty, or zero vector/,
     );
 
     (embed as jest.Mock).mockResolvedValueOnce({ embedding: [0, 0] });
