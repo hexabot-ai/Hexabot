@@ -12,6 +12,20 @@ jobs:
     name: Run typecheck/lint/test/build for all packages
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg16
+        env:
+          POSTGRES_DB: hexabot_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hexabot_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: 🔎 Checkout repository
         uses: actions/checkout@v4
@@ -43,6 +57,12 @@ jobs:
 
       - name: 🔬 Unit tests (all packages via Turbo)
         run: pnpm test
+
+      - name: 🐘 PostgreSQL/pgvector RAG integration tests
+        run: pnpm --filter @hexabot-ai/api exec jest --runInBand --runTestsByPath src/extensions/helpers/pgvector/pgvector.integration.spec.ts
+        env:
+          DB_TYPE: postgres
+          TEST_PGVECTOR_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hexabot_test
 
       - name: 🛠️ Build (all packages via Turbo)
         run: pnpm build

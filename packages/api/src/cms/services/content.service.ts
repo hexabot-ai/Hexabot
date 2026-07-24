@@ -14,26 +14,28 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import Papa from 'papaparse';
 import { FindManyOptions, FindOptionsWhere } from 'typeorm';
 
+import { HelperService } from '@/helper/helper.service';
+import { HelperType } from '@/helper/types';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
 
 import { ContentCreateDto } from '../dto/content.dto';
 import { ContentOrmEntity } from '../entities/content.entity';
+import { RagHelperConfigurationError } from '../errors/rag.errors';
 import { ContentRepository } from '../repositories/content.repository';
 import { RagHit, RagQueryOptions } from '../types/rag';
-
-import { RagRetrieverService } from './rag-retriever.service';
 
 @Injectable()
 export class ContentService extends BaseOrmService<ContentOrmEntity> {
   constructor(
     readonly repository: ContentRepository,
-    private readonly ragRetrieverService: RagRetrieverService,
+    private readonly helperService: HelperService,
   ) {
     super(repository);
   }
 
   /**
-   * Retrieves RAG hits for the provided query.
+   * Retrieves RAG hits for the provided query using the configured default RAG
+   * helper (lexical full-text search by default).
    *
    * @param query - User query text.
    * @param options - Optional retrieval options.
@@ -44,16 +46,17 @@ export class ContentService extends BaseOrmService<ContentOrmEntity> {
     query: string,
     options: RagQueryOptions = {},
   ): Promise<RagHit[]> {
-    return await this.ragRetrieverService.retrieve(query, options);
-  }
+    let helper;
+    try {
+      helper = await this.helperService.getDefaultHelper(HelperType.RAG);
+    } catch (error) {
+      const reason = error instanceof Error ? ` ${error.message}` : '';
+      throw new RagHelperConfigurationError(
+        `The configured default RAG helper is unavailable.${reason}`,
+      );
+    }
 
-  /**
-   * Checks whether RAG retrieval is enabled at the settings level.
-   *
-   * @returns True when rag_settings.enabled is on.
-   */
-  async isRagEnabled(): Promise<boolean> {
-    return await this.ragRetrieverService.isEnabled();
+    return await helper.retrieve(query, options);
   }
 
   /**

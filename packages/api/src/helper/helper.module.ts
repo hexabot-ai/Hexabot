@@ -10,6 +10,7 @@ import { InjectDynamicProviders } from 'nestjs-dynamic-providers';
 
 import { ChatModule } from '@/chat/chat.module';
 import { CmsModule } from '@/cms/cms.module';
+import { UserModule } from '@/user/user.module';
 
 import { HelperController } from './helper.controller';
 import { HelperService } from './helper.service';
@@ -26,7 +27,7 @@ import { HelperService } from './helper.service';
   'dist/extensions/helpers/**/*.helper.js',
 )
 @Module({
-  imports: [HttpModule, CmsModule, ChatModule],
+  imports: [HttpModule, CmsModule, ChatModule, UserModule],
   controllers: [HelperController],
   providers: [HelperService],
   exports: [HelperService],

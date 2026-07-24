@@ -12,7 +12,8 @@ import {
 import type { AxiosInstance } from "axios";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiClient } from "./api.class";
+import { ApiClient, ROUTES } from "./api.class";
+import { EntityType } from "./types";
 
 const createRequestMock = () => {
   return {
@@ -89,5 +90,11 @@ describe("ApiClient workflow import/export", () => {
     expect(formData).toBeInstanceOf(FormData);
     expect(config).toEqual({ params: { _csrf: "csrf-token" } });
     expect(result).toBe(importResult);
+  });
+});
+
+describe("RAG helper API route", () => {
+  it("maps RagHelper autocomplete requests to /helper/rag", () => {
+    expect(ROUTES[EntityType.RAG_HELPER]).toBe("/helper/rag");
   });
 });

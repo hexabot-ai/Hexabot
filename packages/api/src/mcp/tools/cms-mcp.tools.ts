@@ -214,7 +214,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
     description: 'Search indexed CMS content through Hexabot RAG retrieval.',
     parameters: z.object({
       query: z.string().min(1),
-      mode: z.enum(['embedding', 'lexical']).optional(),
       limit: z.number().int().min(1).max(50).default(10),
       contentTypeId: uuidSchema.optional(),
       includeInactive: z.boolean().optional(),
@@ -222,14 +221,12 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   })
   async searchRagContent(args: {
     query: string;
-    mode?: 'embedding' | 'lexical';
     limit: number;
     contentTypeId?: string;
     includeInactive?: boolean;
   }) {
     return {
       items: await this.contentService.retrieve(args.query, {
-        mode: args.mode,
         limit: args.limit,
         contentTypeId: args.contentTypeId,
         includeInactive: args.includeInactive,

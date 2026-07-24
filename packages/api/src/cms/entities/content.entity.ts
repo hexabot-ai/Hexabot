@@ -39,7 +39,13 @@ const requireEntity = createRequire(__filename);
 
 @Entity({ name: 'contents' })
 @Index(['title'])
-@Index(['searchText'])
+// NOTE: `searchText` is intentionally NOT indexed with a plain (btree) index.
+// It is a `text` column holding full content bodies; on PostgreSQL a btree
+// entry is capped at ~2704 bytes, so indexing it makes inserting long content
+// fail with "index row size ... exceeds btree version 4 maximum 2704". A btree
+// also cannot serve the only query that reads it (`LOWER(searchText) LIKE
+// '%..%'`). Lexical RAG uses the GIN `contents_fts_idx` from the v3.4.0
+// migration instead. See that migration for the drop of any legacy btree index.
 export class ContentOrmEntity extends BaseOrmEntity<ContentDto> {
   plainCls = contentSchema;
 

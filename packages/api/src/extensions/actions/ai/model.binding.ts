@@ -9,49 +9,9 @@ import z from 'zod';
 
 import { createBindingKind } from '@/bindings/create-binding-kind';
 
-export const vercelAiSdkProviders = [
-  'alibaba',
-  'amazon-bedrock',
-  'anthropic',
-  'assemblyai',
-  'azure',
-  'baseten',
-  'black-forest-labs',
-  'bytedance',
-  'cerebras',
-  'claude',
-  'cohere',
-  'deepgram',
-  'deepinfra',
-  'deepseek',
-  'elevenlabs',
-  'fal',
-  'fireworks',
-  'gateway',
-  'gemini',
-  'gladia',
-  'google',
-  'google-vertex',
-  'groq',
-  'huggingface',
-  'hume',
-  'klingai',
-  'litellm',
-  'lmnt',
-  'luma',
-  'mistral',
-  'moonshotai',
-  'open-responses',
-  'openai',
-  'openai-compatible',
-  'perplexity',
-  'prodia',
-  'replicate',
-  'revai',
-  'togetherai',
-  'vercel',
-  'xai',
-] as const;
+import { vercelAiSdkProviders } from './provider.constants';
+
+export { vercelAiSdkProviders } from './provider.constants';
 
 export const aiModelBindingSchema = z.strictObject({
   provider: z.enum(vercelAiSdkProviders).default('openai').meta({

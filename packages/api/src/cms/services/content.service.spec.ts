@@ -6,6 +6,7 @@
 
 import { OutgoingMessageType, ContentOptions } from '@hexabot-ai/types';
 
+import { HelperService } from '@/helper/helper.service';
 import { LoggerService } from '@/logger/logger.service';
 import {
   contentFixtures,
@@ -20,6 +21,7 @@ import { ContentService } from './content.service';
 describe('ContentService (TypeORM)', () => {
   let contentService: ContentService;
   let contentTypeService: ContentTypeService;
+  let helperService: HelperService;
   let logger: LoggerService;
   const createdContentIds: string[] = [];
 
@@ -36,9 +38,10 @@ describe('ContentService (TypeORM)', () => {
         },
       ],
     });
-    [contentService, contentTypeService] = await getMocks([
+    [contentService, contentTypeService, helperService] = await getMocks([
       ContentService,
       ContentTypeService,
+      HelperService,
     ]);
     logger = contentService.logger;
   });
@@ -115,6 +118,29 @@ describe('ContentService (TypeORM)', () => {
             typeof content.contentType.id === 'string',
         ),
       ).toBe(true);
+    });
+  });
+
+  describe('retrieve', () => {
+    it('reports an unavailable configured helper as a configuration error', async () => {
+      jest
+        .spyOn(helperService, 'getDefaultHelper')
+        .mockRejectedValue(new Error('missing helper'));
+
+      await expect(contentService.retrieve('query')).rejects.toThrow(
+        'The configured default RAG helper is unavailable. missing helper',
+      );
+    });
+
+    it('does not swallow helper retrieval failures', async () => {
+      const retrieve = jest.fn().mockRejectedValue(new Error('SQL failed'));
+      jest
+        .spyOn(helperService, 'getDefaultHelper')
+        .mockResolvedValue({ retrieve } as never);
+
+      await expect(contentService.retrieve('query')).rejects.toThrow(
+        'SQL failed',
+      );
     });
   });
 

@@ -20,6 +20,12 @@ export * from './channels/web/inbound';
 
 export * from './helpers/local-storage/index.helper';
 
+export * from './helpers/fulltext-search/index.helper';
+
+export * from './helpers/pgvector/index.helper';
+
+export * from './helpers/pgvector/pgvector.settings';
+
 export * from './actions/ai/ai-prompt.helpers';
 
 export * from './actions/ai/ai-schemas';

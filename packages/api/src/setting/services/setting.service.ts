@@ -314,9 +314,16 @@ export class SettingService extends BaseOrmService<SettingOrmEntity> {
     event: UpdateEntityEvent<SettingOrmEntity>,
   ): Promise<void> {
     if (event.entity) {
+      // Derived listeners must observe the newly persisted value, never a
+      // cached settings tree from before this update.
+      await this.clearCache();
       const setting = event.entity.toPlainCls();
       const group = setting.group as keyof IHookSettingsGroupLabelOperationMap;
       const label = setting.label as '*';
+      // Fire-and-forget: derived listeners may run full-corpus reindex work
+      // (e.g. pgvector enqueueAll / fulltext-search reindex). Awaiting them here
+      // would block the HTTP request that saved the setting and time out on a
+      // large corpus. clearCache() above already guarantees fresh reads.
       this.eventEmitter?.emit(`hook:${group}:${label}`, setting);
     }
   }

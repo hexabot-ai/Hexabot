@@ -5,14 +5,23 @@
  */
 
 /**
- * Raised when RAG embedding retrieval is requested but the embedding
- * settings (provider, API key) are incomplete. Distinguishes a
- * configuration gap from genuine backend/infrastructure failures so
- * callers can degrade gracefully instead of failing hard.
+ * Raised when the selected RAG helper needs user-supplied configuration before
+ * it can serve queries.
  */
-export class RagEmbeddingNotConfiguredError extends Error {
+export class RagHelperConfigurationError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'RagEmbeddingNotConfiguredError';
+    this.name = 'RagHelperConfigurationError';
+  }
+}
+
+/**
+ * Raised when a RAG helper cannot run against the current database or when its
+ * required database structures are unavailable.
+ */
+export class RagHelperUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RagHelperUnavailableError';
   }
 }

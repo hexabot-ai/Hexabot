@@ -21,9 +21,6 @@ import { MenuRepository } from './repositories/menu.repository';
 import { ContentTypeService } from './services/content-type.service';
 import { ContentService } from './services/content.service';
 import { MenuService } from './services/menu.service';
-import { RagBackendService } from './services/rag-backend.service';
-import { RagIndexerService } from './services/rag-indexer.service';
-import { RagRetrieverService } from './services/rag-retriever.service';
 import { RagService } from './services/rag.service';
 
 @Module({
@@ -39,9 +36,6 @@ import { RagService } from './services/rag.service';
   providers: [
     ContentTypeService,
     ContentService,
-    RagBackendService,
-    RagIndexerService,
-    RagRetrieverService,
     RagService,
     ContentTypeRepository,
     ContentRepository,

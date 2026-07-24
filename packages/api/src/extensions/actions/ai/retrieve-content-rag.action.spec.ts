@@ -5,7 +5,10 @@
  */
 
 import { ActionService } from '@/actions/actions.service';
-import { RagEmbeddingNotConfiguredError } from '@/cms';
+import {
+  RagHelperConfigurationError,
+  RagHelperUnavailableError,
+} from '@/cms/errors/rag.errors';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import { RetrieveRagContentAction } from './retrieve-content-rag.action';
@@ -13,9 +16,8 @@ import { RetrieveRagContentAction } from './retrieve-content-rag.action';
 describe('RetrieveRagContentAction', () => {
   let actionService: ActionService;
   let action: InstanceType<typeof RetrieveRagContentAction>;
-  let contentService: { retrieve: jest.Mock; isRagEnabled: jest.Mock };
+  let contentService: { retrieve: jest.Mock };
   let contentTypeService: { findOne: jest.Mock };
-  let loggerService: { warn: jest.Mock };
   let context: WorkflowRuntimeContext;
 
   beforeEach(() => {
@@ -24,19 +26,15 @@ describe('RetrieveRagContentAction', () => {
     action = new RetrieveRagContentAction(actionService);
     contentService = {
       retrieve: jest.fn(),
-      isRagEnabled: jest.fn().mockResolvedValue(true),
     };
     contentTypeService = {
       findOne: jest.fn().mockResolvedValue({ id: 'ct-1' }),
-    };
-    loggerService = {
-      warn: jest.fn(),
     };
     context = {
       services: {
         content: contentService,
         contentType: contentTypeService,
-        logger: loggerService,
+        logger: { warn: jest.fn() },
       },
     } as unknown as WorkflowRuntimeContext;
   });
@@ -58,6 +56,25 @@ describe('RetrieveRagContentAction', () => {
     expect(parsedSettings.include_inactive).toBe(false);
   });
 
+  it('accepts and ignores the deprecated mode setting', async () => {
+    contentService.retrieve.mockResolvedValue([]);
+
+    const settings = action.parseSettings({
+      mode: 'embedding',
+      include_inactive: false,
+    });
+    await action.execute({
+      input: { query: 'product' },
+      context,
+      settings,
+      bindings: {} as any,
+    });
+
+    expect(contentService.retrieve).toHaveBeenCalledWith('product', {
+      includeInactive: false,
+    });
+  });
+
   it('maps settings to RAG options and returns structured hits', async () => {
     const hits = [
       {
@@ -66,7 +83,7 @@ describe('RetrieveRagContentAction', () => {
         text: 'Product details',
         score: 0.91,
         contentTypeId: 'ct-1',
-        source: 'embedding',
+        source: 'fulltext-search',
       },
     ];
     contentService.retrieve.mockResolvedValue(hits);
@@ -75,7 +92,6 @@ describe('RetrieveRagContentAction', () => {
       input: { query: 'product' },
       context,
       settings: {
-        mode: 'embedding',
         limit: 5,
         content_type_id: 'ct-1',
         include_inactive: true,
@@ -85,7 +101,6 @@ describe('RetrieveRagContentAction', () => {
 
     expect(contentTypeService.findOne).toHaveBeenCalledWith('ct-1');
     expect(contentService.retrieve).toHaveBeenCalledWith('product', {
-      mode: 'embedding',
       limit: 5,
       contentTypeId: 'ct-1',
       includeInactive: true,
@@ -130,60 +145,9 @@ describe('RetrieveRagContentAction', () => {
     expect(contentService.retrieve).not.toHaveBeenCalled();
   });
 
-  it('returns a warning instead of empty hits when RAG is disabled', async () => {
-    contentService.isRagEnabled.mockResolvedValue(false);
-
-    const result = await action.execute({
-      input: { query: 'product' },
-      context,
-      settings: {
-        include_inactive: false,
-      } as any,
-      bindings: {} as any,
-    });
-
-    expect(result).toEqual({
-      hits: [],
-      text: '',
-      warning:
-        'RAG is disabled. Enable it in Settings > RAG (rag_settings.enabled) to retrieve content.',
-    });
-    expect(contentService.retrieve).not.toHaveBeenCalled();
-    expect(loggerService.warn).toHaveBeenCalledWith(
-      expect.stringContaining('RAG is disabled'),
-    );
-  });
-
-  it('returns a warning when embedding retrieval is not configured', async () => {
+  it('propagates retrieval errors', async () => {
     contentService.retrieve.mockRejectedValue(
-      new RagEmbeddingNotConfiguredError(
-        'Missing RAG embedding API key. Set rag_settings.embedding_api_key.',
-      ),
-    );
-
-    const result = await action.execute({
-      input: { query: 'product' },
-      context,
-      settings: {
-        mode: 'embedding',
-        include_inactive: false,
-      } as any,
-      bindings: {} as any,
-    });
-
-    expect(result).toEqual({
-      hits: [],
-      text: '',
-      warning: expect.stringContaining('rag_settings.embedding_api_key'),
-    });
-    expect(loggerService.warn).toHaveBeenCalledWith(
-      expect.stringContaining('rag_settings.embedding_api_key'),
-    );
-  });
-
-  it('rethrows non-configuration retrieval errors', async () => {
-    contentService.retrieve.mockRejectedValue(
-      new Error('Unable to initialize RAG embedding index.'),
+      new Error('Unable to run full-text search.'),
     );
 
     await expect(
@@ -191,13 +155,37 @@ describe('RetrieveRagContentAction', () => {
         input: { query: 'product' },
         context,
         settings: {
-          mode: 'embedding',
           include_inactive: false,
         } as any,
         bindings: {} as any,
       }),
-    ).rejects.toThrow('Unable to initialize RAG embedding index.');
+    ).rejects.toThrow('Unable to run full-text search.');
   });
+
+  it.each([
+    new RagHelperConfigurationError('missing key'),
+    new RagHelperUnavailableError('missing extension'),
+  ])(
+    'turns known helper configuration failures into warnings',
+    async (error) => {
+      contentService.retrieve.mockRejectedValue(error);
+      const result = await action.execute({
+        input: { query: 'product' },
+        context,
+        settings: {
+          include_inactive: false,
+        } as any,
+        bindings: {} as any,
+      });
+
+      expect(result).toEqual({
+        hits: [],
+        text: '',
+        warning: error.message,
+      });
+      expect(context.services.logger?.warn).toHaveBeenCalled();
+    },
+  );
 
   it('throws when required content services are missing from context', async () => {
     const invalidContext = {

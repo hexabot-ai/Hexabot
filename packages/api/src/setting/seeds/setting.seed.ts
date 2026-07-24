@@ -25,20 +25,22 @@ export class SettingSeeder extends BaseOrmSeeder<SettingOrmEntity> {
   }
 
   async seed(models: SettingCreateDto[]): Promise<boolean> {
-    const grouped = models.reduce<Record<string, SettingCreateDto[]>>(
-      (acc, model) => {
-        acc[model.group] = acc[model.group] || [];
-        acc[model.group].push(model);
+    const missing: SettingCreateDto[] = [];
 
-        return acc;
-      },
-      {},
-    );
-
-    for (const [group, settings] of Object.entries(grouped)) {
-      if (await this.isEmpty({ where: { group } })) {
-        await this.repository.createMany(settings);
+    for (const model of models) {
+      if (
+        await this.isEmpty({
+          where: {
+            group: model.group,
+            label: model.label,
+          },
+        })
+      ) {
+        missing.push(model);
       }
+    }
+    if (missing.length > 0) {
+      await this.repository.createMany(missing);
     }
 
     await this.cacheManager.del(SETTING_CACHE_KEY);

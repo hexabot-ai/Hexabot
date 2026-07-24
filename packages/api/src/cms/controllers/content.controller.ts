@@ -29,7 +29,7 @@ import { TypeOrmSearchFilterPipe } from '@/utils/pipes/typeorm-search-filter.pip
 import { ContentCreateDto, ContentUpdateDto } from '../dto/content.dto';
 import { ContentOrmEntity } from '../entities/content.entity';
 import { RagService } from '../services/rag.service';
-import { RagHit, RagMode, RagQueryOptions } from '../types/rag';
+import { RagHit, RagQueryOptions } from '../types/rag';
 
 import { ContentTypeService } from './../services/content-type.service';
 import { ContentService } from './../services/content.service';
@@ -42,6 +42,17 @@ export class ContentController extends BaseOrmController<ContentOrmEntity> {
     private readonly ragService: RagService,
   ) {
     super(contentService);
+  }
+
+  /**
+   * Schedules reconciliation of the configured RAG helper.
+   */
+  @Post('rag/reindex')
+  @HttpCode(202)
+  reindexRag(): { accepted: true } {
+    this.ragService.scheduleReindexAll();
+
+    return { accepted: true };
   }
 
   /**
@@ -91,19 +102,6 @@ export class ContentController extends BaseOrmController<ContentOrmEntity> {
   }
 
   /**
-   * Triggers a full RAG reindex for content.
-   *
-   * @returns An acknowledgement payload once reindexing is queued.
-   */
-  @Post('rag/reindex')
-  @HttpCode(202)
-  async reindexRag(): Promise<{ accepted: true }> {
-    this.ragService.scheduleReindexAll();
-
-    return { accepted: true };
-  }
-
-  /**
    * Executes a RAG search query for content.
    *
    * @param query - Search query text.
@@ -113,7 +111,6 @@ export class ContentController extends BaseOrmController<ContentOrmEntity> {
   @Get('rag/search')
   async searchRag(
     @Query('query') query: string,
-    @Query('mode') mode?: RagMode,
     @Query('limit') limit?: string,
     @Query('contentTypeId') contentTypeId?: string,
     @Query('includeInactive') includeInactive?: string,
@@ -127,7 +124,6 @@ export class ContentController extends BaseOrmController<ContentOrmEntity> {
         ? undefined
         : includeInactive.toLowerCase() === 'true' || includeInactive === '1';
     const options: RagQueryOptions = {
-      ...(mode ? { mode } : {}),
       ...(Number.isFinite(parsedLimit) ? { limit: parsedLimit } : {}),
       ...(contentTypeId ? { contentTypeId } : {}),
       ...(includeInactive === undefined

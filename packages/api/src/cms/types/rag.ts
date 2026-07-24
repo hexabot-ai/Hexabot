@@ -4,10 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-export type RagMode = 'embedding' | 'lexical';
-
 export interface RagQueryOptions {
-  mode?: RagMode;
   limit?: number;
   contentTypeId?: string;
   includeInactive?: boolean;
@@ -19,5 +16,6 @@ export interface RagHit {
   text: string;
   score?: number;
   contentTypeId?: string;
-  source: RagMode;
+  /** Name of the RAG helper that produced this hit. */
+  source: string;
 }
