@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
@@ -315,5 +315,88 @@ describeWithPostgres('pgvector runtime self-heal', () => {
     await queryRunner.connect();
     await expect(isPgvectorProvisioned(queryRunner)).resolves.toBe(true);
     await queryRunner.release();
+  });
+});
+
+describeWithPostgres('contents.searchText btree index removal', () => {
+  jest.setTimeout(30000);
+
+  const schema = `rag_idx_${process.pid}_${Date.now()}`;
+  // High-entropy text so TOAST compression can't shrink the btree entry back
+  // under the 2704-byte limit (repetitive text would compress and slip through).
+  const longText = randomBytes(4000).toString('hex'); // 8 KB, incompressible
+  let admin: DataSource;
+  let dataSource: DataSource;
+
+  beforeAll(async () => {
+    admin = await new DataSource({
+      type: 'postgres',
+      url: databaseUrl,
+    }).initialize();
+    await admin.query(`CREATE SCHEMA "${schema}"`);
+
+    dataSource = await new DataSource({
+      type: 'postgres',
+      url: databaseUrl,
+      schema,
+    }).initialize();
+    await dataSource.query(
+      `CREATE TABLE "${schema}"."contents" (` +
+        `"id" varchar PRIMARY KEY, ` +
+        `"title" varchar NOT NULL, "status" boolean NOT NULL DEFAULT true, ` +
+        `"searchText" text NOT NULL` +
+        `)`,
+    );
+    // Reproduce the auto-generated btree index that TypeORM would create from
+    // the (now removed) `@Index(['searchText'])` decorator.
+    await dataSource.query(
+      `CREATE INDEX "IDX_contents_searchText_legacy" ` +
+        `ON "${schema}"."contents" ("searchText")`,
+    );
+  });
+
+  afterAll(async () => {
+    await dataSource?.destroy();
+    if (admin?.isInitialized) {
+      await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await admin.destroy();
+    }
+  });
+
+  const insertLongContent = (id: string) =>
+    dataSource.query(
+      `INSERT INTO "${schema}"."contents" ("id", "title", "searchText") ` +
+        `VALUES ($1, 'Long', $2)`,
+      [id, longText],
+    );
+
+  it('rejects long content while the btree index exists', async () => {
+    await expect(insertLongContent('before')).rejects.toThrow(
+      /index row size|maximum .* for index/i,
+    );
+  });
+
+  it('drops the index so long content can be inserted', async () => {
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    await new Migration1784815200000_V3_4_0().up(queryRunner);
+    await queryRunner.commitTransaction();
+    await queryRunner.release();
+
+    const indexes = await dataSource.query(
+      `SELECT i.relname AS name FROM pg_index ix ` +
+        `JOIN pg_class i ON i.oid = ix.indexrelid ` +
+        `JOIN pg_class t ON t.oid = ix.indrelid ` +
+        `JOIN pg_namespace n ON n.oid = t.relnamespace ` +
+        `JOIN pg_am am ON am.oid = i.relam ` +
+        `JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ix.indkey[0] ` +
+        `WHERE t.relname = 'contents' AND a.attname = 'searchText' ` +
+        `AND ix.indnatts = 1 AND am.amname = 'btree' AND n.nspname = $1`,
+      [schema],
+    );
+    expect(indexes).toHaveLength(0);
+
+    await expect(insertLongContent('after')).resolves.not.toThrow();
   });
 });

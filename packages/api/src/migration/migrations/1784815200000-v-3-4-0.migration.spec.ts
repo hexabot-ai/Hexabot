@@ -132,6 +132,24 @@ describe('Migration v3.4.0', () => {
       })
     ).value;
 
+  it('drops a legacy btree index on searchText', async () => {
+    await queryRunner.query(
+      `CREATE INDEX "idx_contents_search_text" ON "contents" ("searchText")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "idx_contents_id" ON "contents" ("id")`,
+    );
+
+    await new Migration1784815200000_V3_4_0().up(queryRunner);
+
+    const remaining = await queryRunner.query(
+      `SELECT name FROM sqlite_master WHERE type = 'index' ` +
+        `AND name IN ('idx_contents_search_text', 'idx_contents_id')`,
+    );
+    // Only the searchText index is removed; unrelated indexes are preserved.
+    expect(remaining).toEqual([{ name: 'idx_contents_id' }]);
+  });
+
   it('migrates SQLite embedding installations to lexical while preserving configuration', async () => {
     await seedLegacyEmbeddingSettings();
     await seedNewDefaults();
