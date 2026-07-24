@@ -665,6 +665,32 @@ describe('validateWorkflow', () => {
       ).toBe(true);
     });
 
+    it('ignores serialized action schemas during binding validation', () => {
+      expect(() =>
+        validateWorkflow(
+          {
+            defs: {
+              retrieve_rag_content: {
+                kind: 'tools',
+                action: 'retrieve_rag_content',
+                settings: {},
+              },
+            },
+            flow: [],
+            outputs: {},
+          },
+          {
+            bindingKinds,
+            actions: {
+              retrieve_rag_content: {
+                settingSchema: {} as unknown as z.ZodTypeAny,
+              },
+            },
+          },
+        ),
+      ).not.toThrow();
+    });
+
     it('reports missing actions with code, actionName and path', () => {
       const workflow = {
         defs: mergeTaskDefs({
