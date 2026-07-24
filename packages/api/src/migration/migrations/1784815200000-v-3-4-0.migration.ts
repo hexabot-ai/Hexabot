@@ -1,0 +1,415 @@
+/*
+ * Hexabot — Fair Core License (FCL-1.0-ALv2)
+ * Copyright (c) 2026 Hexastack.
+ * Full terms: see LICENSE.md.
+ */
+
+import { createHash, randomUUID } from 'node:crypto';
+
+import { In, MigrationInterface, QueryRunner } from 'typeorm';
+
+import { vercelAiSdkProviders } from '@/extensions/actions/ai/provider.constants';
+import {
+  PGVECTOR_CHUNKS_TABLE,
+  PGVECTOR_DOCUMENTS_TABLE,
+  PGVECTOR_JOBS_TABLE,
+  PGVECTOR_TRIGGER,
+  PGVECTOR_TRIGGER_FUNCTION,
+  provisionPgvectorInfrastructure,
+  qualifiedName,
+} from '@/extensions/helpers/pgvector/pgvector.provisioning';
+import { SettingOrmEntity } from '@/setting/entities/setting.entity';
+
+import { MigrationServices } from '../types';
+
+const FULLTEXT_HELPER = 'fulltext-search';
+const PGVECTOR_HELPER = 'pgvector';
+
+type SettingValue = string | number | boolean;
+
+export default class Migration1784815200000_V3_4_0
+  implements MigrationInterface
+{
+  name = 'Migration1784815200000_V3_4_0';
+
+  public async up(
+    queryRunner: QueryRunner,
+    services?: MigrationServices,
+  ): Promise<void> {
+    const databaseType = queryRunner.connection.options.type;
+    let pgvectorAvailable = false;
+
+    if (databaseType === 'postgres') {
+      await this.createPostgresLexicalIndex(queryRunner);
+      pgvectorAvailable = await this.tryCreatePgvectorInfrastructure(
+        queryRunner,
+        services,
+      );
+    } else if (databaseType === 'better-sqlite3' || databaseType === 'sqlite') {
+      await this.createSqliteLexicalIndex(queryRunner);
+    }
+
+    await this.migrateSettings(
+      queryRunner,
+      databaseType === 'postgres',
+      pgvectorAvailable,
+      services,
+    );
+  }
+
+  public async down(
+    queryRunner: QueryRunner,
+    _services?: MigrationServices,
+  ): Promise<void> {
+    const databaseType = queryRunner.connection.options.type;
+
+    if (databaseType === 'postgres') {
+      const contents = this.table(queryRunner, 'contents');
+      await queryRunner.query(
+        `DROP TRIGGER IF EXISTS "${PGVECTOR_TRIGGER}" ON ${contents}`,
+      );
+      await queryRunner.query(
+        `DROP FUNCTION IF EXISTS ${this.table(
+          queryRunner,
+          PGVECTOR_TRIGGER_FUNCTION,
+        )}()`,
+      );
+      await queryRunner.query(
+        `DROP TABLE IF EXISTS ${this.table(
+          queryRunner,
+          PGVECTOR_CHUNKS_TABLE,
+        )}`,
+      );
+      await queryRunner.query(
+        `DROP TABLE IF EXISTS ${this.table(
+          queryRunner,
+          PGVECTOR_DOCUMENTS_TABLE,
+        )}`,
+      );
+      await queryRunner.query(
+        `DROP TABLE IF EXISTS ${this.table(queryRunner, PGVECTOR_JOBS_TABLE)}`,
+      );
+      await queryRunner.query(
+        `DROP INDEX IF EXISTS ${this.table(queryRunner, 'contents_fts_idx')}`,
+      );
+    } else if (databaseType === 'better-sqlite3' || databaseType === 'sqlite') {
+      await queryRunner.query(`DROP TRIGGER IF EXISTS "contents_fts_insert"`);
+      await queryRunner.query(`DROP TRIGGER IF EXISTS "contents_fts_update"`);
+      await queryRunner.query(`DROP TRIGGER IF EXISTS "contents_fts_delete"`);
+      await queryRunner.query(`DROP TABLE IF EXISTS "contents_fts"`);
+    }
+
+    if (await queryRunner.hasTable('settings')) {
+      const repository = queryRunner.manager.getRepository(SettingOrmEntity);
+      await repository.delete({ group: PGVECTOR_HELPER });
+      await repository.delete({
+        group: 'global_settings',
+        label: 'default_rag_helper',
+      });
+    }
+  }
+
+  private async createPostgresLexicalIndex(
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    const contents = this.table(queryRunner, 'contents');
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "contents_fts_idx" ON ${contents} ` +
+        `USING GIN (to_tsvector('simple', COALESCE("searchText", '')))`,
+    );
+  }
+
+  private async createSqliteLexicalIndex(
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    await queryRunner.query(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS "contents_fts" ` +
+        `USING fts5("id" UNINDEXED, "searchText", tokenize = 'unicode61')`,
+    );
+    await queryRunner.query(
+      `CREATE TRIGGER IF NOT EXISTS "contents_fts_insert" ` +
+        `AFTER INSERT ON "contents" BEGIN ` +
+        `INSERT INTO "contents_fts" ("id", "searchText") ` +
+        `VALUES (NEW."id", NEW."searchText"); END`,
+    );
+    await queryRunner.query(
+      `CREATE TRIGGER IF NOT EXISTS "contents_fts_update" ` +
+        `AFTER UPDATE OF "searchText" ON "contents" BEGIN ` +
+        `DELETE FROM "contents_fts" WHERE "id" = OLD."id"; ` +
+        `INSERT INTO "contents_fts" ("id", "searchText") ` +
+        `VALUES (NEW."id", NEW."searchText"); END`,
+    );
+    await queryRunner.query(
+      `CREATE TRIGGER IF NOT EXISTS "contents_fts_delete" ` +
+        `AFTER DELETE ON "contents" BEGIN ` +
+        `DELETE FROM "contents_fts" WHERE "id" = OLD."id"; END`,
+    );
+    await queryRunner.query(`DELETE FROM "contents_fts"`);
+    await queryRunner.query(
+      `INSERT INTO "contents_fts" ("id", "searchText") ` +
+        `SELECT "id", "searchText" FROM "contents"`,
+    );
+  }
+
+  private async tryCreatePgvectorInfrastructure(
+    queryRunner: QueryRunner,
+    services?: MigrationServices,
+  ): Promise<boolean> {
+    // A savepoint isolates the vector DDL from the surrounding settings
+    // migration: if the `vector` extension is missing or privileges are
+    // insufficient, we roll back only this block and keep lexical RAG. The
+    // pgvector store reprovisions on demand (PgvectorStore.assertInfrastructure)
+    // once the extension is installed, so no manual re-run is required.
+    await queryRunner.query('SAVEPOINT "hexabot_pgvector_setup"');
+    try {
+      await provisionPgvectorInfrastructure(queryRunner);
+      await queryRunner.query('RELEASE SAVEPOINT "hexabot_pgvector_setup"');
+
+      return true;
+    } catch (error) {
+      await queryRunner.query('ROLLBACK TO SAVEPOINT "hexabot_pgvector_setup"');
+      await queryRunner.query('RELEASE SAVEPOINT "hexabot_pgvector_setup"');
+      services?.logger.warn(
+        'pgvector RAG was not provisioned. Lexical RAG remains active. Install the PostgreSQL vector extension with sufficient database privileges; the pgvector helper then provisions itself automatically the next time it is used.',
+        error,
+      );
+
+      return false;
+    }
+  }
+
+  private async migrateSettings(
+    queryRunner: QueryRunner,
+    isPostgres: boolean,
+    pgvectorAvailable: boolean,
+    services?: MigrationServices,
+  ): Promise<void> {
+    if (!(await queryRunner.hasTable('settings'))) {
+      return;
+    }
+
+    const repository = queryRunner.manager.getRepository(SettingOrmEntity);
+    const settings = await repository.find({
+      where: {
+        group: In(['global_settings', 'rag_settings', PGVECTOR_HELPER]),
+      },
+    });
+    const settingByKey = new Map(
+      settings.map((setting) => [`${setting.group}:${setting.label}`, setting]),
+    );
+    const getLegacyValue = (label: string): unknown =>
+      settingByKey.get(`rag_settings:${label}`)?.value;
+    const legacyApiKey = this.asNonEmptyString(
+      getLegacyValue('embedding_api_key'),
+    );
+    const embeddingCredentialId = legacyApiKey
+      ? await this.migrateLegacyEmbeddingCredential(queryRunner, legacyApiKey)
+      : undefined;
+    if (legacyApiKey && !embeddingCredentialId) {
+      services?.logger.warn(
+        'The legacy RAG embedding API key could not be converted to a credential because no credential owner was available. Lexical RAG remains selected; the legacy setting was preserved.',
+      );
+    }
+    const pgvectorBaseDefaults: Record<string, SettingValue> = {
+      embedding_provider: 'openai',
+      embedding_model: 'text-embedding-3-small',
+      embedding_api_key: '',
+      embedding_base_url: '',
+      embedding_dimensions: 1536,
+      chunk_size: 2000,
+      chunk_overlap: 200,
+    };
+    const legacyOverrides: Partial<Record<string, SettingValue>> = {
+      ...(this.asEmbeddingProvider(getLegacyValue('embedding_provider'))
+        ? {
+            embedding_provider: this.asEmbeddingProvider(
+              getLegacyValue('embedding_provider'),
+            ),
+          }
+        : {}),
+      ...(this.asNonEmptyString(getLegacyValue('embedding_model'))
+        ? {
+            embedding_model: this.asNonEmptyString(
+              getLegacyValue('embedding_model'),
+            ),
+          }
+        : {}),
+      ...(embeddingCredentialId
+        ? {
+            embedding_api_key: embeddingCredentialId,
+          }
+        : {}),
+      ...(this.asString(getLegacyValue('embedding_base_url')) !== undefined
+        ? {
+            embedding_base_url: this.asString(
+              getLegacyValue('embedding_base_url'),
+            ),
+          }
+        : {}),
+      ...(this.asPositiveInteger(getLegacyValue('embedding_dimensions'))
+        ? {
+            embedding_dimensions: this.asPositiveInteger(
+              getLegacyValue('embedding_dimensions'),
+            ),
+          }
+        : {}),
+    };
+
+    for (const [label, defaultValue] of Object.entries(pgvectorBaseDefaults)) {
+      const key = `${PGVECTOR_HELPER}:${label}`;
+      const existing = settingByKey.get(key);
+      const legacyValue = legacyOverrides[label];
+      const value = legacyValue ?? defaultValue;
+      if (!existing) {
+        const setting = repository.create({
+          group: PGVECTOR_HELPER,
+          subgroup: 'helper',
+          label,
+          value,
+        });
+        await repository.save(setting);
+        settingByKey.set(key, setting);
+      } else if (
+        legacyValue !== undefined &&
+        (existing.value === defaultValue ||
+          (label === 'embedding_api_key' && existing.value === legacyApiKey)) &&
+        existing.value !== legacyValue
+      ) {
+        existing.value = legacyValue;
+        await repository.save(existing);
+      }
+    }
+
+    const defaultHelperKey = 'global_settings:default_rag_helper';
+    const legacyMode = this.asString(getLegacyValue('default_mode'));
+    const legacyEnabled = this.asBoolean(getLegacyValue('enabled')) === true;
+    const hasApiKey = Boolean(embeddingCredentialId);
+    // Only auto-select pgvector when the legacy RAG was actually enabled.
+    // Ignoring `enabled` would activate embedding-based indexing on upgrade for
+    // installations that deliberately disabled RAG, silently sending content to
+    // the external embedding provider.
+    const defaultHelper =
+      legacyEnabled &&
+      legacyMode === 'embedding' &&
+      isPostgres &&
+      pgvectorAvailable &&
+      hasApiKey
+        ? PGVECTOR_HELPER
+        : FULLTEXT_HELPER;
+    const existingDefault = settingByKey.get(defaultHelperKey);
+    if (!existingDefault) {
+      await repository.save(
+        repository.create({
+          group: 'global_settings',
+          label: 'default_rag_helper',
+          value: defaultHelper,
+        }),
+      );
+    } else if (
+      legacyMode !== undefined &&
+      [FULLTEXT_HELPER, PGVECTOR_HELPER].includes(existingDefault.value) &&
+      existingDefault.value !== defaultHelper
+    ) {
+      // The new default can be seeded during Nest bootstrap before migrations
+      // run. Replace only known built-in defaults; preserve custom helpers.
+      existingDefault.value = defaultHelper;
+      await repository.save(existingDefault);
+    }
+  }
+
+  private async migrateLegacyEmbeddingCredential(
+    queryRunner: QueryRunner,
+    apiKey: string,
+  ): Promise<string | undefined> {
+    if (
+      !(await queryRunner.hasTable('credentials')) ||
+      !(await queryRunner.hasTable('users'))
+    ) {
+      return undefined;
+    }
+
+    const credentials = this.table(queryRunner, 'credentials');
+    const users = this.table(queryRunner, 'users');
+    const placeholder = (index: number) =>
+      queryRunner.connection.options.type === 'postgres' ? `$${index}` : '?';
+    const existingById = (await queryRunner.query(
+      `SELECT "id" FROM ${credentials} WHERE "id" = ${placeholder(1)} LIMIT 1`,
+      [apiKey],
+    )) as Array<{ id: string }>;
+    if (existingById[0]?.id) {
+      return existingById[0].id;
+    }
+
+    const fingerprint = createHash('sha256')
+      .update(apiKey)
+      .digest('hex')
+      .slice(0, 12);
+    const name = `Legacy RAG embedding API key (${fingerprint})`;
+    const existingByName = (await queryRunner.query(
+      `SELECT "id" FROM ${credentials} WHERE "name" = ${placeholder(1)} LIMIT 1`,
+      [name],
+    )) as Array<{ id: string }>;
+    if (existingByName[0]?.id) {
+      return existingByName[0].id;
+    }
+
+    const owners = (await queryRunner.query(
+      `SELECT "id" FROM ${users} WHERE "type" = ${placeholder(1)} ORDER BY "id" LIMIT 1`,
+      ['UserOrmEntity'],
+    )) as Array<{ id: string }>;
+    const ownerId = owners[0]?.id;
+    if (!ownerId) {
+      return undefined;
+    }
+
+    const id = randomUUID();
+    await queryRunner.query(
+      `INSERT INTO ${credentials} ("id", "name", "value", "owner_id") ` +
+        `VALUES (${placeholder(1)}, ${placeholder(2)}, ${placeholder(
+          3,
+        )}, ${placeholder(4)})`,
+      [id, name, apiKey, ownerId],
+    );
+
+    return id;
+  }
+
+  private asString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private asBoolean(value: unknown): boolean | undefined {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (value === 'true' || value === 'false') {
+      return value === 'true';
+    }
+
+    return undefined;
+  }
+
+  private asNonEmptyString(value: unknown): string | undefined {
+    const stringValue = this.asString(value)?.trim();
+
+    return stringValue || undefined;
+  }
+
+  private asPositiveInteger(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0
+      ? value
+      : undefined;
+  }
+
+  private asEmbeddingProvider(
+    value: unknown,
+  ): (typeof vercelAiSdkProviders)[number] | undefined {
+    const provider = this.asNonEmptyString(value);
+
+    return vercelAiSdkProviders.find((candidate) => candidate === provider);
+  }
+
+  private table(queryRunner: QueryRunner, name: string): string {
+    return qualifiedName(queryRunner, name);
+  }
+}

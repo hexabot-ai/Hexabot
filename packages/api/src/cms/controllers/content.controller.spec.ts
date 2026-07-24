@@ -26,7 +26,7 @@ describe('ContentController (TypeORM)', () => {
   let controller: ContentController;
   let contentService: ContentService;
   let contentTypeService: ContentTypeService;
-  let contentRagService: RagService;
+  let ragService: RagService;
   let logger: LoggerService;
   const createdContentIds = new Set<string>();
 
@@ -44,7 +44,7 @@ describe('ContentController (TypeORM)', () => {
         },
       ],
     });
-    [controller, contentService, contentTypeService, contentRagService] =
+    [controller, contentService, contentTypeService, ragService] =
       await getMocks([
         ContentController,
         ContentService,
@@ -238,15 +238,14 @@ describe('ContentController (TypeORM)', () => {
   });
 
   describe('searchRag', () => {
-    it('parses rag search options and forwards mode', async () => {
+    it('parses rag search options', async () => {
       const retrieveSpy = jest
         .spyOn(contentService, 'retrieve')
         .mockResolvedValue([]);
 
-      await controller.searchRag('culture', 'lexical', '7', 'ct-1', '1');
+      await controller.searchRag('culture', '7', 'ct-1', '1');
 
       expect(retrieveSpy).toHaveBeenCalledWith('culture', {
-        mode: 'lexical',
         limit: 7,
         contentTypeId: 'ct-1',
         includeInactive: true,
@@ -258,21 +257,20 @@ describe('ContentController (TypeORM)', () => {
         .spyOn(contentService, 'retrieve')
         .mockResolvedValue([]);
 
-      await controller.searchRag('culture', undefined, 'bad-limit');
+      await controller.searchRag('culture', 'bad-limit');
 
       expect(retrieveSpy).toHaveBeenCalledWith('culture', {});
     });
   });
 
   describe('reindexRag', () => {
-    it('queues rag reindex and returns acceptance response', async () => {
-      const reindexSpy = jest
-        .spyOn(contentRagService, 'scheduleReindexAll')
+    it('accepts an asynchronous reindex request', () => {
+      const scheduleSpy = jest
+        .spyOn(ragService, 'scheduleReindexAll')
         .mockImplementation();
-      const response = await controller.reindexRag();
 
-      expect(reindexSpy).toHaveBeenCalledTimes(1);
-      expect(response).toEqual({ accepted: true });
+      expect(controller.reindexRag()).toEqual({ accepted: true });
+      expect(scheduleSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

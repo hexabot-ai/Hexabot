@@ -121,6 +121,7 @@ export const ROUTES = {
   [EntityType.SOURCE]: "/source",
   [EntityType.HELPER]: "/helper",
   [EntityType.STORAGE_HELPER]: "/helper/storage",
+  [EntityType.RAG_HELPER]: "/helper/rag",
   [EntityType.WORKFLOW]: "/workflow",
   [EntityType.WORKFLOW_VERSION]: "/workflow/:id/versions",
   [EntityType.WORKFLOW_RUN]: "/workflowrun",

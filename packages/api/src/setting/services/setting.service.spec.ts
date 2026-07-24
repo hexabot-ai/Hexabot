@@ -16,9 +16,7 @@ import { buildTestingMocks } from '@/utils/test/utils';
 
 import {
   CONTACT_SETTINGS_GROUP,
-  RAG_SETTINGS_GROUP,
   contactSettingsSchema,
-  ragSettingsSchema,
 } from '../default.settings';
 import { SettingRepository } from '../repositories/setting.repository';
 
@@ -218,7 +216,19 @@ describe('SettingService', () => {
       const eventEmitter = settingRepository.getEventEmitter();
       expect(eventEmitter).toBeDefined();
 
-      const emitSpy = jest.spyOn(eventEmitter!, 'emit');
+      const order: string[] = [];
+      const clearCacheSpy = jest
+        .spyOn(settingService, 'clearCache')
+        .mockImplementationOnce(async () => {
+          order.push('cache');
+        });
+      const emitSpy = jest
+        .spyOn(eventEmitter!, 'emit')
+        .mockImplementationOnce(() => {
+          order.push('event');
+
+          return true;
+        });
       const setting = makeSetting({
         group: 'global_settings',
         label: 'locale',
@@ -237,6 +247,8 @@ describe('SettingService', () => {
         'hook:global_settings:locale',
         setting,
       );
+      expect(clearCacheSpy).toHaveBeenCalledTimes(1);
+      expect(order).toEqual(['cache', 'event']);
     });
 
     it('should not emit any event when entity is missing', async () => {
@@ -335,36 +347,6 @@ describe('SettingService', () => {
           value: 'invalid' as unknown as number,
         }),
       ).rejects.toThrow('Invalid value provided for setting "limits.retries".');
-    });
-
-    it('accepts empty or valid URLs for rag_settings.embedding_base_url', async () => {
-      runtimeSettingsService.register({
-        group: RAG_SETTINGS_GROUP,
-        schema: ragSettingsSchema,
-        scope: 'global',
-      });
-      const setting = await settingRepository.create({
-        group: RAG_SETTINGS_GROUP,
-        label: 'embedding_base_url',
-        value: '',
-      });
-      createdIds.push(setting.id);
-
-      const clearedSetting = await settingService.updateOne(setting.id, {
-        value: '',
-      });
-      expect(clearedSetting.value).toBe('');
-
-      const updatedSetting = await settingService.updateOne(setting.id, {
-        value: 'https://api.example.com/v1',
-      });
-      expect(updatedSetting.value).toBe('https://api.example.com/v1');
-
-      await expect(
-        settingService.updateOne(setting.id, { value: 'not-a-url' }),
-      ).rejects.toThrow(
-        'Invalid value provided for setting "rag_settings.embedding_base_url".',
-      );
     });
   });
 });

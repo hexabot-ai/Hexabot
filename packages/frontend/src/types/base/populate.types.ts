@@ -40,6 +40,7 @@ export const POPULATE_BY_TYPE = {
   [EntityType.SOURCE]: ["defaultWorkflow"],
   [EntityType.HELPER]: [],
   [EntityType.STORAGE_HELPER]: [],
+  [EntityType.RAG_HELPER]: [],
   [EntityType.STATS]: [],
 } as const;
 

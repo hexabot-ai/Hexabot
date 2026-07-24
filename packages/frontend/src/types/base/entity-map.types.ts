@@ -413,4 +413,8 @@ export interface IEntityMapTypes {
     IHelper,
     EntityPayload<IHelper, "name">
   >;
+  [EntityType.RAG_HELPER]: IEntityTypes<
+    IHelper,
+    EntityPayload<IHelper, "name">
+  >;
 }

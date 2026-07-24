@@ -8,14 +8,14 @@ import { z } from 'zod';
 
 import { createAction } from '@/actions/create-action';
 import {
-  RagEmbeddingNotConfiguredError,
-  RagMode,
+  RagHelperConfigurationError,
+  RagHelperUnavailableError,
   RagQueryOptions,
 } from '@/cms';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 import { workflowResourceRef } from '@/workflow/resource-refs';
 
-const contentRagModeSchema = z.enum(['embedding', 'lexical']);
+const legacyRagModeSchema = z.enum(['embedding', 'lexical']);
 const retrieveRagContentInputSchema = z.strictObject({
   query: z.string().trim().min(1).meta({
     title: 'Query',
@@ -23,9 +23,11 @@ const retrieveRagContentInputSchema = z.strictObject({
   }),
 });
 const retrieveRagContentSettingsSchema = z.strictObject({
-  mode: contentRagModeSchema.optional().meta({
-    title: 'Mode',
-    description: 'Retrieval mode used to search indexed content.',
+  mode: legacyRagModeSchema.optional().meta({
+    title: 'Legacy RAG mode',
+    description:
+      'Deprecated compatibility field. The configured default RAG helper is always used.',
+    'ui:widget': 'hidden',
   }),
   limit: z.int().min(1).optional().meta({
     title: 'Limit',
@@ -57,15 +59,14 @@ const contentRagHitSchema = z.strictObject({
   text: z.string(),
   score: z.number().optional(),
   contentTypeId: z.string().optional(),
-  source: contentRagModeSchema,
+  source: z.string(),
 });
 const retrieveRagContentOutputSchema = z.strictObject({
   hits: z.array(contentRagHitSchema),
   text: z.string(),
   warning: z.string().optional().meta({
     title: 'Warning',
-    description:
-      'Warning explaining why retrieval was skipped (e.g. RAG disabled or embedding not configured).',
+    description: 'Warning explaining why retrieval returned no results.',
   }),
 });
 
@@ -83,7 +84,7 @@ export const RetrieveRagContentAction = createAction<
 >({
   name: 'retrieve_rag_content',
   description:
-    'Retrieves RAG content from knowledge base using lexical or embedding mode for AI tool usage.',
+    'Retrieves relevant knowledge base content using the configured RAG helper for AI tool usage.',
   group: 'ai',
   color: '#b65bfd',
   icon: 'Search',
@@ -99,14 +100,6 @@ export const RetrieveRagContentAction = createAction<
       );
     }
 
-    if (!(await content.isRagEnabled())) {
-      const warning =
-        'RAG is disabled. Enable it in Settings > RAG (rag_settings.enabled) to retrieve content.';
-      logger?.warn(`retrieve_rag_content: ${warning}`);
-
-      return { hits: [], text: '', warning };
-    }
-
     const contentTypeId = settings.content_type_id?.trim();
     if (contentTypeId) {
       const foundContentType = await contentType.findOne(contentTypeId);
@@ -116,19 +109,20 @@ export const RetrieveRagContentAction = createAction<
     }
 
     const options: RagQueryOptions = {
-      ...(settings.mode ? { mode: settings.mode as RagMode } : {}),
       ...(settings.limit ? { limit: settings.limit } : {}),
       ...(contentTypeId ? { contentTypeId } : {}),
       includeInactive: settings.include_inactive ?? false,
     };
-
     try {
       const hits = await content.retrieve(input.query, options);
 
       return { hits, text: hits.map(({ text }) => text).join('\n\n') };
     } catch (error) {
-      if (error instanceof RagEmbeddingNotConfiguredError) {
-        const warning = `RAG embedding retrieval is not configured: ${error.message} You can also switch this action to lexical mode.`;
+      if (
+        error instanceof RagHelperConfigurationError ||
+        error instanceof RagHelperUnavailableError
+      ) {
+        const warning = error.message;
         logger?.warn(`retrieve_rag_content: ${warning}`);
 
         return { hits: [], text: '', warning };

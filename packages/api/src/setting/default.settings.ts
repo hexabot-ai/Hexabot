@@ -36,6 +36,20 @@ export const globalSettingsSchema = z
           labelKey: 'name',
         },
       }),
+    default_rag_helper: z
+      .string()
+      .default('fulltext-search')
+      .meta({
+        title: 'Default RAG helper',
+        description:
+          'Helper used to retrieve knowledge base content for RAG queries.',
+        'ui:widget': 'AutoCompleteWidget',
+        'ui:options': {
+          entity: 'RagHelper',
+          valueKey: 'name',
+          labelKey: 'name',
+        },
+      }),
   })
   .meta({
     title: 'Global settings',
@@ -43,89 +57,6 @@ export const globalSettingsSchema = z
 
 export const ragSettingsSchema = z
   .strictObject({
-    enabled: z.boolean().default(false).meta({
-      title: 'Enable RAG',
-      description: 'Enable retrieval-augmented generation.',
-    }),
-    default_mode: z.enum(['embedding', 'lexical']).default('lexical').meta({
-      title: 'Default RAG mode',
-      description: 'Default retrieval mode used for RAG queries.',
-      'ui:widget': 'select',
-    }),
-    embedding_provider: z
-      .string()
-      .default('openai')
-      .meta({
-        title: 'Embedding provider',
-        description: 'Provider used to generate embedding vectors.',
-        'ui:options': {
-          showWhen: {
-            field: 'default_mode',
-            equals: 'embedding',
-          },
-        },
-      }),
-    embedding_model: z
-      .string()
-      .default('text-embedding-3-small')
-      .meta({
-        title: 'Embedding model',
-        description:
-          'Embedding model identifier used by the selected provider.',
-        'ui:options': {
-          showWhen: {
-            field: 'default_mode',
-            equals: 'embedding',
-          },
-        },
-      }),
-    embedding_api_key: z
-      .string()
-      .default('')
-      .meta({
-        title: 'Embedding API key',
-        description: 'API key used by the configured embedding provider.',
-        'ui:widget': 'password',
-        'ui:options': {
-          showWhen: {
-            field: 'default_mode',
-            equals: 'embedding',
-          },
-        },
-      }),
-    embedding_base_url: z
-      .string()
-      .refine((value) => value === '' || z.url().safeParse(value).success, {
-        error: 'Must be a valid URL or empty.',
-      })
-      .default('')
-      .meta({
-        title: 'Embedding base URL',
-        description: 'Custom base URL used for embedding API requests.',
-        'ui:options': {
-          showWhen: {
-            field: 'default_mode',
-            equals: 'embedding',
-          },
-        },
-      }),
-    embedding_dimensions: z
-      .number()
-      .int()
-      .min(1)
-      .max(4096)
-      .default(1536)
-      .meta({
-        title: 'Embedding dimensions',
-        description: 'Number of dimensions expected for embedding vectors.',
-        'ui:options': {
-          step: 1,
-          showWhen: {
-            field: 'default_mode',
-            equals: 'embedding',
-          },
-        },
-      }),
     top_k: z
       .number()
       .int()
@@ -134,16 +65,12 @@ export const ragSettingsSchema = z
       .default(3)
       .meta({
         title: 'Top K results',
-        description: 'Maximum number of retrieved chunks returned per query.',
+        description:
+          'Maximum number of retrieved content hits returned per query.',
         'ui:options': {
           step: 1,
         },
       }),
-    index_only_active_content: z.boolean().default(true).meta({
-      title: 'Index only active content',
-      description:
-        'Include only active content entries in the retrieval index.',
-    }),
   })
   .meta({
     title: 'RAG',

@@ -30,7 +30,20 @@ export default abstract class BaseHelper<N extends HelperName = HelperName>
 
   async onModuleInit() {
     await super.onModuleInit();
-    this.helperService.register(this);
+    if (this.isAvailable()) {
+      this.helperService.register(this);
+    }
+  }
+
+  /**
+   * Indicates whether this helper can run in the current environment.
+   *
+   * Environment-specific helpers can override this method to stay out of the
+   * registry (and therefore out of helper selectors) when their prerequisites
+   * are not available.
+   */
+  public isAvailable(): boolean {
+    return true;
   }
 
   /**

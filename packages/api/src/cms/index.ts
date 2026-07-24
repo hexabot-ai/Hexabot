@@ -22,11 +22,11 @@ export * from './dto/menu.dto';
 
 export * from './entities/content-type.entity';
 
-export * from './errors/rag.errors';
-
 export * from './entities/content.entity';
 
 export * from './entities/menu.entity';
+
+export * from './errors/rag.errors';
 
 export * from './repositories/content-type.repository';
 
@@ -36,15 +36,11 @@ export * from './repositories/menu.repository';
 
 export * from './services/content-type.service';
 
-export * from './services/rag-indexer.service';
-
-export * from './services/rag-retriever.service';
-
 export * from './services/content.service';
 
 export * from './services/menu.service';
 
-export * from './services/rag-backend.service';
+export * from './services/rag.service';
 
 export * from './types/content';
 

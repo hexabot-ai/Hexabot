@@ -53,8 +53,12 @@ export class HelperService {
   public get<T extends HelperType>(type: T, name: HelperName) {
     const helpers = this.registry.get(type) as Map<string, BaseHelper>;
 
-    if (!helpers.has(name)) {
-      throw new Error('Uknown type of helpers');
+    if (!helpers?.has(name)) {
+      throw new Error(
+        `Unable to find helper "${name}" of type "${type}". Available helpers: ${
+          helpers ? Array.from(helpers.keys()).join(', ') || 'none' : 'none'
+        }.`,
+      );
     }
 
     return helpers.get(name) as TypeOfHelper<T>;
