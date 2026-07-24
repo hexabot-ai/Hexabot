@@ -58,9 +58,7 @@ if (!rootElement) {
 }
 
 ReactDOM.createRoot(rootElement).render(
-  <BrowserRouter
-    future={{ v7_relativeSplatPath: false, v7_startTransition: false }}
-  >
+  <BrowserRouter>
     <ConfigProvider>
       <AppTheme>
         <CssBaseline enableColorScheme />
