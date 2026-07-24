@@ -346,7 +346,7 @@ export const validateAndResolveBindings = (
     const actionSchema = defDefinition.action
       ? actions?.[defDefinition.action]?.settingSchema
       : undefined;
-    const actionParsed = actionSchema?.safeParse(defDefinition.settings);
+    const actionParsed = actionSchema?.safeParse?.(defDefinition.settings);
 
     if (actionParsed && !actionParsed.success) {
       issues.push(
