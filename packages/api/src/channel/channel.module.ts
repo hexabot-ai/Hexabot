@@ -7,12 +7,14 @@
 import { HttpModule } from '@nestjs/axios';
 import { forwardRef, Global, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InjectDynamicProviders } from 'nestjs-dynamic-providers';
 
 import { AttachmentModule } from '@/attachment/attachment.module';
 import { ChatModule } from '@/chat/chat.module';
 import { CmsModule } from '@/cms/cms.module';
+import { config } from '@/config';
 import { UserModule } from '@/user/user.module';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 import { WorkflowModule } from '@/workflow/workflow.module';
@@ -20,6 +22,7 @@ import { WorkflowModule } from '@/workflow/workflow.module';
 import { ChannelController } from './channel.controller';
 import { ChannelService } from './channel.service';
 import { SourceOrmEntity } from './entities/source.entity';
+import { WebhookTriggerThrottlerGuard } from './guards/webhook-trigger-throttler.guard';
 import { ChannelEventBus } from './lib/channel-event-bus';
 import { SourceRepository } from './repositories/source.repository';
 import { ChannelAttachmentService } from './services/channel-attachment.service';
@@ -57,6 +60,16 @@ export interface ChannelModuleOptions {
     // WebhookTriggerGuard is instantiated in this module's context (the
     // trigger route lives on WebhookController) and needs CredentialService.
     UserModule,
+    // Scoped to this module on purpose: no APP_GUARD binding, so only routes
+    // explicitly decorated with the throttler guard are rate-limited.
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          ttl: config.security.webhookThrottle.ttlMs,
+          limit: config.security.webhookThrottle.limit,
+        },
+      ],
+    }),
   ],
   controllers: [WebhookController, ChannelController, SourceController],
   providers: [
@@ -68,6 +81,7 @@ export interface ChannelModuleOptions {
     ChannelAttachmentService,
     ChannelDownloadService,
     SubscriberResolver,
+    WebhookTriggerThrottlerGuard,
   ],
   exports: [ChannelService, SourceService, ChannelRegistry],
 })

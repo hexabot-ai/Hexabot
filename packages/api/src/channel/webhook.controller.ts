@@ -28,6 +28,7 @@ import {
 } from '@/workflow/services/webhook-trigger.service';
 
 import { ChannelService } from './channel.service';
+import { WebhookTriggerThrottlerGuard } from './guards/webhook-trigger-throttler.guard';
 import { ChannelDownloadService } from './services/channel-download.service';
 
 @Controller('webhook')
@@ -49,6 +50,9 @@ export class WebhookController {
    * The whole request body is the workflow input, so third-party services
    * that emit fixed body shapes can call the endpoint directly.
    *
+   * The throttler runs before the trigger guard so brute-force attempts are
+   * cut off before any credential comparison happens.
+   *
    * Declared before the `:sourceRef/:workflowId` catch-all so `POST
    * /webhook/:id/trigger` is matched first: NestJS registers routes in method
    * definition order and Express 5 resolves overlapping dynamic routes by
@@ -57,7 +61,7 @@ export class WebhookController {
    * @param input - Optional workflow input payload (the request body).
    */
   @Roles('public')
-  @UseGuards(WebhookTriggerGuard)
+  @UseGuards(WebhookTriggerThrottlerGuard, WebhookTriggerGuard)
   @Post(':id/trigger')
   @HttpCode(200)
   async trigger(

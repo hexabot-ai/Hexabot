@@ -80,6 +80,10 @@ export type Config = {
     };
     csrf: boolean;
     csrfExclude: RegExp[];
+    webhookThrottle: {
+      ttlMs: number;
+      limit: number;
+    };
   };
   sockets: {
     path: string;
