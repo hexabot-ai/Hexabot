@@ -17,7 +17,7 @@ jest.mock('ai', () => ({
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { embed } from 'ai';
+import { embed, embedMany } from 'ai';
 import { DataSource } from 'typeorm';
 
 import { RagHelperConfigurationError } from '@/cms/errors/rag.errors';
@@ -52,7 +52,13 @@ const createHelper = (type: 'postgres' | 'better-sqlite3' = 'postgres') => {
     assertInfrastructure: jest.fn(),
     search: jest.fn().mockResolvedValue([]),
     enqueueAll: jest.fn(),
+    enqueueMissing: jest.fn(),
     wakePendingRetries: jest.fn(),
+    claimJobs: jest.fn().mockResolvedValue([]),
+    loadContent: jest.fn(),
+    discardInactive: jest.fn().mockResolvedValue(true),
+    save: jest.fn().mockResolvedValue(true),
+    fail: jest.fn(),
   };
   (helper as unknown as { store: unknown }).store = store;
   (helper as unknown as { settingService: unknown }).settingService = {
@@ -221,5 +227,84 @@ describe('PgvectorRagHelper', () => {
     await helper.reindex();
 
     expect(store.enqueueAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-evaluates the corpus when index_only_active_content is toggled', async () => {
+    const { helper, store } = createHelper();
+
+    await helper.handleSettingsChanged({
+      label: 'index_only_active_content',
+    } as never);
+
+    expect(store.enqueueAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards inactive content instead of transmitting it to the provider', async () => {
+    const { helper, store } = createHelper();
+    const job = { contentId: 'c1', revision: 1, attempts: 0 };
+    store.claimJobs.mockResolvedValue([job]);
+    store.loadContent.mockResolvedValue({
+      id: 'c1',
+      searchText: 'draft body',
+      status: false,
+    });
+    jest
+      .spyOn(
+        helper as unknown as { isSelected: () => Promise<boolean> },
+        'isSelected',
+      )
+      .mockResolvedValue(true);
+
+    await (
+      helper as unknown as { processJobs: () => Promise<void> }
+    ).processJobs();
+
+    expect(store.enqueueMissing).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      true,
+    );
+    expect(store.discardInactive).toHaveBeenCalledWith(job, expect.any(String));
+    expect(store.save).not.toHaveBeenCalled();
+    expect(embedMany).not.toHaveBeenCalled();
+  });
+
+  it('embeds inactive content when index_only_active_content is disabled', async () => {
+    const { helper, store } = createHelper();
+    (
+      helper as unknown as {
+        settingService: { getSettings: jest.Mock };
+      }
+    ).settingService.getSettings.mockResolvedValue({
+      ...validSettings,
+      pgvector: {
+        ...validSettings.pgvector,
+        index_only_active_content: false,
+      },
+    });
+    (embedMany as jest.Mock).mockResolvedValue({ embeddings: [[1, 0]] });
+    const job = { contentId: 'c1', revision: 1, attempts: 0 };
+    store.claimJobs.mockResolvedValue([job]);
+    store.loadContent.mockResolvedValue({
+      id: 'c1',
+      searchText: 'draft body',
+      status: false,
+    });
+    jest
+      .spyOn(
+        helper as unknown as { isSelected: () => Promise<boolean> },
+        'isSelected',
+      )
+      .mockResolvedValue(true);
+
+    await (
+      helper as unknown as { processJobs: () => Promise<void> }
+    ).processJobs();
+
+    expect(store.enqueueMissing).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      false,
+    );
+    expect(store.discardInactive).not.toHaveBeenCalled();
+    expect(store.save).toHaveBeenCalled();
   });
 });

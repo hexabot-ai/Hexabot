@@ -51,6 +51,7 @@ type PgvectorSettings = {
   embedding_dimensions: number;
   chunk_size: number;
   chunk_overlap: number;
+  index_only_active_content: boolean;
 };
 
 type EmbeddingProviderInitOptions = {
@@ -177,6 +178,11 @@ export default class PgvectorRagHelper
           'embedding_dimensions',
           'chunk_size',
           'chunk_overlap',
+          // Re-evaluate every row: the worker embeds active content and drops
+          // inactive content, so toggling in either direction converges the
+          // index (purging inactive rows when enabled, backfilling them when
+          // disabled).
+          'index_only_active_content',
         ].includes(setting.label)
       ) {
         await this.store.enqueueAll();
@@ -216,7 +222,10 @@ export default class PgvectorRagHelper
         Date.now() - this.lastReconciliationAt >=
         RECONCILIATION_INTERVAL_MS
       ) {
-        await this.store.enqueueMissing(profile);
+        await this.store.enqueueMissing(
+          profile,
+          settings.index_only_active_content,
+        );
         this.lastReconciliationAt = Date.now();
       }
 
@@ -259,6 +268,15 @@ export default class PgvectorRagHelper
     try {
       const content = await this.store.loadContent(job.contentId);
       if (!content) {
+        return;
+      }
+
+      // Never embed (i.e. transmit to the external provider) inactive content
+      // when the operator opted to index only active content. Drop any existing
+      // embeddings and clear the job instead.
+      if (settings.index_only_active_content && !content.status) {
+        await this.store.discardInactive(job, this.workerId);
+
         return;
       }
 

@@ -218,6 +218,7 @@ export default class Migration1784815200000_V3_4_0
       embedding_dimensions: 1536,
       chunk_size: 2000,
       chunk_overlap: 200,
+      index_only_active_content: true,
     };
     const legacyOverrides: Partial<Record<string, SettingValue>> = {
       ...(this.asEmbeddingProvider(getLegacyValue('embedding_provider'))
@@ -250,6 +251,14 @@ export default class Migration1784815200000_V3_4_0
         ? {
             embedding_dimensions: this.asPositiveInteger(
               getLegacyValue('embedding_dimensions'),
+            ),
+          }
+        : {}),
+      ...(this.asBoolean(getLegacyValue('index_only_active_content')) !==
+      undefined
+        ? {
+            index_only_active_content: this.asBoolean(
+              getLegacyValue('index_only_active_content'),
             ),
           }
         : {}),

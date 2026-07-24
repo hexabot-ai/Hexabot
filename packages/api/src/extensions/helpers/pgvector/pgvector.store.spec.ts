@@ -277,6 +277,110 @@ describe('PgvectorStore', () => {
     expect(queryRunner.commitTransaction).toHaveBeenCalled();
   });
 
+  it('scopes reconciliation to active content when index-only-active is on', async () => {
+    const { dataSource, query } = createDataSource();
+    query
+      .mockResolvedValueOnce([
+        {
+          hasVector: true,
+          hasDocuments: true,
+          hasChunks: true,
+          hasJobs: true,
+        },
+      ])
+      .mockResolvedValueOnce(undefined);
+    const store = new PgvectorStore(dataSource);
+
+    await store.enqueueMissing('profile-x', true);
+
+    const sql = String(query.mock.calls[1][0]);
+    expect(sql).toContain('content."status" = true');
+    expect(sql).toContain('content."status" = false');
+    expect(query.mock.calls[1][1]).toEqual(['profile-x']);
+  });
+
+  it('reconciles every row when index-only-active is off', async () => {
+    const { dataSource, query } = createDataSource();
+    query
+      .mockResolvedValueOnce([
+        {
+          hasVector: true,
+          hasDocuments: true,
+          hasChunks: true,
+          hasJobs: true,
+        },
+      ])
+      .mockResolvedValueOnce(undefined);
+    const store = new PgvectorStore(dataSource);
+
+    await store.enqueueMissing('profile-x', false);
+
+    const sql = String(query.mock.calls[1][0]);
+    expect(sql).not.toContain('"status"');
+  });
+
+  it('loads content together with its active status', async () => {
+    const { dataSource, query } = createDataSource();
+    query.mockResolvedValueOnce([
+      { id: 'c1', searchText: 'body', status: false },
+    ]);
+    const store = new PgvectorStore(dataSource);
+
+    await expect(store.loadContent('c1')).resolves.toEqual({
+      id: 'c1',
+      searchText: 'body',
+      status: false,
+    });
+    expect(String(query.mock.calls[0][0])).toContain('"status" AS "status"');
+  });
+
+  it('discards inactive content while the claimed revision and lease hold', async () => {
+    const { dataSource, queryRunner } = createDataSource();
+    queryRunner.query.mockResolvedValueOnce([
+      { revision: '2', workerId: 'worker' },
+    ]);
+    const store = new PgvectorStore(dataSource);
+
+    await expect(
+      store.discardInactive(
+        { contentId: 'c1', revision: 2, attempts: 0 },
+        'worker',
+      ),
+    ).resolves.toBe(true);
+
+    const statements = queryRunner.query.mock.calls.map(([sql]) => String(sql));
+    expect(
+      statements.some((sql) =>
+        sql.startsWith('DELETE FROM "rag_pgvector_documents"'),
+      ),
+    ).toBe(true);
+    expect(
+      statements.some((sql) =>
+        sql.startsWith('DELETE FROM "rag_pgvector_jobs"'),
+      ),
+    ).toBe(true);
+    expect(queryRunner.commitTransaction).toHaveBeenCalled();
+  });
+
+  it('leaves a superseded revision untouched when discarding inactive content', async () => {
+    const { dataSource, queryRunner } = createDataSource();
+    queryRunner.query.mockResolvedValueOnce([
+      { revision: '3', workerId: 'worker' },
+    ]);
+    const store = new PgvectorStore(dataSource);
+
+    await expect(
+      store.discardInactive(
+        { contentId: 'c1', revision: 2, attempts: 0 },
+        'worker',
+      ),
+    ).resolves.toBe(false);
+
+    const statements = queryRunner.query.mock.calls.map(([sql]) => String(sql));
+    expect(statements.some((sql) => sql.startsWith('DELETE FROM'))).toBe(false);
+    expect(queryRunner.commitTransaction).toHaveBeenCalled();
+  });
+
   it('retains failed jobs with bounded exponential retry metadata', async () => {
     const { dataSource, query } = createDataSource();
     const store = new PgvectorStore(dataSource);

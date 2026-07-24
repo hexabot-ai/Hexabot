@@ -123,6 +123,70 @@ describeWithPostgres('PostgreSQL lexical and pgvector RAG integration', () => {
     ]);
   });
 
+  it('re-enqueues on deactivation and discards inactive embeddings', async () => {
+    const contentId = randomUUID();
+    const source = 'title: Draftable\nbody: publish state';
+    await dataSource.query(
+      `INSERT INTO "${schema}"."contents" ` +
+        `("id", "content_type_id", "title", "status", "searchText") ` +
+        `VALUES ($1, $2, 'Draftable', true, $3)`,
+      [contentId, contentTypeId, source],
+    );
+
+    // Embed while active, then confirm it is retrievable.
+    const activeJobs = await store.claimJobs('discard-worker', 10);
+    const activeJob = activeJobs.find((job) => job.contentId === contentId)!;
+    expect(activeJob).toBeDefined();
+    await store.save(activeJob, 'discard-worker', 'profile-a', source, [
+      { index: 0, text: 'publish state', embedding: [1, 0] },
+    ]);
+    const activeHits = await store.search([1, 0], 'profile-a', {
+      status: true,
+      limit: 10,
+    });
+    expect(activeHits.some((hit) => hit.contentId === contentId)).toBe(true);
+
+    // Deactivating fires the trigger: it drops the documents immediately and
+    // enqueues a fresh job for the worker to reconcile.
+    await dataSource.query(
+      `UPDATE "${schema}"."contents" SET "status" = false WHERE "id" = $1`,
+      [contentId],
+    );
+    const inactiveHits = await store.search([1, 0], 'profile-a', {
+      status: true,
+      limit: 10,
+    });
+    expect(inactiveHits.some((hit) => hit.contentId === contentId)).toBe(false);
+    const enqueued = await dataSource.query(
+      `SELECT "content_id" FROM "${schema}"."rag_pgvector_jobs" WHERE "content_id" = $1`,
+      [contentId],
+    );
+    expect(enqueued).toHaveLength(1);
+
+    // The worker loads the row, sees it is inactive, and discards it.
+    const inactiveJobs = await store.claimJobs('discard-worker', 10);
+    const inactiveJob = inactiveJobs.find(
+      (job) => job.contentId === contentId,
+    )!;
+    expect(inactiveJob).toBeDefined();
+    await expect(store.loadContent(contentId)).resolves.toEqual({
+      id: contentId,
+      searchText: source,
+      status: false,
+    });
+    await expect(
+      store.discardInactive(inactiveJob, 'discard-worker'),
+    ).resolves.toBe(true);
+
+    for (const table of ['rag_pgvector_documents', 'rag_pgvector_jobs']) {
+      const [{ count }] = await dataSource.query(
+        `SELECT COUNT(*) AS count FROM "${schema}"."${table}" WHERE "content_id" = $1`,
+        [contentId],
+      );
+      expect(Number(count)).toBe(0);
+    }
+  });
+
   it('invalidates stale embeddings, revises active work, and cascades deletes', async () => {
     const contentId = randomUUID();
     const source = 'title: Concurrent updates';

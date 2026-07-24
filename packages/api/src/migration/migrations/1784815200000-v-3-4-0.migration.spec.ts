@@ -92,6 +92,11 @@ describe('Migration v3.4.0', () => {
         label: 'embedding_dimensions',
         value: 768,
       }),
+      settings.create({
+        group: 'rag_settings',
+        label: 'index_only_active_content',
+        value: false,
+      }),
     ]);
   };
   const seedNewDefaults = async () => {
@@ -157,6 +162,9 @@ describe('Migration v3.4.0', () => {
     await expect(getValue('pgvector', 'embedding_dimensions')).resolves.toBe(
       768,
     );
+    await expect(
+      getValue('pgvector', 'index_only_active_content'),
+    ).resolves.toBe(false);
   });
 
   it('selects pgvector only for PostgreSQL with extension and an API key', async () => {

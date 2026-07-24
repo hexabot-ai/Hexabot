@@ -42,6 +42,7 @@ export interface PgvectorJob {
 export interface PgvectorContent {
   id: string;
   searchText: string;
+  status: boolean;
 }
 
 export interface PgvectorEmbeddedChunk {
@@ -166,27 +167,44 @@ export class PgvectorStore extends ContentSearchStore {
   }
 
   /**
-   * Enqueues only rows that have neither a fresh document nor an existing job.
-   * Unlike enqueueAll, this can run periodically without resetting retries.
+   * Enqueues rows whose index state does not match what should be stored,
+   * without resetting retries of already-queued work.
+   *
+   * With `activeOnly`, "needs work" means an active row missing a fresh
+   * document (embed it) or an inactive row that still has any document (remove
+   * it), so the reconciliation converges the index onto active content only.
+   * Otherwise it is simply any row missing a fresh document.
    */
-  async enqueueMissing(profile: string): Promise<void> {
+  async enqueueMissing(profile: string, activeOnly: boolean): Promise<void> {
     await this.assertInfrastructure();
     const table = this.contentTable;
     const idColumn = quoteIdentifier(this.columnName('id'));
     const textColumn = quoteIdentifier(this.columnName('searchText'));
+    const statusColumn = quoteIdentifier(this.columnName('status'));
     const documents = this.helperTable(PGVECTOR_DOCUMENTS_TABLE);
     const jobs = this.helperTable(PGVECTOR_JOBS_TABLE);
+    const missingFreshDocument =
+      `NOT EXISTS (` +
+      `SELECT 1 FROM ${documents} document ` +
+      `WHERE document."content_id" = content.${idColumn} ` +
+      `AND document."profile" = $1 ` +
+      `AND document."source_text" = content.${textColumn}` +
+      `)`;
+    const hasAnyDocument =
+      `EXISTS (` +
+      `SELECT 1 FROM ${documents} document ` +
+      `WHERE document."content_id" = content.${idColumn}` +
+      `)`;
+    const needsWork = activeOnly
+      ? `((content.${statusColumn} = true AND ${missingFreshDocument}) ` +
+        `OR (content.${statusColumn} = false AND ${hasAnyDocument}))`
+      : missingFreshDocument;
 
     await this.dataSource.query(
       `INSERT INTO ${jobs} ` +
         `("content_id", "revision", "attempts", "available_at", "updated_at") ` +
         `SELECT content.${idColumn}, 1, 0, NOW(), NOW() FROM ${table} content ` +
-        `WHERE NOT EXISTS (` +
-        `SELECT 1 FROM ${documents} document ` +
-        `WHERE document."content_id" = content.${idColumn} ` +
-        `AND document."profile" = $1 ` +
-        `AND document."source_text" = content.${textColumn}` +
-        `) AND NOT EXISTS (` +
+        `WHERE ${needsWork} AND NOT EXISTS (` +
         `SELECT 1 FROM ${jobs} job WHERE job."content_id" = content.${idColumn}` +
         `) ON CONFLICT ("content_id") DO NOTHING`,
       [profile],
@@ -232,9 +250,10 @@ export class PgvectorStore extends ContentSearchStore {
     const table = this.contentTable;
     const idColumn = quoteIdentifier(this.columnName('id'));
     const textColumn = quoteIdentifier(this.columnName('searchText'));
+    const statusColumn = quoteIdentifier(this.columnName('status'));
     const rows = await this.dataSource.query(
-      `SELECT ${idColumn} AS "id", ${textColumn} AS "searchText" ` +
-        `FROM ${table} WHERE ${idColumn} = $1`,
+      `SELECT ${idColumn} AS "id", ${textColumn} AS "searchText", ` +
+        `${statusColumn} AS "status" FROM ${table} WHERE ${idColumn} = $1`,
       [contentId],
     );
     if (!rows[0]) {
@@ -244,7 +263,54 @@ export class PgvectorStore extends ContentSearchStore {
     return {
       id: String(rows[0].id),
       searchText: String(rows[0].searchText ?? ''),
+      status: Boolean(rows[0].status),
     };
+  }
+
+  /**
+   * Removes any embeddings for a content row and releases the claimed job.
+   *
+   * Used when `index_only_active_content` is enabled and the claimed job turns
+   * out to reference inactive content. The job is locked first and the delete
+   * only proceeds while the claimed revision and lease still hold, so a
+   * concurrent reactivation (which bumps the revision via the content trigger)
+   * is left untouched and reprocessed rather than having its fresh embeddings
+   * removed. Returns whether the content was discarded.
+   */
+  async discardInactive(job: PgvectorJob, workerId: string): Promise<boolean> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const currentJob = await this.lockCurrentJob(queryRunner, job.contentId);
+      if (
+        currentJob?.revision !== job.revision ||
+        currentJob?.workerId !== workerId
+      ) {
+        await queryRunner.commitTransaction();
+
+        return false;
+      }
+
+      await queryRunner.query(
+        `DELETE FROM ${this.helperTable(PGVECTOR_DOCUMENTS_TABLE)} ` +
+          `WHERE "content_id" = $1`,
+        [job.contentId],
+      );
+      await queryRunner.query(
+        `DELETE FROM ${this.helperTable(PGVECTOR_JOBS_TABLE)} ` +
+          `WHERE "content_id" = $1 AND "revision" = $2 AND "locked_by" = $3`,
+        [job.contentId, job.revision, workerId],
+      );
+      await queryRunner.commitTransaction();
+
+      return true;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   /**

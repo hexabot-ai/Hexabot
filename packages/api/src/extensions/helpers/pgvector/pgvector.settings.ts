@@ -94,6 +94,11 @@ export const pgvectorSettingsSchema = z
           step: 10,
         },
       }),
+    index_only_active_content: z.boolean().default(true).meta({
+      title: 'Index only active content',
+      description:
+        'Embed only active content. When enabled, inactive (unpublished) entries are never sent to the embedding provider and are kept out of the index.',
+    }),
   })
   .superRefine((settings, context) => {
     if (settings.chunk_overlap >= settings.chunk_size) {

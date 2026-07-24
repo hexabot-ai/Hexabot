@@ -40,3 +40,42 @@ operators may remove the dormant LlamaIndex PostgreSQL structures (including
 `llamaindex_embedding` and its document/index-store tables) or the old
 `storage/content-rag` SQLite files. Cleanup is intentionally not automated by
 the migration.
+
+## Indexing only active content
+
+The `pgvector` helper exposes an `index_only_active_content` setting (default
+`true`). When enabled, inactive (unpublished) content is never sent to the
+embedding provider and is kept out of the vector index: the queue worker drops
+any embeddings for a row it finds inactive, the content trigger fires on
+`status` changes so publishing/unpublishing reconciles automatically, and
+toggling the setting re-evaluates the whole corpus. The v3.4.0 migration carries
+the legacy `rag_settings.index_only_active_content` value over to the helper.
+When disabled, all content is embedded regardless of status (retrieval still
+filters inactive rows out of results).
+
+## Testing
+
+Unit tests run against the default SQLite config:
+
+```sh
+pnpm --filter @hexabot-ai/api test
+```
+
+The `pgvector` helper also has an integration suite
+(`pgvector.integration.spec.ts`) that exercises the real provisioning DDL,
+status-aware trigger, leased work queue, and cosine search against PostgreSQL.
+It is `describe.skip` unless `TEST_PGVECTOR_DATABASE_URL` is set, and it also
+requires `DB_TYPE=postgres` — the entities' `DatetimeColumn` decorator picks its
+SQL type from `DB_TYPE` at import time, so without it `createdAt` resolves to the
+SQLite `datetime` type and `DataSource.initialize` fails on PostgreSQL. CI runs
+it this way (see `.github/workflows/main-ci.yml`):
+
+```sh
+docker run -d --name pgv -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=hexabot_test \
+  -p 5432:5432 pgvector/pgvector:0.8.2-pg16
+
+DB_TYPE=postgres \
+TEST_PGVECTOR_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/hexabot_test \
+  pnpm --filter @hexabot-ai/api exec jest --runInBand \
+  --runTestsByPath src/extensions/helpers/pgvector/pgvector.integration.spec.ts
+```

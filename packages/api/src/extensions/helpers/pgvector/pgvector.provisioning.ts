@@ -134,10 +134,17 @@ export async function provisionPgvectorInfrastructure(
     `CREATE INDEX IF NOT EXISTS "rag_pgvector_jobs_available_idx" ` +
       `ON ${jobs} ("available_at", "updated_at")`,
   );
+  // Re-enqueue on inserts, on source-text edits, and on status flips. The
+  // status column matters because the `index_only_active_content` setting can
+  // exclude inactive content from the index: activating content must schedule
+  // its embedding, and deactivating it must schedule removal. The worker (not
+  // this trigger, which cannot read app settings) decides embed vs. remove.
   await queryRunner.query(
     `CREATE OR REPLACE FUNCTION ${triggerFunction}() ` +
       `RETURNS TRIGGER AS $$ BEGIN ` +
-      `IF TG_OP = 'INSERT' OR NEW."searchText" IS DISTINCT FROM OLD."searchText" THEN ` +
+      `IF TG_OP = 'INSERT' ` +
+      `OR NEW."searchText" IS DISTINCT FROM OLD."searchText" ` +
+      `OR NEW."status" IS DISTINCT FROM OLD."status" THEN ` +
       `DELETE FROM ${documents} WHERE "content_id" = NEW."id"; ` +
       `INSERT INTO ${jobs} AS job ` +
       `("content_id", "revision", "attempts", "available_at", "locked_at", "locked_by", "last_error", "updated_at") ` +
@@ -153,7 +160,7 @@ export async function provisionPgvectorInfrastructure(
   );
   await queryRunner.query(
     `CREATE TRIGGER "${PGVECTOR_TRIGGER}" ` +
-      `AFTER INSERT OR UPDATE OF "searchText" ON ${contents} ` +
+      `AFTER INSERT OR UPDATE OF "searchText", "status" ON ${contents} ` +
       `FOR EACH ROW EXECUTE FUNCTION ${triggerFunction}()`,
   );
   await queryRunner.query(
