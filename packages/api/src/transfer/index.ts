@@ -4,6 +4,16 @@
  * Full terms: see LICENSE.md.
  */
 
+export * from './adapters/content-type-transfer.adapter';
+
+export * from './adapters/credential-transfer.adapter';
+
+export * from './adapters/label-transfer.adapter';
+
+export * from './adapters/mcp-server-transfer.adapter';
+
+export * from './adapters/memory-definition-transfer.adapter';
+
 export * from './workflow-transfer.module';
 
 export * from './workflow-transfer.controller';

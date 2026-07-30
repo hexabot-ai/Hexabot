@@ -18,6 +18,8 @@ export * from './entities/translation.entity';
 
 export * from './i18n.module';
 
+export * from './loaders/extension-json.loader';
+
 export * from './repositories/language.repository';
 
 export * from './repositories/translation.repository';
