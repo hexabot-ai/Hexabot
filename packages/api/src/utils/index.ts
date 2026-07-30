@@ -42,13 +42,19 @@ export * from './helpers/clone';
 
 export * from './helpers/flatten';
 
+export * from './helpers/freeze';
+
 export * from './helpers/misc';
 
 export * from './helpers/object';
 
+export * from './helpers/origin';
+
 export * from './helpers/parse';
 
 export * from './helpers/safeRandom';
+
+export * from './helpers/safe-property-path';
 
 export * from './helpers/svg';
 
@@ -63,6 +69,8 @@ export * from './pipes/uuid.pipe';
 export * from './pipes/zod.pipe';
 
 export * from './types/dto.types';
+
+export * from './types/entity-event.types';
 
 export * from './types/filter.types';
 

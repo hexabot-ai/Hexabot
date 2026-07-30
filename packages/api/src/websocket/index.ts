@@ -20,6 +20,8 @@ export * from './services/socket-event-dispatcher.service';
 
 export * from './storage/socket-event-metadata.storage';
 
+export * from './tokens';
+
 export * from './types';
 
 export * from './utils/gateway-options';

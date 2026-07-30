@@ -4,6 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
+export * from './base-web-inbound.event';
+
 export * from './messages/attachment.event';
 
 export * from './delivery.event';
@@ -21,5 +23,7 @@ export * from './read.event';
 export * from './messages/text.event';
 
 export * from './typing.event';
+
+export * from './unsupported.event';
 
 export * from './messages/web-message.event';

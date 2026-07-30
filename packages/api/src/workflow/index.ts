@@ -54,7 +54,41 @@ export * from './repositories/mcp-server.repository';
 
 export * from './contexts/conversational-workflow.context';
 
+export * from './contexts/manual-workflow.context';
+
+export * from './contexts/scheduled-workflow.context';
+
 export * from './contexts/workflow-runtime.context';
+
+export * from './contexts/workflow-context-factory';
+
+export * from './decorators/is-workflow-definition.decorator';
+
+export * from './decorators/is-workflow-yaml.decorator';
+
+export * from './guards/webhook-trigger.guard';
+
+export * from './lib/trigger-event-wrapper';
+
+export * from './lib/workflow-definition';
+
+export * from './resource-refs';
+
+export * from './schemas/workflow-input-schemas';
+
+export * from './schemas/workflow-schemas';
+
+export * from './seeds/memory-definition.seed-model';
+
+export * from './seeds/memory-definition.seed';
+
+export * from './seeds/workflow.seed-model';
+
+export * from './seeds/workflow.seed';
+
+export * from './utils/memory-store';
+
+export * from './utils/schema-instance';
 
 export * from './types';
 
@@ -75,6 +109,12 @@ export * from './services/agentic.service';
 export * from './services/mcp-server.service';
 
 export * from './services/mcp-client-pool.service';
+
+export * from './services/stdio-stderr-capture.transport';
+
+export * from './services/webhook-trigger.service';
+
+export * from './services/workflow-scheduler.service';
 
 export * from '../transfer/workflow-transfer.module';
 

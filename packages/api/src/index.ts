@@ -44,6 +44,8 @@ export * from './extensions';
 
 export * from './extra';
 
+export * from './health';
+
 export * from './helper';
 
 export * from './i18n';
@@ -53,6 +55,8 @@ export * from './license';
 export * from './logger';
 
 export * from './mailer';
+
+export * from './mcp';
 
 export * from './migration';
 

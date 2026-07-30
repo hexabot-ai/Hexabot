@@ -10,4 +10,6 @@ export * from './base-binding-kind';
 
 export * from './runtime-bindings';
 
+export * from './runtime-bindings.service';
+
 export * from './create-binding-kind';
