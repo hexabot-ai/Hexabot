@@ -6,5 +6,6 @@ node_modules/
 /docker/**/db_data
 .idea/
 .turbo
+.agentpond/
 *.sqlite
 .claude

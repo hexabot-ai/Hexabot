@@ -46,6 +46,7 @@ import { LoggerModule } from './logger/logger.module';
 import { MailerModule } from './mailer/mailer.module';
 import { MigrationModule } from './migration/migration.module';
 import { SettingModule } from './setting/setting.module';
+import { AgentPondTracingLifecycle } from './telemetry/agentpond-tracing';
 import { WorkflowTransferModule } from './transfer/workflow-transfer.module';
 import { Ability } from './user/guards/ability.guard';
 import { UserModule } from './user/user.module';
@@ -172,6 +173,7 @@ export const HEXABOT_MODULE_PROVIDERS: ModuleProviders = [
   TypeormConfigService,
   HealthService,
   AppService,
+  AgentPondTracingLifecycle,
 ];
 
 export const HexabotModule = (

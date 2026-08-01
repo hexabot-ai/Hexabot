@@ -60,6 +60,22 @@ Environment variables are loaded from `packages/api/.env` (see `packages/api/.en
 - SQLite is the default database (`./hexabot.sqlite`) and uses the `better-sqlite3` TypeORM driver; configure `DB_TYPE` and `DB_*` for Postgres.
 - Set `REDIS_ENABLED=true` to use Redis-backed cache and the Socket.IO adapter.
 
+### Optional AI tracing
+
+AI workflow actions can export content-free OpenInference traces to an
+[AgentPond](https://github.com/marcusschiesser/agentpond) Files SDK environment.
+Tracing stays disabled unless `FILES_SDK_PROVIDER` and the selected provider's
+server-side configuration are present. Prompt and response content is not
+recorded. For local validation, initialize and load a filesystem environment:
+
+```bash
+npx --yes --min-release-age=0 agentpond@latest env init local --provider fs --root "$PWD/.agentpond/envs/local/objects"
+npx --yes --min-release-age=0 agentpond@latest env use local
+eval "$(npx --yes --min-release-age=0 agentpond@latest env get local)"
+```
+
+Use a supported Files SDK object-storage provider for production deployments.
+
 ## Development Commands
 
 Run all commands from the repository root so PNPM can resolve workspace dependencies:
