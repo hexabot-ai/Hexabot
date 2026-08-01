@@ -18,7 +18,6 @@ export type JsonSchemaLocalizationOptions = {
 type ToDraft07JsonSchemaOptions = {
   localize?: JsonSchemaLocalizationOptions;
 };
-
 const localizeSchemaNodeMetadata = (
   schemaNode: Record<string, unknown>,
   options: JsonSchemaLocalizationOptions,
@@ -49,8 +48,7 @@ export const toDraft07JsonSchema = <TSchema extends z.ZodTypeAny>(
   options?: ToDraft07JsonSchemaOptions,
 ): JsonSchema => {
   const localize = options?.localize;
-
-  return schema.toJSONSchema({
+  const jsonSchema = schema.toJSONSchema({
     target: 'draft-07',
     ...(localize
       ? {
@@ -63,4 +61,6 @@ export const toDraft07JsonSchema = <TSchema extends z.ZodTypeAny>(
         }
       : {}),
   }) as JsonSchema;
+
+  return jsonSchema;
 };

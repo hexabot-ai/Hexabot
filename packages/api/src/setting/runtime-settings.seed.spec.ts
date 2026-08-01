@@ -31,6 +31,21 @@ describe('runtime-settings.seed', () => {
     ]);
   });
 
+  it('seeds defaulted settings while leaving required settings for user setup', () => {
+    const schema = z.strictObject({
+      defaulted: z.string().default('automatic'),
+      required: z.string(),
+    });
+
+    expect(buildSettingSeedsFromSchema('settings', schema)).toEqual([
+      {
+        group: 'settings',
+        label: 'defaulted',
+        value: 'automatic',
+      },
+    ]);
+  });
+
   it('adds subgroup marker for helper extension groups from runtime registry', () => {
     const registry: RuntimeSettingRegistryMap = {
       ollama: {

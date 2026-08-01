@@ -7,6 +7,7 @@
 import { z } from 'zod';
 
 import type { I18nService } from '@/i18n/services/i18n.service';
+import { globalSettingsSchema } from '@/setting/default.settings';
 
 import { toDraft07JsonSchema } from './zod';
 
@@ -81,5 +82,13 @@ describe('toDraft07JsonSchema', () => {
       lang: 'fr',
       defaultValue: 'Field description',
     });
+  });
+
+  it('requires the storage helper without generating a default value', () => {
+    const result = toDraft07JsonSchema(globalSettingsSchema);
+    const storageHelper = result.properties?.default_storage_helper;
+
+    expect(result.required).toContain('default_storage_helper');
+    expect(storageHelper).not.toHaveProperty('default');
   });
 });

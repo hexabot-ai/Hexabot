@@ -16,30 +16,19 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 };
 const resolveGroupDefaultValues = (
   schema: RuntimeSettingGroupSchema,
-  context: string,
+  _context: string,
 ): Record<string, unknown> => {
-  const parsed = schema.safeParse({});
+  const parsed = schema.partial().safeParse({});
 
   if (!parsed.success || parsed.data === undefined) {
     throw new Error(
-      `Setting group "${context}" must define default values in its zod schema.`,
+      `Setting group "${_context}" must define default values in its zod schema.`,
     );
   }
 
   if (!isPlainObject(parsed.data)) {
     throw new Error(
-      `Setting group "${context}" default values must resolve to an object.`,
-    );
-  }
-
-  const expectedKeys = schema.keyof().options;
-  const missingDefaultKeys = expectedKeys.filter(
-    (key) => !(key in parsed.data),
-  );
-
-  if (missingDefaultKeys.length > 0) {
-    throw new Error(
-      `Setting group "${context}" is missing default values for: ${missingDefaultKeys.join(', ')}.`,
+      `Setting group "${_context}" default values must resolve to an object.`,
     );
   }
 
