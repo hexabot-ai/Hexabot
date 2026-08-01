@@ -21,16 +21,19 @@ export const globalSettingsSchema = z
         'Provide the license key associated with your subscription. Learn more about available plans at https://hexabot.ai/pricing#pricing.',
       'ui:widget': 'password',
     }),
-    default_storage_helper: z.string().meta({
-      title: 'Default storage helper',
-      description: 'Helper used to persist workflow data by default.',
-      'ui:widget': 'AutoCompleteWidget',
-      'ui:options': {
-        entity: 'StorageHelper',
-        valueKey: 'name',
-        labelKey: 'name',
-      },
-    }),
+    default_storage_helper: z
+      .string()
+      .min(1)
+      .meta({
+        title: 'Default storage helper',
+        description: 'Helper used to persist workflow data by default.',
+        'ui:widget': 'AutoCompleteWidget',
+        'ui:options': {
+          entity: 'StorageHelper',
+          valueKey: 'name',
+          labelKey: 'name',
+        },
+      }),
     default_rag_helper: z
       .string()
       .default('fulltext-search')

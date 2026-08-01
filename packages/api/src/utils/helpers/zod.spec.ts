@@ -90,5 +90,8 @@ describe('toDraft07JsonSchema', () => {
 
     expect(result.required).toContain('default_storage_helper');
     expect(storageHelper).not.toHaveProperty('default');
+    expect(
+      globalSettingsSchema.safeParse({ default_storage_helper: '' }).success,
+    ).toBe(false);
   });
 });
