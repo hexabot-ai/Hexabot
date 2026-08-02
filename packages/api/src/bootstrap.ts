@@ -128,6 +128,7 @@ export async function bootstrapHexabotApp(
   options: HexabotBootstrapOptions = {},
 ): Promise<NestExpressApplication> {
   const app = await createHexabotApplication(moduleRef);
+  app.enableShutdownHooks();
   const production = isProductionEnv(options.production);
 
   if (!production && !options.skipSeed) {

@@ -55,13 +55,11 @@ afterAll(async () => {
 
 describe('AgentPond AI action tracing', () => {
   it('reads back a content-free trace from the production generate-text action', async () => {
-    const [
-      { AiGenerateTextAction },
-      { AgentPondTracingLifecycle, flushAgentPondTracing },
-    ] = await Promise.all([
+    const [{ AiGenerateTextAction }, tracingModule] = await Promise.all([
       import('../src/extensions/actions/ai/generate-text.action'),
       import('../src/telemetry/agentpond-tracing'),
     ]);
+    const { AgentPondTracingLifecycle, flushAgentPondTracing } = tracingModule;
     const lifecycle = new AgentPondTracingLifecycle();
     await lifecycle.onModuleInit();
     const actionService = { register: jest.fn() } as unknown as ActionService;
@@ -135,5 +133,10 @@ describe('AgentPond AI action tracing', () => {
     expect(rawTracePayload).not.toContain(PROMPT_SENTINEL);
     expect(rawTracePayload).not.toContain(RESPONSE_SENTINEL);
     await lifecycle.onModuleDestroy();
+
+    const replacementLifecycle = new AgentPondTracingLifecycle();
+    await replacementLifecycle.onModuleInit();
+    expect(tracingModule.agentPondTelemetry).toBeDefined();
+    await replacementLifecycle.onModuleDestroy();
   });
 });

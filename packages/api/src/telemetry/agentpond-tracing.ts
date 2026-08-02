@@ -17,6 +17,8 @@ import {
 import { BasicTracerProvider } from '@opentelemetry/sdk-trace-base';
 import type { TelemetrySettings } from 'ai';
 
+import { config } from '@/config';
+
 const AGENTPOND_TRACING_STATE = Symbol.for('hexabot.agentpond-tracing');
 
 interface AgentPondTracingState {
@@ -31,7 +33,7 @@ type AgentPondGlobal = typeof globalThis & {
 async function createAgentPondTracingState(): Promise<
   AgentPondTracingState | undefined
 > {
-  if (!process.env.FILES_SDK_PROVIDER) {
+  if (!config.agentpond.enabled) {
     return undefined;
   }
 
@@ -131,6 +133,7 @@ export class AgentPondTracingLifecycle
     } finally {
       delete agentPondGlobal[AGENTPOND_TRACING_STATE];
       agentPondTelemetry = undefined;
+      tracingInitialization = undefined;
     }
   }
 }

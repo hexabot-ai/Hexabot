@@ -62,6 +62,9 @@ type SocketCookie =
   | boolean;
 
 export type Config = {
+  agentpond: {
+    enabled: boolean;
+  };
   i18n: { translationFilename: string };
   appPath: string;
   apiBaseUrl: string;
