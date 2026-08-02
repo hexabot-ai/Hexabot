@@ -39,6 +39,9 @@ const sessionTtlSeconds = parseOptionalInt(process.env.SESSION_TTL_SECONDS);
 const apiBaseUrl = process.env.API_ORIGIN || 'http://localhost:3000/api';
 
 export const config: Config = {
+  agentpond: {
+    enabled: Boolean(process.env.FILES_SDK_PROVIDER?.trim()),
+  },
   i18n: {
     translationFilename: process.env.I18N_TRANSLATION_FILENAME || 'messages',
   },

@@ -8,6 +8,7 @@ import { JSONSchema7, Output, generateText, jsonSchema } from 'ai';
 
 import { ActionService } from '@/actions/actions.service';
 import { ActionMetadata, ExecArgs } from '@/actions/types';
+import { agentPondTelemetry } from '@/telemetry/agentpond-tracing';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import { AiBaseAction, AiPromptInput } from './ai-base.action';
@@ -58,6 +59,9 @@ export abstract class AiGenerateObjectBaseAction<
       model,
       output,
       abortSignal: signal,
+      ...(agentPondTelemetry
+        ? { experimental_telemetry: agentPondTelemetry }
+        : {}),
       ...(tools ? { tools } : {}),
       ...(stopWhen ? { stopWhen } : {}),
     });
