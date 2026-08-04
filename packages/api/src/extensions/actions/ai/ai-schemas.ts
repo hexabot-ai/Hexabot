@@ -7,11 +7,6 @@
 import { JsonValueSchema } from '@hexabot-ai/agentic';
 import { z } from 'zod';
 
-export {
-  DEFAULT_STEP_BUDGET as DEFAULT_AI_STEP_BUDGET,
-  MAX_STEP_BUDGET as MAX_AI_STEP_BUDGET,
-} from '@hexabot-ai/agentic';
-
 export const DEFAULT_AI_PROMPT = '=$input.text';
 
 export const DEFAULT_AI_MESSAGES_LIMIT = 4;

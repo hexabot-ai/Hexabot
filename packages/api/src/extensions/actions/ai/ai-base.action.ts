@@ -7,6 +7,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { ProviderV2, ProviderV3 } from '@ai-sdk/provider';
+import { DEFAULT_STEP_BUDGET } from '@hexabot-ai/agentic';
 import { StdIncomingMessage, StdOutgoingMessage } from '@hexabot-ai/types';
 import {
   LanguageModel,
@@ -32,11 +33,7 @@ import {
   resolveMessageContent,
   type PromptPayload,
 } from './ai-prompt.helpers';
-import {
-  AiCommonSettings,
-  AiPromptInput,
-  DEFAULT_AI_STEP_BUDGET,
-} from './ai-schemas';
+import { AiCommonSettings, AiPromptInput } from './ai-schemas';
 
 export type { AiCommonSettings, AiPromptInput } from './ai-schemas';
 
@@ -636,7 +633,7 @@ export abstract class AiBaseAction<
     > = [];
     const hasTools = Boolean(tools && Object.keys(tools).length > 0);
     const resolvedStepCount =
-      settings.stop_step_count ?? (hasTools ? DEFAULT_AI_STEP_BUDGET : 0);
+      settings.stop_step_count ?? (hasTools ? DEFAULT_STEP_BUDGET : 0);
 
     if (resolvedStepCount > 0) {
       stopConditions.push(stepCountIs(resolvedStepCount));

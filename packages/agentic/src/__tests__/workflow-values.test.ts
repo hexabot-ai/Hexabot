@@ -183,13 +183,19 @@ describe('workflow values', () => {
     });
   });
 
-  it('parses the workflow step budget and enforces its ceiling', () => {
+  it('renders the capped workflow step budget before retries', () => {
     const jsonSchema = BaseSettingsSchema.toJSONSchema({
       target: 'draft-07',
     }) as {
       properties?: Record<string, Record<string, unknown>>;
     };
+    const properties = jsonSchema.properties ?? {};
 
+    expect(Object.keys(properties)).toEqual([
+      'timeout_ms',
+      'stop_step_count',
+      'retries',
+    ]);
     expect(
       BaseSettingsSchema.safeParse({
         stop_step_count: MAX_STEP_BUDGET,
@@ -201,7 +207,7 @@ describe('workflow values', () => {
       }).success,
     ).toBe(false);
     expect(BaseSettingsSchema.parse({})).not.toHaveProperty('stop_step_count');
-    expect(jsonSchema.properties?.stop_step_count).toEqual(
+    expect(properties.stop_step_count).toEqual(
       expect.objectContaining({
         default: DEFAULT_STEP_BUDGET,
         maximum: MAX_STEP_BUDGET,

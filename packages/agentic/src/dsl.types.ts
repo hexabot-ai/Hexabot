@@ -210,15 +210,15 @@ export const BaseSettingsSchema = z.strictObject({
     description:
       'Maximum runtime in milliseconds for a single action invocation (0 = disabled).',
   }),
-  retries: RetriesSchema.optional().meta({
-    title: 'Retries',
-    description: 'Retry policy applied when an action fails.',
-  }),
   stop_step_count: z.int().positive().max(MAX_STEP_BUDGET).optional().meta({
     title: 'Stop step count',
     description:
       'Maximum number of agent steps before stopping. Applies to AI agent steps; can be overridden per step.',
     default: DEFAULT_STEP_BUDGET,
+  }),
+  retries: RetriesSchema.optional().meta({
+    title: 'Retries',
+    description: 'Retry policy applied when an action fails.',
   }),
 });
 

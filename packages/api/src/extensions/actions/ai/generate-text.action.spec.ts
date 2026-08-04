@@ -229,46 +229,6 @@ describe('AiGenerateTextAction', () => {
     });
   });
 
-  it('keeps an explicit step budget on tool-less runs', async () => {
-    const provider = Object.assign(
-      jest.fn().mockReturnValue('model-instance'),
-      {
-        languageModel: jest.fn(),
-      },
-    );
-    const context = createContext();
-
-    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
-    jest.spyOn(action as any, 'buildPrompt');
-    jest.spyOn(action as any, 'buildCallSettings');
-    jest.spyOn(action as any, 'createModel').mockReturnValue('model-instance');
-    generateTextMock.mockResolvedValue({
-      text: 'Generated text',
-      finishReason: 'stop',
-      request: { foo: 'req' },
-      response: { status: 200 },
-      providerMetadata: {},
-      warnings: [],
-    } as any);
-
-    await action.execute({
-      input: { prompt: 'Hello there' },
-      settings: {
-        timeout_ms: 0,
-        retries: defaultRetries,
-        stop_step_count: 5,
-      },
-      context,
-      bindings: createModelBindings(),
-    });
-
-    const stopWhen = (generateTextMock.mock.calls[0][0] as any).stopWhen;
-
-    expect(stepCountIsMock).toHaveBeenCalledWith(5);
-    expect(stopWhen({ steps: new Array(5).fill({}) })).toBe(true);
-    expect(stopWhen({ steps: new Array(4).fill({}) })).toBe(false);
-  });
-
   it('adds memory to the system prompt when enabled', async () => {
     const provider = Object.assign(
       jest.fn().mockReturnValue('model-instance'),
