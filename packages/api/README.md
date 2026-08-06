@@ -46,6 +46,54 @@ The API is divided into several key modules, each responsible for specific funct
 - Channel/helper runtime setting group keys and settings hook namespaces are now the extension `name` (kebab-case).
 - Third-party channel/helper extensions must define settings groups and i18n namespaces with the same kebab-case extension `name`.
 
+#### Inbound event middleware
+
+Extensions can observe or stop normalized channel events before Hexabot performs
+subscriber, attachment, message, status, or workflow processing. Middleware is
+discovered from compiled files named `*.inbound-event.middleware.js` in
+installed `hexabot-*` packages and `dist/extensions`.
+
+```ts
+import {
+  ChannelInboundEvent,
+  InboundEventMiddleware,
+  InboundEventMiddlewareProvider,
+} from '@hexabot-ai/api';
+
+@InboundEventMiddlewareProvider()
+export class DeduplicateInboundEvents implements InboundEventMiddleware {
+  readonly order = -100;
+
+  async handle(
+    event: ChannelInboundEvent,
+    next: () => Promise<void>,
+  ): Promise<void> {
+    if (await this.wasAlreadyHandled(event)) {
+      return;
+    }
+
+    await next();
+  }
+
+  private async wasAlreadyHandled(_event: ChannelInboundEvent) {
+    return false;
+  }
+}
+```
+
+Lower `order` values run first and wrap higher values; middleware without an
+order uses `0`, and equal orders retain discovery order. Calling `next()` more
+than once is rejected, and middleware errors propagate to the channel
+transport. HTTP webhook channels acknowledge the provider before running
+middleware, so post-acknowledgement errors are logged but cannot change the
+HTTP response. Custom channel handlers must call the protected
+`dispatchInboundEvent(event, next)` helper for every normalized event before
+applying business-side effects.
+
+For web/console messages, `next()` resolves after chatbot work is queued so the
+client acknowledgement remains fast; it does not measure completion of the
+queued workflow.
+
 ## Installation
 
 ```bash

@@ -16,6 +16,7 @@ import { ChannelEventBus } from '@/channel/lib/channel-event-bus';
 import { UnsupportedOutgoingFormatError } from '@/channel/lib/outbound';
 import { ChannelAttachmentService } from '@/channel/services/channel-attachment.service';
 import { ChannelRegistry } from '@/channel/services/channel-registry.service';
+import { InboundEventMiddlewareRegistry } from '@/channel/services/inbound-event-middleware.registry';
 import { SourceService } from '@/channel/services/source.service';
 import { MessageService } from '@/chat/services/message.service';
 import { SubscriberService } from '@/chat/services/subscriber.service';
@@ -65,6 +66,9 @@ describe('WebChannelHandler', () => {
       .fn()
       .mockResolvedValue('http://public.url/download/filename.extension?t=any'),
   } as jest.Mocked<Pick<ChannelAttachmentService, 'getPublicUrl'>>;
+  const inboundEventMiddlewareRegistryMock = {
+    dispatch: jest.fn(async (_event, next: () => Promise<void>) => next()),
+  } as jest.Mocked<Pick<InboundEventMiddlewareRegistry, 'dispatch'>>;
   const sourceServiceMock = {
     findActiveById: jest.fn(),
     ensureDefaultSources: jest.fn(),
@@ -109,6 +113,10 @@ describe('WebChannelHandler', () => {
         {
           provide: ChannelAttachmentService,
           useValue: channelAttachmentServiceMock,
+        },
+        {
+          provide: InboundEventMiddlewareRegistry,
+          useValue: inboundEventMiddlewareRegistryMock,
         },
         {
           provide: WebsocketGateway,
@@ -166,6 +174,106 @@ describe('WebChannelHandler', () => {
   it('should have correct name', () => {
     expect(handler).toBeDefined();
     expect(handler.getName()).toEqual('web');
+  });
+
+  it('short-circuits web messages before thread, broadcast, and queue work', async () => {
+    websocketGatewayMock.broadcast.mockClear();
+    const req = {
+      isSocket: true,
+      query: { first_name: 'Middleware', last_name: 'Short Circuit' },
+      session: {},
+      headers: { 'user-agent': 'browser' },
+      socket: {
+        handshake: { address: '127.0.0.1' },
+        data: {},
+      },
+      user: {},
+    } as any as SocketRequest;
+    const profile = await handler['getOrCreateSession'](req as any, webSource);
+    req.body = {
+      type: 'text',
+      data: { text: 'Drop this duplicate' },
+    };
+    req.query = {};
+    req.session.web = {
+      ...req.session.web,
+      profile,
+    };
+    const resolveThreadSpy = jest.spyOn(
+      handler['sessionService'],
+      'resolveThreadForIncoming',
+    );
+    const emitMessageSpy = jest.spyOn(
+      handler['channelEventBus'],
+      'emitMessage',
+    );
+    inboundEventMiddlewareRegistryMock.dispatch.mockImplementationOnce(
+      async () => undefined,
+    );
+    const status = jest.fn();
+    const json = jest.fn();
+    const res = { status, json } as any as SocketResponse;
+    status.mockReturnValue(res);
+    json.mockReturnValue(res);
+
+    await handler['handleEvent'](req, res, webSource);
+
+    expect(status).toHaveBeenCalledWith(200);
+    expect(inboundEventMiddlewareRegistryMock.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ triggerType: 'conversational' }),
+      expect.any(Function),
+    );
+    expect(resolveThreadSpy).not.toHaveBeenCalled();
+    expect(websocketGatewayMock.broadcast).not.toHaveBeenCalled();
+    expect(emitMessageSpy).not.toHaveBeenCalled();
+    resolveThreadSpy.mockRestore();
+    emitMessageSpy.mockRestore();
+  });
+
+  it('runs web status events through middleware before dispatch', async () => {
+    const calls: string[] = [];
+    const req = {
+      isSocket: true,
+      query: { first_name: 'Middleware', last_name: 'Status' },
+      session: {},
+      headers: { 'user-agent': 'browser' },
+      socket: {
+        handshake: { address: '127.0.0.1' },
+        data: {},
+      },
+      user: {},
+    } as any as SocketRequest;
+    const profile = await handler['getOrCreateSession'](req as any, webSource);
+    req.body = { type: 'typing' };
+    req.query = {};
+    req.session.web = {
+      ...req.session.web,
+      profile,
+    };
+    inboundEventMiddlewareRegistryMock.dispatch.mockImplementationOnce(
+      async (_event, next) => {
+        calls.push('before');
+        await next();
+        calls.push('after');
+      },
+    );
+    const emitStatusSpy = jest
+      .spyOn(handler['channelEventBus'], 'emitStatusEvent')
+      .mockImplementation(() => {
+        calls.push('status');
+      });
+    const status = jest.fn();
+    const json = jest.fn();
+    const res = { status, json } as any as SocketResponse;
+    status.mockReturnValue(res);
+    json.mockReturnValue(res);
+
+    await handler['handleEvent'](req, res, webSource);
+
+    expect(calls).toEqual(['before', 'status', 'after']);
+    expect(status).toHaveBeenCalledWith(200);
+    expect(emitStatusSpy).toHaveBeenCalledWith(expect.anything());
+    emitStatusSpy.mockRestore();
   });
 
   it('should allow the request if the origin is in the allowed domains', async () => {
