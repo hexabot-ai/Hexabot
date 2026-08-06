@@ -36,6 +36,7 @@ import { SocketResponse } from '@/websocket/utils/socket-response';
 
 import { ChannelAttachmentService } from '../services/channel-attachment.service';
 import { ChannelRegistry } from '../services/channel-registry.service';
+import { InboundEventMiddlewareRegistry } from '../services/inbound-event-middleware.registry';
 import { ChannelName } from '../types';
 
 import {
@@ -44,6 +45,7 @@ import {
 } from './channel-capabilities';
 import { ChannelEventBus } from './channel-event-bus';
 import { collectExtensionInjectMeta } from './extension-inject.decorator';
+import type ChannelInboundEvent from './inbound-events/channel-inbound-event';
 import { UnsupportedOutgoingFormatError } from './outbound';
 
 @Injectable()
@@ -64,6 +66,9 @@ export default abstract class ChannelHandler<
 
   @Inject(ChannelEventBus)
   protected readonly channelEventBus: ChannelEventBus;
+
+  @Inject(InboundEventMiddlewareRegistry)
+  private readonly inboundEventMiddlewareRegistry: InboundEventMiddlewareRegistry;
 
   @Inject(ModuleRef)
   private readonly moduleRef: ModuleRef;
@@ -99,6 +104,18 @@ export default abstract class ChannelHandler<
 
   protected async createModuleRef<T>(provider: Type<T>): Promise<T> {
     return await this.moduleRef.create(provider);
+  }
+
+  /**
+   * Runs a normalized channel event through all registered inbound middleware.
+   * Custom channel handlers should use this helper before performing business
+   * processing or emitting the event through ChannelEventBus.
+   */
+  protected async dispatchInboundEvent(
+    event: ChannelInboundEvent,
+    next: () => Promise<void>,
+  ): Promise<void> {
+    await this.inboundEventMiddlewareRegistry.dispatch(event, next);
   }
 
   /**
