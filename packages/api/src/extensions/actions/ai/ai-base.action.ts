@@ -7,6 +7,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { ProviderV2, ProviderV3 } from '@ai-sdk/provider';
+import { DEFAULT_STEP_BUDGET } from '@hexabot-ai/agentic';
 import { StdIncomingMessage, StdOutgoingMessage } from '@hexabot-ai/types';
 import {
   LanguageModel,
@@ -713,10 +714,9 @@ export abstract class AiBaseAction<
     const stopConditions: Array<
       ReturnType<typeof stepCountIs> | ReturnType<typeof hasToolCall>
     > = [];
-    // By default the default step count would be the max number of tools
-    // that could be called + 1 step pour generating the output
-    const defaultStepCount = tools ? 1 + Object.keys(tools).length : 0;
-    const resolvedStepCount = settings.stop_step_count ?? defaultStepCount;
+    const hasTools = Boolean(tools && Object.keys(tools).length > 0);
+    const resolvedStepCount =
+      settings.stop_step_count ?? (hasTools ? DEFAULT_STEP_BUDGET : 0);
 
     if (resolvedStepCount > 0) {
       stopConditions.push(stepCountIs(resolvedStepCount));

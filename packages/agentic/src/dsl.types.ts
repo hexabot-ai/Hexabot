@@ -41,6 +41,10 @@ export type JsonValue =
 // Per-action timeout in milliseconds; 0 disables the timeout wrapper.
 export const DEFAULT_TIMEOUT_MS = 0;
 
+export const DEFAULT_STEP_BUDGET = 10;
+
+export const MAX_STEP_BUDGET = 100;
+
 // Retry defaults: disabled with 3 attempts and exponential backoff starting at 25ms, capped at 10s, no jitter.
 export const DEFAULT_RETRY_SETTINGS = {
   enabled: false,
@@ -205,6 +209,12 @@ export const BaseSettingsSchema = z.strictObject({
     title: 'Timeout (ms)',
     description:
       'Maximum runtime in milliseconds for a single action invocation (0 = disabled).',
+  }),
+  stop_step_count: z.int().positive().max(MAX_STEP_BUDGET).optional().meta({
+    title: 'Stop step count',
+    description:
+      'Maximum number of agent steps before stopping. Applies to AI agent steps; can be overridden per step.',
+    default: DEFAULT_STEP_BUDGET,
   }),
   retries: RetriesSchema.optional().meta({
     title: 'Retries',
