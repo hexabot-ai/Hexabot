@@ -19,7 +19,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         channel: "web",
         sourceId: "replace-with-source-id",
         language: "en",
-        primaryColor: "#1BA089",
+        primaryColor: "#29998e",
       }}
     />
   </React.StrictMode>,

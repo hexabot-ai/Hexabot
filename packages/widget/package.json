@@ -6,14 +6,21 @@
   "license": "FCL-1.0-ALv2",
   "type": "module",
   "main": "dist/hexabot-widget.umd.js",
+  "module": "dist/hexabot-widget.es.js",
+  "types": "dist/embed.d.ts",
   "style": "dist/style.css",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "pnpm run clean && tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --ext ts,tsx --fix",
-    "preview": "vite preview",
-    "serve": "pnpm exec http-server ./dist/",
+    "preview": "vite preview --port 5174",
+    "serve": "pnpm exec http-server ./dist/ -b -g -p 5174",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "format": "pnpm run lint:fix",
@@ -30,8 +37,6 @@
     "lucide-react": "^0.562.0",
     "marked": "14.0.0",
     "normalize.css": "^8.0.1",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
@@ -51,6 +56,8 @@
     "http-server": "^14.1.1",
     "jsdom": "^28.0.0",
     "lint-staged": "^15.3.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "rimraf": "^6.0.1",
     "sass": "^1.98.0",
     "typescript": "^5.8.3",

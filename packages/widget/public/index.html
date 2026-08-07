@@ -1,45 +1,24 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Widget Embed</title>
-    <script
-      crossorigin
-      src="https://unpkg.com/react@18/umd/react.production.min.js"
-    ></script>
-    <script
-      crossorigin
-      src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
-    ></script>
     <script src="./hexabot-widget.umd.js"></script>
   </head>
   <body>
     <div id="hb-chat-widget"></div>
     <script>
-      // Create the shadow root and attach it to the widget container
-      const createElement = (tag, props = {}) =>
-        Object.assign(document.createElement(tag), props);
-      const shadowContainer = createElement("div");
-      document
-        .getElementById("hb-chat-widget")
-        .attachShadow({ mode: "open" })
-        .append(
-          shadowContainer,
-          createElement("link", {
-            rel: "stylesheet",
-            href: "./style.css",
-          }),
-        );
-      ReactDOM.render(
-        React.createElement(HexabotWidget, {
-          apiUrl: "http://localhost:4000",
-          channel: "web",
-          token: "token123",
-          primaryColor: "#1ba089",
-        }),
-        shadowContainer,
-      );
+      HexabotWidget.config({
+        id: "hb-chat-widget",
+        css: "./style.css",
+        shadowDom: true,
+        apiUrl: "http://localhost:3000",
+        channel: "web",
+        sourceId: "replace-with-source-id",
+        language: "en",
+        primaryColor: "#29998e",
+      });
     </script>
   </body>
 </html>

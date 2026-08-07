@@ -11,7 +11,8 @@ Typical agent work in this package includes:
 
 ## Repository Structure
 Key paths in `packages/widget`:
-- `src/ChatWidget.tsx`: Main exported widget entry (also Vite library entry).
+- `src/embed.tsx`: Vite library entry and public package surface (`config`, `ChatWidget`).
+- `src/ChatWidget.tsx`: Main widget component, composed by `src/embed.tsx`.
 - `src/UiChatWidget.tsx`: Alternate/customizable widget composition entry.
 - `src/main.tsx`: Local dev/demo app entry for Vite.
 - `src/components/`: UI building blocks (chat window, header, messages, launcher, buttons, icons).
@@ -29,7 +30,8 @@ Key paths in `packages/widget`:
 - `eslint.config.cjs` / `eslint.config-staged.cjs`: Lint rules.
 - `.prettierrc`: Formatting defaults.
 - `tsconfig*.json`: TypeScript config.
-- `vite.config.ts`: Library bundling and externals config.
+- `vite.config.ts`: Library bundling, declaration emit, and asset precompression.
+- `tsconfig.build.json`: Declaration-emit config (`tsconfig.app.json` sets `noEmit`).
 - `Dockerfile`: Containerized build/dev/serve flow.
 
 ## Setup & Dev Environment
@@ -86,8 +88,12 @@ pnpm --filter @hexabot-ai/widget run build
 Unit tests:
 - Vitest is configured in `vite.config.ts` under `test`.
 - Current widget tests live in:
-  - `src/theme/theme.utils.test.ts`
+  - `src/components/Message.test.tsx`
+  - `src/providers/ConfigProvider.test.tsx`
   - `src/providers/ThemeProvider.test.tsx`
+  - `src/theme/theme.utils.test.ts`
+  - `src/utils/SocketIoClient.test.ts`
+  - `src/utils/webhook-url.test.ts`
 - Test setup is initialized in `src/test/setup.ts`.
 
 ## Coding Style & Conventions
@@ -180,8 +186,16 @@ Release (v3 alpha train, `main` branch):
   - `packages/widget/node_modules/**`
   - `packages/widget/.turbo/**`
 - Keep the public widget entry contract stable unless explicitly requested:
-  - `src/ChatWidget.tsx` default export.
+  - `config(options)` exported from `src/embed.tsx` — this is what embedders call. `options` merges the mount target (`id`, `css`, `shadowDom`) with the widget config into one object.
   - Vite library build target in `vite.config.ts` (`name: "HexabotWidget"`).
+- React and React DOM are **bundled**, not externalized, and are declared as
+  `devDependencies` rather than peers. React 19 ships no UMD builds, so a
+  script-tag embedder cannot supply them. Do not re-add them to `dependencies`
+  or add `react` to `rolldownOptions.external`; either change reintroduces a
+  hard dependency on the host page's React version.
+- `process.env.NODE_ENV` is pinned to `production` only for production builds.
+  Pinning it unconditionally breaks the test run, because React's production
+  build omits `act`.
 - Settings persistence is now instance-scoped (`hexabot:widget:settings:<scope>`); avoid changes that re-introduce cross-widget leakage.
 - Any protocol-level changes (socket payloads, webhook behavior) must stay compatible with the backend expectations used in `src/providers/ChatProvider.tsx` and `src/utils/SocketIoClient.ts`.
 - Preserve license headers and do not remove licensing notices.

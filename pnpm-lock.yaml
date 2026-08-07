@@ -890,12 +890,6 @@ importers:
       normalize.css:
         specifier: ^8.0.1
         version: 8.0.1
-      react:
-        specifier: 19.2.7
-        version: 19.2.7
-      react-dom:
-        specifier: 19.2.7
-        version: 19.2.7(react@19.2.7)
       socket.io-client:
         specifier: ^4.8.1
         version: 4.8.1
@@ -948,6 +942,12 @@ importers:
       lint-staged:
         specifier: ^15.3.0
         version: 15.5.2
+      react:
+        specifier: 19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: 19.2.7
+        version: 19.2.7(react@19.2.7)
       rimraf:
         specifier: ^6.0.1
         version: 6.0.1

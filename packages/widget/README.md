@@ -57,76 +57,83 @@ pnpm --filter @hexabot-ai/widget run preview
 
 The preview server is helpful for validating the compiled assets before publishing.
 
+### Serve the Bundle
+
+```bash
+pnpm --filter @hexabot-ai/widget run serve
+```
+
+Unlike `preview`, this serves the precompressed `.br`/`.gz` files the build
+produces alongside the bundle — use it to check what a CDN or self-hosted
+deployment will actually send over the wire. Both commands default to port
+`5174`, so run only one at a time.
+
 ## Embed Chat Widget
 
 Once the widget is built, you can easily embed it into any webpage. Here's an example of how to add it to your website:
 
+The widget bundles its own copy of React, so `hexabot-widget.umd.js` is the
+only *script* you need — no separate React/ReactDOM tags to load first. Its
+styles still ship as a separate file, so keep the stylesheet link.
+
 ```html
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <link rel="stylesheet" href="<<WIDGET URL>>/style.css">
 <script src="<<WIDGET URL>>/hexabot-widget.umd.js"></script>
 
 <div id="hb-chat-widget"></div>
 <script>
-  const el = React.createElement;
-  const domContainer = document.getElementById('hb-chat-widget');
-  ReactDOM.render(
-    el(HexabotWidget, {
-      apiUrl: 'https://api.yourdomain.com',
-      channel: 'web',
-      sourceId: 'your-source-id',
-      transport: 'ws', // or "polling"
-      primaryColor: '#1ba089',
-    }),
-    domContainer,
-  );
+  HexabotWidget.config({
+    id: 'hb-chat-widget',
+    apiUrl: 'https://api.yourdomain.com',
+    channel: 'web',
+    sourceId: 'your-source-id',
+    transport: 'ws', // or "polling"
+    primaryColor: '#1ba089',
+  });
 </script>
 ```
+
+`config` takes one object: `id` (an element id, a CSS selector, or an element)
+plus `css` (a stylesheet URL to load) and `shadowDom` (render in a shadow root),
+alongside the regular widget config.
+
+`config` returns a handle with an `unmount()` method if you need to tear the
+widget down again.
 
 Replace the values in `apiUrl`, `sourceId`, and `primaryColor` with your configuration details.
 `transport` is optional and accepts `ws` (default) or `polling`.
 
 To prevent the website css from conflicting with the chat widget css, we can leverage the shadow dom:
 
+Pass `shadowDom: true` and `config` creates the shadow root, renders inside it, and
+loads `css` into that root — a shadow root does not inherit the page's styles,
+so the stylesheet has to go in with it. No `<link>` in the page is needed.
+
 ```html
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="<<WIDGET URL>>/hexabot-widget.umd.js"></script>
 
 <div id="hb-chat-widget"></div>
 <script>
-  // Create the shadow root and attach it to the widget container
-  const createElement = (tag, props = {}) => Object.assign(document.createElement(tag), props);
-  const shadowContainer = createElement("div");
-  document
-      .getElementById('hb-chat-widget')
-      .attachShadow({ mode: 'open' })
-      .append(
-        shadowContainer,
-        createElement("link", {
-          rel: "stylesheet",
-          href: "<<WIDGET URL>>/style.css"
-        }),
-      );
-
-  // Render the widget inside the shadow root
-  ReactDOM.render(
-    React.createElement(HexabotWidget, {
-      apiUrl: 'https://api.yourdomain.com',
-      channel: 'web',
-      sourceId: 'your-source-id',
-      transport: 'ws', // or "polling"
-      primaryColor: '#1ba089',
-    }),
-    shadowContainer,
-  );
+  HexabotWidget.config({
+    id: 'hb-chat-widget',
+    apiUrl: 'https://api.yourdomain.com',
+    channel: 'web',
+    sourceId: 'your-source-id',
+    transport: 'ws', // or "polling"
+    primaryColor: '#1ba089',
+    css: '<<WIDGET URL>>/style.css',
+    shadowDom: true,
+  });
 </script>
 ```
 
-
-For stable v3 releases, pin the major version:
+For stable releases, pin the major version:
 `https://cdn.jsdelivr.net/npm/@hexabot-ai/widget@3/dist/`
+
+> **Note:** the snippets above use `HexabotWidget.config()`, which is only
+> available from the major release that bundles React. Pinning `@3` loads the
+> older bundle, which instead expects `React` and `ReactDOM` globals to already
+> be on the page. Bump this pin when that major is published.
 
 JsDelivr uses the package published in the npm registry: https://www.npmjs.com/package/@hexabot-ai/widget
 
