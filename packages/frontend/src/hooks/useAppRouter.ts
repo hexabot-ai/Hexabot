@@ -15,7 +15,7 @@ import {
   useNavigate,
   useParams,
   useSearchParams,
-} from "react-router-dom";
+} from "react-router";
 
 export type QueryValue = string | string[] | undefined;
 

@@ -8,7 +8,7 @@ import dayjs from "dayjs";
 import "dayjs/locale/en";
 import "dayjs/locale/fr";
 import relativeTime from "dayjs/plugin/relativeTime";
-import React, { PropsWithChildren, useState } from "react";
+import React, { PropsWithChildren, type ReactElement, useState } from "react";
 
 import { useChat } from "../providers/ChatProvider";
 import { Direction, UiMessage, Web } from "../types/message.types";
@@ -26,7 +26,7 @@ dayjs.extend(relativeTime);
 
 type MessageProps = PropsWithChildren<{
   animate?: boolean;
-  Avatar?: () => JSX.Element;
+  Avatar?: () => ReactElement;
   message: UiMessage;
 }>;
 

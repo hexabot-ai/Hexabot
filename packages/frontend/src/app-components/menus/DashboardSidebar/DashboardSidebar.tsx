@@ -13,7 +13,7 @@ import type {} from "@mui/material/themeCssVarsAugmentation";
 import Toolbar from "@mui/material/Toolbar";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import * as React from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 
 import { useTranslate } from "@/hooks/useTranslate";
 

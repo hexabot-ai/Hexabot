@@ -5,7 +5,7 @@
  */
 
 import type { Setting } from "@hexabot-ai/types";
-import { createContext, ReactNode } from "react";
+import { createContext, type ReactElement, ReactNode } from "react";
 
 import { Progress } from "@/app-components/displays/Progress";
 import { useFind } from "@/hooks/crud/useFind";
@@ -50,7 +50,7 @@ export const useLoadSettings = () => {
 
 export const SettingsProvider = ({
   children,
-}: SettingsProviderProps): JSX.Element => {
+}: SettingsProviderProps): ReactElement => {
   const { data, isLoading } = useLoadSettings();
 
   if (isLoading) return <Progress />;

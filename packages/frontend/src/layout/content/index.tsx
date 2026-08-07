@@ -6,7 +6,7 @@
 
 import { Box, BoxProps, styled, Theme } from "@mui/material";
 import Grid from "@mui/material/Grid";
-import { FC } from "react";
+import { FC, type ReactElement } from "react";
 
 import { SXStyleOptions } from "@/utils/SXStyleOptions";
 
@@ -35,7 +35,7 @@ const DrawerHeader = styled("div")(({ theme }) => ({
 }));
 
 export type ContentProps = BoxProps & {
-  children: JSX.Element;
+  children: ReactElement;
 } & IContentPaddingProps;
 export const Content: FC<ContentProps> = ({ children, ...rest }) => (
   <StyledBox component="main" {...rest}>

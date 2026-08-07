@@ -5,7 +5,7 @@
  */
 
 import { Action } from "@hexabot-ai/types";
-import { type ReactNode, useCallback, useMemo } from "react";
+import { type ReactElement, type ReactNode, useCallback, useMemo } from "react";
 
 import { Progress } from "@/app-components/displays/Progress";
 import { PermissionContext } from "@/contexts/permission.context";
@@ -27,7 +27,7 @@ export const useUserPermissions = () => {
 
 export const PermissionProvider = ({
   children,
-}: PermissionProviderProps): JSX.Element => {
+}: PermissionProviderProps): ReactElement => {
   const { data, isLoading, isFetching } = useUserPermissions();
   const permissionMap = useMemo(
     () =>

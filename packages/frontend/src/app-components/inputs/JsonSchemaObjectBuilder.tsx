@@ -245,7 +245,7 @@ export function fromJsonSchema(
 type SchemaNodeEditorProps<C extends JsonSchemaOptionContext = "default"> = {
   /** react-hook-form path to this schema node (e.g. "schema", "schema.items", "schema.properties.0.schema") */
   name: string;
-  label?: string | JSX.Element;
+  label?: string | React.JSX.Element;
   /** Optional helper text rendered under the root title. */
   description?: React.ReactNode;
   /** If set, type is enforced and selection is hidden. */
@@ -815,7 +815,7 @@ export function JsonSchemaObjectBuilder<
   context,
 }: {
   name: string;
-  label?: string | JSX.Element;
+  label?: string | React.JSX.Element;
   description?: React.ReactNode;
   maxDepth?: number;
   hideTitle?: boolean;

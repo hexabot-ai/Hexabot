@@ -10,7 +10,8 @@ import React, { RefObject, useRef, useState } from "react";
 import EmojiPicker from "../EmojiPicker";
 
 const EmojiButton: React.FC<{
-  inputRef: RefObject<HTMLDivElement>;
+  // React 19 types: `useRef<T>(null)` yields `RefObject<T | null>`.
+  inputRef: RefObject<HTMLDivElement | null>;
   onInput: () => void;
 }> = ({ inputRef, onInput }) => {
   const [isActive, setIsActive] = useState(false);

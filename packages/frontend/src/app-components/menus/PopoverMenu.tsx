@@ -13,7 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import { FC } from "react";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink } from "react-router";
 
 import { PopoverMenuProps } from "./DashboardSidebar/types/sidebar.types";
 

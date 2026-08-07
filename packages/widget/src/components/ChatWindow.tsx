@@ -4,7 +4,12 @@
  * Full terms: see LICENSE.md.
  */
 
-import React, { PropsWithChildren, useEffect, useMemo } from "react";
+import React, {
+  PropsWithChildren,
+  type ReactElement,
+  useEffect,
+  useMemo,
+} from "react";
 
 import { useChat } from "../providers/ChatProvider";
 import { useWidget } from "../providers/WidgetProvider";
@@ -21,8 +26,8 @@ import Webview from "./Webview";
 import "./ChatWindow.scss";
 
 type ChatWindowProps = PropsWithChildren<{
-  CustomHeader?: () => JSX.Element | null;
-  CustomAvatar?: () => JSX.Element;
+  CustomHeader?: () => ReactElement | null;
+  CustomAvatar?: () => ReactElement;
   PreChat?: React.FC;
   PostChat?: React.FC;
 }>;

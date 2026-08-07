@@ -6,7 +6,7 @@
 
 import Box from "@mui/material/Box";
 import { Bug } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 
 import { BackButton } from "@/app-components/buttons/BackButton";
 import { WorkflowActionsProvider } from "@/contexts/workflow-actions.context";

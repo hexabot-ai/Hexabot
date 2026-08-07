@@ -338,7 +338,8 @@ export const getAdminWorkflowTourTransition = ({
     return { complete: true };
   }
 
-  if (status === "error") {
+  // Joyride v3 reports failures through the `error` event rather than a status.
+  if (type === "error") {
     return { stop: true };
   }
 

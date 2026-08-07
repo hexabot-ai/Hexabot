@@ -12,7 +12,7 @@ import {
   SendHorizontal,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink } from "react-router";
 
 import { useApiClientMutation } from "@/hooks/useApiClient";
 import { useToast } from "@/hooks/useToast";

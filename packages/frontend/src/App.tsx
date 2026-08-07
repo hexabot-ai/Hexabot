@@ -5,16 +5,24 @@
  */
 
 import { Suspense } from "react";
-import { useRoutes } from "react-router-dom";
+import { useRoutes } from "react-router";
 
 import { Progress } from "@/app-components/displays/Progress";
 import { Layout } from "@/layout";
 
 import { routes } from "./routes";
+import { RouteObjectItem } from "./routes/routeConfig";
+
+// `useRoutes` returns react-router's RouteContext provider, whose props carry
+// the matched route. React 19 types expose `ReactElement.props` as `unknown`,
+// so the shape has to be named explicitly.
+type RouteContextElementProps = {
+  match: { route: Pick<RouteObjectItem, "handle"> };
+};
 
 const App = () => {
   const element = useRoutes(routes);
-  const { match } = element?.props;
+  const { match } = element?.props as RouteContextElementProps;
   const { handle } = match.route;
 
   return (

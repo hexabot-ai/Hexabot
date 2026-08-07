@@ -5,6 +5,7 @@
  */
 
 import { Chip, ChipProps } from "@mui/material";
+import { type ReactElement } from "react";
 
 import { useGet } from "@/hooks/crud/useGet";
 import { THook, TType } from "@/types/base.types";
@@ -23,7 +24,10 @@ export const ChipEntity = <
   id: string;
   field: K;
   entity: TE;
-  render?: (value?: T["basic"][K], data?: T["basic"]) => JSX.Element[] | string;
+  render?: (
+    value?: T["basic"][K],
+    data?: T["basic"],
+  ) => ReactElement[] | string;
 } & ChipProps) => {
   const { data } = useGet(id, { entity });
   const renderOutput = render?.(data?.[field], data);

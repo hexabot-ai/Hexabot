@@ -16,7 +16,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { lighten, useColorScheme, useTheme } from "@mui/material/styles";
+import { alpha, useColorScheme, useTheme } from "@mui/material/styles";
 import { X } from "lucide-react";
 import {
   type ReactNode,
@@ -26,8 +26,9 @@ import {
   useRef,
   useState,
 } from "react";
-import Joyride, {
-  type CallBackProps,
+import {
+  type EventData,
+  Joyride,
   type Step,
   type TooltipRenderProps,
 } from "react-joyride";
@@ -62,10 +63,6 @@ type TourWorkflowCreatePayload = ReturnType<
   typeof buildAdminWorkflowTourWorkflowPayload
 >;
 
-type JoyrideTooltipActionProps = TooltipRenderProps["primaryProps"] & {
-  children?: ReactNode;
-};
-
 const getTooltipLabel = (title: ReactNode, content: ReactNode) => {
   if (typeof title === "string") {
     return title;
@@ -77,8 +74,6 @@ const getTooltipLabel = (title: ReactNode, content: ReactNode) => {
 
   return undefined;
 };
-const getJoyrideActionContent = (props: JoyrideTooltipActionProps) =>
-  props.children ?? props.title;
 const AdminWorkflowTourTooltip = ({
   backProps,
   closeProps,
@@ -90,23 +85,17 @@ const AdminWorkflowTourTooltip = ({
   size,
   tooltipProps,
 }: TooltipRenderProps) => {
-  const {
-    content,
-    hideBackButton,
-    hideCloseButton,
-    hideFooter,
-    showSkipButton,
-    styles,
-    title,
-  } = step;
+  // Joyride v3 replaced the per-step `hide*`/`showSkipButton` flags with a
+  // single `buttons` allow-list on the merged step.
+  const { buttons, content, styles, title } = step;
   const theme = useTheme();
   const tooltipLabel = getTooltipLabel(title, content);
-  const showBack = !hideBackButton && index > 0;
-  const showSkip = showSkipButton && !isLastStep;
-  const backActionProps = backProps as JoyrideTooltipActionProps;
-  const closeActionProps = closeProps as JoyrideTooltipActionProps;
-  const primaryActionProps = primaryProps as JoyrideTooltipActionProps;
-  const skipActionProps = skipProps as JoyrideTooltipActionProps;
+  const hideCloseButton = !buttons.includes("close");
+  const hideFooter = !["back", "primary", "skip"].some((button) =>
+    buttons.includes(button as (typeof buttons)[number]),
+  );
+  const showBack = buttons.includes("back") && index > 0;
+  const showSkip = buttons.includes("skip") && !isLastStep;
 
   return (
     <Paper
@@ -138,7 +127,7 @@ const AdminWorkflowTourTooltip = ({
               },
             }}
             type="button"
-            {...closeActionProps}
+            {...closeProps}
           >
             <X aria-hidden="true" size={18} strokeWidth={2.25} />
             <Box
@@ -155,7 +144,7 @@ const AdminWorkflowTourTooltip = ({
                 width: 1,
               }}
             >
-              {getJoyrideActionContent(closeActionProps)}
+              {closeProps.title}
             </Box>
           </IconButton>
         ) : null}
@@ -229,9 +218,9 @@ const AdminWorkflowTourTooltip = ({
                     size="small"
                     type="button"
                     variant="text"
-                    {...skipActionProps}
+                    {...skipProps}
                   >
-                    {getJoyrideActionContent(skipActionProps)}
+                    {skipProps.title}
                   </Button>
                 ) : null}
               </Box>
@@ -242,9 +231,9 @@ const AdminWorkflowTourTooltip = ({
                     size="small"
                     type="button"
                     variant="outlined"
-                    {...backActionProps}
+                    {...backProps}
                   >
-                    {getJoyrideActionContent(backActionProps)}
+                    {backProps.title}
                   </Button>
                 ) : null}
                 <Button
@@ -252,9 +241,9 @@ const AdminWorkflowTourTooltip = ({
                   size="small"
                   type="button"
                   variant="contained"
-                  {...primaryActionProps}
+                  {...primaryProps}
                 >
-                  {getJoyrideActionContent(primaryActionProps)}
+                  {primaryProps.title}
                 </Button>
               </Stack>
             </Stack>
@@ -332,54 +321,41 @@ export const AdminWorkflowTour = () => {
         target: ADMIN_WORKFLOW_TOUR_SELECTORS.dashboardCreate,
         title: t("visual_editor.guided_tour.dashboard_create.title"),
         content: t("visual_editor.guided_tour.dashboard_create.content"),
-        disableBeacon: true,
-        hideFooter: true,
         placement: "bottom",
-        spotlightClicks: true,
       },
       {
         target: ADMIN_WORKFLOW_TOUR_SELECTORS.emptyInsert,
         title: t("visual_editor.guided_tour.empty_insert.title"),
         content: t("visual_editor.guided_tour.empty_insert.content"),
-        disableBeacon: true,
-        hideFooter: true,
         placement: "right",
-        spotlightClicks: true,
       },
       {
         target: ADMIN_WORKFLOW_TOUR_SELECTORS.insertStep,
         title: t("visual_editor.guided_tour.insert_step.title"),
         content: t("visual_editor.guided_tour.insert_step.content"),
-        disableBeacon: true,
-        hideFooter: true,
         placement: "right",
-        spotlightClicks: true,
       },
       {
         target: ADMIN_WORKFLOW_TOUR_SELECTORS.sendTextActionSpotlight,
         title: t("visual_editor.guided_tour.send_text_action.title"),
         content: t("visual_editor.guided_tour.send_text_action.content"),
-        disableBeacon: true,
-        disableScrolling: true,
-        hideFooter: true,
         isFixed: true,
         placement: "left",
-        spotlightClicks: true,
       },
       {
         target: ADMIN_WORKFLOW_TOUR_SELECTORS.actionSave,
         title: t("visual_editor.guided_tour.action_save.title"),
         content: t("visual_editor.guided_tour.action_save.content"),
-        disableBeacon: true,
-        hideFooter: true,
         placement: "left-end",
-        spotlightClicks: true,
       },
       {
         target: ADMIN_WORKFLOW_TOUR_SELECTORS.chatWidget,
         title: t("visual_editor.guided_tour.chat_widget.title"),
         content: t("visual_editor.guided_tour.chat_widget.content"),
-        disableBeacon: true,
+        // Final step is informational: show the Done button and stop letting
+        // clicks fall through to the highlighted element.
+        blockTargetInteraction: true,
+        buttons: ["close", "primary"],
         placement: "top",
       },
     ],
@@ -553,8 +529,8 @@ export const AdminWorkflowTour = () => {
     };
   }, [run, stepIndex]);
 
-  const handleJoyrideCallback = useCallback(
-    (data: CallBackProps) => {
+  const handleJoyrideEvent = useCallback(
+    (data: EventData) => {
       const transition = getAdminWorkflowTourTransition({
         action: data.action,
         index: data.index,
@@ -596,11 +572,7 @@ export const AdminWorkflowTour = () => {
 
   return (
     <Joyride
-      callback={handleJoyrideCallback}
       continuous
-      disableOverlayClose
-      disableScrolling
-      hideBackButton
       locale={{
         back: t("button.back"),
         close: t("button.close"),
@@ -608,22 +580,34 @@ export const AdminWorkflowTour = () => {
         next: t("button.next"),
         skip: t("button.skip"),
       }}
+      onEvent={handleJoyrideEvent}
+      // Joyride v3 folds theming and per-step behavior flags into `options`.
+      // Steps are driven click-through, so only the close button is rendered
+      // and the target stays interactive (`blockTargetInteraction` default).
+      options={{
+        arrowColor: tooltipBg,
+        backgroundColor: tooltipBg,
+        buttons: ["close"],
+        overlayClickAction: false,
+        // v2 dimmed the page by blending an opaque overlay with
+        // `mixBlendMode: hard-light`; v3 fills the overlay SVG directly and
+        // strips that blend mode, so an opaque color paints a solid sheet over
+        // the app. These alphas reproduce what hard-light used to compute: a
+        // 40% black scrim in light mode, a 20% white veil in dark mode.
+        overlayColor: isDark
+          ? alpha(theme.palette.common.white, 0.2)
+          : alpha(theme.palette.common.black, 0.4),
+        primaryColor: theme.vars.palette.primary.main,
+        skipBeacon: true,
+        skipScroll: true,
+        spotlightPadding: 8,
+        textColor: theme.vars.palette.text.primary,
+        zIndex: theme.zIndex.modal + 100,
+      }}
       run={run}
-      showSkipButton
-      spotlightPadding={8}
       stepIndex={stepIndex}
       steps={steps}
       tooltipComponent={AdminWorkflowTourTooltip}
-      styles={{
-        options: {
-          arrowColor: tooltipBg,
-          backgroundColor: tooltipBg,
-          overlayColor: lighten(theme.palette.common.black, isDark ? 0.6 : 0.3),
-          primaryColor: theme.vars.palette.primary.main,
-          textColor: theme.vars.palette.text.primary,
-          zIndex: theme.zIndex.modal + 100,
-        },
-      }}
     />
   );
 };

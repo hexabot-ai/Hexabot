@@ -10,8 +10,15 @@ import {
   AutocompleteProps,
   AutocompleteValue,
 } from "@mui/material/Autocomplete";
-import type { ReactNode, SyntheticEvent } from "react";
-import { forwardRef, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  type ReactNode,
+  type Ref,
+  type SyntheticEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 
 import { useInfiniteFind } from "@/hooks/crud/useInfiniteFind";
 import { useSearch } from "@/hooks/useSearch";
@@ -69,25 +76,25 @@ const AutoCompleteEntitySelect = <
   Value,
   Label extends keyof Value = keyof Value,
   Multiple extends boolean | undefined = true,
->(
-  {
-    entity,
-    format,
-    searchFields,
-    disableSearch,
-    preprocess,
-    idKey = "id",
-    sortKey = "id",
-    labelKey,
-    enableEntityAddButton,
-    disableAutoSelectOnCreate,
-    routeParams,
-    queryEnabled = true,
-    where,
-    ...rest
-  }: AutoCompleteEntitySelectProps<Value, Label, Multiple>,
+>({
+  entity,
+  format,
+  searchFields,
+  disableSearch,
+  preprocess,
+  idKey = "id",
+  sortKey = "id",
+  labelKey,
+  enableEntityAddButton,
+  disableAutoSelectOnCreate,
+  routeParams,
+  queryEnabled = true,
+  where,
   ref,
-) => {
+  ...rest
+}: AutoCompleteEntitySelectProps<Value, Label, Multiple> & {
+  ref?: Ref<HTMLDivElement>;
+}) => {
   const { onSearch, searchPayload } = useSearch<typeof entity>(
     disableSearch
       ? {}
@@ -222,12 +229,12 @@ const AutoCompleteEntitySelect = <
 
 AutoCompleteEntitySelect.displayName = "AutoCompleteEntitySelect";
 
-export default forwardRef(AutoCompleteEntitySelect) as unknown as <
+export default AutoCompleteEntitySelect as unknown as <
   Value,
   Label extends keyof Value = keyof Value,
   Multiple extends boolean | undefined = true,
 >(
   props: AutoCompleteEntitySelectProps<Value, Label, Multiple> & {
-    ref?: React.ForwardedRef<HTMLDivElement>;
+    ref?: Ref<HTMLDivElement>;
   },
 ) => ReturnType<typeof AutoCompleteEntitySelect>;

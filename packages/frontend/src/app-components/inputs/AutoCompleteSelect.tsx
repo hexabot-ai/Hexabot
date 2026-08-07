@@ -16,8 +16,7 @@ import Autocomplete, {
   AutocompleteValue,
 } from "@mui/material/Autocomplete";
 import stringify from "fast-json-stable-stringify";
-import type { ReactNode } from "react";
-import { forwardRef, useCallback, useMemo } from "react";
+import { ReactNode, type Ref, useCallback, useMemo } from "react";
 
 import { AlertAdornment } from "./AlertAdornment";
 
@@ -56,37 +55,34 @@ const AutoCompleteSelect = <
   Multiple extends boolean | undefined = true,
   DisableClearable extends boolean | undefined = false,
   FreeSolo extends boolean | undefined = false,
->(
-  {
-    label,
-    value,
-    options = [],
-    idKey = "id",
-    labelKey,
-    multiple,
-    onSearch,
-    inputLabelSx,
-    error,
-    required,
-    helperText,
-    isOptionEqualToValue = (option, value) =>
-      option?.[idKey] === value?.[idKey],
-    getOptionLabel = (option) => option?.[String(labelKey)] || option?.[idKey],
-    freeSolo,
-    limitTags,
-    loading,
-    noOptionsWarning,
-    isDisabledWhenEmpty = true,
-    ...rest
-  }: AutoCompleteSelectProps<
-    Value,
-    Label,
-    Multiple,
-    DisableClearable,
-    FreeSolo
-  >,
+>({
+  label,
+  value,
+  options = [],
+  idKey = "id",
+  labelKey,
+  multiple,
+  onSearch,
+  inputLabelSx,
+  error,
+  required,
+  helperText,
+  isOptionEqualToValue = (option, value) => option?.[idKey] === value?.[idKey],
+  getOptionLabel = (option) => option?.[String(labelKey)] || option?.[idKey],
+  freeSolo,
+  limitTags,
+  loading,
+  noOptionsWarning,
+  isDisabledWhenEmpty = true,
   ref,
-) => {
+  ...rest
+}: AutoCompleteSelectProps<
+  Value,
+  Label,
+  Multiple,
+  DisableClearable,
+  FreeSolo
+> & { ref?: Ref<HTMLDivElement> }) => {
   const handleSearch = useCallback(
     (keywords: string) => {
       onSearch?.(keywords);
@@ -200,7 +196,7 @@ const AutoCompleteSelect = <
 
 AutoCompleteSelect.displayName = "AutoCompleteSelect";
 
-export default forwardRef(AutoCompleteSelect) as unknown as <
+export default AutoCompleteSelect as unknown as <
   Value,
   Label extends keyof Value = keyof Value,
   Multiple extends boolean | undefined = true,
@@ -214,6 +210,6 @@ export default forwardRef(AutoCompleteSelect) as unknown as <
     DisableClearable,
     FreeSolo
   > & {
-    ref?: React.ForwardedRef<HTMLDivElement>;
+    ref?: Ref<HTMLDivElement>;
   },
 ) => ReturnType<typeof AutoCompleteSelect>;

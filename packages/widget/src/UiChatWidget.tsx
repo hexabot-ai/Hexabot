@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { PropsWithChildren } from "react";
+import { PropsWithChildren, type ReactElement } from "react";
 
 import Launcher from "./components/Launcher";
 import UserSubscription from "./components/UserSubscription";
@@ -22,9 +22,9 @@ import { ChatScreen, ConnectionState } from "./types/state.types";
 import "./UiChatWidget.css";
 
 type UiChatWidgetProps = PropsWithChildren<{
-  CustomLauncher?: (props: { widget: WidgetContextType }) => JSX.Element;
-  CustomHeader?: () => JSX.Element | null;
-  CustomAvatar?: () => JSX.Element;
+  CustomLauncher?: (props: { widget: WidgetContextType }) => ReactElement;
+  CustomHeader?: () => ReactElement | null;
+  CustomAvatar?: () => ReactElement;
   PreChat?: React.FC;
   PostChat?: React.FC;
   defaultIsOpen?: boolean;

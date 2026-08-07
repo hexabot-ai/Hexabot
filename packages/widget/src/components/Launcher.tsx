@@ -5,7 +5,7 @@
  */
 
 import { MessageCircle, X } from "lucide-react";
-import React, { PropsWithChildren } from "react";
+import React, { PropsWithChildren, type ReactElement } from "react";
 
 import { useChat } from "../providers/ChatProvider";
 import { useSocketLifecycle } from "../providers/SocketProvider";
@@ -16,9 +16,9 @@ import ChatWindow from "./ChatWindow";
 import "./Launcher.scss";
 
 type LauncherProps = PropsWithChildren<{
-  CustomLauncher?: (props: { widget: WidgetContextType }) => JSX.Element;
-  CustomHeader?: () => JSX.Element | null;
-  CustomAvatar?: () => JSX.Element;
+  CustomLauncher?: (props: { widget: WidgetContextType }) => ReactElement;
+  CustomHeader?: () => ReactElement | null;
+  CustomAvatar?: () => ReactElement;
   PreChat?: React.FC;
   PostChat?: React.FC;
 }>;

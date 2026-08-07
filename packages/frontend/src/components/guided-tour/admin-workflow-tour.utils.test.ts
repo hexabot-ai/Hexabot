@@ -246,6 +246,15 @@ describe("admin-workflow-tour.utils", () => {
     ).toEqual({ retryStepIndex: 3 });
     expect(
       getAdminWorkflowTourTransition({
+        action: "update",
+        index: 3,
+        size: 6,
+        status: "running",
+        type: "error",
+      }),
+    ).toEqual({ stop: true });
+    expect(
+      getAdminWorkflowTourTransition({
         action: "skip",
         index: 2,
         size: 6,

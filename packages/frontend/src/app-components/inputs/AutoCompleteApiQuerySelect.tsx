@@ -7,8 +7,7 @@
 import { ChipTypeMap } from "@mui/material";
 import { AutocompleteProps } from "@mui/material/Autocomplete";
 import get from "lodash/get";
-import type { ReactNode } from "react";
-import { forwardRef, useMemo, useState } from "react";
+import { type ReactNode, type Ref, useMemo, useState } from "react";
 
 import { useApiClientQuery } from "@/hooks/useApiClient";
 
@@ -65,22 +64,22 @@ const AutoCompleteApiQuerySelect = <
   Value = Record<string, unknown>,
   Label extends keyof Value = keyof Value,
   Multiple extends boolean | undefined = true,
->(
-  {
-    apiPath,
-    queryParams,
-    disableSearch,
-    preprocess,
-    idKey = "id",
-    valueKey,
-    sortKey = "id",
-    labelKey,
-    queryEnabled = true,
-    staleTime,
-    ...rest
-  }: AutoCompleteApiQuerySelectProps<Value, Label, Multiple>,
+>({
+  apiPath,
+  queryParams,
+  disableSearch,
+  preprocess,
+  idKey = "id",
+  valueKey,
+  sortKey = "id",
+  labelKey,
+  queryEnabled = true,
+  staleTime,
   ref,
-) => {
+  ...rest
+}: AutoCompleteApiQuerySelectProps<Value, Label, Multiple> & {
+  ref?: Ref<HTMLDivElement>;
+}) => {
   const [searchText, setSearchText] = useState("");
   const { data, isFetching } = useApiClientQuery("getByPath", {
     params: [apiPath, queryParams],
@@ -151,12 +150,12 @@ const AutoCompleteApiQuerySelect = <
 
 AutoCompleteApiQuerySelect.displayName = "AutoCompleteApiQuerySelect";
 
-export default forwardRef(AutoCompleteApiQuerySelect) as unknown as <
+export default AutoCompleteApiQuerySelect as unknown as <
   Value = Record<string, unknown>,
   Label extends keyof Value = keyof Value,
   Multiple extends boolean | undefined = true,
 >(
   props: AutoCompleteApiQuerySelectProps<Value, Label, Multiple> & {
-    ref?: React.ForwardedRef<HTMLDivElement>;
+    ref?: Ref<HTMLDivElement>;
   },
 ) => ReturnType<typeof AutoCompleteApiQuerySelect>;

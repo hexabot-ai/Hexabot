@@ -6,7 +6,7 @@
 
 import { Button, Typography } from "@mui/material";
 import { ArrowLeft } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { useTranslate } from "@/hooks/useTranslate";
 

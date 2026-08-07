@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { matchPath } from "react-router-dom";
+import { matchPath } from "react-router";
 
 import { RouterType } from "@/services/types";
 

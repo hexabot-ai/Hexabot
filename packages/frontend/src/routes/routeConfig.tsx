@@ -6,11 +6,7 @@
 
 import { Action } from "@hexabot-ai/types";
 import React, { ReactElement, ReactNode } from "react";
-import {
-  IndexRouteObject,
-  Navigate,
-  NonIndexRouteObject,
-} from "react-router-dom";
+import { IndexRouteObject, Navigate, NonIndexRouteObject } from "react-router";
 
 import { Login } from "@/app-components/auth/Login";
 import { ResetPassword } from "@/app-components/auth/ResetPassword";

@@ -12,13 +12,14 @@ import {
   TimelineSeparator,
 } from "@mui/lab";
 import { Box, Paper, Typography } from "@mui/material";
+import { type ReactElement } from "react";
 
 interface DashboardTimelineItemProps {
   time: string | null;
   text?: string;
   secondaryText?: string;
   onClick?: () => void;
-  renderTitle: () => JSX.Element;
+  renderTitle: () => ReactElement;
 }
 export const DashboardTimelineItem = ({
   time = "",

@@ -48,6 +48,12 @@ overrides:
   "openai>zod": "^3.23.8"
   "picomatch": "4.0.4"
   "protobufjs": "7.6.5"
+  # Keep a single React copy across the workspace (hoisted linker + externalized
+  # react in the widget build both break if a transitive dep pulls its own copy).
+  "react": "19.2.7"
+  "react-dom": "19.2.7"
+  "@types/react": "19.2.18"
+  "@types/react-dom": "19.2.4"
   "shell-quote": ">=1.8.5"
   "svgo@>=4.0.0 <4.0.2": ">=4.0.2"
   "uuid": "11.1.1"

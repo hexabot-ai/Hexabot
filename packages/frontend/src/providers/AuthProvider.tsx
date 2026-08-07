@@ -5,6 +5,7 @@
  */
 
 import {
+  type ReactElement,
   type ReactNode,
   useCallback,
   useEffect,
@@ -34,7 +35,7 @@ export interface AuthProviderProps {
   children: ReactNode;
 }
 
-export const AuthProvider = ({ children }: AuthProviderProps): JSX.Element => {
+export const AuthProvider = ({ children }: AuthProviderProps): ReactElement => {
   const router = useAppRouter();
   const { hasUserSession } = useConfig();
   const [isAuthenticated, setIsAuthenticated] = useState(hasUserSession);

@@ -48,7 +48,7 @@ export const BroadcastChannelProvider: FC<IBroadcastChannelProps> = ({
   children,
   channelName,
 }) => {
-  const channelRef = useRef<BroadcastChannel>();
+  const channelRef = useRef<BroadcastChannel | undefined>(undefined);
   const subscribersRef = useRef<
     Record<
       string,

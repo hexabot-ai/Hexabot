@@ -17,7 +17,7 @@ import { type Theme, SxProps, useTheme } from "@mui/material/styles";
 import type {} from "@mui/material/themeCssVarsAugmentation";
 import Tooltip from "@mui/material/Tooltip";
 import * as React from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { useDashboardSidebar } from "./hooks/useDashboardSidebar";
 import { ICON_WIDTH } from "./measurements.constansts";

@@ -6,6 +6,7 @@
 
 import { Action } from "@hexabot-ai/types";
 import { BoxProps } from "@mui/material";
+import { type ReactElement } from "react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { EntityType } from "@/services/types";
@@ -18,7 +19,7 @@ export interface IContentPaddingProps {
 }
 
 export type LayoutProps = IContentPaddingProps & {
-  children: JSX.Element;
+  children: ReactElement;
   sxContent?: BoxProps;
   isPublicRoute?: boolean;
   requiredPermissions?: [EntityType, Action][];

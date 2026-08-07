@@ -4,7 +4,13 @@
  * Full terms: see LICENSE.md.
  */
 
-import React, { PropsWithChildren, useEffect, useRef, useState } from "react";
+import React, {
+  PropsWithChildren,
+  type ReactElement,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { useChat } from "../providers/ChatProvider";
 import { useWidget } from "../providers/WidgetProvider";
@@ -15,7 +21,7 @@ import "./Messages.scss";
 import TypingMessage from "./messages/TypingMessage";
 
 type MessagesProps = PropsWithChildren<{
-  Avatar?: () => JSX.Element;
+  Avatar?: () => ReactElement;
 }>;
 
 const Messages: React.FC<MessagesProps> = ({ Avatar }) => {
