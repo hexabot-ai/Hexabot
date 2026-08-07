@@ -42,22 +42,6 @@ export interface subscriberUpdateEvent {
   profile: Subscriber;
 }
 
-export type SocketEvent =
-  | MessageSentEvent
-  | MessageReceivedEvent
-  | messageDeliveredEvent
-  | messageReadEvent
-  | newSubscriberEvent
-  | subscriberUpdateEvent;
-
-export type SocketMessageEvents =
-  | MessageSentEvent
-  | MessageReceivedEvent
-  | messageDeliveredEvent
-  | messageReadEvent;
-
-export type SocketSubscriberEvents = newSubscriberEvent | subscriberUpdateEvent;
-
 export enum AssignedTo {
   ALL = "title.all_messages",
   ME = "title.handled_by_me",

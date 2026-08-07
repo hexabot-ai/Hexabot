@@ -77,12 +77,3 @@ export const getConnectionLabel = (
     ? `${server.command}${args.length ? ` ${args.join(" ")}` : ""}`
     : noneLabel;
 };
-
-export const getTransportLabel = (
-  transport: string,
-  t: (key: string) => string,
-): string => {
-  const label = t(`label.${transport}`);
-
-  return label || transport.toUpperCase();
-};

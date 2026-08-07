@@ -5,7 +5,6 @@
  */
 
 import { Action } from "@hexabot-ai/types";
-import React, { ReactElement, ReactNode } from "react";
 import {
   IndexRouteObject,
   Navigate,
@@ -39,10 +38,6 @@ import { WorkflowRunDebuggerPage } from "@/components/workflow-run-debugger";
 import { WorkflowRuns } from "@/components/workflow-runs";
 import { LayoutProps } from "@/layout";
 import { EntityType } from "@/services/types";
-
-export type RouteComponent = React.ComponentType & {
-  getLayout?: (page: ReactElement) => ReactNode;
-};
 
 export type RouteObjectItem = (
   | Omit<IndexRouteObject, "handle">

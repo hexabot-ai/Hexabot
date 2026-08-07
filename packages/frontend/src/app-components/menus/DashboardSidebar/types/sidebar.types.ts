@@ -27,13 +27,6 @@ export type TMenu = TMenuItem & {
   submenuItems?: TMenuItem[];
 };
 
-export type TSidebarProps = {
-  menu: TMenu[];
-  pathname: string;
-  isToggled?: boolean;
-  toggleFunction?: () => void;
-};
-
 export interface DashboardHeaderProps {
   logo?: React.ReactNode;
   menuOpen: boolean;

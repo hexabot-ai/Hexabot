@@ -307,14 +307,6 @@ export class ApiClient extends TranslatableMethods {
     return data;
   }
 
-  async importContent(contentTypeId: string, attachmentId: string) {
-    const { data } = await this.request.get(
-      `${ROUTES.CONTENT_IMPORT}/${contentTypeId}/${attachmentId}`,
-    );
-
-    return data;
-  }
-
   async testMcpServer(id: string) {
     const { _csrf } = await this.getCsrf();
     const route = resolveRoute(ROUTES.MCP_SERVER_TEST, { id });

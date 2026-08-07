@@ -6,13 +6,6 @@
 
 import type { StepExecutionRecord } from "@hexabot-ai/agentic";
 
-export const getStepOrder = (id: string): number => {
-  const [prefix] = id.split(":");
-  const order = Number(prefix);
-
-  return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
-};
-
 export const getStepDuration = (step: StepExecutionRecord): number => {
   const candidate = (step as StepExecutionRecord & { duration?: number })
     .duration;

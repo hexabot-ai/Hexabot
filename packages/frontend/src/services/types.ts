@@ -62,16 +62,10 @@ export type TCount = {
 export enum RouterType {
   HOME = "/",
   LOGIN = "login",
-  RESET = "reset",
   WORKFLOW_EDITOR = "workflow-editor",
   INBOX = "inbox",
   SETTINGS = "settings",
 }
-
-export const FULL_WIDTH_PATHNAMES: TRouterValues[] = [
-  RouterType.WORKFLOW_EDITOR,
-  RouterType.INBOX,
-] as const;
 
 export type TRouterValues = `${RouterType}`;
 

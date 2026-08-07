@@ -65,8 +65,6 @@ const BASE_TYPE_OPTIONS = {
 export type JsonSchemaType<C extends JsonSchemaOptionContext = "default"> =
   (typeof BASE_TYPE_OPTIONS)[C][number]["value"];
 
-export type TypeOption = { value: JsonSchemaType; label: string };
-
 type ContextTypeOption<C extends JsonSchemaOptionContext = "default"> = {
   label: string;
   value: JsonSchemaType<C>;
