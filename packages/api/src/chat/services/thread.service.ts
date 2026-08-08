@@ -182,6 +182,32 @@ export class ThreadService extends BaseOrmService<ThreadOrmEntity> {
     });
   }
 
+  async closeInactiveThreads(at: Date = new Date()): Promise<number> {
+    const openThreads = await this.repository.findOpenThreads();
+    let closedCount = 0;
+
+    for (const thread of openThreads) {
+      const inactivityHours = this.resolveInactivityHours(
+        thread.source.settings,
+      );
+      if (
+        !this.isThreadInactive(
+          thread.lastMessageAt,
+          thread.createdAt,
+          inactivityHours,
+          at,
+        )
+      ) {
+        continue;
+      }
+
+      await this.closeThread(thread.id, 'inactivity', at);
+      closedCount += 1;
+    }
+
+    return closedCount;
+  }
+
   async reopenThread(threadId: string, at: Date = new Date()) {
     return await this.updateOne(threadId, {
       status: 'open',
@@ -233,9 +259,12 @@ export class ThreadService extends BaseOrmService<ThreadOrmEntity> {
       return await this.createThread(subscriberId, null, sourceId);
     }
 
-    const anchor = latestOpen.lastMessageAt ?? latestOpen.createdAt;
-    const inactivityMs = this.getInactivityThresholdMs(inactivityHours);
-    const hasExpired = now.getTime() - anchor.getTime() > inactivityMs;
+    const hasExpired = this.isThreadInactive(
+      latestOpen.lastMessageAt,
+      latestOpen.createdAt,
+      inactivityHours,
+      now,
+    );
 
     if (hasExpired) {
       await this.closeThread(latestOpen.id, 'inactivity', now);
@@ -328,5 +357,19 @@ export class ThreadService extends BaseOrmService<ThreadOrmEntity> {
     }
 
     return this.getDefaultInactivityHours();
+  }
+
+  private isThreadInactive(
+    lastMessageAt: Date | null | undefined,
+    createdAt: Date,
+    inactivityHours: number | undefined,
+    at: Date,
+  ): boolean {
+    const anchor = lastMessageAt ?? createdAt;
+
+    return (
+      at.getTime() - anchor.getTime() >=
+      this.getInactivityThresholdMs(inactivityHours)
+    );
   }
 }

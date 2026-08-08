@@ -5,6 +5,7 @@
  */
 
 import { forwardRef, Module } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AttachmentModule } from '@/attachment/attachment.module';
@@ -33,6 +34,7 @@ import { LabelGroupService } from './services/label-group.service';
 import { LabelService } from './services/label.service';
 import { MessageService } from './services/message.service';
 import { SubscriberService } from './services/subscriber.service';
+import { ThreadCleanupService } from './services/thread-cleanup.service';
 import { ThreadService } from './services/thread.service';
 
 @Module({
@@ -70,6 +72,8 @@ import { ThreadService } from './services/thread.service';
     SubscriberService,
     ThreadService,
     ChatService,
+    SchedulerRegistry,
+    ThreadCleanupService,
   ],
   exports: [
     SubscriberService,

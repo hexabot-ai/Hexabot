@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Thread } from '@hexabot-ai/types';
+import { Thread, ThreadFull } from '@hexabot-ai/types';
 import { BadRequestException } from '@nestjs/common';
 
 import { ThreadRepository } from '@/chat/repositories/thread.repository';
@@ -25,6 +25,45 @@ const createThread = (overrides: Partial<Thread> = {}): Thread => ({
   title: null,
   ...overrides,
 });
+const createFullThread = (
+  overrides: Partial<ThreadFull> = {},
+  settings: Record<string, unknown> = { thread_inactivity_hours: 24 },
+): ThreadFull =>
+  ({
+    ...createThread(),
+    subscriber: {
+      id: 'sub-1',
+      createdAt: new Date('2026-03-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+      firstName: 'Test',
+      lastName: 'Subscriber',
+      language: null,
+      timezone: 0,
+      locale: null,
+      gender: null,
+      country: null,
+      foreignId: null,
+      assignedAt: null,
+      lastvisit: null,
+      retainedFrom: null,
+      channel: { name: null, data: null },
+      labels: [],
+      assignedTo: null,
+      avatar: null,
+      source: 'source-1',
+    },
+    source: {
+      id: 'source-1',
+      createdAt: new Date('2026-03-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+      name: 'Web',
+      channel: 'web',
+      settings,
+      state: true,
+      defaultWorkflow: null,
+    },
+    ...overrides,
+  }) as ThreadFull;
 
 describe('ThreadService', () => {
   let service: ThreadService;
@@ -36,6 +75,7 @@ describe('ThreadService', () => {
     findOneForSubscriber: jest.Mock;
     findLatestOpenThreadForSubscriber: jest.Mock;
     findLatestThreadForSubscriber: jest.Mock;
+    findOpenThreads: jest.Mock;
     setTitleIfMissing: jest.Mock;
     create: jest.Mock;
     updateOne: jest.Mock;
@@ -47,6 +87,7 @@ describe('ThreadService', () => {
       findOneForSubscriber: jest.fn(),
       findLatestOpenThreadForSubscriber: jest.fn(),
       findLatestThreadForSubscriber: jest.fn(),
+      findOpenThreads: jest.fn(),
       setTitleIfMissing: jest.fn(),
       create: jest.fn(),
       updateOne: jest.fn(),
@@ -248,6 +289,59 @@ describe('ThreadService', () => {
       );
       expect(repository.create).toHaveBeenCalledTimes(1);
       expect(resolved).toEqual(fresh);
+    });
+  });
+
+  describe('closeInactiveThreads', () => {
+    it('closes threads at their configured threshold and leaves fresh threads open', async () => {
+      const now = new Date('2026-03-02T00:00:00.000Z');
+      const stale = createFullThread({
+        id: 'thread-stale',
+        lastMessageAt: new Date('2026-03-01T00:00:00.000Z'),
+      });
+      const fresh = createFullThread({
+        id: 'thread-fresh',
+        lastMessageAt: new Date('2026-03-01T01:00:00.000Z'),
+      });
+      const shortThreshold = createFullThread(
+        {
+          id: 'thread-short-threshold',
+          lastMessageAt: new Date('2026-03-01T22:00:00.000Z'),
+        },
+        { thread_inactivity_hours: 1 },
+      );
+      repository.findOpenThreads.mockResolvedValue([
+        stale,
+        fresh,
+        shortThreshold,
+      ]);
+      repository.updateOne.mockResolvedValue(stale);
+
+      const closedCount = await service.closeInactiveThreads(now);
+
+      expect(closedCount).toBe(2);
+      expect(repository.updateOne).toHaveBeenNthCalledWith(
+        1,
+        stale.id,
+        {
+          status: 'closed',
+          closeReason: 'inactivity',
+          closedAt: now,
+          lastMessageAt: now,
+        },
+        undefined,
+      );
+      expect(repository.updateOne).toHaveBeenNthCalledWith(
+        2,
+        shortThreshold.id,
+        {
+          status: 'closed',
+          closeReason: 'inactivity',
+          closedAt: now,
+          lastMessageAt: now,
+        },
+        undefined,
+      );
     });
   });
 
