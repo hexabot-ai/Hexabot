@@ -32,12 +32,6 @@ export type QuerySortDirection = 'ASC' | 'DESC' | 'asc' | 'desc';
 
 export type QuerySortDto<T> = [keyof T & string, QuerySortDirection];
 
-export type PageQueryDto<T> = {
-  skip: number | undefined;
-  limit: number | undefined;
-  sort?: QuerySortDto<T>;
-};
-
 export type PageQueryParams = {
   skip?: string;
   limit?: string;

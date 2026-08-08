@@ -301,12 +301,11 @@ export class ChatService {
           }
         }
       }
+
+      // Set the subscriber object
       event.setInitiator(subscriber);
       // Exec lastvisit hook
       this.eventEmitter.emit('hook:user:lastvisit', subscriber);
-
-      // Set the subscriber object
-      event.setInitiator(subscriber!);
 
       const channelSettings =
         typeof event.getSourceSettings === 'function'

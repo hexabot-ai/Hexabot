@@ -65,5 +65,3 @@ export * from './pipes/zod.pipe';
 export * from './types/dto.types';
 
 export * from './types/filter.types';
-
-export * from './types/format.types';

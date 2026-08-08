@@ -6,10 +6,7 @@
 
 import { SettingCreateDto } from '@/setting/dto/setting.dto';
 import { RuntimeSettingGroupSchema } from '@/setting/runtime-settings';
-import {
-  RuntimeSettingRegistryMap,
-  RuntimeSettingsService,
-} from '@/setting/services/runtime-settings.service';
+import { RuntimeSettingRegistryMap } from '@/setting/services/runtime-settings.service';
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -88,10 +85,4 @@ export const buildSettingSeedsFromRegistry = (
       subgroup ? { subgroup } : undefined,
     );
   });
-};
-
-export const buildSettingSeedsFromRuntimeRegistry = (): SettingCreateDto[] => {
-  return buildSettingSeedsFromRegistry(
-    RuntimeSettingsService.getRegistryOrThrow('setting seed generation'),
-  );
 };

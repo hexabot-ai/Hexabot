@@ -52,14 +52,6 @@ export type TFilterNestedKeysOfType<T, D extends number = 3> = [D] extends [0]
             : never;
     }[keyof T & string];
 
-//////
-
-export type TFilterKeysOfType<T, U> = {
-  [K in keyof T]: T[K] extends U ? K : never;
-}[keyof T];
-
-export type TFilterKeysOfNeverType<T> = Omit<T, TFilterKeysOfType<T, []>>;
-
 export type RecursivePartial<T> = {
   [P in keyof T]?: T[P] extends (infer U)[]
     ? RecursivePartial<U>[]
@@ -67,15 +59,6 @@ export type RecursivePartial<T> = {
       ? RecursivePartial<T[P]>
       : T[P];
 };
-
-//populate types
-export type TFilterPopulateFields<T, TStub> = Omit<
-  T,
-  TFilterKeysOfType<
-    TStub,
-    null | undefined | string | number | boolean | object
-  >
->;
 
 //search filter types
 type TField<T> = {

@@ -9,8 +9,3 @@ export enum Room {
   SUBSCRIBER = 'Subscriber',
   WORKFLOW = 'Workflow',
 }
-
-export type SocketErrorResponse = {
-  statusCode: number;
-  message: string;
-};

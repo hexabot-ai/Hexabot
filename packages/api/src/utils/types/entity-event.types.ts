@@ -48,11 +48,6 @@ type EventProps<Entity extends BaseOrmEntity> =
       databaseEntity: Entity;
     };
 
-export type EntityPostHookEvent = EmitEventProps<
-  BaseOrmEntity,
-  EHook.postCreate | EHook.postUpdate | EHook.postDelete
-> & { entityName: string };
-
 export type EmitEventProps<
   Entity extends BaseOrmEntity,
   H extends EHook,

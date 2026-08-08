@@ -12,8 +12,6 @@ export * from './controllers/content.controller';
 
 export * from './controllers/menu.controller';
 
-export * from './decorators/unique-field-names.decorator';
-
 export * from './dto/content.dto';
 
 export * from './dto/contentType.dto';
@@ -42,18 +40,12 @@ export * from './services/menu.service';
 
 export * from './services/rag.service';
 
-export * from './types/content';
-
 export * from './types/rag';
 
 export * from './types/menu-types';
 
 export * from './types/menu';
 
-export * from './utilities/field-validation.utils';
-
 export * from './utilities/verifyTree';
 
 export * from './validators/validate-required-fields.validator';
-
-export * from './validators/validate-unique-names.validator';

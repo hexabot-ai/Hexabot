@@ -13,8 +13,6 @@ import {
 
 import { config } from '@/config';
 
-import { Room } from '../types';
-
 export interface IOOutgoingMessage {
   statusCode: number;
   body: any;
@@ -27,11 +25,6 @@ export interface IOIncomingMessage {
   data: Record<string, any>;
   params: Record<string, any>;
   url: string;
-}
-
-export interface IOOutgoingSubscribeMessage {
-  success: boolean;
-  subscribe: Room;
 }
 
 @Injectable()

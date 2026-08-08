@@ -10,18 +10,8 @@ export { FieldType } from '@hexabot-ai/types';
 
 export type AnySetting = Setting;
 
-export type SettingDict = { [group: string]: Setting[] };
-
 export type ExtensionSetting<
   E extends object = object,
   U extends AnySetting = AnySetting,
   K extends keyof Setting = 'id' | 'createdAt' | 'updatedAt',
 > = Omit<U, K> & E;
-
-export type SettingSeed = ExtensionSetting<
-  {
-    group: string;
-  },
-  AnySetting,
-  'id' | 'createdAt' | 'updatedAt' | 'group'
->;

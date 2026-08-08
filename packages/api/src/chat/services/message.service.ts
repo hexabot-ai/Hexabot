@@ -4,21 +4,17 @@
  * Full terms: see LICENSE.md.
  */
 
-import { ThreadStub, Message, Thread } from '@hexabot-ai/types';
+import { Message, Thread, ThreadStub } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
 
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
-import { WebsocketGateway } from '@/websocket/websocket.gateway';
 
 import { MessageOrmEntity } from '../entities/message.entity';
 import { MessageRepository } from '../repositories/message.repository';
 
 @Injectable()
 export class MessageService extends BaseOrmService<MessageOrmEntity> {
-  constructor(
-    readonly repository: MessageRepository,
-    private readonly gateway: WebsocketGateway,
-  ) {
+  constructor(readonly repository: MessageRepository) {
     super(repository);
   }
 

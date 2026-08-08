@@ -101,5 +101,3 @@ export * from './types/user-provider.type';
 export * from './user.module';
 
 export * from './utilities/bcryptjs';
-
-export * from './utilities/hash';

@@ -30,10 +30,6 @@ import { SubscriberResolver } from './services/subscriber-resolver.service';
 import { SourceController } from './source.controller';
 import { WebhookController } from './webhook.controller';
 
-export interface ChannelModuleOptions {
-  folder: string;
-}
-
 @Global()
 @InjectDynamicProviders(
   // Built-in core channels

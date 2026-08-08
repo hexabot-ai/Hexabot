@@ -16,18 +16,6 @@ import { config } from '@/config';
 
 import { AttachmentResourceRef } from '../types';
 
-export const MIME_REGEX = /^[a-z-]+\/[0-9a-z\-.]+$/gm;
-
-/**
- * Validates if a given string matches the MIME type format.
- *
- * @param type The string to validate.
- * @returns Whether the string is a valid MIME type.
- */
-export const isMime = (type: string): boolean => {
-  return MIME_REGEX.test(type);
-};
-
 /**
  * Checks if a file exists in the specified upload directory.
  * @param filePath The relative location of the file.
