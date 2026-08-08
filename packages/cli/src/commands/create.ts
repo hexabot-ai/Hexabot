@@ -28,7 +28,7 @@ const DEFAULT_TEMPLATE_REPO = 'hexastack/hexabot-template-starter';
 interface CreateCommandOptions {
   template?: string;
   pm?: string;
-  noInstall?: boolean;
+  install?: boolean;
   dev?: boolean;
   docker?: boolean;
   force?: boolean;
@@ -57,9 +57,7 @@ export const registerCreateCommand = (program: Command) => {
       'Show Docker/Postgres next steps and use Docker mode with --dev',
     )
     .option('--force', 'Allow scaffolding into a non-empty directory')
-    .action(async (projectName: string, options: CreateCommandOptions) => {
-      await createProject(projectName, options);
-    });
+    .action(createProject);
 };
 
 const createProject = async (
@@ -105,7 +103,7 @@ const createProject = async (
       projectName,
     );
 
-    if (options.noInstall) {
+    if (!options.install) {
       console.log(
         chalk.yellow('Skipping dependency installation (--no-install).'),
       );
@@ -119,7 +117,7 @@ const createProject = async (
     logSuccessMessage(projectName, { docker: options.docker });
 
     if (options.dev) {
-      if (options.noInstall) {
+      if (!options.install) {
         console.log(
           chalk.yellow(
             'Dependencies were not installed. Run `npm install` before `--dev`.',

@@ -19,7 +19,6 @@ import { isHexabotProject } from '../core/project.js';
 interface CheckCommandOptions {
   dockerOnly?: boolean;
   docker?: boolean;
-  noDocker?: boolean;
 }
 
 export const registerCheckCommand = (program: Command) => {
@@ -28,21 +27,13 @@ export const registerCheckCommand = (program: Command) => {
     .description('Run diagnostic checks')
     .option('--docker-only', 'Only run Docker checks')
     .option('--no-docker', 'Skip Docker checks')
-    .action((options: CheckCommandOptions) => {
-      runDiagnostics({
-        dockerOnly: options.dockerOnly,
-        noDocker: options.noDocker ?? options.docker === false,
-      });
-    });
+    .action(runDiagnostics);
 };
 
-const runDiagnostics = (options: {
-  dockerOnly?: boolean;
-  noDocker?: boolean;
-}) => {
+const runDiagnostics = (options: CheckCommandOptions) => {
   const projectRoot = process.cwd();
   const onlyDocker = options.dockerOnly;
-  const skipDocker = options.noDocker;
+  const skipDocker = !options.docker;
   const results: DiagnosticResult[] = [];
 
   if (!onlyDocker) {
