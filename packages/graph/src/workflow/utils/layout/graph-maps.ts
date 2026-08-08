@@ -54,7 +54,7 @@ export const buildOutgoingMap = (
 };
 export const buildAttachmentMaps = (
   edges: Edge[],
-  nodesById?: Map<string, GraphNode>,
+  nodesById: Map<string, GraphNode>,
 ) => {
   const childrenByParent = new Map<string, string[]>();
   const parentByChild = new Map<string, string>();
@@ -64,10 +64,7 @@ export const buildAttachmentMaps = (
       return;
     }
 
-    if (
-      nodesById &&
-      (!nodesById.has(edge.source) || !nodesById.has(edge.target))
-    ) {
+    if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) {
       return;
     }
 

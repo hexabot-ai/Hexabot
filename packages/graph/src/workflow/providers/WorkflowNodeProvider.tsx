@@ -5,7 +5,6 @@
  */
 
 import type { ActionStatus } from "@hexabot-ai/agentic";
-import type { NodeConnection } from "@xyflow/react";
 import { useMemo, type FC } from "react";
 
 import { useWorkflowGraphHost } from "../contexts/workflow-graph-host.context";
@@ -18,7 +17,6 @@ import type {
 } from "../types/workflow-node.types";
 import { resolveWorkflowStepTheme } from "../utils/workflow-theme.utils";
 
-const EMPTY_NODE_CONNECTIONS: NodeConnection[] = [];
 const toActionStatus = (
   executionState?: NodeExecutionState,
 ): ActionStatus | undefined => {
@@ -104,7 +102,6 @@ export const WorkflowNodeProvider: FC<IWorkflowNodeProps> = ({
         selected,
         draggable,
         action,
-        connections: EMPTY_NODE_CONNECTIONS,
         executionState,
         resolvedTheme,
       }) as IWorkflowNodeContext,

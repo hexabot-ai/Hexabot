@@ -16,13 +16,9 @@ import type {
   NodeProps,
   NodeTypes,
 } from "@xyflow/react";
-import type {
-  EdgeMarkerType,
-  NodeConnection,
-  ResizeControlDirection,
-} from "@xyflow/system";
-import { memo } from "react";
+import type { EdgeMarkerType, ResizeControlDirection } from "@xyflow/system";
 import type { CSSProperties, JSXElementConstructor, ReactNode } from "react";
+import { memo } from "react";
 
 import { EdgeWithButton } from "../components/edges/EdgeWithButton";
 import { BindingMulti } from "../components/workflow-nodes/BindingMulti";
@@ -169,8 +165,6 @@ export type GroupData = {
   groupName?: never;
 };
 
-export type EdgeLink = Edge & { id: string; source: string; target: string };
-
 export enum EHandleType {
   TARGET = "target",
   SOURCE = "source",
@@ -297,10 +291,6 @@ export type NodeDataTypes = {
   [ENodeType.BINDING_PLACEHOLDER]: BindingPlaceholderData;
 };
 
-export type NodeType<V, T = NodeDataTypes> = {
-  [K in keyof T]: T[K] extends V ? K : never;
-}[keyof T];
-
 export type GraphNode<T extends keyof NodeDataTypes | null = null> =
   T extends keyof NodeDataTypes
     ? Node<NodeDataTypes[T], T>
@@ -356,7 +346,6 @@ export type IWorkflowNodeContext<T extends ENodeType = ENodeType> = Omit<
 > &
   Partial<CommonNodeDadaTypes> & {
     action?: WorkflowAction | undefined;
-    connections: NodeConnection[];
     resolvedTheme: WorkflowNodeTheme & { Icon: WorkflowIcon };
   };
 

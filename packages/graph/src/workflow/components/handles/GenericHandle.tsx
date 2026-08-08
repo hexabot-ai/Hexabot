@@ -51,12 +51,10 @@ export const GenericHandle = <T extends ENodeType>({
   id,
   label,
   hidden = false,
-  style: styleOverride,
 }: {
   id: Port<T>;
   label?: string;
   hidden?: boolean;
-  style?: CSSProperties;
 }) => {
   const { direction, translate } = useWorkflowGraphHost();
   const config = getHandleConfig(id, direction);
@@ -69,7 +67,6 @@ export const GenericHandle = <T extends ENodeType>({
       isValidConnection={() => false}
       style={{
         ...config.style,
-        ...styleOverride,
         ...(hidden
           ? {
               opacity: 0,
