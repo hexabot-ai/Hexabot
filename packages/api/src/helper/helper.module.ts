@@ -14,6 +14,7 @@ import { UserModule } from '@/user/user.module';
 
 import { HelperController } from './helper.controller';
 import { HelperService } from './helper.service';
+import { InboundMiddlewareService } from './inbound-middleware.service';
 
 @Global()
 @InjectDynamicProviders(
@@ -29,7 +30,7 @@ import { HelperService } from './helper.service';
 @Module({
   imports: [HttpModule, CmsModule, ChatModule, UserModule],
   controllers: [HelperController],
-  providers: [HelperService],
-  exports: [HelperService],
+  providers: [HelperService, InboundMiddlewareService],
+  exports: [HelperService, InboundMiddlewareService],
 })
 export class HelperModule {}

@@ -21,6 +21,7 @@ import { MessageService } from '@/chat/services/message.service';
 import { SubscriberService } from '@/chat/services/subscriber.service';
 import { ThreadService } from '@/chat/services/thread.service';
 import { MenuService } from '@/cms/services/menu.service';
+import { InboundMiddlewareService } from '@/helper/inbound-middleware.service';
 import { installLabelGroupFixturesTypeOrm } from '@/utils/test/fixtures/label-group';
 import { installMessageFixturesTypeOrm } from '@/utils/test/fixtures/message';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
@@ -71,6 +72,12 @@ describe('WebChannelHandler', () => {
   } as jest.Mocked<
     Pick<SourceService, 'findActiveById' | 'ensureDefaultSources'>
   >;
+  const inboundMiddlewareServiceMock = {
+    // Default: pass-through onion — always run the downstream `next`.
+    run: jest.fn().mockImplementation(async (_event, next) => {
+      await next();
+    }),
+  } as jest.Mocked<Pick<InboundMiddlewareService, 'run'>>;
 
   beforeAll(async () => {
     webSource = {
@@ -117,6 +124,10 @@ describe('WebChannelHandler', () => {
         {
           provide: SourceService,
           useValue: sourceServiceMock,
+        },
+        {
+          provide: InboundMiddlewareService,
+          useValue: inboundMiddlewareServiceMock,
         },
       ],
       typeorm: {
@@ -1095,6 +1106,74 @@ describe('WebChannelHandler', () => {
       }),
     );
     clearMock.mockRestore();
+  });
+
+  it('short-circuits uploads, thread resolution, broadcast and dispatch when middleware drops', async () => {
+    attachmentServiceMock.store.mockClear();
+    websocketGatewayMock.broadcast.mockClear();
+    // Middleware drops by not invoking the downstream `next`.
+    inboundMiddlewareServiceMock.run.mockImplementationOnce(async () => {
+      // intentionally skip next()
+    });
+
+    const req = {
+      isSocket: true,
+      query: { first_name: 'Drop', last_name: 'Upload' },
+      session: {},
+      headers: { 'user-agent': 'browser' },
+      socket: { handshake: { address: '127.0.0.1' } },
+      user: {},
+    } as any as SocketRequest;
+    const profile = await handler['getOrCreateSession'](req as any, webSource);
+    const fileBuffer = Buffer.from('dropped');
+    req.body = {
+      type: 'file',
+      data: {
+        type: 'image/png',
+        size: fileBuffer.byteLength,
+        name: 'dropped.png',
+        file: fileBuffer,
+      },
+    };
+    req.query = {};
+    req.session.web = { ...req.session.web, profile };
+
+    const emitMessageSpy = jest
+      .spyOn(handler['channelEventBus'], 'emitMessage')
+      .mockResolvedValue(undefined);
+    const resolveThreadSpy = jest.spyOn(
+      handler['sessionService'] as any,
+      'resolveThreadForIncoming',
+    );
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error('Timed out waiting for response')),
+        2000,
+      );
+      const res = {
+        status: (code: number) => {
+          expect(code).toEqual(200);
+
+          return res;
+        },
+        json: () => {
+          clearTimeout(timeout);
+          resolve();
+        },
+      } as any as SocketResponse;
+
+      handler['handleEvent'](req as any, res, webSource);
+    });
+
+    await Promise.resolve();
+    expect(inboundMiddlewareServiceMock.run).toHaveBeenCalled();
+    expect(attachmentServiceMock.store).not.toHaveBeenCalled();
+    expect(resolveThreadSpy).not.toHaveBeenCalled();
+    expect(websocketGatewayMock.broadcast).not.toHaveBeenCalled();
+    expect(emitMessageSpy).not.toHaveBeenCalled();
+    emitMessageSpy.mockRestore();
+    resolveThreadSpy.mockRestore();
   });
 
   it('rejects file metadata events when binary payload is missing', async () => {

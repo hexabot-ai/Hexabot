@@ -115,16 +115,21 @@ export abstract class HttpChannelHandler<N extends ChannelName>
       }
 
       try {
-        const subscriber = await this.resolveSubscriber(event);
-        event.setInitiator(subscriber);
+        // Wrap all post-decode processing in the inbound middleware chain, so a
+        // dropped event (e.g. a provider redelivery) resolves no subscriber,
+        // persists nothing, and is never dispatched.
+        await this.dispatchInboundEvent(event, async () => {
+          const subscriber = await this.resolveSubscriber(event);
+          event.setInitiator(subscriber);
 
-        if (event.getEventType() === StdEventType.message) {
-          const messageEvent = event as unknown as MessageInboundEvent<N>;
-          await messageEvent.preprocess();
-          await this.channelEventBus.emitMessage(messageEvent);
-        } else {
-          this.channelEventBus.emitStatusEvent(event);
-        }
+          if (event.getEventType() === StdEventType.message) {
+            const messageEvent = event as unknown as MessageInboundEvent<N>;
+            await messageEvent.preprocess();
+            await this.channelEventBus.emitMessage(messageEvent);
+          } else {
+            this.channelEventBus.emitStatusEvent(event);
+          }
+        });
       } catch (err) {
         this.logger.error('Failed to process webhook event', err);
       }

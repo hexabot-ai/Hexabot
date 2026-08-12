@@ -30,6 +30,7 @@ import {
 } from '@/attachment/types';
 import { MessageInboundEvent } from '@/channel/lib/inbound-events';
 import { SubscriberCreateDto } from '@/chat/dto/subscriber.dto';
+import { InboundMiddlewareService } from '@/helper/inbound-middleware.service';
 import { Extension } from '@/utils/generics/extension';
 import { SocketRequest } from '@/websocket/utils/socket-request';
 import { SocketResponse } from '@/websocket/utils/socket-response';
@@ -44,6 +45,7 @@ import {
 } from './channel-capabilities';
 import { ChannelEventBus } from './channel-event-bus';
 import { collectExtensionInjectMeta } from './extension-inject.decorator';
+import type ChannelInboundEvent from './inbound-events/channel-inbound-event';
 import { UnsupportedOutgoingFormatError } from './outbound';
 
 @Injectable()
@@ -64,6 +66,9 @@ export default abstract class ChannelHandler<
 
   @Inject(ChannelEventBus)
   protected readonly channelEventBus: ChannelEventBus;
+
+  @Inject(InboundMiddlewareService)
+  private readonly inboundMiddlewareService: InboundMiddlewareService;
 
   @Inject(ModuleRef)
   private readonly moduleRef: ModuleRef;
@@ -99,6 +104,23 @@ export default abstract class ChannelHandler<
 
   protected async createModuleRef<T>(provider: Type<T>): Promise<T> {
     return await this.moduleRef.create(provider);
+  }
+
+  /**
+   * Runs a decoded inbound event through the inbound middleware chain, wrapping
+   * all post-decode processing as `next` (subscriber resolution, attachment
+   * persistence/uploads, thread resolution, broadcasts, hook emission).
+   *
+   * Every transport MUST route inbound events through this boundary before
+   * performing that processing, so middleware applies uniformly across channels.
+   * A middleware that drops the event (never calls `next`) short-circuits the
+   * entire block — none of the above side effects run.
+   */
+  protected async dispatchInboundEvent(
+    event: ChannelInboundEvent,
+    next: () => Promise<void>,
+  ): Promise<void> {
+    await this.inboundMiddlewareService.run(event, next);
   }
 
   /**

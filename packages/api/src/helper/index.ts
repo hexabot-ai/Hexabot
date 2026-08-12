@@ -10,7 +10,11 @@ export * from './helper.module';
 
 export * from './helper.service';
 
+export * from './inbound-middleware.service';
+
 export * from './lib/base-helper';
+
+export * from './lib/base-middleware-helper';
 
 export * from './lib/base-rag-helper';
 
