@@ -26,6 +26,8 @@ export * from './lib/channel-event-bus';
 
 export * from './lib/inbound-events';
 
+export * from './lib/inbound-event-middleware';
+
 export * from './lib/outbound';
 
 export * from './lib/extension-inject.decorator';
@@ -39,6 +41,8 @@ export * from './services/channel-attachment.service';
 export * from './services/channel-download.service';
 
 export * from './services/channel-registry.service';
+
+export * from './services/inbound-event-middleware.registry';
 
 export * from './services/source.service';
 

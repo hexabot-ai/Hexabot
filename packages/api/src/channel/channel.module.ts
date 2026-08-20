@@ -6,6 +6,7 @@
 
 import { HttpModule } from '@nestjs/axios';
 import { forwardRef, Global, Module } from '@nestjs/common';
+import { DiscoveryModule } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InjectDynamicProviders } from 'nestjs-dynamic-providers';
@@ -25,6 +26,7 @@ import { SourceRepository } from './repositories/source.repository';
 import { ChannelAttachmentService } from './services/channel-attachment.service';
 import { ChannelDownloadService } from './services/channel-download.service';
 import { ChannelRegistry } from './services/channel-registry.service';
+import { InboundEventMiddlewareRegistry } from './services/inbound-event-middleware.registry';
 import { SourceService } from './services/source.service';
 import { SubscriberResolver } from './services/subscriber-resolver.service';
 import { SourceController } from './source.controller';
@@ -40,9 +42,18 @@ import { WebhookController } from './webhook.controller';
   '../../node_modules/hexabot-channel-*/**/*.channel.js',
   // Custom & under dev channels
   'dist/extensions/channels/**/*.channel.js',
+  // Built-in core inbound event middleware
+  'node_modules/@hexabot-ai/api/dist/extensions/**/*.inbound-event.middleware.js',
+  // Community extensions installed in the API package
+  'node_modules/hexabot-*/**/*.inbound-event.middleware.js',
+  // Community extensions installed at the workspace root
+  '../../node_modules/hexabot-*/**/*.inbound-event.middleware.js',
+  // Custom & under dev inbound event middleware
+  'dist/extensions/**/*.inbound-event.middleware.js',
 )
 @Module({
   imports: [
+    DiscoveryModule,
     ChatModule,
     AttachmentModule,
     CmsModule,
@@ -64,7 +75,13 @@ import { WebhookController } from './webhook.controller';
     ChannelAttachmentService,
     ChannelDownloadService,
     SubscriberResolver,
+    InboundEventMiddlewareRegistry,
   ],
-  exports: [ChannelService, SourceService, ChannelRegistry],
+  exports: [
+    ChannelService,
+    SourceService,
+    ChannelRegistry,
+    InboundEventMiddlewareRegistry,
+  ],
 })
 export class ChannelModule {}
