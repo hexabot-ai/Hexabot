@@ -271,6 +271,7 @@ describe('AiBaseAction', () => {
       expect(action.shouldRequireApiKeyPublic('openai')).toBe(true);
       expect(action.shouldRequireApiKeyPublic('gateway')).toBe(true);
       expect(action.shouldRequireApiKeyPublic('litellm')).toBe(true);
+      expect(action.shouldRequireApiKeyPublic('orcarouter')).toBe(true);
     });
 
     it('allows local providers without api key', () => {
@@ -321,6 +322,41 @@ describe('AiBaseAction', () => {
         ...options,
         name: 'litellm',
         baseURL: options.baseURL,
+      });
+      expect(result).toBe(provider);
+    });
+
+    it('loads orcarouter provider via createOpenAICompatible with default gateway URL', async () => {
+      const provider = createProviderStub();
+
+      (createOpenAICompatible as jest.Mock).mockReturnValue(provider);
+
+      const result = await action.loadProviderPublic('orcarouter', {
+        apiKey: 'sk-orca-key',
+      });
+
+      expect(createOpenAICompatible).toHaveBeenCalledWith({
+        apiKey: 'sk-orca-key',
+        name: 'orcarouter',
+        baseURL: 'https://api.orcarouter.ai/v1',
+      });
+      expect(result).toBe(provider);
+    });
+
+    it('loads orcarouter provider with an explicit base URL override', async () => {
+      const provider = createProviderStub();
+
+      (createOpenAICompatible as jest.Mock).mockReturnValue(provider);
+
+      const result = await action.loadProviderPublic('orcarouter', {
+        apiKey: 'sk-orca-key',
+        baseURL: 'https://my-orca-proxy.example/v1',
+      });
+
+      expect(createOpenAICompatible).toHaveBeenCalledWith({
+        apiKey: 'sk-orca-key',
+        name: 'orcarouter',
+        baseURL: 'https://my-orca-proxy.example/v1',
       });
       expect(result).toBe(provider);
     });
