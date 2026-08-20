@@ -25,7 +25,7 @@ The API is divided into several key modules, each responsible for specific funct
 - **CMS:** Content types, content entries, and menus.
 - **Workflow:** Workflow definitions, runs, scheduling, memory definitions, and agentic execution.
 - **Actions:** Registry for action extensions used by workflows.
-- **Helper:** Registry for helper extensions such as storage and utility helpers.
+- **Helper:** Registry for helper extensions such as storage, RAG, utility, and inbound-middleware helpers.
 - **I18n:** Languages, translations, and runtime localization.
 - **User:** Authentication, roles, permissions, invitations, and password reset.
 - **Settings:** Settings and metadata management.

@@ -56,6 +56,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot API.
 - Extension cleanup runs on application bootstrap in `packages/api/src/extension/extension.module.ts`.
 - Use extension settings instead of hardcoded behavior when adding new channel/action/helper behavior.
 - Channel/helper runtime setting group keys and settings hook namespaces must match the extension `name` (kebab-case).
+- Inbound **middleware** helpers (`BaseMiddlewareHelper`, helper type `middleware`) form an onion chain that wraps all post-decode inbound processing via `ChannelHandler.dispatchInboundEvent(event, next)`; every registered one runs, ordered by `getPriority()`. Keep them self-contained (`ChannelInboundEvent` accessors only). See `src/helper/README.md`.
 
 ## Coding conventions and gotchas
 - All new TS files must include the license header; ESLint `header/header` enforces it.

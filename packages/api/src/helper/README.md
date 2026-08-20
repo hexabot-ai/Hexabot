@@ -1,3 +1,52 @@
+# Middleware helpers
+
+Middleware helpers form an onion-style chain that wraps the handling of every
+inbound channel event (user messages **and** status events: delivery, read,
+typing, echo, …) before it reaches the workflow engine. Use them to deduplicate
+provider redeliveries, rate limit a contact, merge consecutive messages,
+transcribe audio (Speech-to-Text), measure turn duration, etc.
+
+Unlike storage/RAG helpers (where a single "default" helper is selected), **all**
+registered middleware helpers run, ordered by `getPriority()` (lower runs first,
+outermost layer).
+
+## Contract
+
+A middleware helper extends `BaseMiddlewareHelper` and implements one onion
+method:
+
+```ts
+abstract handle(
+  event: ChannelInboundEvent,
+  next: InboundMiddlewareNext,
+): Promise<void>;
+```
+
+- Call `await next()` to let the event proceed — optionally after mutating it in
+  place (e.g. Speech-to-Text sets the transcript as text).
+- **Do not** call `next()` to drop the event (e.g. deduplicate redeliveries,
+  rate limit).
+- Wrap `await next()` in `try/catch` / `try/finally` to react to downstream
+  success or failure (e.g. roll back a claim, record metrics).
+
+A helper that only observes must guard its own errors and still call `next()`:
+a thrown error propagates to the transport, which logs it and abandons the
+event. Message-specific helpers should narrow on the type (e.g.
+`event instanceof MessageInboundEvent`) and pass other events straight through.
+
+## Interception point
+
+The chain is executed by each transport through
+`ChannelHandler.dispatchInboundEvent(event, next)`, which wraps **all
+post-decode processing** as `next`: subscriber resolution/creation, attachment
+persistence/uploads, thread resolution, socket broadcasts, and hook emission. A
+dropped event therefore incurs none of those side effects.
+
+> Channels that override `handle()` or dispatch events themselves (e.g. a
+> gateway/WebSocket channel that calls `ChannelEventBus` directly) must route
+> their inbound events through `dispatchInboundEvent` to participate in the
+> chain.
+
 # RAG helpers
 
 Hexabot ships with one built-in, database-owned RAG helper:

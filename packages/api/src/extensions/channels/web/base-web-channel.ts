@@ -519,94 +519,110 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
       event.setInitiator(profile);
       event.setWorkflowId(workflowId);
 
-      if (event.getEventType() === StdEventType.message) {
-        const messageEvent = event as WebMessageInboundEvent<
-          N,
-          Web.InboundMessage
-        >;
+      // Wrap all post-decode processing (uploads, thread resolution,
+      // broadcasts, dispatch) in the inbound middleware chain. A dropped event
+      // short-circuits the block; `abort` is set only when the callback itself
+      // sends an error response.
+      let abort = false;
+      await this.dispatchInboundEvent(event, async () => {
+        if (event.getEventType() === StdEventType.message) {
+          const messageEvent = event as WebMessageInboundEvent<
+            N,
+            Web.InboundMessage
+          >;
 
-        if (messageEvent instanceof AttachmentMessageInboundEvent) {
-          try {
-            const attachment = await this.handleWsUpload(req);
-            if (attachment) {
-              messageEvent.setUploadedAttachment(attachment);
-              messageEvent.setUploadedRawData(
-                AttachmentOrmEntity.getTypeByMime(attachment.type),
-                await this.channelAttachmentService.getPublicUrl(
-                  source.id,
-                  attachment,
-                ),
-              );
+          if (messageEvent instanceof AttachmentMessageInboundEvent) {
+            try {
+              const attachment = await this.handleWsUpload(req);
+              if (attachment) {
+                messageEvent.setUploadedAttachment(attachment);
+                messageEvent.setUploadedRawData(
+                  AttachmentOrmEntity.getTypeByMime(attachment.type),
+                  await this.channelAttachmentService.getPublicUrl(
+                    source.id,
+                    attachment,
+                  ),
+                );
+              }
+            } catch (err) {
+              this.logger.warn('Unable to upload file ', err);
+              res
+                .status(403)
+                .json({ err: 'Web Channel Handler : File upload failed!' });
+              abort = true;
+
+              return;
             }
-          } catch (err) {
-            this.logger.warn('Unable to upload file ', err);
-
-            return void res
-              .status(403)
-              .json({ err: 'Web Channel Handler : File upload failed!' });
           }
-        }
 
-        if (messageEvent.isSyncFromChatbot()) {
-          const thread = await this.sessionService.resolveThreadForHistory(
+          if (messageEvent.isSyncFromChatbot()) {
+            const thread = await this.sessionService.resolveThreadForHistory(
+              req,
+              profile.id,
+            );
+            if (!thread) {
+              res.status(409).json({
+                err: 'Web Channel Handler : No thread available before first user message',
+              });
+              abort = true;
+
+              return;
+            }
+            messageEvent.setThreadId(thread.id);
+            if (req.session.web) req.session.web.threadId = thread.id;
+
+            const sentMessage: MessageCreateDto = {
+              mid: messageEvent.getId(),
+              message: {
+                type: OutgoingMessageType.text,
+                data: { text: messageEvent.getText() },
+              },
+              recipient: profile.id,
+              thread: thread.id,
+              read: true,
+              delivery: true,
+            };
+            this.channelEventBus.emitSent(sentMessage, messageEvent);
+
+            return;
+          }
+
+          messageEvent.setMessageId(this.generateId());
+          if (profile.foreignId) {
+            messageEvent.setAuthorForeignId(profile.foreignId);
+          }
+          messageEvent.setCreatedAt(new Date());
+
+          // Resolve the thread before acknowledging the socket request so the
+          // client receives a stable thread_id, then dispatch chatbot work later.
+          const thread = await this.sessionService.resolveThreadForIncoming(
             req,
             profile.id,
-          );
-          if (!thread) {
-            return void res.status(409).json({
-              err: 'Web Channel Handler : No thread available before first user message',
-            });
-          }
-          messageEvent.setThreadId(thread.id);
-          if (req.session.web) req.session.web.threadId = thread.id;
-
-          const sentMessage: MessageCreateDto = {
-            mid: messageEvent.getId(),
-            message: {
-              type: OutgoingMessageType.text,
-              data: { text: messageEvent.getText() },
+            {
+              explicitThreadId: messageEvent.getThreadId(),
+              inactivityHours: this.sessionService.resolveInactivityHours(
+                source.settings,
+              ),
+              sourceId: source.id,
             },
-            recipient: profile.id,
-            thread: thread.id,
-            read: true,
-            delivery: true,
-          };
-          this.channelEventBus.emitSent(sentMessage, messageEvent);
-          continue;
+          );
+          messageEvent.setThreadId(thread.id);
+          messageEvent.setThreadIdOnRaw(thread.id);
+
+          this.broadcast(profile, StdEventType.message, messageEvent.getRaw());
+          this.enqueueMessageDispatch(req, messageEvent);
+
+          return;
         }
 
-        messageEvent.setMessageId(this.generateId());
-        if (profile.foreignId) {
-          messageEvent.setAuthorForeignId(profile.foreignId);
-        }
-        messageEvent.setCreatedAt(new Date());
-        // Resolve the thread before acknowledging the socket request so the
-        // client receives a stable thread_id, then dispatch chatbot work later.
-        const thread = await this.sessionService.resolveThreadForIncoming(
-          req,
-          profile.id,
-          {
-            explicitThreadId: messageEvent.getThreadId(),
-            inactivityHours: this.sessionService.resolveInactivityHours(
-              source.settings,
-            ),
-            sourceId: source.id,
-          },
-        );
-        messageEvent.setThreadId(thread.id);
-        messageEvent.setThreadIdOnRaw(thread.id);
+        const type = event.getEventType();
+        const threadId = event.getThreadId();
+        if (threadId) event.setThreadIdOnRaw(threadId);
+        this.broadcast(profile, type, event.getRaw());
+        this.channelEventBus.emitStatusEvent(event);
+      });
 
-        this.broadcast(profile, StdEventType.message, messageEvent.getRaw());
-        this.enqueueMessageDispatch(req, messageEvent);
-
-        continue;
-      }
-
-      const type = event.getEventType();
-      const threadId = event.getThreadId();
-      if (threadId) event.setThreadIdOnRaw(threadId);
-      this.broadcast(profile, type, event.getRaw());
-      this.channelEventBus.emitStatusEvent(event);
+      if (abort) return;
     }
 
     res.status(200).json(responseBody);

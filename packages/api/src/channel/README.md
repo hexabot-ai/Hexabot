@@ -27,7 +27,9 @@ At request time:
 2. `ChannelService` resolves an active `Source` by `sourceRef`, then resolves the handler by `source.channel`.
 3. The handler transport (`HttpChannelHandler` or `WebSocketChannelHandler`) processes the request.
 4. Inbound payloads are decoded into `ChannelInboundEvent` instances.
-5. Events are emitted through `ChannelEventBus` to the chatbot/workflow pipeline.
+5. Each event's post-decode processing is wrapped by the inbound middleware
+   chain via `ChannelHandler.dispatchInboundEvent(event, next)` (see below).
+6. Events are emitted through `ChannelEventBus` to the chatbot/workflow pipeline.
 
 ## HTTP Surface
 
@@ -81,6 +83,19 @@ Optional extension points:
 - `getSubscriberAvatar(event)`
 - `hasDownloadAccess(attachment, req)`
 - `getAttachmentPublicUrl(sourceId, attachment)`
+
+### Inbound middleware boundary (`dispatchInboundEvent`)
+
+`dispatchInboundEvent(event, next)` runs a decoded event through the inbound
+middleware chain (see `src/helper/README.md`), wrapping **all post-decode
+processing** as `next` — subscriber resolution, uploads, thread resolution,
+broadcasts, and hook emission. A middleware may inspect, mutate, or **drop** the
+event (short-circuiting the whole block).
+
+Both built-in transports already route every event through it. A custom handler
+that overrides `handle()` or dispatches events itself (e.g. a gateway channel)
+**must** call `dispatchInboundEvent(event, () => …)` for its events to be seen
+by middleware.
 
 ### Transport Base Classes
 
