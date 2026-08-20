@@ -238,6 +238,27 @@ describe('ai model binding schema', () => {
       result.error?.issues.some((issue) => issue.path[0] === 'model_id'),
     ).toBe(true);
   });
+
+  it('accepts the named orcarouter provider with a model id', () => {
+    const result = aiModelBindingSchema.safeParse({
+      provider: 'orcarouter',
+      model_id: 'orcarouter/auto',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.provider).toBe('orcarouter');
+  });
+
+  it('accepts orcarouter with an explicit base URL', () => {
+    const result = aiModelBindingSchema.safeParse({
+      provider: 'orcarouter',
+      model_id: 'orcarouter/auto',
+      base_url: 'https://my-orca-proxy.example/v1',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.base_url).toBe('https://my-orca-proxy.example/v1');
+  });
 });
 
 describe('legacy provider/model settings rejection', () => {
