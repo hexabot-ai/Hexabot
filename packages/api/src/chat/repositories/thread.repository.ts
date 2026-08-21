@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Thread } from '@hexabot-ai/types';
+import { Thread, ThreadFull } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -20,6 +20,14 @@ export class ThreadRepository extends BaseOrmRepository<ThreadOrmEntity> {
     repository: Repository<ThreadOrmEntity>,
   ) {
     super(repository, ['subscriber', 'source']);
+  }
+
+  async findOpenThreads(): Promise<ThreadFull[]> {
+    return await this.findAndPopulate({
+      where: {
+        status: 'open',
+      },
+    });
   }
 
   async findLatestOpenThreadForSubscriber(
