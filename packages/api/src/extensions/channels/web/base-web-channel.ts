@@ -571,7 +571,7 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
             read: true,
             delivery: true,
           };
-          this.channelEventBus.emitSent(sentMessage, messageEvent);
+          this.channelEventBus.emitSent(sentMessage);
           continue;
         }
 

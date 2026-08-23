@@ -174,7 +174,7 @@ export abstract class MessageAction<
       read: false,
       delivery: false,
     };
-    await eventEmitter.emitAsync('hook:chatbot:sent', sentMessage, event);
+    await eventEmitter.emitAsync('hook:chatbot:sent', sentMessage);
 
     return { sent };
   }

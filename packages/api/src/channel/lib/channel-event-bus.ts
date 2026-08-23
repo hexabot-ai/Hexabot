@@ -53,8 +53,8 @@ export class ChannelEventBus {
    * Record a chatbot-originated message that was synchronised from the client
    * side (e.g. web widget sending a bot reply for history storage).
    */
-  emitSent(message: MessageCreateDto, event: MessageInboundEvent): void {
-    this.eventEmitter.emit(ChannelHookEvent.sent, message, event);
+  emitSent(message: MessageCreateDto): void {
+    this.eventEmitter.emit(ChannelHookEvent.sent, message);
   }
 
   /**

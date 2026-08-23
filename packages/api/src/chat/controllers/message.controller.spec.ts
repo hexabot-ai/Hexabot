@@ -212,7 +212,6 @@ describe('MessageController (TypeORM)', () => {
           recipient: subscriber.id,
           thread: thread.id,
         }),
-        expect.anything(),
       );
     });
   });

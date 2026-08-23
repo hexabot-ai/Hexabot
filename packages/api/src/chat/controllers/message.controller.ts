@@ -202,7 +202,7 @@ export class MessageController extends BaseOrmController<MessageOrmEntity> {
         delivery: false,
         handover: false,
       };
-      this.eventEmitter.emit('hook:chatbot:sent', sentMessage, event);
+      this.eventEmitter.emit('hook:chatbot:sent', sentMessage);
 
       return {
         success: true,

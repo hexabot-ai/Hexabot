@@ -188,19 +188,15 @@ describe('MessageAction base', () => {
       StatsType.all_messages,
       'All Messages',
     );
-    expect(eventEmitter.emitAsync).toHaveBeenCalledWith(
-      'hook:chatbot:sent',
-      {
-        mid: 'server-mid',
-        message: envelope,
-        recipient: recipient.id,
-        thread: 'thread-1',
-        handover: false,
-        read: false,
-        delivery: false,
-      },
-      prepared.event,
-    );
+    expect(eventEmitter.emitAsync).toHaveBeenCalledWith('hook:chatbot:sent', {
+      mid: 'server-mid',
+      message: envelope,
+      recipient: recipient.id,
+      thread: 'thread-1',
+      handover: false,
+      read: false,
+      delivery: false,
+    });
     expect(result).toEqual({
       sent: {
         mid: 'server-mid',

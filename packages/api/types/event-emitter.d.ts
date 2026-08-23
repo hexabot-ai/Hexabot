@@ -24,10 +24,7 @@ import type {
   StatsType,
 } from '@/analytics/entities/stats.entity';
 import type { AttachmentOrmEntity } from '@/attachment/entities/attachment.entity';
-import type {
-  ChannelInboundEvent,
-  MessageInboundEvent,
-} from '@/channel/lib/inbound-events';
+import type { MessageInboundEvent } from '@/channel/lib/inbound-events';
 import type { Message, MessageCreateDto } from '@/chat/dto/message.dto';
 import type {
   Subscriber,
@@ -66,7 +63,6 @@ import type { THydratedDocument } from '@/utils/types/filter.types';
 import type { WorkflowRunOrmEntity } from '@/workflow/entities/workflow-run.entity';
 import type { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 
-type AnyInboundEvent = ChannelInboundEvent<any>;
 type AnyMessageInboundEvent = MessageInboundEvent<any>;
 
 type DefaultHookSettingsMap = {
@@ -229,7 +225,7 @@ declare module '@nestjs/event-emitter' {
     'hook:chatbot:message': [AnyMessageInboundEvent];
     'hook:chatbot:read': [ReadNotificationInboundEvent];
     'hook:chatbot:received': [AnyMessageInboundEvent];
-    'hook:chatbot:sent': [MessageCreateDto, AnyInboundEvent?];
+    'hook:chatbot:sent': [MessageCreateDto];
     'hook:message:preCreate': [THydratedDocument<Message>];
     'hook:stats:entry': [StatsType, string, Subscriber?];
     'hook:subscriber:assign': [SubscriberUpdateDto, Subscriber];
@@ -272,25 +268,18 @@ declare module '@nestjs/event-emitter' {
     ...args: HookEventArgs<K>
   ) => unknown;
 
-  interface EventEmitter2 extends EventEmitter2Base {
+  type HookEventEmitter = Omit<EventEmitter2Base, 'emit' | 'emitAsync'> & {
     emit<K extends HookEventKey>(
       event: K,
       ...values: HookEventArgs<K>
     ): boolean;
-    emit(
-      event: EventKey | EventNamespace | Array<EventKey | EventNamespace>,
-      ...values: any[]
-    ): boolean;
-
     emitAsync<K extends HookEventKey>(
       event: K,
       ...values: HookEventArgs<K>
     ): Promise<any[]>;
-    emitAsync(
-      event: EventKey | EventNamespace | Array<EventKey | EventNamespace>,
-      ...values: any[]
-    ): Promise<any[]>;
+  };
 
+  interface EventEmitter2 extends EventEmitter2Base {
     addListener<K extends HookEventKey>(
       event: K,
       listener: HookEventListener<K>,
