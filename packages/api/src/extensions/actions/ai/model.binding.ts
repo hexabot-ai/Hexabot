@@ -8,16 +8,33 @@ import { BindingKindDescriptor } from '@hexabot-ai/agentic';
 import z from 'zod';
 
 import { createBindingKind } from '@/bindings/create-binding-kind';
+import { getAddPackageCommand } from '@/utils/helpers/package-manager';
 
-import { vercelAiSdkProviders } from './provider.constants';
+import { vercelAiSdkProviderOptions } from './provider.constants';
 
 export { vercelAiSdkProviders } from './provider.constants';
 
+const providerNames = vercelAiSdkProviderOptions.map(
+  ({ provider }) => provider,
+);
+const providerUiOptions = {
+  enumNames: vercelAiSdkProviderOptions.map(
+    ({ provider, packageName, installed }) =>
+      installed
+        ? provider
+        : `${provider} (${getAddPackageCommand(packageName)})`,
+  ),
+  enumDisabled: vercelAiSdkProviderOptions
+    .filter(({ installed }) => !installed)
+    .map(({ provider }) => provider),
+};
+
 export const aiModelBindingSchema = z.strictObject({
-  provider: z.enum(vercelAiSdkProviders).default('openai').meta({
+  provider: z.enum(providerNames).default('openai').meta({
     title: 'Provider',
     description:
-      'Vercel AI SDK provider identifier. Selecting a provider still requires its package to be installed (e.g., @ai-sdk/anthropic, @ai-sdk/google). By default, package.json only includes OpenAI/Gateway provider packages.',
+      'Installed providers are listed first. Disabled providers require the package shown.',
+    'ui:options': providerUiOptions,
   }),
   model_id: z.string().min(1).default('gpt-5.2').meta({
     title: 'Model',
