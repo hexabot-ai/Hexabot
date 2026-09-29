@@ -1,0 +1,28 @@
+version: "3.9"
+
+# Set the Ollama helper's base URL to http://llmman:17434
+
+services:
+  llmman:
+    image: docker.io/ai/llmman:server
+    container_name: llmman
+    entrypoint: llmman
+    command: serve
+    environment:
+      # Only reachable on llmman-network, so no API key is needed.
+      LLMMAN_AUTH: "off"
+    volumes:
+      - llmman:/root/.local/share/llmman
+    restart: unless-stopped
+    networks:
+      - llmman-network
+
+  api:
+    networks:
+      - llmman-network
+
+volumes:
+  llmman:
+
+networks:
+  llmman-network:
