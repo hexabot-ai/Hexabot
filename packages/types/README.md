@@ -22,6 +22,10 @@ addition to the stable actor/resource identifiers.
 `ChannelMetadata` includes `visibility` (`public` or `system`) so clients can
 separate customer-facing channels from internal tooling channels.
 
+`WorkflowRun` includes a nullable `checkpoint`: the opaque agentic checkpoint a
+suspended run resumes from, cleared once the run finishes or fails. Its
+`waits` list the open waits of the run (step, reason and data of each).
+
 ## Standard Export Pattern
 
 Each migrated entity exposes:

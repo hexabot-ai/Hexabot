@@ -7,8 +7,10 @@
 import {
   StepType,
   type StepExecutionRecord,
+  type WaitInfo,
   WorkflowDefinition,
   Workflow as WorkflowHelper,
+  WorkflowResumeRejectedError,
 } from '@hexabot-ai/agentic';
 import { Workflow } from '@hexabot-ai/types';
 import { BadRequestException, ConflictException } from '@nestjs/common';
@@ -386,7 +388,7 @@ describe('WorkflowService (TypeORM)', () => {
         runId: run.id,
         step,
         stepExecution,
-        error,
+        error: { name: 'Error', message: error.message },
         t: expect.any(Number),
         workflowRun: expect.objectContaining({
           id: run.id,
@@ -397,6 +399,42 @@ describe('WorkflowService (TypeORM)', () => {
         threadId: 'thread-1',
         workflowEvent: 'step:cancelled',
       });
+    });
+
+    it('broadcasts refused resume payloads with their error message', async () => {
+      const targetWorkflow = await createWorkflowForType(WorkflowType.manual);
+      const run = await createWorkflowRun(targetWorkflow);
+      const wait: WaitInfo = {
+        waitId: 'approve@index:1',
+        step: { id: 'approve', name: 'approve', type: StepType.Task },
+        suspendKey: 'index:1',
+        reason: 'awaiting_approval',
+      };
+      const error = new WorkflowResumeRejectedError('Payload refused', {
+        issues: ['approved: Required'],
+      });
+
+      await workflowService.sendWorkflowResumeRejected({
+        runId: run.id,
+        wait,
+        resumeData: {},
+        error,
+      });
+
+      expect(gatewayMock.broadcastWorkflowEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runId: run.id,
+          wait,
+          resumeData: {},
+          // Sent as JSON, so it must not carry the `Error` itself.
+          error: {
+            name: 'WorkflowResumeRejectedError',
+            message: 'Payload refused',
+            issues: ['approved: Required'],
+          },
+          workflowEvent: 'workflow:resume_rejected',
+        }),
+      );
     });
 
     it('does not broadcast when the workflow event has no run id', async () => {

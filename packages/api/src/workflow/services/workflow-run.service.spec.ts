@@ -6,6 +6,9 @@
 
 import {
   EWorkflowRunStatus,
+  StepType,
+  WaitInfo,
+  WorkflowCheckpoint,
   WorkflowDefinition,
   Workflow as WorkflowHelper,
   WorkflowSnapshot,
@@ -61,6 +64,31 @@ describe('WorkflowRunService (TypeORM)', () => {
         status: 'running',
       },
     },
+  };
+  const wait: WaitInfo = {
+    waitId: '0:greet@index:1',
+    step: { id: '0:greet', name: 'greet', type: StepType.Task },
+    suspendKey: 'index:1',
+    reason: 'awaiting input',
+    data: { question: 'name' },
+  };
+  const checkpoint: WorkflowCheckpoint = {
+    version: 1,
+    fingerprint: 'fingerprint',
+    input: { foo: 'bar' },
+    output: { previous: { ok: true } },
+    root: {
+      kind: 'sequence',
+      index: 0,
+      child: {
+        kind: 'task',
+        stepId: '0:greet',
+        inputs: { name: 'Alice' },
+        awaitResults: {},
+        wait,
+      },
+    },
+    waits: [wait],
   };
 
   beforeAll(async () => {
@@ -136,12 +164,8 @@ describe('WorkflowRunService (TypeORM)', () => {
     jest.useRealTimers();
   });
   describe('state transitions', () => {
-    it('marks a run as running and forwards state', async () => {
-      const payload = {
-        snapshot,
-        context: { user: 'demo' },
-        lastResumeData: { resumed: true },
-      };
+    it('marks a run as running with its context', async () => {
+      const payload = { context: { user: 'demo' } };
       const updateSpy = jest.spyOn(workflowRunRepository, 'updateOne');
       const updated = await workflowRunService.markRunning(
         workflowRun.id,
@@ -158,26 +182,18 @@ describe('WorkflowRunService (TypeORM)', () => {
         undefined,
       );
       expect(updated.status).toBe('running');
-      expect(updated.snapshot).toEqual(payload.snapshot);
       expect(updated.context).toEqual(payload.context);
-      expect(updated.lastResumeData).toEqual(payload.lastResumeData);
       expect(stored?.status).toBe('running');
     });
 
-    it('marks a run as suspended with metadata and timestamps', async () => {
+    it('marks a run as suspended with its checkpoint', async () => {
       const now = new Date('2024-10-10T10:00:00Z');
       jest.useFakeTimers().setSystemTime(now);
       const payload = {
-        stepId: 'greet',
-        reason: 'awaiting input',
-        data: { question: 'name' },
-        stepExecId: 'greet#1',
-        suspendIndex: 2,
-        suspendKey: 'index:2',
-        awaitResults: { 'index:1': { answer: 'Alice' } },
-        lastResumeData: { source: 'suspend' },
+        checkpoint,
         snapshot,
         context: { lang: 'en' },
+        output: checkpoint.output,
       };
       const updateSpy = jest.spyOn(workflowRunRepository, 'updateOne');
       const updated = await workflowRunService.markSuspended(
@@ -189,29 +205,13 @@ describe('WorkflowRunService (TypeORM)', () => {
         workflowRun.id,
         {
           status: 'suspended',
-          suspendedStep: payload.stepId,
-          suspensionReason: payload.reason,
-          suspensionData: payload.data,
-          suspensionStepExecId: payload.stepExecId,
-          suspensionIndex: payload.suspendIndex,
-          suspensionKey: payload.suspendKey,
-          suspensionAwaitResults: payload.awaitResults,
-          lastResumeData: payload.lastResumeData,
           suspendedAt: now,
-          snapshot,
-          context: payload.context,
+          ...payload,
         },
         undefined,
       );
       expect(updated.status).toBe('suspended');
-      expect(updated.suspendedStep).toBe(payload.stepId);
-      expect(updated.suspensionReason).toBe(payload.reason);
-      expect(updated.suspensionData).toEqual(payload.data);
-      expect(updated.suspensionStepExecId).toBe(payload.stepExecId);
-      expect(updated.suspensionIndex).toBe(payload.suspendIndex);
-      expect(updated.suspensionKey).toBe(payload.suspendKey);
-      expect(updated.suspensionAwaitResults).toEqual(payload.awaitResults);
-      expect(updated.lastResumeData).toEqual(payload.lastResumeData);
+      expect(updated.checkpoint).toEqual(checkpoint);
       expect(updated.suspendedAt?.getTime()).toBe(now.getTime());
     });
 
@@ -234,6 +234,7 @@ describe('WorkflowRunService (TypeORM)', () => {
         workflowRun.id,
         {
           status: 'finished',
+          checkpoint: null,
           finishedAt: now,
           ...payload,
         },
@@ -265,6 +266,7 @@ describe('WorkflowRunService (TypeORM)', () => {
         workflowRun.id,
         {
           status: 'failed',
+          checkpoint: null,
           failedAt: now,
           ...payload,
         },
@@ -275,6 +277,90 @@ describe('WorkflowRunService (TypeORM)', () => {
       expect(updated.error).toBe(payload.error);
       expect(stored?.status).toBe('failed');
       expect(stored?.failedAt?.getTime()).toBe(now.getTime());
+    });
+  });
+
+  describe('suspension claims', () => {
+    const suspend = async () =>
+      await workflowRunService.markSuspended(workflowRun.id, {
+        checkpoint,
+      });
+
+    it('clears the checkpoint once a run finishes or fails', async () => {
+      await suspend();
+      expect(
+        (await workflowRunService.markFinished(workflowRun.id, {})).checkpoint,
+      ).toBeNull();
+
+      await suspend();
+      expect(
+        (await workflowRunService.markFailed(workflowRun.id, {})).checkpoint,
+      ).toBeNull();
+    });
+
+    it('claims a suspension exactly once', async () => {
+      const suspended = await suspend();
+      const claims = await Promise.all([
+        workflowRunService.claimSuspended(
+          workflowRun.id,
+          suspended.suspendedAt,
+        ),
+        workflowRunService.claimSuspended(
+          workflowRun.id,
+          suspended.suspendedAt,
+        ),
+      ]);
+
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      expect((await workflowRunService.findOne(workflowRun.id))?.status).toBe(
+        'running',
+      );
+    });
+
+    it('refuses to claim a run that is not suspended', async () => {
+      expect(
+        await workflowRunService.claimSuspended(workflowRun.id, null),
+      ).toBe(false);
+    });
+
+    it('refuses to claim a later suspension of the same run', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-10-10T10:00:00Z'));
+      const first = await suspend();
+      jest.setSystemTime(new Date('2024-10-10T10:05:00Z'));
+      await suspend();
+      jest.useRealTimers();
+
+      expect(
+        await workflowRunService.claimSuspended(
+          workflowRun.id,
+          first.suspendedAt,
+        ),
+      ).toBe(false);
+    });
+
+    it('releases a claim back to the same suspension', async () => {
+      const suspended = await suspend();
+      await workflowRunService.claimSuspended(
+        workflowRun.id,
+        suspended.suspendedAt,
+      );
+
+      const released = await workflowRunService.releaseClaim(workflowRun.id, {
+        context: { restored: true },
+      });
+
+      expect(released.status).toBe('suspended');
+      expect(released.context).toEqual({ restored: true });
+      expect(released.checkpoint).toEqual(checkpoint);
+      expect(released.suspendedAt?.getTime()).toBe(
+        suspended.suspendedAt?.getTime(),
+      );
+      expect(
+        await workflowRunService.claimSuspended(
+          workflowRun.id,
+          released.suspendedAt,
+        ),
+      ).toBe(true);
     });
   });
 

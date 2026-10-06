@@ -80,17 +80,10 @@ const workflowRunStubObjectSchema = baseStubSchema.extend({
   ),
   snapshot: preprocess(nullishToNull, z.any().nullable()),
   stepLog: preprocess(nullishToNull, z.record(z.string(), z.any()).nullable()),
-  suspendedStep: preprocess(nullishToNull, z.string().nullable()),
-  suspensionReason: preprocess(nullishToNull, z.string().nullable()),
-  suspensionData: preprocess(nullishToNull, z.unknown().nullable()),
-  suspensionStepExecId: preprocess(nullishToNull, z.string().nullable()),
-  suspensionIndex: preprocess(nullishToNull, z.coerce.number().nullable()),
-  suspensionKey: preprocess(nullishToNull, z.string().nullable()),
-  suspensionAwaitResults: preprocess(
+  checkpoint: preprocess(
     nullishToNull,
     z.record(z.string(), z.any()).nullable(),
   ),
-  lastResumeData: preprocess(nullishToNull, z.unknown().nullable()),
   error: preprocess(nullishToNull, z.string().nullable()),
   suspendedAt: preprocess(nullishToNull, z.coerce.date().nullable()),
   finishedAt: preprocess(nullishToNull, z.coerce.date().nullable()),

@@ -4,7 +4,12 @@
  * Full terms: see LICENSE.md.
  */
 
-import { EWorkflowRunStatus, WorkflowSnapshot } from '@hexabot-ai/agentic';
+import {
+  EWorkflowRunStatus,
+  type StepExecutionRecord,
+  type WorkflowCheckpoint,
+  type WorkflowSnapshot,
+} from '@hexabot-ai/agentic';
 import { WorkflowRun, WorkflowRunFull } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
 import { In } from 'typeorm';
@@ -14,9 +19,13 @@ import { BaseOrmService } from '@/utils/generics/base-orm.service';
 import { WorkflowRunOrmEntity } from '../entities/workflow-run.entity';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
 
-type StateUpdate = {
+/** Run state persisted when a runner pass ends. */
+type RunStateUpdate = {
   snapshot?: WorkflowSnapshot | null;
   context?: Record<string, unknown> | null;
+  stepLog?: Record<string, StepExecutionRecord> | null;
+  input?: Record<string, unknown> | null;
+  output?: Record<string, unknown> | null;
 };
 
 const ACTIVE_WORKFLOW_RUN_STATUSES = [
@@ -37,15 +46,15 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   }
 
   /**
-   * Mark a run as running and persist optional execution state.
+   * Mark a run as running and persist the context it runs with.
    *
    * @param runId - Identifier of the run to update.
-   * @param payload - State changes such as snapshot, context, or resume data.
+   * @param payload - Hydrated context state of the run.
    * @returns Updated workflow run marked as `running`.
    */
   async markRunning(
     runId: string,
-    payload: StateUpdate & { lastResumeData?: unknown },
+    payload: { context?: Record<string, unknown> | null },
   ): Promise<WorkflowRun> {
     return await this.updateOne(runId, {
       status: 'running',
@@ -54,49 +63,54 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   }
 
   /**
-   * Mark a run as suspended with the corresponding reason and state.
+   * Claim a suspended run before resuming it. Only one caller wins a given
+   * suspension; see {@link WorkflowRunRepository.claimSuspended}.
+   *
+   * @param runId - Identifier of the run to claim.
+   * @param suspendedAt - Suspension timestamp of the run as it was loaded.
+   * @returns `true` when the run was claimed and is now `running`.
+   */
+  async claimSuspended(
+    runId: string,
+    suspendedAt: Date | null,
+  ): Promise<boolean> {
+    return await this.repository.claimSuspended(runId, suspendedAt);
+  }
+
+  /**
+   * Put a claimed run back to `suspended` after its resume payload was
+   * refused. The checkpoint and `suspendedAt` are left unchanged, so the run
+   * stays on the same suspension.
+   *
+   * @param runId - Identifier of the run to release.
+   * @param payload - Context state the run had before it was claimed.
+   * @returns Updated workflow run marked as `suspended`.
+   */
+  async releaseClaim(
+    runId: string,
+    payload: { context?: Record<string, unknown> | null },
+  ): Promise<WorkflowRun> {
+    return await this.updateOne(runId, {
+      status: 'suspended',
+      ...payload,
+    });
+  }
+
+  /**
+   * Mark a run as suspended and persist its checkpoint.
    *
    * @param runId - Identifier of the run to update.
-   * @param payload - Suspension metadata (step, reason, data) plus optional state updates.
+   * @param payload - Checkpoint to resume from, and the run state.
    * @returns Updated workflow run marked as `suspended`.
    */
   async markSuspended(
     runId: string,
-    payload: {
-      stepId?: string | null;
-      reason?: string | null;
-      data?: unknown;
-      stepExecId?: string | null;
-      suspendIndex?: number | null;
-      suspendKey?: string | null;
-      awaitResults?: Record<string, unknown> | null;
-      lastResumeData?: unknown;
-    } & StateUpdate,
+    payload: { checkpoint: WorkflowCheckpoint } & RunStateUpdate,
   ): Promise<WorkflowRun> {
-    const {
-      stepId,
-      reason,
-      data,
-      stepExecId,
-      suspendIndex,
-      suspendKey,
-      awaitResults,
-      lastResumeData,
-      ...state
-    } = payload;
-
     return await this.updateOne(runId, {
       status: 'suspended',
-      suspendedStep: stepId ?? null,
-      suspensionReason: reason ?? null,
-      suspensionData: data,
-      suspensionStepExecId: stepExecId ?? null,
-      suspensionIndex: suspendIndex ?? null,
-      suspensionKey: suspendKey ?? null,
-      suspensionAwaitResults: awaitResults ?? null,
-      lastResumeData,
       suspendedAt: new Date(),
-      ...state,
+      ...payload,
     });
   }
 
@@ -109,10 +123,11 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    */
   async markFinished(
     runId: string,
-    payload: StateUpdate & { output?: Record<string, unknown> | null },
+    payload: RunStateUpdate,
   ): Promise<WorkflowRun> {
     return await this.updateOne(runId, {
       status: 'finished',
+      checkpoint: null,
       finishedAt: new Date(),
       ...payload,
     });
@@ -127,10 +142,11 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    */
   async markFailed(
     runId: string,
-    payload: StateUpdate & { error?: string | null },
+    payload: RunStateUpdate & { error?: string | null },
   ): Promise<WorkflowRun> {
     return await this.updateOne(runId, {
       status: 'failed',
+      checkpoint: null,
       failedAt: new Date(),
       ...payload,
     });

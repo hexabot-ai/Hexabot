@@ -6,14 +6,19 @@
 
 import {
   Workflow as AgenticWorkflow,
-  ExecutionState,
   JsonataFunctionRegistry,
   StepExecutionRecord,
+  WaitInfo,
+  WorkflowCheckpointInvalidError,
+  WorkflowDefinition,
+  WorkflowDefinitionDriftError,
+  WorkflowResumeRejectedError,
   WorkflowRunner,
+  WorkflowRunResult,
 } from '@hexabot-ai/agentic';
 import { WorkflowFull, WorkflowRunFull } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
 import { ActionService } from '@/actions/actions.service';
 import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
@@ -21,27 +26,38 @@ import { I18nService } from '@/i18n/services/i18n.service';
 import { LoggerService } from '@/logger/logger.service';
 
 import { WorkflowContextFactory } from '../contexts/workflow-context-factory';
-import type { WorkflowRuntimeContext } from '../contexts/workflow-runtime.context';
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
 import { parseWorkflowDefinition } from '../lib/workflow-definition';
+import { getOpenWaits } from '../lib/workflow-run-waits';
 import type {
   CallWorkflowOptions,
   CallWorkflowResult,
-  RunStrategy,
-  RunWorkflowOptions,
+  ResumeOutcome,
+  ResumeRunOptions,
+  StartRunOptions,
   WorkflowCallService,
-  WorkflowResult,
 } from '../types';
-import { AWAITING_CHILD_WORKFLOW_REASON } from '../types';
+import {
+  AWAITING_CHILD_WORKFLOW_REASON,
+  HOST_RESOLVED_WAIT_REASONS,
+} from '../types';
 
 import { WorkflowRunService } from './workflow-run.service';
 import { WorkflowService } from './workflow.service';
 
 const MAX_CALL_STACK_DEPTH = 10;
+const MISSING_DEFINITION_ERROR =
+  'Workflow definition is required to run the workflow';
 
 type RunWorkflowExecution = {
   run: WorkflowRunFull;
-  result: WorkflowResult;
+  result: WorkflowRunResult;
+};
+
+/** The definition a run pins, and the workflow compiled from it. */
+type CompiledRun = {
+  definition: WorkflowDefinition;
+  workflow: AgenticWorkflow;
 };
 
 @Injectable()
@@ -54,6 +70,7 @@ export class AgenticService implements WorkflowCallService {
     private readonly logger: LoggerService,
     private readonly workflowContextFactory: WorkflowContextFactory,
     private readonly i18n: I18nService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -92,17 +109,24 @@ export class AgenticService implements WorkflowCallService {
           triggeredById: initiator.id,
           runId: suspendedRun.id,
           workflowId: suspendedRun.workflow?.id,
-          suspendedStep: suspendedRun.suspendedStep,
-          suspensionReason: suspendedRun.suspensionReason,
+          waitIds: getOpenWaits(suspendedRun).map((wait) => wait.waitId),
         });
 
-        const execution = await this.runWorkflow({
-          mode: 'resume',
-          run: suspendedRun,
-          event,
-        });
+        const outcome = await this.resumeRunFromEvent(suspendedRun, event);
+        // Only the run this event targeted may fall through to a new run: a
+        // parent failing further up the call stack must not start another one.
+        if (outcome.status !== 'unresumable') {
+          return outcome.run;
+        }
 
-        return execution.run;
+        this.logger.warn(
+          'Suspended workflow run can no longer be resumed; starting a new run',
+          {
+            triggeredById: initiator.id,
+            runId: suspendedRun.id,
+            workflowId: suspendedRun.workflow?.id,
+          },
+        );
       }
 
       const workflowToRun =
@@ -129,8 +153,7 @@ export class AgenticService implements WorkflowCallService {
         workflowId: workflowToRun.id,
       });
 
-      const execution = await this.runWorkflow({
-        mode: 'start',
+      const execution = await this.startRun({
         workflow: workflowToRun,
         event,
       });
@@ -168,27 +191,6 @@ export class AgenticService implements WorkflowCallService {
       );
     }
 
-    // Defense in depth against deterministic replay: if the parent is
-    // re-executing an already-resolved `call_workflow` suspension, reuse the
-    // child run it originally spawned instead of creating a duplicate.
-    const replayedChildRun = await this.findReplayedChildRun(
-      parentRun,
-      workflowId,
-      parentContext,
-    );
-    if (replayedChildRun) {
-      this.logger.log(
-        'Reusing recorded child workflow run during parent replay',
-        {
-          parentRunId: parentRun.id,
-          childRunId: replayedChildRun.id,
-          workflowId,
-        },
-      );
-
-      return this.toPersistedCallWorkflowResult(replayedChildRun);
-    }
-
     const workflow = await this.workflowService.findOneAndPopulate(workflowId);
     if (!workflow) {
       throw new Error(`Workflow with ID ${workflowId} not found`);
@@ -204,8 +206,7 @@ export class AgenticService implements WorkflowCallService {
 
     await this.assertCanCallWorkflow(parentRun, workflow.id);
 
-    const execution = await this.runWorkflow({
-      mode: 'start',
+    const execution = await this.startRun({
       workflow,
       event: parentContext.event,
       parentRun,
@@ -216,117 +217,312 @@ export class AgenticService implements WorkflowCallService {
   }
 
   /**
-   * Shared runner lifecycle for starts, external resumes, and internal parent
-   * resumes. When a resumed child reaches a terminal state, this method also
-   * unwinds the suspended parent with the child result payload.
+   * Create a run for a workflow and execute it from its first step.
    */
-  private async runWorkflow(
-    options: RunWorkflowOptions,
+  private async startRun(
+    options: StartRunOptions,
   ): Promise<RunWorkflowExecution> {
-    const { event, mode } = options;
-    const run =
-      mode === 'start'
-        ? await this.createRun(options.workflow, event, {
-            parentRun: options.parentRun,
-            input: options.input,
-          })
-        : options.run;
-    const definition = this.resolveRunDefinition(run);
-    if (!definition) {
-      throw new Error('Workflow definition is required to run the workflow');
-    }
-    const workflowInstance = AgenticWorkflow.fromDefinition(definition, {
-      actions: this.actionService.getRegistry(),
-      bindingKinds: this.runtimeBindingsService.getRegistry(),
-      jsonataFunctions: this.buildJsonataFunctions(event),
+    const { event } = options;
+    const run = await this.createRun(options.workflow, event, {
+      parentRun: options.parentRun,
+      input: options.input,
     });
+    const compiled = this.compileRun(run, event);
+    if (!compiled) {
+      throw new Error(MISSING_DEFINITION_ERROR);
+    }
+
+    const { definition, workflow } = compiled;
     const context = await this.workflowContextFactory.create(
       run,
       event,
       definition,
     );
-
-    this.logger.debug('Preparing workflow runner', {
-      mode,
-      runId: run.id,
-      workflowId: run.workflow?.id,
-      triggeredById: run.triggeredBy?.id,
-    });
-
-    const strategy = await this.createRunStrategy(
-      mode,
-      run,
-      context,
-      workflowInstance,
-      mode === 'resume' ? options.resumeData : undefined,
-    );
+    const runner = await workflow.buildAsyncRunner({ runId: run.id });
 
     this.logger.debug('Marking workflow run as running', {
-      mode,
       runId: run.id,
       workflowId: run.workflow?.id,
       triggeredById: run.triggeredBy?.id,
-      hasSnapshot: Boolean(strategy.markRunningInput.snapshot ?? run.snapshot),
-      hasResumeData: Boolean(
-        strategy.markRunningInput.lastResumeData ?? strategy.resumeData,
-      ),
     });
     await this.workflowRunService.markRunning(run.id, {
-      ...strategy.markRunningInput,
       context: context.state,
     });
 
-    let result: WorkflowResult;
+    let result: WorkflowRunResult;
     try {
-      this.logger.debug('Executing workflow runner', {
-        mode,
-        runId: run.id,
-        workflowId: run.workflow?.id,
-        triggeredById: run.triggeredBy?.id,
+      result = await runner.start({
+        inputData: run.input ?? {},
+        context,
       });
-      result = await strategy.execute();
     } catch (err) {
       this.logger.error('Workflow runner threw during execution', err);
-      await this.markRunFailed(run, strategy.runner, context.state, err);
-      if (mode === 'resume') {
-        await this.resumeParentRunFromChild(
-          run,
-          {
-            status: 'failed',
-            error: err,
-            snapshot: strategy.runner.getSnapshot(),
-          },
-          event,
-        );
-      }
+      await this.markRunFailed(run, runner, context.state, err);
 
       throw err;
     }
 
-    this.logger.debug('Workflow runner completed', {
-      mode,
+    await this.persistResult(run, runner, result, context.state);
+    if (result.status === 'suspended') {
+      await this.deliverMissedChildResults(run, result.waits, event);
+    }
+
+    return { run: await this.reloadRun(run), result };
+  }
+
+  /**
+   * Resume a suspended run with the input of an inbound event.
+   *
+   * The event resolves the first open wait, in flow order, that the host does
+   * not resolve itself (see `HOST_RESOLVED_WAIT_REASONS`).
+   */
+  private async resumeRunFromEvent(
+    run: WorkflowRunFull,
+    event: TriggerEventWrapper,
+  ): Promise<ResumeOutcome> {
+    const outcome = await this.resumeRun({
+      run,
+      event,
+      selectWait: (waits) =>
+        waits.find(
+          (wait) => !HOST_RESOLVED_WAIT_REASONS.has(wait.reason ?? ''),
+        ),
+      resumeData: event.buildInput(),
+    });
+    if (outcome.status !== 'no_wait') {
+      return outcome;
+    }
+
+    // The run only waits on things the host resolves, such as a child run.
+    // It is left as is: a child that just ended is resuming it right now,
+    // and one whose result was missed is caught up below.
+    this.logger.warn('Suspended workflow run has no wait an event resolves', {
+      runId: run.id,
+      waits: getOpenWaits(run).map((wait) => wait.reason ?? null),
+    });
+    await this.resumeFromEndedChildren(run.id, event);
+
+    return { ...outcome, run: await this.reloadRun(run) };
+  }
+
+  /**
+   * Resume one open wait of a suspended run.
+   *
+   * Follows the agentic host contract: the checkpoint and the payload are
+   * validated before anything is claimed, the run is then claimed on the
+   * suspension that was validated, restored from its checkpoint, and resumed.
+   * A refused payload leaves the run exactly as it was, still waiting.
+   *
+   * @throws When the pinned definition no longer compiles. The run stays
+   * suspended: compiling depends on the registered actions and binding kinds,
+   * which a later deployment can restore.
+   */
+  private async resumeRun(options: ResumeRunOptions): Promise<ResumeOutcome> {
+    const { run, event, resumeData } = options;
+    const compiled = this.compileRun(run, event);
+    if (!compiled) {
+      return await this.failUnresumableRun(
+        run,
+        new Error(MISSING_DEFINITION_ERROR),
+        event,
+      );
+    }
+
+    const { definition, workflow } = compiled;
+    const restorable = workflow.validateCheckpoint(run.checkpoint);
+    if (!restorable.ok) {
+      return await this.failUnresumableRun(run, restorable.error, event);
+    }
+
+    const wait = options.selectWait(restorable.checkpoint.waits);
+    if (!wait) {
+      return { status: 'no_wait', run };
+    }
+
+    const accepted = workflow.validateCheckpoint(restorable.checkpoint, {
+      waitId: wait.waitId,
+      resumeData,
+    });
+    if (!accepted.ok) {
+      if (accepted.error instanceof WorkflowResumeRejectedError) {
+        this.logRejection(run, wait, accepted.error);
+        // The runner never sees this payload, so the host reports the
+        // refusal as the runner does for the payloads it refuses itself.
+        this.eventEmitter.emit('hook:workflow:resume_rejected', {
+          runId: run.id,
+          wait,
+          resumeData,
+          error: accepted.error,
+        });
+
+        return { status: 'rejected', run, error: accepted.error };
+      }
+
+      // The wait was picked from the open ones, so it is always found.
+      throw accepted.error;
+    }
+
+    const context = await this.workflowContextFactory.create(
+      run,
+      event,
+      definition,
+    );
+    const claimed = await this.workflowRunService.claimSuspended(
+      run.id,
+      run.suspendedAt ?? null,
+    );
+    if (!claimed) {
+      this.logger.warn('Workflow run was already resumed by another caller', {
+        runId: run.id,
+        waitId: wait.waitId,
+      });
+
+      return { status: 'claim_lost', run: await this.reloadRun(run) };
+    }
+
+    this.logger.debug('Marking workflow run as running', {
       runId: run.id,
       workflowId: run.workflow?.id,
       triggeredById: run.triggeredBy?.id,
-      status: result.status,
+      waitId: wait.waitId,
     });
-    await this.persistResult(
-      run,
-      strategy.runner,
-      result,
-      strategy.resumeData,
-      context,
-    );
+    await this.workflowRunService.markRunning(run.id, {
+      context: context.state,
+    });
 
-    if (mode === 'resume') {
-      await this.resumeParentRunFromChild(run, result, event);
+    let runner: WorkflowRunner | undefined;
+    let result: WorkflowRunResult;
+    try {
+      runner = workflow.buildRunnerFromCheckpoint({
+        checkpoint: accepted.checkpoint,
+        context,
+        snapshot: run.snapshot ?? undefined,
+        runId: run.id,
+      });
+      result = await runner.resume({ waitId: wait.waitId, resumeData });
+    } catch (err) {
+      this.logger.error('Workflow runner threw during execution', err);
+      await this.markRunFailed(run, runner, context.state, err);
+      await this.resumeParentRunFromChild(
+        run,
+        this.toFailedCallWorkflowResult(run, err),
+        event,
+      );
+
+      throw err;
     }
 
-    const persistedRun = await this.workflowRunService.findOneAndPopulate(
+    if (result.status === 'suspended' && result.rejection) {
+      // The step that read the payload refused it: the runner put the run
+      // back as its checkpoint describes it, so only the claim is undone.
+      this.logRejection(run, wait, result.rejection.error);
+      await this.workflowRunService.releaseClaim(run.id, {
+        context: run.context ?? null,
+      });
+      await this.deliverMissedChildResults(run, result.waits, event);
+
+      return {
+        status: 'rejected',
+        run: await this.reloadRun(run),
+        error: result.rejection.error,
+      };
+    }
+
+    await this.persistResult(run, runner, result, context.state);
+
+    if (result.status === 'suspended') {
+      await this.deliverMissedChildResults(run, result.waits, event);
+    } else {
+      await this.resumeParentRunFromChild(
+        run,
+        this.toCallWorkflowResult(run, result),
+        event,
+      );
+    }
+
+    return { status: 'resumed', run: await this.reloadRun(run) };
+  }
+
+  /**
+   * Fail a suspended run that can never be resumed: it pins no definition,
+   * or its checkpoint is missing, malformed or taken against another
+   * definition. Failing it stops it from claiming further events.
+   */
+  private async failUnresumableRun(
+    run: WorkflowRunFull,
+    error: unknown,
+    event: TriggerEventWrapper,
+  ): Promise<ResumeOutcome> {
+    const claimed = await this.workflowRunService.claimSuspended(
       run.id,
+      run.suspendedAt ?? null,
+    );
+    if (!claimed) {
+      return { status: 'claim_lost', run: await this.reloadRun(run) };
+    }
+
+    this.logger.error('Workflow run can no longer be resumed', error, {
+      runId: run.id,
+      workflowId: run.workflow?.id,
+      triggeredById: run.triggeredBy?.id ?? null,
+      ...(error instanceof WorkflowCheckpointInvalidError
+        ? { code: error.code, path: error.path }
+        : {}),
+      ...(error instanceof WorkflowDefinitionDriftError
+        ? { expected: error.expected, actual: error.actual }
+        : {}),
+    });
+    const message = `Cannot resume workflow run: ${this.stringifyError(error)}`;
+    await this.workflowRunService.markFailed(run.id, { error: message });
+    await this.resumeParentRunFromChild(
+      run,
+      this.toFailedCallWorkflowResult(run, message),
+      event,
     );
 
-    return { run: persistedRun ?? run, result };
+    return { status: 'unresumable', run: await this.reloadRun(run) };
+  }
+
+  /**
+   * Log a refused resume payload; the run keeps waiting on the same wait.
+   */
+  private logRejection(
+    run: WorkflowRunFull,
+    wait: WaitInfo,
+    error: WorkflowResumeRejectedError,
+  ): void {
+    this.logger.warn('Workflow run refused the resume payload', {
+      runId: run.id,
+      waitId: wait.waitId,
+      reason: wait.reason ?? null,
+      error: error.message,
+      issues: error.issues,
+    });
+  }
+
+  /**
+   * Compile the definition pinned by a run's workflow version.
+   *
+   * @returns The compiled run, or `undefined` when the run pins no definition.
+   * @throws When the definition no longer parses or compiles against the
+   * registered actions and binding kinds.
+   */
+  private compileRun(
+    run: WorkflowRunFull,
+    event: TriggerEventWrapper,
+  ): CompiledRun | undefined {
+    const definition = this.resolveRunDefinition(run);
+    if (!definition) {
+      return undefined;
+    }
+
+    const workflow = AgenticWorkflow.fromDefinition(definition, {
+      actions: this.actionService.getRegistry(),
+      bindingKinds: this.runtimeBindingsService.getRegistry(),
+      jsonataFunctions: this.buildJsonataFunctions(event),
+    });
+
+    return { definition, workflow };
   }
 
   /**
@@ -344,68 +540,6 @@ export class AgenticService implements WorkflowCallService {
           defaultValue: key,
           args,
         }),
-    };
-  }
-
-  /**
-   * Build the execution strategy for starting a new workflow or resuming an existing one.
-   *
-   * `resumeData` is supplied only for internal child-to-parent unwinds; normal
-   * event resumes use the current event input.
-   */
-  private async createRunStrategy(
-    mode: 'start' | 'resume',
-    run: WorkflowRunFull,
-    context: WorkflowRuntimeContext,
-    workflowInstance: AgenticWorkflow,
-    resumeData?: unknown,
-  ): Promise<RunStrategy> {
-    if (mode === 'start') {
-      const runner = await workflowInstance.buildAsyncRunner({
-        runId: run.id,
-      });
-
-      return {
-        runner,
-        markRunningInput: {
-          snapshot: run.snapshot ?? null,
-        },
-        execute: () =>
-          runner.start({
-            inputData: run.input ?? {},
-            context,
-          }),
-      };
-    }
-
-    const latestInput = resumeData ?? context.event.buildInput();
-    const runner = await workflowInstance.buildRunnerFromState({
-      state: this.buildExecutionState(run),
-      context,
-      snapshot: run.snapshot ?? { status: run.status, actions: {} },
-      suspension: run.suspendedStep
-        ? {
-            stepId: run.suspendedStep,
-            reason: run.suspensionReason,
-            data: run.suspensionData ?? undefined,
-            stepExecId: run.suspensionStepExecId ?? undefined,
-            suspendIndex: run.suspensionIndex ?? undefined,
-            suspendKey: run.suspensionKey ?? undefined,
-            awaitResults: run.suspensionAwaitResults ?? undefined,
-          }
-        : undefined,
-      runId: run.id,
-      lastResumeData: latestInput,
-    });
-
-    return {
-      runner,
-      resumeData: latestInput,
-      markRunningInput: {
-        lastResumeData: latestInput,
-        snapshot: run.snapshot ?? null,
-      },
-      execute: () => runner.resume({ resumeData: latestInput }),
     };
   }
 
@@ -493,7 +627,7 @@ export class AgenticService implements WorkflowCallService {
    */
   private toCallWorkflowResult(
     run: WorkflowRunFull,
-    result: WorkflowResult,
+    result: WorkflowRunResult,
   ): CallWorkflowResult {
     if (result.status === 'finished') {
       return {
@@ -512,84 +646,28 @@ export class AgenticService implements WorkflowCallService {
       };
     }
 
+    return this.toFailedCallWorkflowResult(run, result.error);
+  }
+
+  /**
+   * Build the `call_workflow` payload of a child run that failed.
+   */
+  private toFailedCallWorkflowResult(
+    run: WorkflowRunFull,
+    error: unknown,
+  ): CallWorkflowResult {
     return {
       status: 'failed',
       workflow_id: run.workflow.id,
       workflow_run_id: run.id,
-      error: this.stringifyError(result.error),
+      error: this.stringifyError(error),
     };
   }
 
   /**
-   * Detect a deterministic replay of a `call_workflow` suspension and return
-   * the child run originally spawned by that call, if any.
-   *
-   * Replay is identified by the parent runtime control reporting a recorded
-   * resume result for the upcoming suspension; the persisted parent
-   * suspension metadata then pins which child run the original call created.
-   * The runtime signal is required because suspension bookkeeping is not
-   * cleared on resume, so metadata alone would also match a later sequential
-   * call to the same workflow.
+   * Build the `call_workflow` payload of a persisted child run that ended.
    */
-  private async findReplayedChildRun(
-    parentRun: WorkflowRunFull,
-    workflowId: string,
-    parentContext: WorkflowRuntimeContext,
-  ): Promise<WorkflowRunFull | null> {
-    if (!this.isReplayingRecordedSuspension(parentContext)) {
-      return null;
-    }
-
-    if (parentRun.suspensionReason !== AWAITING_CHILD_WORKFLOW_REASON) {
-      return null;
-    }
-
-    const suspensionData = parentRun.suspensionData as
-      | { workflow_id?: unknown; workflow_run_id?: unknown }
-      | null
-      | undefined;
-    if (
-      suspensionData?.workflow_id !== workflowId ||
-      typeof suspensionData.workflow_run_id !== 'string'
-    ) {
-      return null;
-    }
-
-    const childRun = await this.workflowRunService.findOneAndPopulate(
-      suspensionData.workflow_run_id,
-    );
-    if (
-      !childRun ||
-      this.resolveRunId(childRun.parentRun) !== parentRun.id ||
-      childRun.workflow.id !== workflowId
-    ) {
-      return null;
-    }
-
-    return childRun;
-  }
-
-  /**
-   * Report whether the parent context is replaying a suspension whose resume
-   * result is already recorded.
-   */
-  private isReplayingRecordedSuspension(
-    parentContext: WorkflowRuntimeContext,
-  ): boolean {
-    try {
-      return parentContext.workflow.hasRecordedResult();
-    } catch {
-      // The context may not be attached to a running workflow runtime.
-      return false;
-    }
-  }
-
-  /**
-   * Build the `call_workflow` contract payload from a persisted child run.
-   */
-  private toPersistedCallWorkflowResult(
-    run: WorkflowRunFull,
-  ): CallWorkflowResult {
+  private toEndedCallWorkflowResult(run: WorkflowRunFull): CallWorkflowResult {
     if (run.status === 'finished') {
       return {
         status: 'finished',
@@ -599,37 +677,25 @@ export class AgenticService implements WorkflowCallService {
       };
     }
 
-    if (run.status === 'failed') {
-      return {
-        status: 'failed',
-        workflow_id: run.workflow.id,
-        workflow_run_id: run.id,
-        error: run.error ?? 'Child workflow run failed',
-      };
-    }
-
-    return {
-      status: 'suspended',
-      workflow_id: run.workflow.id,
-      workflow_run_id: run.id,
-    };
+    return this.toFailedCallWorkflowResult(
+      run,
+      run.error ?? 'Child workflow run failed',
+    );
   }
 
   /**
    * Resume a suspended parent run after its child run completes or fails.
    *
-   * This may cascade through multiple ancestors because resuming the parent can
-   * itself finish a child call that belongs to another suspended parent.
+   * The child result resolves the parent wait opened by the `call_workflow`
+   * step that spawned this child. This may cascade through multiple ancestors
+   * because resuming the parent can itself finish a child call that belongs to
+   * another suspended parent.
    */
   private async resumeParentRunFromChild(
     childRun: WorkflowRunFull,
-    result: WorkflowResult,
+    payload: CallWorkflowResult,
     event: TriggerEventWrapper,
   ): Promise<void> {
-    if (result.status === 'suspended') {
-      return;
-    }
-
     const parentRunId = this.resolveRunId(childRun.parentRun);
     if (!parentRunId) {
       return;
@@ -646,6 +712,7 @@ export class AgenticService implements WorkflowCallService {
       return;
     }
 
+    // A parent still running catches this result up once it suspends.
     if (parentRun.status !== 'suspended') {
       this.logger.warn(
         'Skipping parent workflow resume because it is not suspended',
@@ -659,12 +726,116 @@ export class AgenticService implements WorkflowCallService {
       return;
     }
 
-    await this.runWorkflow({
-      mode: 'resume',
+    const outcome = await this.resumeRun({
       run: parentRun,
       event,
-      resumeData: this.toCallWorkflowResult(childRun, result),
+      selectWait: (waits) =>
+        waits.find((wait) => this.getChildRunId(wait) === childRun.id),
+      resumeData: payload,
     });
+
+    switch (outcome.status) {
+      case 'no_wait':
+        this.logger.warn('Parent workflow run is not waiting on this child', {
+          childRunId: childRun.id,
+          parentRunId,
+        });
+        break;
+      case 'claim_lost':
+        // The caller holding the parent catches this result up once the
+        // parent suspends again.
+        this.logger.warn('Parent workflow run is being resumed by another', {
+          childRunId: childRun.id,
+          parentRunId,
+        });
+        break;
+      case 'rejected':
+        // The child result cannot be sent again, so the parent could never
+        // leave this wait.
+        await this.failUnresumableRun(parentRun, outcome.error, event);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
+   * Deliver the results of child runs that ended while `run` was not
+   * suspended. Call it each time `run` goes back to `suspended`.
+   *
+   * @param waits The waits `run` was left suspended on.
+   */
+  private async deliverMissedChildResults(
+    run: WorkflowRunFull,
+    waits: WaitInfo[],
+    event: TriggerEventWrapper,
+  ): Promise<void> {
+    if (waits.some((wait) => this.getChildRunId(wait))) {
+      await this.resumeFromEndedChildren(run.id, event);
+    }
+  }
+
+  /**
+   * Resume a suspended parent with the result of a child that already ended.
+   *
+   * A child cannot resume a parent that is still running, e.g. one whose
+   * first pass is still going after spawning it, and it loses the claim on a
+   * parent held by another caller, e.g. two children of a `wait_all` block
+   * finishing together. Whoever leaves the parent suspended calls this to
+   * deliver the result that was missed. One wait is resolved per call: that
+   * resume calls back here once the parent suspends again.
+   */
+  private async resumeFromEndedChildren(
+    parentRunId: string,
+    event: TriggerEventWrapper,
+  ): Promise<void> {
+    const parentRun =
+      await this.workflowRunService.findOneAndPopulate(parentRunId);
+    if (!parentRun || parentRun.status !== 'suspended') {
+      return;
+    }
+
+    for (const wait of getOpenWaits(parentRun)) {
+      const childRunId = this.getChildRunId(wait);
+      const childRun = childRunId
+        ? await this.workflowRunService.findOneAndPopulate(childRunId)
+        : null;
+      if (
+        !childRun ||
+        this.resolveRunId(childRun.parentRun) !== parentRun.id ||
+        (childRun.status !== 'finished' && childRun.status !== 'failed')
+      ) {
+        continue;
+      }
+
+      this.logger.log('Resuming parent workflow run with a missed result', {
+        parentRunId: parentRun.id,
+        childRunId: childRun.id,
+      });
+      await this.resumeParentRunFromChild(
+        childRun,
+        this.toEndedCallWorkflowResult(childRun),
+        event,
+      );
+
+      return;
+    }
+  }
+
+  /**
+   * Read the child run a `call_workflow` wait is waiting on.
+   *
+   * @returns The child run id, or `undefined` for any other wait.
+   */
+  private getChildRunId(wait: WaitInfo): string | undefined {
+    if (wait.reason !== AWAITING_CHILD_WORKFLOW_REASON) {
+      return undefined;
+    }
+
+    const childRunId = (wait.data as { workflow_run_id?: unknown } | null)
+      ?.workflow_run_id;
+
+    return typeof childRunId === 'string' ? childRunId : undefined;
   }
 
   /**
@@ -681,6 +852,13 @@ export class AgenticService implements WorkflowCallService {
   }
 
   /**
+   * Load the latest persisted state of a run, falling back to the given one.
+   */
+  private async reloadRun(run: WorkflowRunFull): Promise<WorkflowRunFull> {
+    return (await this.workflowRunService.findOneAndPopulate(run.id)) ?? run;
+  }
+
+  /**
    * Resolve the workflow definition snapshot used by the current run.
    */
   private resolveRunDefinition(run: WorkflowRunFull) {
@@ -691,20 +869,21 @@ export class AgenticService implements WorkflowCallService {
   }
 
   /**
-   * Persist workflow outcome and updated execution state.
+   * Persist the outcome of a runner pass and the run state it left.
    */
   private async persistResult(
     run: WorkflowRunFull,
     runner: WorkflowRunner,
-    result: WorkflowResult,
-    resumeData?: unknown,
-    runtimeContext?: WorkflowRuntimeContext,
+    result: WorkflowRunResult,
+    contextState: Record<string, unknown> | null,
   ): Promise<void> {
-    const contextState = runtimeContext?.state;
     const state = runner.getState();
-    const metadata = this.buildMetadata(state, run.metadata);
-    const output = this.pickOutput(result, state, run.output);
-    const stepLog = this.buildStepLog(runner, run.stepLog);
+    const runState = {
+      snapshot: result.snapshot,
+      context: contextState,
+      stepLog: this.buildStepLog(runner, run.stepLog),
+      input: state?.input ?? run.input ?? {},
+    };
     this.logger.debug('Persisting workflow result', {
       runId: run.id,
       status: result.status,
@@ -714,23 +893,15 @@ export class AgenticService implements WorkflowCallService {
       case 'suspended':
         this.logger.log('Workflow run suspended', {
           runId: run.id,
-          stepId: result.step.id,
-          reason: result.reason,
-          stepExecId: result.stepExecId,
-          suspendIndex: result.suspendIndex,
-          suspendKey: result.suspendKey,
+          waits: result.waits.map(({ waitId, reason }) => ({
+            waitId,
+            reason,
+          })),
         });
         await this.workflowRunService.markSuspended(run.id, {
-          stepId: result.step.id,
-          reason: result.reason,
-          data: result.data,
-          stepExecId: result.stepExecId,
-          suspendIndex: result.suspendIndex,
-          suspendKey: result.suspendKey,
-          awaitResults: result.awaitResults,
-          snapshot: result.snapshot,
-          context: contextState,
-          lastResumeData: resumeData,
+          ...runState,
+          checkpoint: result.checkpoint,
+          output: result.checkpoint.output,
         });
         break;
       case 'finished':
@@ -738,9 +909,8 @@ export class AgenticService implements WorkflowCallService {
           runId: run.id,
         });
         await this.workflowRunService.markFinished(run.id, {
-          snapshot: result.snapshot,
-          context: contextState,
-          output: result.output ?? output,
+          ...runState,
+          output: result.output,
         });
         break;
       case 'failed':
@@ -750,62 +920,12 @@ export class AgenticService implements WorkflowCallService {
           error: this.stringifyError(result.error),
         });
         await this.workflowRunService.markFailed(run.id, {
-          snapshot: result.snapshot,
-          context: contextState,
+          ...runState,
+          output: state?.output ?? run.output ?? null,
           error: this.stringifyError(result.error),
         });
         break;
     }
-
-    await this.workflowRunService.updateOne(run.id, {
-      input: state?.input ?? run.input ?? {},
-      output,
-      metadata,
-      context: contextState,
-      stepLog,
-    });
-  }
-
-  /**
-   * Build the ExecutionState used to rebuild a runner.
-   */
-  private buildExecutionState(run: WorkflowRunFull): ExecutionState {
-    const state: ExecutionState = {
-      input: run.input ?? {},
-      output: run.output ?? {},
-      iterationStack: [],
-    };
-    const storedState = (run.metadata as any)?.state;
-    if (storedState) {
-      if (storedState.iteration !== undefined) {
-        state.iteration = storedState.iteration;
-      }
-      if (storedState.accumulator !== undefined) {
-        state.accumulator = storedState.accumulator;
-      }
-      state.iterationStack = storedState.iterationStack ?? [];
-    }
-
-    return state;
-  }
-
-  /**
-   * Build the metadata payload for persisting workflow run state.
-   */
-  private buildMetadata(
-    state: ExecutionState | undefined,
-    existing?: Record<string, unknown> | null,
-  ): Record<string, unknown> | null {
-    const next = { ...(existing ?? {}) };
-    if (state) {
-      next.state = {
-        iteration: state.iteration,
-        accumulator: state.accumulator,
-        iterationStack: state.iterationStack,
-      };
-    }
-
-    return Object.keys(next).length > 0 ? next : null;
   }
 
   /**
@@ -821,36 +941,17 @@ export class AgenticService implements WorkflowCallService {
   }
 
   /**
-   * Decide which output payload to persist based on result and runner state.
-   */
-  private pickOutput(
-    result: WorkflowResult,
-    state: ExecutionState | undefined,
-    previousOutput?: Record<string, unknown> | null,
-  ): Record<string, unknown> | null {
-    if (result.status === 'finished' && result.output) {
-      return result.output;
-    }
-
-    if (state?.output) {
-      return state.output;
-    }
-
-    return previousOutput ?? null;
-  }
-
-  /**
    * Persist a failing workflow run when runner execution throws.
+   *
+   * @param runner The runner that threw, if it was created at all.
    */
   private async markRunFailed(
     run: WorkflowRunFull,
-    runner: WorkflowRunner,
+    runner: WorkflowRunner | undefined,
     contextState: Record<string, unknown> | null,
     error: unknown,
   ): Promise<void> {
-    const state = runner.getState();
-    const metadata = this.buildMetadata(state, run.metadata);
-    const stepLog = this.buildStepLog(runner, run.stepLog);
+    const state = runner?.getState();
 
     this.logger.error(
       'Persisting failed workflow run after runner crash',
@@ -862,17 +963,16 @@ export class AgenticService implements WorkflowCallService {
       },
     );
     await this.workflowRunService.markFailed(run.id, {
-      snapshot: runner.getSnapshot(),
+      ...(runner
+        ? {
+            snapshot: runner.getSnapshot(),
+            stepLog: this.buildStepLog(runner, run.stepLog),
+          }
+        : {}),
       context: contextState,
-      error: this.stringifyError(error),
-    });
-
-    await this.workflowRunService.updateOne(run.id, {
       input: state?.input ?? run.input ?? {},
       output: state?.output ?? run.output ?? null,
-      metadata,
-      context: contextState,
-      stepLog,
+      error: this.stringifyError(error),
     });
   }
 
@@ -884,7 +984,11 @@ export class AgenticService implements WorkflowCallService {
       return error.message;
     }
 
-    return typeof error === 'string' ? error : JSON.stringify(error);
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    return JSON.stringify(error) ?? 'Unknown error';
   }
 
   /**

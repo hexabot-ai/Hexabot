@@ -75,10 +75,11 @@ describe('HexabotWorkflowRunMcpTools', () => {
     );
   });
 
-  it('searches workflow runs without nested workflow YAML definitions', async () => {
+  it('searches workflow runs without nested workflow YAML definitions or checkpoints', async () => {
     const run = {
       id: 'run-id',
       status: 'finished',
+      checkpoint: { version: 1, waits: [] },
       workflowVersion: {
         id: 'version-id',
         version: 3,
@@ -117,10 +118,11 @@ describe('HexabotWorkflowRunMcpTools', () => {
     });
   });
 
-  it('reads a workflow run without nested workflow YAML definitions', async () => {
+  it('reads a workflow run without nested workflow YAML definitions or checkpoint', async () => {
     const run = {
       id: 'run-id',
       status: 'finished',
+      checkpoint: { version: 1, waits: [] },
       workflowVersion: {
         id: 'version-id',
         version: 3,
@@ -144,7 +146,7 @@ describe('HexabotWorkflowRunMcpTools', () => {
     });
   });
 
-  it('returns workflow run debugging context with related runs and YAML', async () => {
+  it('returns workflow run debugging context with related runs and YAML, keeping only the inspected checkpoint', async () => {
     const run = {
       id: 'run-id',
       status: 'failed',
@@ -171,12 +173,14 @@ describe('HexabotWorkflowRunMcpTools', () => {
       },
       error: 'Template is missing',
       duration: 125,
+      checkpoint: { version: 1, waits: [] },
       createdAt: '2026-05-08T10:00:00.000Z',
       updatedAt: '2026-05-08T10:00:01.000Z',
     };
     const parentRun = {
       id: 'parent-run-id',
       status: 'suspended',
+      checkpoint: { version: 1, waits: [] },
       workflowVersion: {
         id: 'parent-version-id',
         definitionYml: 'parent-yaml',
@@ -185,6 +189,7 @@ describe('HexabotWorkflowRunMcpTools', () => {
     const childRun = {
       id: 'child-run-id',
       status: 'finished',
+      checkpoint: null,
       workflowVersion: {
         id: 'child-version-id',
         definitionYml: 'child-yaml',
@@ -298,11 +303,23 @@ describe('HexabotWorkflowRunMcpTools', () => {
       },
       parentRun: null,
       stepLog: null,
-      suspendedStep: 'await_reply',
-      suspensionReason: 'Waiting for user',
-      suspensionStepExecId: 'exec-id',
-      suspensionIndex: 1,
-      suspensionKey: 'reply',
+      checkpoint: {
+        version: 1,
+        waits: [
+          {
+            waitId: 'await_reply@key:reply',
+            step: { id: 'await_reply', name: 'await_reply', type: 'task' },
+            suspendKey: 'key:reply',
+            reason: 'Waiting for user',
+          },
+          {
+            waitId: 'call_child@index:1',
+            step: { id: 'call_child', name: 'call_child', type: 'task' },
+            suspendKey: 'index:1',
+            reason: 'awaiting_child_workflow',
+          },
+        ],
+      },
     };
     const workflowRunService = {
       findOneAndPopulate: jest.fn().mockResolvedValue(run),
@@ -341,11 +358,20 @@ describe('HexabotWorkflowRunMcpTools', () => {
         summary: expect.objectContaining({
           status: 'suspended',
           suspension: {
-            step: 'await_reply',
-            reason: 'Waiting for user',
-            stepExecId: 'exec-id',
-            index: 1,
-            key: 'reply',
+            waits: [
+              {
+                waitId: 'await_reply@key:reply',
+                step: 'await_reply',
+                reason: 'Waiting for user',
+                suspendKey: 'key:reply',
+              },
+              {
+                waitId: 'call_child@index:1',
+                step: 'call_child',
+                reason: 'awaiting_child_workflow',
+                suspendKey: 'index:1',
+              },
+            ],
           },
         }),
       }),

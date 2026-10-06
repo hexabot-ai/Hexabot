@@ -48,6 +48,17 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot API.
 - Migrations live in `packages/api/src/migration/migrations`; module docs in `packages/api/src/migration/README.md`.
 - CLI migration commands: `pnpm --filter @hexabot-ai/api run cli migration create|migrate`.
 - Seed data runs in non-production via `packages/api/src/seeder.ts` during bootstrap.
+- On SQLite, do not use `queryRunner.addColumn`/`dropColumn` on tables other tables reference (e.g. `workflow_runs`): they rebuild the table with `DROP TABLE`, and inside the migration transaction foreign keys stay enforced, so `ON DELETE` actions fire. Use a native `ALTER TABLE ... ADD/DROP COLUMN` there.
+
+## Workflow runs and suspension
+- `AgenticService` (`packages/api/src/workflow/services/agentic.service.ts`) hosts the `@hexabot-ai/agentic` runner; the host contract is in `packages/agentic/SUSPENSION.md` §8.
+- A suspended run persists one JSON `checkpoint` column, the only state needed to resume it; read its open waits with `getOpenWaits` (`packages/api/src/workflow/lib/workflow-run-waits.ts`). `suspendedAt` versions the suspension. `markFinished`/`markFailed` clear the checkpoint.
+- Resume order: compile the pinned definition → `validateCheckpoint` (and again with `{ waitId, resumeData }`) before claiming → `WorkflowRunService.claimSuspended(runId, suspendedAt)` → `buildRunnerFromCheckpoint` → `resume({ waitId, resumeData })`. The claim targets the suspension that was loaded (`suspended_at`), not only the status.
+- A refused payload leaves the run suspended on the same wait: before the claim nothing is written; after it, `releaseClaim` puts back the status and the context. Either way `hook:workflow:resume_rejected` is emitted: by the runner for refusals of a step, by `AgenticService` for refusals before the claim.
+- Inbound events resolve the first open wait not listed in `HOST_RESOLVED_WAIT_REASONS` (`packages/api/src/workflow/types.ts`); the host resolves the others itself (e.g. `awaiting_child_workflow`, resolved by the child run's result through the wait whose `data.workflow_run_id` matches).
+- A child run cannot resume a parent that is not `suspended` (still running, or claimed by another caller). Every path that leaves a run `suspended` (start, resume, refused resume) therefore calls `deliverMissedChildResults` to deliver the results of child runs that ended meanwhile.
+- A run that can never resume (missing or drifted checkpoint, no pinned definition) is failed, its parent receives a failed child result, and the event starts a new run. A definition that no longer parses or compiles is not such a case: it depends on the registered actions and binding kinds, so the resume throws and the run stays suspended.
+- Actions declare their resume payload with `suspend({ accepts })` instead of validating it and throwing.
 
 ## Extensions and dynamic providers
 - Built-in extensions live under `packages/api/src/extensions/{actions,channels,helpers}`.

@@ -8,6 +8,7 @@ import {
   EWorkflowRunStatus,
   WORKFLOW_RUN_STATUSES,
   type StepExecutionRecord,
+  type WorkflowCheckpoint,
   type WorkflowRunStatus,
   type WorkflowSnapshot,
 } from '@hexabot-ai/agentic';
@@ -134,57 +135,12 @@ export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
   @JsonColumn({ name: 'step_log', nullable: true })
   stepLog?: Record<string, StepExecutionRecord> | null;
 
-  /** Step identifier where the run was suspended. */
-  @Column({
-    name: 'suspended_step',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  suspendedStep?: string | null;
-
-  /** Free-text reason explaining why the run was suspended. */
-  @Column({
-    name: 'suspension_reason',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  suspensionReason?: string | null;
-
-  /** Payload captured when the run was suspended. */
-  @JsonColumn({ name: 'suspension_data', nullable: true })
-  suspensionData?: unknown;
-
-  /** Step execution attempt identifier for deterministic suspension replay. */
-  @Column({
-    name: 'suspension_step_exec_id',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  suspensionStepExecId?: string | null;
-
-  /** 1-based suspension index reached within the step execution. */
-  @Column({ name: 'suspension_index', type: 'int', nullable: true })
-  suspensionIndex?: number | null;
-
-  /** Normalized key identifying the suspension point inside the step. */
-  @Column({
-    name: 'suspension_key',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  suspensionKey?: string | null;
-
-  /** Previously resolved suspension values required for durable replay. */
-  @JsonColumn({ name: 'suspension_await_results', nullable: true })
-  suspensionAwaitResults?: Record<string, unknown> | null;
-
-  /** Payload stored to resume the run after suspension. */
-  @JsonColumn({ name: 'last_resume_data', nullable: true })
-  lastResumeData?: unknown;
+  /**
+   * Checkpoint of the suspended run: the only state needed to resume it, in
+   * any process. Cleared once the run finishes or fails.
+   */
+  @JsonColumn({ nullable: true })
+  checkpoint?: WorkflowCheckpoint | null;
 
   /** Error message when the run fails. */
   @Column({ name: 'error', type: 'text', nullable: true })

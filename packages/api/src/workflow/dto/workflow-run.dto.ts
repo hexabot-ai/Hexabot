@@ -7,6 +7,7 @@
 import {
   WORKFLOW_RUN_STATUSES,
   type StepExecutionRecord,
+  type WorkflowCheckpoint,
   type WorkflowRunStatus,
   type WorkflowSnapshot,
 } from '@hexabot-ai/agentic';
@@ -16,7 +17,6 @@ import { Type } from 'class-transformer';
 import {
   IsDate,
   IsIn,
-  IsInt,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -108,58 +108,12 @@ export class WorkflowRunCreateDto {
   stepLog?: Record<string, StepExecutionRecord> | null;
 
   @ApiPropertyOptional({
-    description: 'Step id where the run is suspended',
-    type: String,
-  })
-  @IsOptional()
-  @IsString()
-  suspendedStep?: string | null;
-
-  @ApiPropertyOptional({ description: 'Suspension reason', type: String })
-  @IsOptional()
-  @IsString()
-  suspensionReason?: string | null;
-
-  @ApiPropertyOptional({ description: 'Suspension payload', type: Object })
-  @IsOptional()
-  suspensionData?: unknown;
-
-  @ApiPropertyOptional({
-    description: 'Step execution attempt id for suspension replay',
-    type: String,
-  })
-  @IsOptional()
-  @IsString()
-  suspensionStepExecId?: string | null;
-
-  @ApiPropertyOptional({
-    description: '1-based suspension index within the step',
-    type: Number,
-  })
-  @IsOptional()
-  @IsInt()
-  suspensionIndex?: number | null;
-
-  @ApiPropertyOptional({
-    description: 'Normalized key of the active suspension point',
-    type: String,
-  })
-  @IsOptional()
-  @IsString()
-  suspensionKey?: string | null;
-
-  @ApiPropertyOptional({
-    description:
-      'Previously resumed suspension values for deterministic replay',
+    description: 'Checkpoint of the suspended run, needed to resume it',
     type: Object,
   })
   @IsOptional()
   @IsObject()
-  suspensionAwaitResults?: Record<string, unknown> | null;
-
-  @ApiPropertyOptional({ description: 'Last resume payload', type: Object })
-  @IsOptional()
-  lastResumeData?: unknown;
+  checkpoint?: WorkflowCheckpoint | null;
 
   @ApiPropertyOptional({ description: 'Error message if failed', type: String })
   @IsOptional()

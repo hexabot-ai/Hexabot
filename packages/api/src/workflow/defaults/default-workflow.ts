@@ -9,8 +9,8 @@ import { stringify } from 'yaml';
 
 /**
  * Minimal fallback workflow used when no custom workflows are configured.
- * It leverages the messaging actions to acknowledge the subscriber and suspend
- * until the next incoming message resumes the run.
+ * It leverages the messaging actions to acknowledge the subscriber; each
+ * incoming message starts a new run.
  */
 export const defaultWorkflowDefinition: WorkflowDefinition = {
   defs: {

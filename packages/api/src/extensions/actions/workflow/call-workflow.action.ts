@@ -12,7 +12,8 @@ import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.con
 import { workflowResourceRef } from '@/workflow/resource-refs';
 import {
   AWAITING_CHILD_WORKFLOW_REASON,
-  CallWorkflowResult,
+  CallWorkflowFailedResult,
+  CallWorkflowFinishedResult,
 } from '@/workflow/types';
 
 const callWorkflowInputSchema = z.object({
@@ -39,13 +40,9 @@ const callWorkflowFinishedSchema = z.object({
   workflow_run_id: z.uuid(),
   output: z.record(z.string(), z.any()),
 });
+// The parent is only resumed once the child run has ended.
 const callWorkflowResumeSchema = z.union([
   callWorkflowFinishedSchema,
-  z.object({
-    status: z.literal('suspended'),
-    workflow_id: z.uuid(),
-    workflow_run_id: z.uuid(),
-  }),
   z.object({
     status: z.literal('failed'),
     workflow_id: z.uuid(),
@@ -57,18 +54,14 @@ const callWorkflowResumeSchema = z.union([
 type CallWorkflowInput = z.infer<typeof callWorkflowInputSchema>;
 type CallWorkflowOutput = z.infer<typeof callWorkflowFinishedSchema>;
 
-const assertFinishedResult = (result: CallWorkflowResult) => {
-  if (result.status === 'finished') {
-    return result;
-  }
-
+const assertFinishedResult = (
+  result: CallWorkflowFinishedResult | CallWorkflowFailedResult,
+) => {
   if (result.status === 'failed') {
     throw new Error(result.error);
   }
 
-  throw new Error(
-    `Workflow ${result.workflow_id} suspended but did not return a final result`,
-  );
+  return result;
 };
 
 export const CallWorkflowAction = createAction<
@@ -84,43 +77,40 @@ export const CallWorkflowAction = createAction<
   inputSchema: callWorkflowInputSchema,
   outputSchema: callWorkflowFinishedSchema,
   async execute({ input, context }) {
-    // Deterministic replay re-executes this action when the parent resumes
-    // after the child completed. The child was already spawned by the original
-    // execution, so skip the spawn and let suspend() return the recorded
-    // child payload immediately.
-    if (context.workflow.hasRecordedResult()) {
-      const resumeData = await context.workflow.suspend<unknown>({
-        reason: AWAITING_CHILD_WORKFLOW_REASON,
+    let data: { workflow_id: string; workflow_run_id: string } | undefined;
+    // On resume this body runs again from the top. The child was already
+    // spawned by the first run, so skip the spawn and let suspend() resolve
+    // with the recorded child payload immediately.
+    if (!context.workflow.hasRecordedResult()) {
+      // AgenticService owns workflow resolution and run creation because the
+      // target workflow is an API-persisted entity, not an agentic DSL
+      // primitive.
+      const result = await context.services.agentic.callWorkflow({
+        workflowId: input.workflow_id,
+        input: input.input,
+        parentContext: context,
       });
 
-      return assertFinishedResult(callWorkflowResumeSchema.parse(resumeData));
-    }
+      if (result.status !== 'suspended') {
+        return assertFinishedResult(result);
+      }
 
-    // AgenticService owns workflow resolution and run creation because the
-    // target workflow is an API-persisted entity, not an agentic DSL primitive.
-    const result = await context.services.agentic.callWorkflow({
-      workflowId: input.workflow_id,
-      input: input.input,
-      parentContext: context,
-    });
-
-    if (result.status !== 'suspended') {
-      return assertFinishedResult(result);
+      data = {
+        workflow_id: result.workflow_id,
+        workflow_run_id: result.workflow_run_id,
+      };
     }
 
     // If the child suspends, this action suspends the parent at the call site.
     // A future event resumes the child leaf first; AgenticService then resumes
     // this parent action with the final child payload.
-    const resumeData = await context.workflow.suspend<unknown>({
+    const resumeData = await context.workflow.suspend({
       reason: AWAITING_CHILD_WORKFLOW_REASON,
-      data: {
-        workflow_id: result.workflow_id,
-        workflow_run_id: result.workflow_run_id,
-      },
+      data,
+      accepts: callWorkflowResumeSchema,
     });
-    const parsed = callWorkflowResumeSchema.parse(resumeData);
 
-    return assertFinishedResult(parsed);
+    return assertFinishedResult(resumeData);
   },
 });
 

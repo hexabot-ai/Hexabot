@@ -69,7 +69,7 @@ export class WebsocketGateway
     Partial<Pick<WorkflowContextState, 'initiatorId'>> & {
       workflowId: string;
       threadId?: string;
-      workflowRun?: WorkflowRun;
+      workflowRun?: Omit<WorkflowRun, 'checkpoint'>;
       workflowEvent: string;
       t: number;
     }): void {

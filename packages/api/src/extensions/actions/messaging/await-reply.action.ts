@@ -47,21 +47,13 @@ export class AwaitReplyAction extends BaseAction<
   async execute({
     context,
   }: ExecArgs<void, ConversationalWorkflowContext, AwaitReplySettings>) {
-    const resumeData = await context.workflow.suspend<
-      z.infer<typeof awaitReplyResumeSchema>
-    >({
+    // A reply that does not match the conversational input is refused: the
+    // run keeps waiting on this wait instead of failing.
+    return await context.workflow.suspend({
       reason: 'awaiting_user_response',
       data: null,
+      accepts: awaitReplyResumeSchema,
     });
-    const parsed = awaitReplyResumeSchema.safeParse(resumeData);
-
-    if (!parsed.success) {
-      throw new Error(
-        'resumeData must be compliant with the workflow input schema (conversational)',
-      );
-    }
-
-    return parsed.data;
   }
 }
 

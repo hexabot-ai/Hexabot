@@ -62,13 +62,15 @@ describe('CallWorkflowAction', () => {
       input: undefined,
       parentContext: context,
     });
-    expect(suspend).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'awaiting_child_workflow' }),
-    );
+    expect(suspend).toHaveBeenCalledWith({
+      reason: 'awaiting_child_workflow',
+      data: { workflow_id: workflowId, workflow_run_id: childRunId },
+      accepts: expect.any(Object),
+    });
     expect(result).toEqual(finishedPayload);
   });
 
-  it('does not re-spawn the child workflow when replaying a recorded suspension', async () => {
+  it('does not re-spawn the child workflow when its body re-runs on resume', async () => {
     const callWorkflow = jest.fn();
     const suspend = jest.fn().mockResolvedValue(finishedPayload);
     const context = buildContext({
@@ -82,12 +84,65 @@ describe('CallWorkflowAction', () => {
       context,
     } as any);
 
-    // Deterministic replay re-executes this action after the child completes;
+    // A resumed body runs again from the top after the child completes;
     // spawning again would create a duplicate, orphaned child run.
     expect(callWorkflow).not.toHaveBeenCalled();
-    expect(suspend).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'awaiting_child_workflow' }),
-    );
+    expect(suspend).toHaveBeenCalledWith({
+      reason: 'awaiting_child_workflow',
+      accepts: expect.any(Object),
+    });
     expect(result).toEqual(finishedPayload);
+  });
+
+  it('accepts only the result of a child run that ended', async () => {
+    const suspend = jest.fn().mockResolvedValue(finishedPayload);
+    const context = buildContext({
+      hasRecordedResult: jest.fn(() => true),
+      callWorkflow: jest.fn(),
+      suspend,
+    });
+    await new CallWorkflowAction(actionServiceMock).execute({
+      input: { workflow_id: workflowId },
+      context,
+    } as any);
+    const { accepts } = suspend.mock.calls[0][0];
+
+    expect(accepts.safeParse(finishedPayload).success).toBe(true);
+    expect(
+      accepts.safeParse({
+        status: 'failed',
+        workflow_id: workflowId,
+        workflow_run_id: childRunId,
+        error: 'boom',
+      }).success,
+    ).toBe(true);
+    expect(
+      accepts.safeParse({
+        status: 'suspended',
+        workflow_id: workflowId,
+        workflow_run_id: childRunId,
+      }).success,
+    ).toBe(false);
+    expect(accepts.safeParse({ status: 'finished' }).success).toBe(false);
+  });
+
+  it('fails the step when the child run failed', async () => {
+    const context = buildContext({
+      hasRecordedResult: jest.fn(() => true),
+      callWorkflow: jest.fn(),
+      suspend: jest.fn().mockResolvedValue({
+        status: 'failed',
+        workflow_id: workflowId,
+        workflow_run_id: childRunId,
+        error: 'child failed',
+      }),
+    });
+
+    await expect(
+      new CallWorkflowAction(actionServiceMock).execute({
+        input: { workflow_id: workflowId },
+        context,
+      } as any),
+    ).rejects.toThrow('child failed');
   });
 });

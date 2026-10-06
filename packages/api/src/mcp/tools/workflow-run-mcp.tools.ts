@@ -23,6 +23,7 @@ import {
   ManualEventWrapper,
   ScheduledEventWrapper,
 } from '@/workflow/lib/trigger-event-wrapper';
+import { getOpenWaits } from '@/workflow/lib/workflow-run-waits';
 import { AgenticService } from '@/workflow/services/agentic.service';
 import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
@@ -146,7 +147,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       throw new NotFoundException(`Workflow run ${args.id} not found`);
     }
 
-    return this.withoutWorkflowDefinition(run);
+    return this.withoutWorkflowDefinition(this.withoutCheckpoint(run));
   }
 
   @McpPermission('workflowrun', Action.READ)
@@ -194,8 +195,12 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     const response: Record<string, unknown> = {
       run: this.withoutWorkflowDefinition(run),
       relatedRuns: {
-        parent: this.withoutWorkflowDefinition(parentRun),
-        children: this.withoutWorkflowDefinition(childRuns),
+        parent: this.withoutWorkflowDefinition(
+          this.withoutCheckpoint(parentRun),
+        ),
+        children: this.withoutWorkflowDefinition(
+          childRuns.map((childRun) => this.withoutCheckpoint(childRun)),
+        ),
         childRunTotal,
         childRunsLimit: includeRelatedRuns ? childRunsLimit : 0,
       },
@@ -264,11 +269,12 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       suspension:
         run.status === EWorkflowRunStatus.SUSPENDED
           ? {
-              step: run.suspendedStep ?? null,
-              reason: run.suspensionReason ?? null,
-              stepExecId: run.suspensionStepExecId ?? null,
-              index: run.suspensionIndex ?? null,
-              key: run.suspensionKey ?? null,
+              waits: getOpenWaits(run).map((wait) => ({
+                waitId: wait.waitId,
+                step: wait.step?.id ?? null,
+                reason: wait.reason ?? null,
+                suspendKey: wait.suspendKey,
+              })),
             }
           : null,
       stepStatusCounts,
@@ -282,8 +288,25 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
   ): T {
     return {
       ...response,
-      items: this.withoutWorkflowDefinition(response.items),
+      items: this.withoutWorkflowDefinition(
+        response.items.map((item) => this.withoutCheckpoint(item)),
+      ),
     };
+  }
+
+  /**
+   * Drop the resume checkpoint from a run: it is large, and only the run the
+   * debug tool inspects needs it. Only the run's own key is removed, never
+   * nested user data that happens to use the same name.
+   */
+  private withoutCheckpoint<T>(run: T): T {
+    if (!run || typeof run !== 'object' || !('checkpoint' in run)) {
+      return run;
+    }
+
+    const { checkpoint: _checkpoint, ...rest } = run as Record<string, unknown>;
+
+    return rest as T;
   }
 
   private withoutWorkflowDefinition<T>(value: T): T {

@@ -4,11 +4,9 @@
  * Full terms: see LICENSE.md.
  */
 
-import {
-  WorkflowResumeResult,
-  WorkflowRunner,
-  WorkflowSnapshot,
-  WorkflowStartResult,
+import type {
+  WaitInfo,
+  WorkflowResumeRejectedError,
 } from '@hexabot-ai/agentic';
 import {
   DirectionType,
@@ -35,13 +33,20 @@ export {
 
 export type MemoryValue = Record<string, unknown>;
 
-export type WorkflowResult = WorkflowStartResult | WorkflowResumeResult;
-
 /**
  * Suspension reason used by the `call_workflow` action while its parent run
  * waits for a spawned child run to reach a terminal state.
  */
 export const AWAITING_CHILD_WORKFLOW_REASON = 'awaiting_child_workflow';
+
+/**
+ * Suspension reasons of waits that the host resolves itself. Inbound events
+ * (messages, webhooks, manual triggers) never resolve these waits; they only
+ * resolve the other open waits of a run.
+ */
+export const HOST_RESOLVED_WAIT_REASONS: ReadonlySet<string> = new Set([
+  AWAITING_CHILD_WORKFLOW_REASON,
+]);
 
 /**
  * Payload passed from a child workflow back to the suspended `call_workflow`
@@ -88,35 +93,39 @@ export interface WorkflowCallService {
 
 export const WORKFLOW_CALL_SERVICE = Symbol('WORKFLOW_CALL_SERVICE');
 
-export type RunWorkflowOptions =
+export type StartRunOptions = {
+  workflow: WorkflowFull;
+  event: TriggerEventWrapper;
+  /** Present when this run is a child workflow call. */
+  parentRun?: WorkflowRunFull;
+  /** Start input override for child calls. */
+  input?: Record<string, unknown>;
+};
+
+export type ResumeRunOptions = {
+  run: WorkflowRunFull;
+  event: TriggerEventWrapper;
+  /** Picks the open wait to resolve, from the run's waits in flow order. */
+  selectWait: (waits: WaitInfo[]) => WaitInfo | undefined;
+  resumeData: unknown;
+};
+
+/** What happened to a suspended run the host tried to resume. */
+export type ResumeOutcome =
+  /** The wait was resolved and the run went on. */
+  | { status: 'resumed'; run: WorkflowRunFull }
+  /** The payload was refused; the run is unchanged and still waiting. */
   | {
-      mode: 'start';
-      workflow: WorkflowFull;
-      event: TriggerEventWrapper;
-      /** Present when this run is a child workflow call. */
-      parentRun?: WorkflowRunFull;
-      /** Start input override for child calls. */
-      input?: Record<string, unknown>;
-    }
-  | {
-      mode: 'resume';
+      status: 'rejected';
       run: WorkflowRunFull;
-      event: TriggerEventWrapper;
-      /** Internal resume payload used to unwind a completed child into its parent. */
-      resumeData?: unknown;
-    };
-
-export type MarkRunningInput = {
-  snapshot?: WorkflowSnapshot | null;
-  lastResumeData?: unknown;
-};
-
-export type RunStrategy = {
-  runner: WorkflowRunner;
-  markRunningInput: MarkRunningInput;
-  resumeData?: unknown;
-  execute: () => Promise<WorkflowResult>;
-};
+      error: WorkflowResumeRejectedError;
+    }
+  /** Another caller resumed this suspension first. */
+  | { status: 'claim_lost'; run: WorkflowRunFull }
+  /** None of the open waits is one this caller resolves. */
+  | { status: 'no_wait'; run: WorkflowRunFull }
+  /** The run can never resume; it was marked failed. */
+  | { status: 'unresumable'; run: WorkflowRunFull };
 
 export type WorkflowContextState = Record<string, unknown> & {
   initiatorId: string;

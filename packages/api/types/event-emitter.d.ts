@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { StepExecutionRecord, StepInfo } from '@hexabot-ai/agentic';
+import type { WorkflowEventMap } from '@hexabot-ai/agentic';
 import type { HttpException } from '@nestjs/common';
 import type { OnEventType } from '@nestjs/event-emitter';
 import type { OnEventOptions } from '@nestjs/event-emitter/dist/interfaces';
@@ -135,10 +135,9 @@ type HookEventPayload<
 
 type HookWildcardPayload<Entity> = [OrmLifecycleEvent<Entity>];
 
-type StepWorkflowEventPayload = {
-  runId?: string;
-  step: StepInfo;
-  stepExecution?: StepExecutionRecord;
+/** Workflow runner hooks, mirrored from the agentic event map. */
+type WorkflowHookEventMap = {
+  [K in keyof WorkflowEventMap]: [WorkflowEventMap[K]];
 };
 
 declare module '@nestjs/event-emitter' {
@@ -223,7 +222,7 @@ declare module '@nestjs/event-emitter' {
     }[keyof IHookSettingsGroupLabelOperationMap & string]
   >;
 
-  interface CustomEventMap {
+  interface CustomEventMap extends WorkflowHookEventMap {
     'hook:chatbot:echo': [AnyMessageInboundEvent];
     'hook:chatbot:delivery': [DeliveryNotificationInboundEvent];
     'hook:chatbot:message': [AnyMessageInboundEvent];
@@ -237,22 +236,6 @@ declare module '@nestjs/event-emitter' {
     'hook:user:logout': [ExpressSession];
     'hook:websocket:connection': [Socket];
     'hook:websocket:error': [Socket, Error | HttpException];
-    'hook:workflow:start': [{ runId?: string }];
-    'hook:workflow:finish': [
-      { runId?: string; output: Record<string, unknown> },
-    ];
-    'hook:workflow:failure': [{ runId?: string; error: unknown }];
-    'hook:workflow:suspended': [
-      { runId?: string; step: StepInfo; reason?: string; data?: unknown },
-    ];
-    'hook:step:start': [StepWorkflowEventPayload];
-    'hook:step:success': [StepWorkflowEventPayload];
-    'hook:step:error': [StepWorkflowEventPayload & { error: unknown }];
-    'hook:step:cancelled': [StepWorkflowEventPayload & { error: unknown }];
-    'hook:step:suspended': [
-      StepWorkflowEventPayload & { reason?: string; data?: unknown },
-    ];
-    'hook:step:skipped': [{ runId?: string; step: StepInfo; reason?: string }];
   }
 
   interface IBaseHookEventMap
