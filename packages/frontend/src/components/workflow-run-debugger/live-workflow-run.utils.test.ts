@@ -5,13 +5,14 @@
  */
 
 import { EWorkflowRunStatus, StepType } from "@hexabot-ai/agentic";
-import type { StepExecutionRecord } from "@hexabot-ai/agentic";
+import type { StepExecutionRecord, WaitInfo } from "@hexabot-ai/agentic";
 import type { WorkflowRun } from "@hexabot-ai/types";
 import { describe, expect, it } from "vitest";
 
 import type { SubscribeWorkflowProps } from "@/websocket/types/workflow.types";
 
 import {
+  getResumeRejectionMessage,
   isWorkflowRunLiveEventForDebugger,
   mergeWorkflowRunLiveEvent,
   shouldWorkflowRunLiveEventTouchQuery,
@@ -35,14 +36,7 @@ const buildRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun =>
     context: {},
     snapshot: null,
     stepLog: null,
-    suspendedStep: null,
-    suspensionReason: null,
-    suspensionData: null,
-    suspensionStepExecId: null,
-    suspensionIndex: null,
-    suspensionKey: null,
-    suspensionAwaitResults: null,
-    lastResumeData: null,
+    checkpoint: null,
     error: null,
     suspendedAt: null,
     finishedAt: null,
@@ -51,6 +45,11 @@ const buildRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun =>
     metadata: null,
     ...overrides,
   }) as WorkflowRun;
+// The API never broadcasts the checkpoint.
+const toBroadcastRun = ({
+  checkpoint: _checkpoint,
+  ...run
+}: WorkflowRun): Omit<WorkflowRun, "checkpoint"> => run;
 const buildEvent = (
   overrides: Partial<SubscribeWorkflowProps>,
 ): SubscribeWorkflowProps =>
@@ -58,11 +57,20 @@ const buildEvent = (
     runId,
     workflowId,
     initiatorId,
-    workflowRun: buildRun(),
+    workflowRun: toBroadcastRun(buildRun()),
     workflowEvent: "workflow:start",
     t: 2000,
     ...overrides,
   }) as SubscribeWorkflowProps;
+const awaitStep = { id: "0:await", name: "await", type: StepType.Task };
+const buildWait = (overrides: Partial<WaitInfo> = {}): WaitInfo => ({
+  waitId: "wait-1",
+  step: awaitStep,
+  suspendKey: "index:1",
+  reason: "approval",
+  data: { amount: 42 },
+  ...overrides,
+});
 const buildStepExecution = (
   overrides: Partial<StepExecutionRecord> = {},
 ): StepExecutionRecord => ({
@@ -132,7 +140,7 @@ describe("live workflow run utils", () => {
       scheduledRun,
       buildEvent({
         workflowId: scheduledWorkflowId,
-        workflowRun: scheduledRun,
+        workflowRun: toBroadcastRun(scheduledRun),
         workflowEvent: "step:suspended",
         t: 3000,
         step: { id: "0:await", name: "await", type: StepType.Task },
@@ -170,7 +178,7 @@ describe("live workflow run utils", () => {
     const updated = mergeWorkflowRunLiveEvent(
       runningRun,
       buildEvent({
-        workflowRun: runningRun,
+        workflowRun: toBroadcastRun(runningRun),
         workflowEvent: "step:cancelled",
         t: 3200,
         step: { id: "0:slow_branch", name: "slow_branch", type: StepType.Task },
@@ -191,6 +199,152 @@ describe("live workflow run utils", () => {
         error: { message: "Parallel wait_any branch lost the race." },
       }),
     );
+  });
+
+  it("marks a resumed step as running again", () => {
+    const suspendedRun = buildRun({
+      status: EWorkflowRunStatus.SUSPENDED,
+      suspendedAt: new Date(3000),
+      stepLog: {
+        "0:await": buildStepExecution({
+          id: "0:await",
+          name: "await",
+          status: "suspended",
+          endedAt: 3000,
+          reason: "approval",
+        }),
+      },
+    });
+    const resumed = mergeWorkflowRunLiveEvent(
+      suspendedRun,
+      buildEvent({
+        workflowRun: toBroadcastRun(suspendedRun),
+        workflowEvent: "step:resumed",
+        t: 4000,
+        step: awaitStep,
+        wait: buildWait(),
+        resumeData: { approved: true },
+        stepExecution: buildStepExecution({
+          id: "0:await",
+          name: "await",
+          status: "running",
+          startedAt: 4000,
+        }),
+      }),
+    );
+
+    expect(resumed?.status).toBe(EWorkflowRunStatus.RUNNING);
+    expect(resumed?.stepLog?.["0:await"]).toEqual(
+      expect.objectContaining({ status: "running", startedAt: 4000 }),
+    );
+  });
+
+  it("keeps the run suspended when a resume payload is refused", () => {
+    const suspendedRun = buildRun({
+      status: EWorkflowRunStatus.SUSPENDED,
+      suspendedAt: new Date(3000),
+      checkpoint: { waits: [buildWait()] },
+    });
+    const stepRejected = mergeWorkflowRunLiveEvent(
+      { ...suspendedRun, status: EWorkflowRunStatus.RUNNING },
+      buildEvent({
+        workflowRun: toBroadcastRun(suspendedRun),
+        workflowEvent: "step:resume_rejected",
+        t: 4100,
+        step: awaitStep,
+        wait: buildWait(),
+        stepExecution: buildStepExecution({
+          id: "0:await",
+          name: "await",
+          status: "suspended",
+          endedAt: 4100,
+          reason: "approval",
+        }),
+      }),
+    );
+    const workflowRejected = mergeWorkflowRunLiveEvent(
+      stepRejected,
+      buildEvent({
+        workflowRun: toBroadcastRun(suspendedRun),
+        workflowEvent: "workflow:resume_rejected",
+        t: 4200,
+        wait: buildWait(),
+        resumeData: { approved: "yes" },
+      }),
+    );
+
+    expect(stepRejected?.status).toBe(EWorkflowRunStatus.SUSPENDED);
+    expect(workflowRejected?.status).toBe(EWorkflowRunStatus.SUSPENDED);
+    expect(workflowRejected?.suspendedAt).toEqual(new Date(3000));
+    expect(workflowRejected?.checkpoint).toEqual({ waits: [buildWait()] });
+  });
+
+  it("refreshes the cached checkpoint waits from suspension events", () => {
+    const resumedRun = buildRun({
+      status: EWorkflowRunStatus.RUNNING,
+      checkpoint: { version: 1, frames: [], waits: [buildWait()] },
+    });
+    const nextWait = buildWait({ waitId: "wait-2", reason: "second_review" });
+    const suspended = mergeWorkflowRunLiveEvent(
+      resumedRun,
+      buildEvent({
+        workflowRun: toBroadcastRun(resumedRun),
+        workflowEvent: "workflow:suspended",
+        t: 5000,
+        waits: [nextWait],
+      }),
+    );
+
+    expect(suspended?.status).toBe(EWorkflowRunStatus.SUSPENDED);
+    expect(suspended?.checkpoint).toEqual({
+      version: 1,
+      frames: [],
+      waits: [nextWait],
+    });
+  });
+
+  it.each(["workflow:finish", "workflow:failure"] as const)(
+    "clears the cached checkpoint on %s",
+    (workflowEvent) => {
+      const run = buildRun({
+        status: EWorkflowRunStatus.RUNNING,
+        checkpoint: { waits: [buildWait()] },
+      });
+      const ended = mergeWorkflowRunLiveEvent(
+        run,
+        buildEvent({
+          workflowRun: toBroadcastRun(run),
+          workflowEvent,
+          t: 6000,
+        }),
+      );
+
+      expect(ended?.checkpoint).toBeNull();
+    },
+  );
+
+  it("reads the refusal message of resume_rejected events only", () => {
+    expect(
+      getResumeRejectionMessage(
+        buildEvent({
+          workflowEvent: "workflow:resume_rejected",
+          wait: buildWait(),
+          resumeData: {},
+          error: {
+            name: "WorkflowResumeRejectedError",
+            message: "approved: Required",
+          } as never,
+        }),
+      ),
+    ).toBe("approved: Required");
+    expect(
+      getResumeRejectionMessage(
+        buildEvent({ workflowEvent: "workflow:resume_rejected" }),
+      ),
+    ).toBe("");
+    expect(
+      getResumeRejectionMessage(buildEvent({ workflowEvent: "step:start" })),
+    ).toBeUndefined();
   });
 
   it("filters and touches only matching debugger workflow run collections", () => {

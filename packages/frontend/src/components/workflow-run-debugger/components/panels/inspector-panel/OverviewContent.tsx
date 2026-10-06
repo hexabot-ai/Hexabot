@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { StepExecutionRecord } from "@hexabot-ai/agentic";
+import type { StepExecutionRecord, WaitInfo } from "@hexabot-ai/agentic";
 import type { WorkflowRun } from "@hexabot-ai/types";
 
 import { NoDataMessage } from "./NoDataMessage";
@@ -15,6 +15,7 @@ import { StepOverview } from "./StepOverview";
 type OverviewContentProps = {
   run: WorkflowRun | null;
   step: StepExecutionRecord | null;
+  waits: WaitInfo[];
   labels: OverviewLabels;
   triggeredAtLabel: string;
   triggeredByLabel: string;
@@ -31,6 +32,7 @@ type OverviewContentProps = {
 export const OverviewContent = ({
   run,
   step,
+  waits,
   labels,
   triggeredAtLabel,
   triggeredByLabel,
@@ -51,6 +53,7 @@ export const OverviewContent = ({
     return (
       <StepOverview
         step={step}
+        waits={waits}
         labels={labels}
         stepStatusLabel={stepStatusLabel}
         stepDurationLabel={stepDurationLabel}
@@ -70,6 +73,7 @@ export const OverviewContent = ({
   return (
     <RunOverview
       run={run}
+      waits={waits}
       labels={labels}
       triggeredAtLabel={triggeredAtLabel}
       triggeredByLabel={triggeredByLabel}

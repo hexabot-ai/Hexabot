@@ -4,6 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
+import type { WaitInfo } from "@hexabot-ai/agentic";
 import type { WorkflowRun } from "@hexabot-ai/types";
 import { Divider, Stack } from "@mui/material";
 
@@ -14,9 +15,11 @@ import { ErrorSummary } from "./ErrorSummary";
 import type { OverviewLabels } from "./overview.types";
 import { SummaryGrid } from "./SummaryGrid";
 import { SummaryItem } from "./SummaryItem";
+import { WaitsSummary } from "./WaitsSummary";
 
 type RunOverviewProps = {
   run: WorkflowRun;
+  waits: WaitInfo[];
   labels: OverviewLabels;
   triggeredAtLabel: string;
   triggeredByLabel: string;
@@ -30,6 +33,7 @@ type RunOverviewProps = {
 
 export const RunOverview = ({
   run,
+  waits,
   labels,
   triggeredAtLabel,
   triggeredByLabel,
@@ -55,6 +59,12 @@ export const RunOverview = ({
       <SummaryItem label={labels.triggeredBy} value={triggeredByLabel} />
       <SummaryItem label={labels.duration} value={durationLabel} />
     </SummaryGrid>
+    {waits.length > 0 ? (
+      <>
+        <Divider />
+        <WaitsSummary labels={labels} waits={waits} />
+      </>
+    ) : null}
     <Divider />
     <DataSummaryGrid
       inputLabel={labels.input}
