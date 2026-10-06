@@ -7,7 +7,6 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
 const inputSchema = z.object({
@@ -20,7 +19,7 @@ const outputSchema = z.object({
   ticket_id: z.string(),
   status: z.string(),
 });
-const settingsSchema = SettingsSchema;
+const settingsSchema = z.strictObject({});
 
 type CreateTicketInput = z.infer<typeof inputSchema>;
 type CreateTicketOutput = z.infer<typeof outputSchema>;

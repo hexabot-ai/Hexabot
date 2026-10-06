@@ -7,7 +7,6 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
 const stakeholderSchema = z.object({
@@ -29,7 +28,7 @@ const outputSchema = z.object({
   }),
   recent_cases: z.array(z.object({ id: z.string(), subject: z.string() })),
 });
-const settingsSchema = SettingsSchema;
+const settingsSchema = z.strictObject({});
 
 type GetUserProfileInput = z.infer<typeof inputSchema>;
 type GetUserProfileOutput = z.infer<typeof outputSchema>;

@@ -4,17 +4,16 @@
  * Full terms: see LICENSE.md.
  */
 
+import type { LoopFrame } from '../checkpoint';
 import type {
   EvaluationScope,
   ExecutionState,
   ForEachLoopStep,
   LoopStep,
-  Suspension,
   WhileLoopStep,
 } from '../workflow-types';
 import { evaluateValue } from '../workflow-values';
 
-import { wrapSuspensionContinuation } from './suspension-continuation';
 import type { StepExecutorEnv } from './types';
 
 type LoopScope = EvaluationScope;
@@ -26,21 +25,22 @@ type LoopScope = EvaluationScope;
  * @param step The loop step configuration.
  * @param state Mutable workflow execution state.
  * @param path Path tokens locating this loop within the workflow.
- * @param startIndex Index to resume iteration from when continuing.
- * @returns A suspension if a child step pauses execution, otherwise void.
+ * @param frame Frame returned when an iteration previously suspended; the
+ * loop resumes that iteration with the items and accumulator it recorded.
+ * @returns A frame if an iteration suspends, otherwise void.
  */
 export async function executeLoop(
   env: StepExecutorEnv,
   step: LoopStep,
   state: ExecutionState,
   path: Array<number | string>,
-  startIndex = 0,
-): Promise<Suspension | void> {
+  frame?: LoopFrame,
+): Promise<LoopFrame | void> {
   if (step.loopType === 'for_each') {
-    return executeForEachLoop(env, step, state, path, startIndex);
+    return executeForEachLoop(env, step, state, path, frame);
   }
 
-  return executeWhileLoop(env, step, state, path, startIndex);
+  return executeWhileLoop(env, step, state, path, frame);
 }
 
 async function executeForEachLoop(
@@ -48,64 +48,41 @@ async function executeForEachLoop(
   step: ForEachLoopStep,
   state: ExecutionState,
   path: Array<number | string>,
-  startIndex: number,
-): Promise<Suspension | void> {
-  const scope = {
-    input: state.input,
-    context: env.context.state,
-    output: state.output,
-    iteration: state.iteration,
-    accumulator: state.accumulator,
-  };
-  const items = await evaluateValue(step.forEach.in, scope);
-  const iterable = Array.isArray(items) ? items : [];
-  let accumulator = step.accumulate?.initial ?? state.accumulator;
+  frame?: LoopFrame,
+): Promise<LoopFrame | void> {
+  // The item list is resolved once, when the loop starts; a resumed loop
+  // keeps iterating over the same items even if `in` would now differ.
+  const items = frame
+    ? (frame.items ?? [])
+    : await resolveItems(env, step, state);
+  let accumulator = frame
+    ? frame.accumulator
+    : (step.accumulate?.initial ?? state.accumulator);
 
-  for (let index = startIndex; index < iterable.length; index += 1) {
-    const item = iterable[index];
+  for (let index = frame?.index ?? 0; index < items.length; index += 1) {
+    const item = items[index];
     const iterationState: ExecutionState = {
       ...state,
       iteration: { item, index },
       accumulator,
       iterationStack: [...state.iterationStack, index],
     };
-    const suspension = await env.executeFlow(step.steps, iterationState, [
-      ...path,
-      index,
-    ]);
+    const child = await env.executeFlow(
+      step.steps,
+      iterationState,
+      [...path, index],
+      frame && index === frame.index ? frame.child : undefined,
+    );
 
-    if (suspension) {
-      return wrapSuspensionContinuation(suspension, async () => {
-        const postScope = buildScope(
-          env,
-          iterationState,
-          { item, index },
-          accumulator,
-        );
-        accumulator = await updateAccumulator(step, postScope, accumulator);
-
-        const shouldStop = await shouldStopLoop(step, postScope);
-        if (shouldStop) {
-          state.accumulator = accumulator;
-          if (step.accumulate && step.name) {
-            state.output[step.name] = { [step.accumulate.as]: accumulator };
-          }
-
-          return undefined;
-        }
-
-        return executeForEachLoop(
-          env,
-          step,
-          {
-            ...iterationState,
-            accumulator,
-            iterationStack: state.iterationStack,
-          },
-          path,
-          index + 1,
-        );
-      });
+    if (child) {
+      return {
+        kind: 'loop',
+        stepId: step.id,
+        index,
+        items,
+        accumulator,
+        child,
+      };
     }
 
     const postScope = buildScope(
@@ -135,20 +112,28 @@ async function executeWhileLoop(
   step: WhileLoopStep,
   state: ExecutionState,
   path: Array<number | string>,
-  startIndex: number,
-): Promise<Suspension | void> {
-  let accumulator = step.accumulate?.initial ?? state.accumulator;
+  frame?: LoopFrame,
+): Promise<LoopFrame | void> {
+  let accumulator = frame
+    ? frame.accumulator
+    : (step.accumulate?.initial ?? state.accumulator);
 
-  for (let index = startIndex; ; index += 1) {
-    const conditionScope = buildScope(
-      env,
-      state,
-      { item: undefined, index },
-      accumulator,
-    );
-    const shouldContinue = await evaluateValue(step.while, conditionScope);
-    if (!Boolean(shouldContinue)) {
-      break;
+  for (let index = frame?.index ?? 0; ; index += 1) {
+    const resumedChild =
+      frame && index === frame.index ? frame.child : undefined;
+
+    // The guard of a resumed iteration already passed before it suspended.
+    if (!resumedChild) {
+      const conditionScope = buildScope(
+        env,
+        state,
+        { item: undefined, index },
+        accumulator,
+      );
+      const shouldContinue = await evaluateValue(step.while, conditionScope);
+      if (!Boolean(shouldContinue)) {
+        break;
+      }
     }
 
     const iterationState: ExecutionState = {
@@ -157,33 +142,15 @@ async function executeWhileLoop(
       accumulator,
       iterationStack: [...state.iterationStack, index],
     };
-    const suspension = await env.executeFlow(step.steps, iterationState, [
-      ...path,
-      index,
-    ]);
+    const child = await env.executeFlow(
+      step.steps,
+      iterationState,
+      [...path, index],
+      resumedChild,
+    );
 
-    if (suspension) {
-      return wrapSuspensionContinuation(suspension, async () => {
-        const postScope = buildScope(
-          env,
-          iterationState,
-          { item: undefined, index },
-          accumulator,
-        );
-        accumulator = await updateAccumulator(step, postScope, accumulator);
-
-        return executeWhileLoop(
-          env,
-          step,
-          {
-            ...iterationState,
-            accumulator,
-            iterationStack: state.iterationStack,
-          },
-          path,
-          index + 1,
-        );
-      });
+    if (child) {
+      return { kind: 'loop', stepId: step.id, index, accumulator, child };
     }
 
     const postScope = buildScope(
@@ -200,6 +167,22 @@ async function executeWhileLoop(
   finalizeAccumulatorState(step, state, accumulator);
 
   return undefined;
+}
+
+async function resolveItems(
+  env: StepExecutorEnv,
+  step: ForEachLoopStep,
+  state: ExecutionState,
+): Promise<unknown[]> {
+  const items = await evaluateValue(step.forEach.in, {
+    input: state.input,
+    context: env.context.state,
+    output: state.output,
+    iteration: state.iteration,
+    accumulator: state.accumulator,
+  });
+
+  return Array.isArray(items) ? items : [];
 }
 
 function finalizeAccumulatorState(

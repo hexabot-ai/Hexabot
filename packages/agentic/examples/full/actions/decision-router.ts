@@ -7,7 +7,6 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
 const inputSchema = z.object({
@@ -25,7 +24,12 @@ const outputSchema = z.object({
   ]),
   explanation: z.string(),
 });
-const settingsSchema = SettingsSchema;
+const settingsSchema = z.strictObject({
+  branches: z
+    .array(z.object({ when: z.string(), next: z.string() }))
+    .optional(),
+  default_next: z.string().optional(),
+});
 
 type DecisionRouterInput = z.infer<typeof inputSchema>;
 type DecisionRouterOutput = z.infer<typeof outputSchema>;

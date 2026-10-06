@@ -4,18 +4,25 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { BaseWorkflowContext, WorkflowRuntimeControl } from '../context';
 import {
+  collectWaits,
+  type ParallelBranchFrame,
+  type ParallelFrame,
+  type StepFrame,
+} from '../checkpoint';
+import type { BaseWorkflowContext } from '../context';
+import {
+  createLinkedAbortController,
   getAbortReason,
-  ParallelSuspensionError,
   throwIfAborted,
   WorkflowCancellationError,
 } from '../errors';
+import type { RunnerRuntimeControl } from '../runner-runtime-control';
+import { cloneRecord, cloneValue, isRecord } from '../utils/clone';
 import type {
   CompiledStep,
   ExecutionState,
   ParallelStep,
-  Suspension,
 } from '../workflow-types';
 
 import { markStepsCancelled } from './skip-helpers';
@@ -23,6 +30,12 @@ import type { StepExecutorEnv } from './types';
 
 type BranchResult =
   | { status: 'fulfilled'; index: number; outputDelta: Record<string, unknown> }
+  | {
+      status: 'suspended';
+      index: number;
+      outputDelta: Record<string, unknown>;
+      frame: StepFrame;
+    }
   | { status: 'failed'; index: number; error: unknown }
   | { status: 'cancelled'; index: number; error: Error };
 
@@ -42,27 +55,51 @@ type TrackedOutput = {
 /**
  * Execute a set of child steps concurrently and resolve according to the configured strategy.
  *
+ * A branch may suspend. The block then waits until every branch has settled
+ * (fulfilled, suspended, or failed) before suspending itself, so a sibling that
+ * was still running finishes exactly once instead of being re-run on resume.
+ *
  * @param env Executor environment providing helpers and workflow context.
  * @param step The parallel step definition including strategy and children.
  * @param state Mutable workflow execution state.
  * @param path Path tokens locating this parallel block in the workflow.
- * @returns Always undefined; suspensions are rejected inside parallel blocks.
+ * @param frame Frame returned when the block previously suspended: fulfilled
+ * branches are not launched again, parked ones stay parked unless this pass
+ * resolves one of their waits, and those resume from their frame.
+ * @returns A frame if any branch is left suspended, otherwise void.
  */
 export async function executeParallel(
   env: StepExecutorEnv,
   step: ParallelStep,
   state: ExecutionState,
   path: Array<number | string>,
-): Promise<Suspension | void> {
+  frame?: ParallelFrame,
+): Promise<ParallelFrame | void> {
   if (step.steps.length === 0) {
     return undefined;
   }
 
   throwIfAborted(env.signal);
 
+  const outcomes = new Map<number, BranchResult>();
+  const launches: Array<{
+    child: CompiledStep;
+    index: number;
+    recorded?: ParallelBranchFrame;
+  }> = [];
+  step.steps.forEach((child, index) => {
+    const recorded = frame?.branches[index];
+    const kept = recorded ? keepRecordedBranch(env, index, recorded) : null;
+    if (kept) {
+      outcomes.set(index, kept);
+    } else {
+      launches.push({ child, index, recorded });
+    }
+  });
+
   const baseOutput = cloneRecord(state.output);
   const baseContextState = cloneRecord(env.context.state);
-  const branches = step.steps.map((child, index) =>
+  const branches = launches.map(({ child, index, recorded }) =>
     launchBranch({
       env,
       child,
@@ -71,23 +108,55 @@ export async function executeParallel(
       parentState: state,
       baseOutput,
       baseContextState,
+      recorded,
     }),
   );
 
   if (step.strategy === 'wait_any') {
-    return executeWaitAny(env, branches, state);
+    return executeWaitAny(env, step, branches, outcomes, state);
   }
 
-  return executeWaitAll(env, branches, state);
+  return executeWaitAll(env, step, branches, outcomes, state);
+}
+
+/**
+ * Settle a recorded branch that has nothing to run in this pass: a fulfilled
+ * branch never runs again, and a parked branch stays exactly as it was
+ * unless this pass resolves one of its waits.
+ *
+ * @returns Its outcome, or null when the branch has to be launched.
+ */
+function keepRecordedBranch(
+  env: StepExecutorEnv,
+  index: number,
+  recorded: ParallelBranchFrame,
+): BranchResult | null {
+  if (recorded.status === 'fulfilled') {
+    return { status: 'fulfilled', index, outputDelta: recorded.outputDelta };
+  }
+
+  const resolved = collectWaits(recorded.child).some((wait) =>
+    env.resolutions.has(wait.waitId),
+  );
+
+  return resolved
+    ? null
+    : {
+        status: 'suspended',
+        index,
+        outputDelta: recorded.outputDelta,
+        frame: recorded.child,
+      };
 }
 
 async function executeWaitAll(
   env: StepExecutorEnv,
+  step: ParallelStep,
   branches: BranchHandle[],
+  outcomes: Map<number, BranchResult>,
   state: ExecutionState,
-): Promise<void> {
+): Promise<ParallelFrame | void> {
   const pending = new Set(branches);
-  const outcomes = new Map<number, BranchResult>();
 
   while (pending.size > 0) {
     const { branch, result } = await raceNext(pending);
@@ -95,15 +164,13 @@ async function executeWaitAll(
     outcomes.set(result.index, result);
 
     if (result.status === 'failed' || result.status === 'cancelled') {
-      cancelBranches(
-        env,
-        pending,
-        result.error,
-        'Parallel branch execution was cancelled.',
-      );
-      await settleBranches(branches);
+      await abandonBranches(env, branches, pending, outcomes, result.error);
       throw result.error;
     }
+  }
+
+  if (hasSuspendedBranch(outcomes)) {
+    return buildParallelFrame(step, outcomes);
   }
 
   mergeBranchOutputs(state, outcomes);
@@ -111,39 +178,64 @@ async function executeWaitAll(
 
 async function executeWaitAny(
   env: StepExecutorEnv,
+  step: ParallelStep,
   branches: BranchHandle[],
+  outcomes: Map<number, BranchResult>,
   state: ExecutionState,
-): Promise<void> {
+): Promise<ParallelFrame | void> {
   const pending = new Set(branches);
-  const outcomes = new Map<number, BranchResult>();
 
   while (pending.size > 0) {
     const { branch, result } = await raceNext(pending);
     pending.delete(branch);
     outcomes.set(result.index, result);
 
+    if (result.status === 'suspended') {
+      continue;
+    }
+
     if (result.status === 'fulfilled') {
-      cancelBranches(
+      // Parked losers will never be resumed; drop their waits with the race.
+      await abandonBranches(
         env,
+        branches,
         pending,
+        outcomes,
         new WorkflowCancellationError('Parallel wait_any winner selected.'),
         'Parallel wait_any branch lost the race.',
       );
-      await settleBranches(branches);
       mergeBranchOutputs(state, new Map([[result.index, result]]));
 
-      return;
+      return undefined;
     }
 
-    cancelBranches(
-      env,
-      pending,
-      result.error,
-      'Parallel branch execution was cancelled.',
-    );
-    await settleBranches(branches);
+    await abandonBranches(env, branches, pending, outcomes, result.error);
     throw result.error;
   }
+
+  // Every branch settled without a winner, so all of them are suspended.
+  return buildParallelFrame(step, outcomes);
+}
+
+/**
+ * Give up on the block: cancel the branches still running, let every branch
+ * settle, then drop the waits of every branch left suspended, including one
+ * that suspended while it was being cancelled.
+ */
+async function abandonBranches(
+  env: StepExecutorEnv,
+  branches: BranchHandle[],
+  pending: Set<BranchHandle>,
+  outcomes: Map<number, BranchResult>,
+  reason: unknown,
+  snapshotReason = 'Parallel branch execution was cancelled.',
+): Promise<void> {
+  cancelBranches(env, pending, reason, snapshotReason);
+  for (const result of await settleBranches(branches)) {
+    outcomes.set(result.index, result);
+  }
+
+  cancelSuspendedBranches(env, outcomes, reason);
 }
 
 function launchBranch({
@@ -154,6 +246,7 @@ function launchBranch({
   parentState,
   baseOutput,
   baseContextState,
+  recorded,
 }: {
   env: StepExecutorEnv;
   child: CompiledStep;
@@ -162,9 +255,10 @@ function launchBranch({
   parentState: ExecutionState;
   baseOutput: Record<string, unknown>;
   baseContextState: Record<string, unknown>;
+  recorded?: ParallelBranchFrame;
 }): BranchHandle {
-  const controller = createBranchController(env.signal);
-  const trackedOutput = createTrackedOutput(baseOutput);
+  const { controller, unlink } = createLinkedAbortController(env.signal);
+  const trackedOutput = createTrackedOutput(baseOutput, recorded?.outputDelta);
   const branchState: ExecutionState = {
     input: parentState.input,
     output: trackedOutput.output,
@@ -172,14 +266,16 @@ function launchBranch({
     accumulator: cloneValue(parentState.accumulator),
     iterationStack: [...parentState.iterationStack],
   };
+  const branchRuntime = env.runtime.fork();
   const branchContext = createParallelBranchContext(
     env.context,
     cloneRecord(baseContextState),
+    branchRuntime,
   );
   const branchEnv = env.fork({
     context: branchContext,
     signal: controller.signal,
-    setCurrentStep: () => undefined,
+    runtime: branchRuntime,
   });
   const childPath = [...path, 'parallel', index];
   const promise = runBranch(
@@ -189,7 +285,8 @@ function launchBranch({
     childPath,
     trackedOutput,
     index,
-  );
+    recorded?.status === 'suspended' ? recorded.child : undefined,
+  ).finally(unlink);
 
   return {
     index,
@@ -207,13 +304,27 @@ async function runBranch(
   childPath: Array<number | string>,
   trackedOutput: TrackedOutput,
   index: number,
+  frame?: StepFrame,
 ): Promise<BranchResult> {
   try {
     throwIfAborted(env.signal);
 
-    const suspension = await env.executeStep(child, branchState, childPath);
-    if (suspension) {
-      throw new ParallelSuspensionError();
+    const suspended = await env.executeStep(
+      child,
+      branchState,
+      childPath,
+      frame,
+    );
+
+    // A branch can suspend while it is being cancelled: its wait was opened
+    // all the same, so the block needs its frame to drop it.
+    if (suspended) {
+      return {
+        status: 'suspended',
+        index,
+        outputDelta: trackedOutput.getDelta(),
+        frame: suspended,
+      };
     }
 
     throwIfAborted(env.signal);
@@ -242,8 +353,11 @@ async function raceNext(
   );
 }
 
-async function settleBranches(branches: BranchHandle[]): Promise<void> {
-  await Promise.all(branches.map((branch) => branch.promise.catch(() => null)));
+/** Wait for every branch to settle; `runBranch` never rejects. */
+async function settleBranches(
+  branches: BranchHandle[],
+): Promise<BranchResult[]> {
+  return Promise.all(branches.map((branch) => branch.promise));
 }
 
 function cancelBranches(
@@ -270,6 +384,77 @@ function cancelBranches(
   }
 }
 
+/**
+ * Mark the parked waits of suspended branches cancelled once the block can
+ * no longer resume them.
+ */
+function cancelSuspendedBranches(
+  env: StepExecutorEnv,
+  outcomes: Map<number, BranchResult>,
+  reason: unknown,
+): void {
+  const message =
+    reason instanceof Error ? reason.message : 'Parallel branch was cancelled.';
+
+  for (const outcome of outcomes.values()) {
+    if (outcome.status !== 'suspended') {
+      continue;
+    }
+
+    for (const wait of collectWaits(outcome.frame)) {
+      const stepExecution = env.recordStepExecution(wait.step, {
+        status: 'cancelled',
+        endedAt: Date.now(),
+        reason: message,
+        error: { message },
+      });
+      env.markSnapshot(wait.step, 'cancelled', message);
+      env.emit('hook:step:cancelled', {
+        runId: env.runId,
+        step: wait.step,
+        stepExecution,
+        error: reason instanceof Error ? reason : new Error(message),
+        wait,
+      });
+    }
+  }
+}
+
+function hasSuspendedBranch(outcomes: Map<number, BranchResult>): boolean {
+  return [...outcomes.values()].some(
+    (outcome) => outcome.status === 'suspended',
+  );
+}
+
+function buildParallelFrame(
+  step: ParallelStep,
+  outcomes: Map<number, BranchResult>,
+): ParallelFrame {
+  return {
+    kind: 'parallel',
+    stepId: step.id,
+    branches: step.steps.map((_, index): ParallelBranchFrame => {
+      const outcome = outcomes.get(index);
+
+      if (outcome?.status === 'fulfilled') {
+        return { status: 'fulfilled', outputDelta: outcome.outputDelta };
+      }
+
+      if (outcome?.status === 'suspended') {
+        return {
+          status: 'suspended',
+          outputDelta: outcome.outputDelta,
+          child: outcome.frame,
+        };
+      }
+
+      throw new Error(
+        `Parallel branch ${index} of "${step.id}" did not settle before suspending.`,
+      );
+    }),
+  };
+}
+
 function mergeBranchOutputs(
   state: ExecutionState,
   outcomes: Map<number, BranchResult>,
@@ -287,29 +472,20 @@ function mergeBranchOutputs(
   }
 }
 
-function createBranchController(parentSignal: AbortSignal): AbortController {
-  const controller = new AbortController();
-
-  if (parentSignal.aborted) {
-    controller.abort(getAbortReason(parentSignal));
-
-    return controller;
-  }
-
-  parentSignal.addEventListener(
-    'abort',
-    () => controller.abort(getAbortReason(parentSignal)),
-    { once: true },
-  );
-
-  return controller;
-}
-
+/**
+ * Give a branch its own copy of the parent output that remembers which keys
+ * the branch wrote. A resumed branch starts from the delta it had recorded.
+ */
 function createTrackedOutput(
   baseOutput: Record<string, unknown>,
+  recordedDelta?: Record<string, unknown>,
 ): TrackedOutput {
-  const writtenKeys = new Set<string>();
+  const writtenKeys = new Set<string>(Object.keys(recordedDelta ?? {}));
   const target = cloneRecord(baseOutput);
+  if (recordedDelta) {
+    Object.assign(target, cloneRecord(recordedDelta));
+  }
+
   const output = new Proxy(target, {
     set(record, property, value) {
       if (typeof property === 'string') {
@@ -338,42 +514,16 @@ function createTrackedOutput(
   };
 }
 
-class ParallelWorkflowRuntimeControl implements WorkflowRuntimeControl {
-  constructor(private readonly getParent: () => WorkflowRuntimeControl) {}
-
-  get status() {
-    return this.getParent().status;
-  }
-
-  get resumeData() {
-    return this.getParent().resumeData;
-  }
-
-  suspend<T = unknown>(): Promise<T> {
-    return Promise.reject(new ParallelSuspensionError());
-  }
-
-  hasRecordedResult(): boolean {
-    // Suspension is not supported inside parallel blocks, so no resume
-    // result can ever be recorded for them.
-    return false;
-  }
-
-  resume(data?: unknown): void {
-    this.getParent().resume(data);
-  }
-
-  getSnapshot() {
-    return this.getParent().getSnapshot();
-  }
-}
-
+/**
+ * Isolate a branch's context state and route `context.workflow` to the
+ * branch's own runtime scope, so its steps can suspend independently.
+ */
 function createParallelBranchContext(
   context: BaseWorkflowContext,
   branchState: Record<string, unknown>,
+  runtime: RunnerRuntimeControl,
 ): BaseWorkflowContext {
   let state = branchState;
-  const workflow = new ParallelWorkflowRuntimeControl(() => context.workflow);
 
   return new Proxy(context, {
     get(target, property, receiver) {
@@ -382,7 +532,11 @@ function createParallelBranchContext(
       }
 
       if (property === 'workflow') {
-        return workflow;
+        return runtime;
+      }
+
+      if (property === 'getWorkflowRuntime') {
+        return () => runtime;
       }
 
       if (property === 'snapshot') {
@@ -405,40 +559,4 @@ function createParallelBranchContext(
       return Reflect.set(target, property, value, receiver);
     },
   });
-}
-
-function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
-  return cloneValue(value) as Record<string, unknown>;
-}
-
-function cloneValue<T>(value: T): T {
-  if (value === undefined || value === null) {
-    return value;
-  }
-
-  if (typeof structuredClone === 'function') {
-    try {
-      return structuredClone(value);
-    } catch {
-      // Fall through to JSON clone below.
-    }
-  }
-
-  try {
-    return JSON.parse(JSON.stringify(value)) as T;
-  } catch {
-    if (Array.isArray(value)) {
-      return [...value] as T;
-    }
-
-    if (isRecord(value)) {
-      return { ...value } as T;
-    }
-
-    return value;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

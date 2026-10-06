@@ -1,289 +1,373 @@
 # Suspension Runtime Design
 
-This document explains how suspension currently works in `@hexabot-ai/agentic` based on the staged runtime changes in `packages/agentic/src`.
-
-## 1. What changed
-
-Suspension is based async runtime-control model:
-
-- Action code now pauses by awaiting `context.workflow.suspend(...)`.
-- Runtime suspension metadata is now explicit and serializable:
-  - `stepExecId`
-  - `suspendIndex`
-  - `suspendKey`
-  - `awaitResults`
+How `@hexabot-ai/agentic` pauses a workflow run and resumes it later, in the same process or in a
+different one.
 
 Core files:
 
-- `src/runner-runtime-control.ts`
-- `src/step-executors/task-executor.ts`
-- `src/workflow-runner.ts`
-- `src/suspension-rebuilder.ts`
-- `src/workflow-types.ts`
+- `src/checkpoint.ts`: frame and checkpoint types, schema, validation
+- `src/runner-runtime-control.ts`: `context.workflow` (`suspend`, `hasRecordedResult`)
+- `src/step-executors/*.ts`: each executor produces and consumes its own frame
+- `src/workflow-runner.ts`: `start`, `resume`, `fromCheckpoint`
+- `src/workflow-fingerprint.ts`: definition fingerprint used to detect drift
+- `src/resume-payload.ts`: the `accepts` JSON Schema stored on a wait, and payload checks
 
-## 2. Public API behavior
+## 1. Model
 
-### 2.1 Action-side API
+A suspended run is described by a **checkpoint**, a plain JSON value. Nothing in memory is
+needed to resume it.
+
+Each control-flow executor owns its part of the checkpoint. When a child step suspends, the
+executor returns a **frame** holding only the local state it needs to continue. Resuming calls
+the **same executor** again with that frame, and the frame seeds those locals. There is no
+second code path that rebuilds control flow, and step ids are never parsed.
 
 ```ts
-const resumed = await context.workflow.suspend<{ reply: string }>({
-  key: 'await-reply',
-  reason: 'awaiting_user',
-  data: { channel: 'sms' },
+// Every executor has this shape. A returned frame means "suspended".
+(env, step, state, path, frame?: F) => Promise<F | void>
+```
+
+| Frame | Records | On resume |
+|---|---|---|
+| `sequence` | `index` of the suspended step, `$accumulator` of its scope | restores `$accumulator`, starts at `index`, passes `child` to that step |
+| `conditional` | `branchIndex` taken | re-enters that branch; conditions are **not** re-evaluated |
+| `loop` | `index`, `accumulator`, `items` (`for_each`) | continues iteration `index` with the recorded items and accumulator; a `while` guard is not re-checked for that iteration |
+| `parallel` | per branch: `fulfilled` + `outputDelta`, or `suspended` + `outputDelta` + `child` | fulfilled branches are not launched again; suspended ones re-enter their frame only when this pass resolves one of their waits, and otherwise stay parked as recorded |
+| `task` | `inputs`, `awaitResults`, `wait` | see §3 |
+
+A sequence records `$accumulator` because a loop that finished earlier in it replaces the value its
+scope started with: after `loop A` completes, `$accumulator` is A's result for the next steps, even
+inside an outer loop whose own accumulator the `loop` frame records.
+
+Frames name the **compiled** step id (`stepId`) so validation can line them up with the compiled
+flow. Instance ids such as `0.loop.0:ask[2]` are rebuilt by the loop executors as they
+re-enter, so snapshot and step-log keys are the same as in an uninterrupted run.
+
+```ts
+type WorkflowCheckpoint = {
+  version: 1;
+  fingerprint: string;              // fingerprintWorkflow(compiled) at suspension time
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;  // root $output
+  root: SequenceFrame;
+  waits: WaitInfo[];                // every open wait, in flow order
+};
+
+type WaitInfo = {
+  waitId: string;     // opaque handle; never parse it
+  step: StepInfo;     // instance step that suspended
+  suspendKey: string; // `index:<n>` or `key:<key>`
+  reason?: string;
+  data?: unknown;
+  accepts?: JsonSchema;      // relaxed JSON Schema of the payload, see §4
+  payloadOptional?: boolean; // `accepts` also takes a resume without payload
+};
+
+// In a task frame, each answered `suspend()` call, by suspend key. The value
+// is wrapped so that a resume without payload stays answered once JSON drops
+// its `undefined` value.
+type RecordedResult = { value?: unknown };
+```
+
+## 2. Public API
+
+```ts
+const result = await runner.start({ inputData, context });
+// finished | failed | { status: 'suspended', waits, checkpoint, snapshot }
+
+await runner.resume({ resumeData, waitId });   // waitId optional when one wait is open
+// same results as start(); a refused payload gives { status: 'suspended', ..., rejection }
+
+validateCheckpoint(compiled, checkpoint, { waitId?, resumeData? });
+// { ok: true, checkpoint } | { ok: false, error: WorkflowResumeError }
+
+const restored = WorkflowRunner.fromCheckpoint(compiled, {
+  checkpoint, context, snapshot?, runId?,
 });
 ```
 
-- `suspend()` returns a promise resolved by `runner.resume({ resumeData })`.
-- `SuspensionOptions` includes `key` in addition to `reason` and `data`.
+Inside an action, `context.workflow` only suspends (`suspend`, `hasRecordedResult`,
+`markSuspendCursor`); resuming is the host's job, through the runner.
 
-### 2.2 Runner results
+`Workflow` wraps these helpers as `validateCheckpoint(checkpoint, options)` and
+`buildRunnerFromCheckpoint(options)`. `workflowCheckpointSchema` is exported so hosts can type
+and validate the stored column.
 
-When `start()`/`resume()` suspend, returned status now includes:
+In-process and durable resumes share one code path. The checkpoint is built through a JSON round
+trip, and `runner.resume()` on a live runner starts from a JSON copy of it, exactly as
+`fromCheckpoint` does after a host stored it. Values in `$output` or in resume payloads that are
+not plain JSON are therefore seen as a host would store them: a `Date` becomes its ISO string,
+and `undefined` values inside them are dropped. This holds for payloads read from `suspend()`,
+from the resuming pass on. A resume without payload is the exception:
+it stays `undefined` (§3). A run whose state JSON cannot encode (a `BigInt`, a cycle) fails instead
+of suspending, and a resume payload JSON cannot encode is refused (§4).
 
-- `step`
-- `reason`
-- `data`
-- `stepExecId`
-- `suspendIndex`
-- `suspendKey`
-- `awaitResults`
-- `snapshot`
+## 3. Suspended tasks
 
-These are defined on `StartResult`/`ResumeResult` and `Suspension`.
+Only task frames run code on resume.
 
-### 2.3 Persisted suspension contract
+- **The wait is not resolved in this pass**: the frame is returned unchanged and nothing runs.
+  This is how a parallel sibling stays parked while another wait is resolved.
+- **The wait is resolved**: the resume payload is recorded under the frame's `suspendKey` as
+  `{ value }` (a resume without payload is recorded as `{}`, and resolves `undefined` on every
+  later pass), and the
+  action body **re-runs from the top** with the stored `inputs`, not with re-evaluated inputs.
+  Earlier `suspend()` calls resolve immediately from `awaitResults`. The body either completes or
+  suspends at a new key, and `hook:step:resumed` is emitted instead of `hook:step:start`.
 
-`PersistedSuspension` now supports:
+When a task suspends, its action's `signal` is aborted. The parked body therefore stops its
+timeout and retry loop, and suspended time does not count toward `timeout_ms`.
 
-- `stepId`
-- `reason`
-- `data`
-- `stepExecId`
-- `suspendIndex`
-- `suspendKey`
-- `awaitResults`
+### Action authoring contract
 
-This metadata is required for deterministic replay when a step has multiple `suspend()` calls.
+A suspended body runs once, then once more per resolved wait. Side effects performed before a
+`suspend()` must be guarded:
 
-### 2.4 Errors
+```ts
+if (!context.workflow.hasRecordedResult()) {
+  await spawnChildRun(); // runs once, not once per resume
+}
+const result = await context.workflow.suspend({ reason: 'awaiting_child' });
+```
 
-- `WorkflowSuspendedError` was removed.
-- `Workflow.run(...)` now throws an internal `WorkflowRunSuspendedError` carrying `stepId`, `reason`, and `data`.
-- `NonDeterministicWorkflowError` is exported and used to fail resume when replay metadata does not match runtime behavior.
-- `ParallelSuspensionError` is exported and used when `context.workflow.suspend()` is attempted inside a parallel branch.
+`hasRecordedResult(key?)` reports whether the next `suspend()` resolves immediately. Steps that
+completed never run again, and neither do parallel siblings.
 
-## 3. End-to-end control flow
+Other rules:
 
-### 3.1 Initial execution (`WorkflowRunner.start`)
+- Always `await` `suspend()`.
+- `suspend()` outside a running step throws.
+- Keys are positional (`index:<n>`) unless `options.key` is given (`key:<key>`).
+- A user `key` can be used once per action body; reusing it throws. Otherwise the second call
+  would resolve with the first call's answer on resume instead of suspending.
+- Every attempt of an action run rewinds the cursor to where that run started, so a retried body
+  reproduces its keys instead of suspending again. `AbstractAction` takes the mark with
+  `context.workflow.markSuspendCursor()` before its first attempt and rewinds before each one.
+  Because the mark is where the run started, a retried action run nested inside a body resolves
+  its own suspends again without rewinding the body's, and an action wrapped by another one
+  behaves as if it ran directly. An action with its own retry loop should do the same:
 
-1. Runner sets status to `running`, initializes state/context, and attaches runtime control.
-2. Task executor starts action execution and simultaneously waits for:
-   - action completion/failure/cancellation
-   - first suspension request from that step
-3. If suspension arrives first, executor returns a `Suspension` continuation to the runner.
-4. Runner sets status to `suspended`, stores continuation, emits `hook:workflow:suspended`, and returns suspended result.
-
-Inside a `parallel` branch, `context.workflow.suspend()` rejects with `ParallelSuspensionError`; the workflow fails instead of returning a suspended result.
-
-### 3.2 In-action suspension (`RunnerRuntimeControl.suspend`)
-
-Inside `suspend(options)`:
-
-1. Resolve current step id from runner.
-2. Get/create per-step execution state (`stepExecId`, cursor, await history).
-3. Increment `suspendCursor` -> `suspendIndex`.
-4. Build `suspendKey`:
-   - `index:<n>` when no custom key
-   - `key:<custom>` when `options.key` is provided
-5. Validate replay expectation (if resume was rebuilt from persisted metadata).
-6. Fast paths:
-   - if `awaitResults[suspendKey]` exists, return it immediately
-   - else if primed resume data exists, return it immediately
-7. Otherwise enqueue a `RuntimeSuspensionRequest` and return its deferred promise.
-
-Parallel branch contexts replace the normal runtime control with one that rejects `suspend()` immediately. This avoids ambiguous multi-branch checkpoints and durable replay anomalies.
-
-### 3.3 Resume (`Suspension.continue` + `WorkflowRunner.resume`)
-
-1. Host calls `runner.resume({ resumeData })`.
-2. Runner invokes stored continuation.
-3. Continuation:
-   - stores resume payload via `recordStepSuspendResult(...)` (by key/index when available)
-   - resolves the deferred suspension promise (unblocking action code at `await suspend(...)`)
-   - races again for:
-     - action completion
-     - next suspension (same action can suspend again)
-4. Outcomes:
-   - `completed` -> capture output, mark step completed, continue workflow
-   - `suspended` -> return a new `Suspension` for next await point
-   - `failed` -> mark step failed and return failed run result
-
-Continuation is one-shot; calling it twice throws.
-
-## 4. Internal runtime state model
-
-`RunnerRuntimeControl` tracks step-local suspension state in maps:
-
-- `pendingSuspensions: Map<stepId, RuntimeSuspensionRequest[]>`
-  - queued suspension notices waiting for executor consumption
-- `suspensionWaiters: Map<stepId, resolver[]>`
-  - executor waiters blocked on next suspension
-- `primedResumeData: Map<stepId, unknown[]>`
-  - fallback replay payloads for legacy/no-key metadata
-- `activeStepExecutions: Map<stepId, StepExecutionState>`
-  - active step runtime state: cursor, await history, replay expectation
-- `replaySeeds: Map<stepId, StoredReplaySeed>`
-  - replay bootstrap state injected before step re-execution
-- `stepAttempts: Map<stepId, number>`
-  - monotonically tracks `<stepId>#<attempt>`
-
-## 5. Key metadata semantics
-
-### 5.1 `stepExecId`
-
-- Format: `<stepId>#<attempt>`
-- New attempt id created each time a step execution starts (unless replay seed provides one).
-- Used to correlate persisted suspension metadata to the right execution attempt.
-
-### 5.2 `suspendIndex`
-
-- 1-based per step execution.
-- Increments each time that step calls `suspend()`.
-
-### 5.3 `suspendKey`
-
-- Normalized key for suspend point identity.
-- Generated from:
-  - `index:<suspendIndex>` by default
-  - `key:<user_key>` when user passes `key`
-- Normalization supports compatibility inputs:
-  - already-prefixed keys remain unchanged
-  - numeric raw keys normalize to `index:<n>`
-  - other raw strings normalize to `key:<raw>`
-
-### 5.4 `awaitResults`
-
-- Snapshot of previously resumed suspend values for this step execution.
-- Included in suspended status payload.
-- Example for a step suspended on second await point:
-
-```json
-{
-  "suspendIndex": 2,
-  "suspendKey": "index:2",
-  "awaitResults": {
-    "index:1": { "reply": "first-answer" }
+  ```ts
+  const rewind = context.workflow.markSuspendCursor?.();
+  for (let attempt = 1; ; attempt += 1) {
+    rewind?.();
+    try {
+      return await attemptOnce();
+    } catch (error) {
+      if (attempt >= maxAttempts) throw error;
+    }
   }
-}
-```
+  ```
 
-## 6. Multiple suspend points in one action
+- Declare what a wait accepts with `accepts` instead of throwing on a bad payload (§4). Do not
+  loop and `suspend()` again to ask for a new payload: every retry opens a new wait with a new
+  `waitId`, so handles already sent go stale, and every refused payload stays in `awaitResults`.
 
-A single action can suspend repeatedly:
+### Determinism checks
 
-```ts
-const first = await context.workflow.suspend({ reason: 'first' });
-const second = await context.workflow.suspend({ reason: 'second' });
-return { first, second };
-```
+A re-run body must reach the suspension it was resumed from. `NonDeterministicWorkflowError`
+fails the run when the body:
 
-Runtime behavior:
+- reaches an unrecorded suspend key before the expected one;
+- reaches the expected key with a different `reason`;
+- completes without reaching the expected key.
 
-1. first `suspend()` -> workflow pauses (`index:1`).
-2. resume with payload A -> first await resolves to A.
-3. action reaches second `suspend()` -> pauses again (`index:2`) and includes `awaitResults[index:1] = A`.
-4. resume with payload B -> second await resolves to B and action can complete.
+`AbstractAction` does not retry it: a retry would replay the same body into the same mismatch,
+repeating its side effects for nothing.
 
-## 7. Persisted resume / rebuild behavior
+## 4. Resume payloads
 
-### 7.1 What hosts should persist on suspension
-
-- `runner.getState()`
-- suspended `snapshot`
-- full suspension metadata fields from `start()/resume()` result
-
-Recommended persisted shape:
+A bad payload must not end the run: the person or system that sent it should be able to send
+another one to the same wait. A refused payload leaves the run as it was: same checkpoint, same
+open waits and `waitId`s, and the same snapshot and step log. `resume()` then
+returns the suspended result with `rejection: { waitId, error }`, where `error` is a
+`WorkflowResumeRejectedError` (with `issues` when a schema refused it).
 
 ```ts
-{
-  state,
-  snapshot,
-  suspension: {
-    stepId,
-    reason,
-    data,
-    stepExecId,
-    suspendIndex,
-    suspendKey,
-    awaitResults,
-  },
-}
+const { reply } = await context.workflow.suspend({
+  reason: 'awaiting_reply',
+  accepts: z.object({ reply: z.string() }), // also types the result
+});
 ```
 
-### 7.2 Rebuild path
+A payload is checked three times, and refused at the first failure:
 
-`WorkflowRunner.fromPersistedState(...)` calls `rebuildSuspension(...)`, which:
+1. **Before anything runs.** `accepts` is stored on the wait as a JSON Schema.
+   `validateCheckpoint(..., { waitId, resumeData })` checks the payload against it, so a host
+   can refuse it before claiming the run. `resume()` runs the same check first. Neither runs any
+   action code.
+2. **When the body reads it.** On resume, `suspend()` parses the payload through the live Zod
+   schema and resolves with the parsed value (coercions and defaults applied). If parsing
+   fails, `suspend()` rejects with `WorkflowResumeRejectedError`, which covers refinements and
+   anything else JSON Schema cannot express.
+3. **By the action.** After its `suspend()` resolved, an action may throw
+   `WorkflowResumeRejectedError` itself, for checks no schema can express, such as an unknown
+   order id.
 
-1. Parses `stepId` path and loop iteration suffix (`[i.j]`).
-2. Walks compiled flow tree (`task`, `conditional`, `loop`) to locate suspended node. Suspensions whose path is inside `parallel` are rejected because parallel suspension is unsupported.
-3. Builds a continuation that replays only the suspended step, then resumes normal flow.
-4. Injects replay seed and previously resumed data via:
-   - `prepareStepReplay(...)`
-   - `recordStepSuspendResult(...)` when suspend metadata is available
-   - fallback `primeStepResumeData(...)` when metadata is missing
+Before either check, the payload goes through the same JSON round trip as the checkpoint, so
+every check sees what the body will read. A payload JSON cannot encode is refused.
 
-The fallback keeps older persisted format working for simple first-suspend resumes.
+`accepts` therefore describes the payload **in its JSON form**. A `Date` sent to `resume()`
+reaches the schema as its ISO string, so declare `z.coerce.date()` or `z.iso.datetime()`, not
+`z.date()`. A schema using a type JSON cannot carry (`z.date()`, `z.bigint()`, `z.map()`,
+`z.set()`, `z.nan()`, `z.symbol()`, `z.function()`, `z.file()`), anywhere outside a coerced,
+preprocessed or `catch` node, could never be resumed, so `suspend()` throws a `TypeError` naming
+those parts instead of opening the wait.
 
-## 8. Deterministic replay guarantees
+A resume without payload is not a JSON value. It stays `undefined`: `suspend()` resolves with
+`undefined`, and the task frame records the answer as `{}`. JSON Schema cannot say whether
+`undefined` is accepted, so the wait carries `payloadOptional: true` when the `accepts` schema
+takes it (`.optional()`, `.default()`, `.nullish()`, ...); otherwise the first check refuses a
+missing payload.
 
-Replay validation protects against code drift between suspend and resume.
+When the body refuses a payload (checks 2 and 3), the step goes back to `suspended`, and
+`hook:step:resume_rejected` is emitted after `hook:step:resumed`. Only the refusing task ran in
+that pass and it did not complete, so the runner keeps the checkpoint it resumed from and puts
+back the snapshot and step log it had before the pass. Parked parallel siblings are
+not cancelled. `AbstractAction` does not retry a refusal, since a retry would read the same
+payload. What the runner does not own is not rolled back: the events of the refused pass stay
+emitted, and side effects the body performs between reading the payload and refusing it,
+including writes to context state, are not undone.
 
-`NonDeterministicWorkflowError` is thrown when:
+The JSON Schema is **relaxed** so that it never refuses a JSON payload the Zod schema would
+accept. Coerced, preprocessed, `catch` and custom nodes accept anything. Keywords that do not
+survive `z.fromJSONSchema` exactly (`pattern`, `format`, `propertyNames`, ...) are dropped, and
+so are length and range bounds of a node with a rewrite such as `.trim()`. Any looser check here
+is caught by the live schema in step 2.
 
-- replay reaches a different suspend point before expected one
-- expected suspend key is reached but reason mismatches (when reason is part of replay expectation)
-- step completes without ever reaching expected suspension
+A `WorkflowResumeRejectedError` counts as a refusal only when the task was resumed and its body
+has reached the `suspend()` call being resolved. Thrown anywhere else, it fails the run like any
+other error. It is recognised by its `name` as well as its class, so an extension that imports
+the other (CJS or ESM) build of this package can throw it too; `AbstractAction` recognises
+`NonDeterministicWorkflowError` the same way. If a payload accepted by an earlier pass no longer
+parses, because the schema changed between deployments, the run fails with
+`NonDeterministicWorkflowError`.
 
-Validation allows traversing already-resolved suspend points listed in `awaitResults` before reaching the expected active suspend.
+## 5. Parallel blocks
 
-## 9. Snapshot/events lifecycle around suspension
+Branches may suspend. Each branch runs in its own runtime scope (its own `context.workflow`), so
+concurrent branches suspend independently.
 
-Step-level lifecycle for a suspending task:
+- **Settle, then suspend.** The block waits until every branch has completed, failed or suspended.
+  A sibling that was still running finishes before the run suspends, so it runs exactly once and
+  is recorded as `fulfilled`.
+- **`wait_all`** suspends with every suspended branch's wait open, and completes once all are
+  resolved. A failing branch cancels the others, drops the open waits and fails the block.
+- **`wait_any`**: the first branch to complete wins. Losing branches are cancelled, and their open
+  waits are dropped and marked `cancelled`. If every branch suspends, the block suspends and the
+  first resolved branch to complete wins later.
+- **Dropping waits.** A branch can suspend while it is being cancelled, after a sibling won or
+  failed. Its wait was opened all the same, so the block lets every branch settle, then drops
+  the waits of every branch left suspended: each gets `hook:step:cancelled` with its `wait`, and
+  its snapshot and step log say `cancelled`.
+- **Resuming.** Only branches holding the resolved wait are launched again. The other parked
+  branches keep their recorded frame and output delta, without a new runtime scope or copies of
+  `$output`, context state and `$accumulator`.
+- **Outputs.** Branch output deltas are recorded in the frame and merged in branch order when the
+  block completes, exactly as in an uninterrupted run.
+- **Context.** A branch's writes to context state are local to the branch and are not kept
+  across a suspension. On resume the branch context is re-cloned from the host-hydrated context.
+  Pass data between steps through `$output`.
 
-1. `running`
-2. `suspended`
-3. `completed` (after resume and eventual completion) or `failed`
+## 6. Validation and errors
 
-Events:
+`validateCheckpoint` runs no action and needs no context. It checks, in order:
 
-- Step:
-  - `hook:step:start`
-  - `hook:step:suspended`
-  - `hook:step:success` or `hook:step:error`
-- Workflow:
-  - `hook:workflow:suspended`
-  - then `hook:workflow:finish` or `hook:workflow:failure`
+1. presence (`WorkflowCheckpointInvalidError`, `code: 'missing'`);
+2. `version` (`code: 'unsupported_version'`), then schema (`code: 'malformed'`, with `issues`);
+3. fingerprint against the compiled workflow (`WorkflowDefinitionDriftError`, `expected`/`actual`);
+4. every frame against the compiled step it names: kind, id, branch or loop index, parallel
+   branch count (`code: 'structure'`, with `path`);
+5. `waits` against the task frames (`code: 'structure'`);
+6. when `waitId` or `resumeData` is given, the wait `resume()` would resolve: `waitId` must be
+   open (`WorkflowWaitNotFoundError`, with `openWaitIds`), and without it exactly one wait must
+   be open (`WorkflowWaitAmbiguousError`, with `openWaitIds`);
+7. that `resumeData`, when the key is given, is accepted by that wait
+   (`WorkflowResumeRejectedError`, with `issues`).
 
-## 10. Operational caveats
+All of these extend `WorkflowResumeError`. `fromCheckpoint` throws the same errors (except
+the wait and payload checks). `resume()` picks the wait exactly as check 6 does and throws the
+same two errors, so a request `validateCheckpoint` accepted never fails there. `resume()` does
+not throw for a refused payload; it returns the `rejection`.
 
-- Action code must `await` `workflow.suspend(...)`. Calling it without `await` can lead to cancellation of that suspend request.
-- `workflow.suspend()` outside an active step throws.
-- `workflow.suspend()` inside `parallel` fails with `ParallelSuspensionError`; move human-in-the-loop waits before or after the parallel block.
-- Actions receive an `AbortSignal` and should observe it so cancelled parallel losers can stop promptly.
-- Timeouts/retries in `AbstractAction.run()` wrap the full action execution; if non-zero timeout is used, suspended wall time counts toward that timeout.
-- `Workflow.run(...)` suspended errors are not exported as a public class; treat them structurally (`stepId`, `reason`, `data`) or use `WorkflowRunner` for explicit status objects.
+The fingerprint covers step ids, labels, types, task inputs, conditions, loop expressions,
+accumulators and output mappings. A renamed task, an inserted step or a changed `until`
+expression is therefore caught before anything runs.
 
-## 11. Test coverage for this implementation
+## 7. Events
 
-Relevant tests:
+| Event | When | Wait fields |
+|---|---|---|
+| `hook:step:suspended` | a task suspends | `wait` it opened |
+| `hook:workflow:suspended` | the run suspends | `waits`: every open wait, in flow order |
+| `hook:step:resumed` | a suspended task re-runs its body after its wait was resolved | `wait` it resolved, `resumeData` as recorded |
+| `hook:step:resume_rejected` | a resumed task refused its payload and is suspended again on the same wait | `wait`, `error` |
+| `hook:workflow:resume_rejected` | a resume payload was refused (by `accepts` or by the body) | `wait`, `resumeData` as passed to `resume()`, `error` |
+| `hook:step:cancelled` | a step is cancelled; for a parked wait, it is dropped (`wait_any` loser, failing sibling, branch that suspended while cancelled) | `wait` it dropped, when it held one |
 
-- `src/__tests__/workflow-runner.test.ts`
-  - suspension/resume happy paths
-  - multi-suspend metadata persistence/rebuild
-  - non-deterministic replay failure
-- `src/step-executors/task-executor.test.ts`
-  - in-flight action resume behavior
-- `src/__tests__/suspension-rebuilder.test.ts`
-  - path parsing and continuation rebuild for task/loop, plus rejection of parallel suspension paths
-- `src/__tests__/workflow.test.ts`
-  - `Workflow.run()` suspension throw shape
+Every event about a wait carries its `WaitInfo`, so a host can match it by `waitId` to what it
+keeps for that wait. For example, a notification sent or an expiry scheduled on
+`hook:step:suspended` can be withdrawn on the `hook:step:cancelled` of the same wait. Together,
+`hook:step:resumed` and `hook:workflow:resume_rejected` record who answered what, accepted or
+refused, which is enough for an approval audit trail. `resumeData` on `hook:step:resumed` has been
+through the checkpoint's JSON round trip. Payloads can hold personal data, so decide what to keep
+before forwarding them.
+
+## 8. Host integration
+
+A host persists, per suspended run:
+
+- `checkpoint`: one JSON column; the only thing needed to resume;
+- `snapshot`: to keep reporting the status of past steps;
+- optionally values denormalized from `waits` (step, reason, data) for querying and routing.
+
+To resume a wait, typically from an HTTP request:
+
+1. load the run and compile its pinned definition;
+2. `validateCheckpoint(compiled, run.checkpoint, { waitId, resumeData })`, and refuse the
+   request on `ok: false`, before claiming anything. A `WorkflowResumeRejectedError` means the
+   payload is wrong (e.g. HTTP 422), and a `WorkflowWaitAmbiguousError` that the request must
+   name a `waitId` (e.g. HTTP 400); the others mean the wait cannot be resumed;
+3. claim the run (optimistic lock); two resumes of different waits of the same run must not
+   interleave. Claim the suspension that was validated (a version or a suspension timestamp),
+   not only the status: otherwise a caller holding a stale checkpoint can claim a run another
+   caller resumed and suspended again in the meantime;
+4. `fromCheckpoint(...)`, then `resume({ waitId, resumeData })`;
+5. persist the new checkpoint (or clear it when the run finished or failed). When the result
+   carries `rejection`, the checkpoint is unchanged: release the claim and refuse the request,
+   leaving the run suspended.
+
+A payload refused by `validateCheckpoint` in step 2 never reaches the runner, so no
+`hook:workflow:resume_rejected` is emitted for it; a host that keeps an audit trail of refusals
+records those itself.
+
+## 9. Tests
+
+- `src/__tests__/checkpoint.test.ts`: every fixture runs twice, once resumed in process and once
+  with a JSON round trip into a brand-new compiled workflow, runner and context after each
+  suspension. Both passes must produce the same outputs and the expected per-action body counts.
+  Fixtures cover sequences, output values that are not plain JSON, conditionals, `for_each`
+  accumulators reading `$iteration.item`, nested `for_each` + `while`, multi-suspend actions,
+  `wait_all` with two waits in both orders, both `wait_any` outcomes, and a loop inside parallel
+  inside a loop. The file also covers every validation error (including each frame structure
+  check), retry after resume, timeouts, failing siblings, `waitId` selection, recorded inputs,
+  nested action runs, reused keys, all three determinism checks, and the suspension and
+  cancellation events. It also covers resume payloads: refusal by `accepts` before and after
+  claiming, refusal by the body and by the action, no retry of a
+  refusal, payloads JSON cannot encode, and refusals inside `wait_all`, `wait_any` and loops.
+  Regression tests cover `$accumulator` after a finished loop (at the root and inside an outer
+  loop), a branch suspending while it is cancelled (swept over when the suspension lands, for
+  both strategies and branch orders), the step log of dropped waits, wait selection shared by
+  `validateCheckpoint` and `resume()`, optional payloads, schemas JSON cannot satisfy,
+  refusals thrown by another copy of the package, no retry of `NonDeterministicWorkflowError`,
+  retried nested and wrapped action runs, and what a refused resume leaves unchanged.
+- `src/__tests__/resume-payload.test.ts`: the relaxed `accepts` JSON Schema never refuses what
+  the Zod schema accepts, still refuses what JSON Schema can check, optional payloads, types
+  JSON cannot carry, and payload normalization.
+- `src/__tests__/runner-runtime-control.test.ts`: the suspend cursor and its rewinds, keys,
+  recorded results, `accepts` parsing, and determinism checks of one runtime scope.
+- `src/__tests__/workflow-fingerprint.test.ts`: which definition changes count as drift.
+- `src/step-executors/*.test.ts`: frame production and consumption per executor.
+- `src/__tests__/workflow-runner.test.ts`: runner-level suspend and resume, restoring from
+  persisted checkpoints, `hasRecordedResult`.
+- `src/__tests__/workflow.test.ts`: the `Workflow` checkpoint helpers and the error `run()` throws.

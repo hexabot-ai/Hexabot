@@ -7,9 +7,10 @@
 import { z } from 'zod';
 
 import { defineAction } from '../action/action';
+import type { TaskFrame, WorkflowCheckpoint } from '../checkpoint';
 import { BaseWorkflowContext } from '../context';
 import type { Settings, WorkflowDefinition } from '../dsl.types';
-import { ParallelSuspensionError } from '../errors';
+import { WorkflowCheckpointInvalidError } from '../errors';
 import { compileWorkflow } from '../workflow-compiler';
 import {
   StepType,
@@ -75,6 +76,12 @@ class TestContext extends BaseWorkflowContext<
   }
 }
 
+/** Round-trip a checkpoint through JSON, as a host database would. */
+const persist = (checkpoint: WorkflowCheckpoint): WorkflowCheckpoint =>
+  JSON.parse(JSON.stringify(checkpoint));
+/** Read the task frame of a checkpoint suspended on a top-level task. */
+const suspendedTask = (checkpoint: WorkflowCheckpoint): TaskFrame =>
+  checkpoint.root.child as TaskFrame;
 const baseRetries = {
   enabled: true,
   max_attempts: 1,
@@ -568,7 +575,9 @@ describe('WorkflowRunner', () => {
     if (startResult.status !== 'suspended') {
       throw new Error('Workflow did not suspend as expected');
     }
-    expect(startResult.step.id).toBe('0.wait_until_stop.0:wait_step[0]');
+    expect(startResult.waits[0].step.id).toBe(
+      '0.wait_until_stop.0:wait_step[0]',
+    );
 
     const firstResume = await runner.resume({
       resumeData: { reply: 'continue' },
@@ -577,7 +586,9 @@ describe('WorkflowRunner', () => {
     if (firstResume.status !== 'suspended') {
       throw new Error('Workflow did not suspend on second iteration');
     }
-    expect(firstResume.step.id).toBe('0.wait_until_stop.0:wait_step[1]');
+    expect(firstResume.waits[0].step.id).toBe(
+      '0.wait_until_stop.0:wait_step[1]',
+    );
 
     const secondResume = await runner.resume({
       resumeData: { reply: 'stop' },
@@ -724,24 +735,23 @@ describe('WorkflowRunner', () => {
     const startResult = await runner.start({ inputData: {}, context });
     expect(startResult.status).toBe('suspended');
     if (startResult.status === 'suspended') {
-      expect(startResult.reason).toBe('awaiting_user');
+      expect(startResult.waits[0].reason).toBe('awaiting_user');
       expect(runner.getStatus()).toBe('suspended');
-      expect(runner.getSnapshot().actions[startResult.step.id]?.status).toBe(
-        'suspended',
-      );
+      expect(
+        runner.getSnapshot().actions[startResult.waits[0].step.id]?.status,
+      ).toBe('suspended');
     }
 
     const resume = await runner.resume({ resumeData: { reply: 'Sure' } });
     expect(resume.status).toBe('finished');
     if (resume.status === 'finished') {
       expect(resume.output.reply).toBe('Sure');
-      expect(runner.getLastResumeData()).toEqual({ reply: 'Sure' });
     }
 
     expect(() => context.workflow).toThrow();
   });
 
-  it('fails when a parallel branch attempts to suspend', async () => {
+  it('suspends and resumes inside a parallel branch', async () => {
     const suspendAction = defineAction<
       unknown,
       { reply: string },
@@ -752,9 +762,11 @@ describe('WorkflowRunner', () => {
       inputSchema: z.any(),
       outputSchema: z.object({ reply: z.string() }),
       execute: async ({ context }) => {
-        await context.workflow.suspend({ reason: 'not_allowed' });
+        const resumed = (await context.workflow.suspend({
+          reason: 'awaiting_reply',
+        })) as { reply: string };
 
-        return { reply: 'unreachable' };
+        return { reply: resumed.reply };
       },
     });
     const definition: WorkflowDefinition = {
@@ -782,16 +794,22 @@ describe('WorkflowRunner', () => {
       context: new TestContext({}),
     });
 
-    expect(result.status).toBe('failed');
-    if (result.status === 'failed') {
-      expect(result.error).toBeInstanceOf(ParallelSuspensionError);
+    expect(result.status).toBe('suspended');
+    if (result.status === 'suspended') {
+      expect(result.waits.map((wait) => wait.step.id)).toEqual([
+        '0.parallel.0:wait_step',
+      ]);
     }
     expect(
       runner.getSnapshot().actions['0.parallel.0:wait_step'],
-    ).toMatchObject({
-      status: 'failed',
-      reason: 'workflow.suspend() is not supported inside a parallel block.',
-    });
+    ).toMatchObject({ status: 'suspended', reason: 'awaiting_reply' });
+
+    const resumed = await runner.resume({ resumeData: { reply: 'done' } });
+
+    expect(resumed.status).toBe('finished');
+    if (resumed.status === 'finished') {
+      expect(resumed.output).toEqual({ reply: 'done' });
+    }
   });
 
   it('accepts emitter-like implementations without Node EventEmitter', async () => {
@@ -1027,7 +1045,7 @@ describe('WorkflowRunner', () => {
       throw new Error('workflow did not suspend');
     }
 
-    expect(startResult.step.id).toBe('0:wait_step');
+    expect(startResult.waits[0].step.id).toBe('0:wait_step');
     expect(runner.getSnapshot().actions['0:wait_step']?.status).toBe(
       'suspended',
     );
@@ -1087,7 +1105,7 @@ describe('WorkflowRunner', () => {
     }
   });
 
-  it('throws when a persisted suspension cannot be rebuilt', async () => {
+  it('refuses to restore a run without a checkpoint', () => {
     const noopAction = defineAction<
       unknown,
       { ok: boolean },
@@ -1109,23 +1127,16 @@ describe('WorkflowRunner', () => {
     const compiled = compileWorkflow(definition, {
       actions: { noop_action: noopAction },
     });
-    const persistedState: ExecutionState = {
-      input: {},
-      output: {},
-      iterationStack: [],
-    };
 
-    await expect(
-      WorkflowRunner.fromPersistedState(compiled, {
-        state: persistedState,
+    expect(() =>
+      WorkflowRunner.fromCheckpoint(compiled, {
+        checkpoint: null,
         context: new TestContext({}),
-        snapshot: { status: 'suspended', actions: {} },
-        suspension: { stepId: 'unknown.step', reason: null, data: undefined },
       }),
-    ).rejects.toThrow('Unable to rebuild suspension for step unknown.step');
+    ).toThrow(WorkflowCheckpointInvalidError);
   });
 
-  it('rebuilds loop suspension using the iteration suffix when iterationStack is missing', async () => {
+  it('restores a loop suspension from a persisted checkpoint', async () => {
     const suspendAction = defineAction<
       { prompt: string },
       { reply: string },
@@ -1159,7 +1170,7 @@ describe('WorkflowRunner', () => {
       defs: createTaskDefs({
         wait_step: {
           action: 'loop_suspend_action',
-          inputs: { prompt: '="Ping"' },
+          inputs: { prompt: '=$iteration.item' },
         },
         after_step: {
           action: 'after_loop_action',
@@ -1194,10 +1205,9 @@ describe('WorkflowRunner', () => {
       },
     });
     const runner = new WorkflowRunner(compiled);
-    const context = new TestContext({});
     const startResult = await runner.start({
       inputData: { items: ['first'] },
-      context,
+      context: new TestContext({}),
     });
 
     expect(startResult.status).toBe('suspended');
@@ -1205,25 +1215,16 @@ describe('WorkflowRunner', () => {
       throw new Error('Workflow did not suspend as expected');
     }
 
-    expect(startResult.step.id).toBe('0.iterate.0:wait_step[0]');
+    expect(startResult.waits[0]).toMatchObject({
+      step: { id: '0.iterate.0:wait_step[0]' },
+      reason: 'awaiting_reply',
+      data: { prompt: 'first' },
+    });
 
-    const runtimeState = (runner as unknown as { state: ExecutionState }).state;
-    const persistedState: ExecutionState = {
-      input: { ...runtimeState.input },
-      output: { ...runtimeState.output },
-      iteration: runtimeState.iteration,
-      accumulator: runtimeState.accumulator,
-      iterationStack: [],
-    };
-    const rebuilt = await WorkflowRunner.fromPersistedState(compiled, {
-      state: persistedState,
+    const rebuilt = WorkflowRunner.fromCheckpoint(compiled, {
+      checkpoint: persist(startResult.checkpoint),
       context: new TestContext({}),
       snapshot: startResult.snapshot,
-      suspension: {
-        stepId: startResult.step.id,
-        reason: startResult.reason ?? null,
-        data: startResult.data,
-      },
     });
     const resumeResult = await rebuilt.resume({
       resumeData: { reply: 'Pong' },
@@ -1235,7 +1236,7 @@ describe('WorkflowRunner', () => {
     }
   });
 
-  it('rebuilds a task suspended on a later suspend() call using suspend metadata and await history', async () => {
+  it('restores a task suspended on a later suspend() call with its earlier results', async () => {
     const multiSuspendAction = defineAction<
       unknown,
       { firstReply: string; secondReply: string },
@@ -1290,9 +1291,11 @@ describe('WorkflowRunner', () => {
       throw new Error('Workflow did not suspend on first await point');
     }
 
-    expect(firstSuspension.suspendIndex).toBe(1);
-    expect(firstSuspension.suspendKey).toBe('index:1');
-    expect(firstSuspension.awaitResults).toEqual({});
+    expect(firstSuspension.waits[0]).toMatchObject({
+      waitId: '0:wait_step@index:1',
+      suspendKey: 'index:1',
+    });
+    expect(suspendedTask(firstSuspension.checkpoint).awaitResults).toEqual({});
 
     const secondSuspension = await runner.resume({
       resumeData: { reply: 'first-answer' },
@@ -1302,33 +1305,19 @@ describe('WorkflowRunner', () => {
       throw new Error('Workflow did not suspend on second await point');
     }
 
-    expect(secondSuspension.suspendIndex).toBe(2);
-    expect(secondSuspension.suspendKey).toBe('index:2');
-    expect(secondSuspension.awaitResults).toEqual({
-      'index:1': { reply: 'first-answer' },
+    expect(secondSuspension.waits[0]).toMatchObject({
+      waitId: '0:wait_step@index:2',
+      suspendKey: 'index:2',
+      reason: 'second_pause',
+    });
+    expect(suspendedTask(secondSuspension.checkpoint).awaitResults).toEqual({
+      'index:1': { value: { reply: 'first-answer' } },
     });
 
-    const runtimeState = runner.getState() as ExecutionState;
-    const persistedState: ExecutionState = {
-      input: { ...runtimeState.input },
-      output: { ...runtimeState.output },
-      iteration: runtimeState.iteration,
-      accumulator: runtimeState.accumulator,
-      iterationStack: [...runtimeState.iterationStack],
-    };
-    const rebuilt = await WorkflowRunner.fromPersistedState(compiled, {
-      state: persistedState,
+    const rebuilt = WorkflowRunner.fromCheckpoint(compiled, {
+      checkpoint: persist(secondSuspension.checkpoint),
       context: new TestContext({}),
       snapshot: secondSuspension.snapshot,
-      suspension: {
-        stepId: secondSuspension.step.id,
-        reason: secondSuspension.reason ?? null,
-        data: secondSuspension.data,
-        stepExecId: secondSuspension.stepExecId,
-        suspendIndex: secondSuspension.suspendIndex,
-        suspendKey: secondSuspension.suspendKey,
-        awaitResults: secondSuspension.awaitResults,
-      },
     });
     const finalResult = await rebuilt.resume({
       resumeData: { reply: 'second-answer' },
@@ -1341,7 +1330,7 @@ describe('WorkflowRunner', () => {
     }
   });
 
-  it('lets actions skip side effects via hasRecordedResult when replaying a resumed step', async () => {
+  it('lets actions skip side effects via hasRecordedResult when a resumed body re-runs', async () => {
     const sideEffects: string[] = [];
     const spawnAction = defineAction<
       unknown,
@@ -1353,8 +1342,8 @@ describe('WorkflowRunner', () => {
       inputSchema: z.any(),
       outputSchema: z.object({ reply: z.string() }),
       execute: async ({ context }) => {
-        // Deterministic replay re-runs this body; the guard must prevent the
-        // side effect from executing a second time.
+        // A resumed body re-runs; the guard must prevent the side effect
+        // from executing a second time.
         if (!context.workflow.hasRecordedResult()) {
           sideEffects.push('spawn');
         }
@@ -1392,26 +1381,10 @@ describe('WorkflowRunner', () => {
 
     expect(sideEffects).toEqual(['spawn']);
 
-    const runtimeState = runner.getState() as ExecutionState;
-    const rebuilt = await WorkflowRunner.fromPersistedState(compiled, {
-      state: {
-        input: { ...runtimeState.input },
-        output: { ...runtimeState.output },
-        iteration: runtimeState.iteration,
-        accumulator: runtimeState.accumulator,
-        iterationStack: [...runtimeState.iterationStack],
-      },
+    const rebuilt = WorkflowRunner.fromCheckpoint(compiled, {
+      checkpoint: persist(startResult.checkpoint),
       context: new TestContext({}),
       snapshot: startResult.snapshot,
-      suspension: {
-        stepId: startResult.step.id,
-        reason: startResult.reason ?? null,
-        data: startResult.data,
-        stepExecId: startResult.stepExecId,
-        suspendIndex: startResult.suspendIndex,
-        suspendKey: startResult.suspendKey,
-        awaitResults: startResult.awaitResults,
-      },
     });
     const resumeResult = await rebuilt.resume({
       resumeData: { reply: 'child-finished' },
@@ -1422,11 +1395,10 @@ describe('WorkflowRunner', () => {
       expect(resumeResult.output.reply).toBe('child-finished');
     }
 
-    // The side effect must not run a second time during deterministic replay.
     expect(sideEffects).toEqual(['spawn']);
   });
 
-  it('reports recorded results only for suspensions that will replay immediately', async () => {
+  it('reports recorded results only for suspensions that will resolve immediately', async () => {
     const observed: boolean[] = [];
     const multiSuspendAction = defineAction<
       unknown,
@@ -1479,6 +1451,7 @@ describe('WorkflowRunner', () => {
       context: new TestContext({}),
     });
     expect(firstSuspension.status).toBe('suspended');
+    expect(observed).toEqual([false]);
 
     const secondSuspension = await runner.resume({
       resumeData: { reply: 'first-answer' },
@@ -1488,29 +1461,13 @@ describe('WorkflowRunner', () => {
       throw new Error('Workflow did not suspend on second await point');
     }
 
-    // In-memory execution never sees pre-recorded results.
-    expect(observed).toEqual([false, false]);
+    // The resumed body re-runs: the first suspension is answered, the second is new.
+    expect(observed).toEqual([false, true, false]);
 
-    const runtimeState = runner.getState() as ExecutionState;
-    const rebuilt = await WorkflowRunner.fromPersistedState(compiled, {
-      state: {
-        input: { ...runtimeState.input },
-        output: { ...runtimeState.output },
-        iteration: runtimeState.iteration,
-        accumulator: runtimeState.accumulator,
-        iterationStack: [...runtimeState.iterationStack],
-      },
+    const rebuilt = WorkflowRunner.fromCheckpoint(compiled, {
+      checkpoint: persist(secondSuspension.checkpoint),
       context: new TestContext({}),
       snapshot: secondSuspension.snapshot,
-      suspension: {
-        stepId: secondSuspension.step.id,
-        reason: secondSuspension.reason ?? null,
-        data: secondSuspension.data,
-        stepExecId: secondSuspension.stepExecId,
-        suspendIndex: secondSuspension.suspendIndex,
-        suspendKey: secondSuspension.suspendKey,
-        awaitResults: secondSuspension.awaitResults,
-      },
     });
     const finalResult = await rebuilt.resume({
       resumeData: { reply: 'second-answer' },
@@ -1522,11 +1479,88 @@ describe('WorkflowRunner', () => {
       expect(finalResult.output.secondReply).toBe('second-answer');
     }
 
-    // During replay both suspensions have recorded results awaiting them.
-    expect(observed).toEqual([false, false, true, true]);
+    expect(observed).toEqual([false, true, false, true, true]);
   });
 
-  it('fails resume when replay suspension metadata does not match the workflow code path', async () => {
+  it('keeps a resume without payload recorded across later suspensions', async () => {
+    const sideEffects: string[] = [];
+    const acknowledged: unknown[] = [];
+    const acknowledgeAction = defineAction<
+      unknown,
+      { reply: string },
+      TestContext,
+      Settings
+    >({
+      name: 'acknowledge_then_ask_action',
+      inputSchema: z.any(),
+      outputSchema: z.object({ reply: z.string() }),
+      execute: async ({ context }) => {
+        if (!context.workflow.hasRecordedResult()) {
+          sideEffects.push('notify');
+        }
+
+        acknowledged.push(
+          await context.workflow.suspend({ reason: 'acknowledge' }),
+        );
+        const answer = (await context.workflow.suspend({
+          reason: 'ask',
+        })) as { reply: string };
+
+        return { reply: answer.reply };
+      },
+    });
+    const definition: WorkflowDefinition = {
+      defs: createTaskDefs({
+        wait_step: {
+          action: 'acknowledge_then_ask_action',
+          inputs: {},
+        },
+      }),
+      flow: [{ do: 'wait_step' }],
+      outputs: { reply: '=$output.wait_step.reply' },
+    };
+    const compiled = compileWorkflow(definition, {
+      actions: { acknowledge_then_ask_action: acknowledgeAction },
+    });
+    const runner = new WorkflowRunner(compiled);
+    const firstSuspension = await runner.start({
+      inputData: {},
+      context: new TestContext({}),
+    });
+    expect(firstSuspension.status).toBe('suspended');
+
+    // An "acknowledge" button resumes without sending a body.
+    const secondSuspension = await runner.resume({});
+    expect(secondSuspension.status).toBe('suspended');
+    if (secondSuspension.status !== 'suspended') {
+      throw new Error('Workflow did not suspend on second await point');
+    }
+
+    // Recorded as answered, without a value: JSON has no `undefined`.
+    expect(suspendedTask(secondSuspension.checkpoint).awaitResults).toEqual({
+      'index:1': {},
+    });
+
+    const rebuilt = WorkflowRunner.fromCheckpoint(compiled, {
+      checkpoint: persist(secondSuspension.checkpoint),
+      context: new TestContext({}),
+      snapshot: secondSuspension.snapshot,
+    });
+    const finalResult = await rebuilt.resume({
+      resumeData: { reply: 'answer' },
+    });
+
+    expect(finalResult.status).toBe('finished');
+    if (finalResult.status === 'finished') {
+      expect(finalResult.output.reply).toBe('answer');
+    }
+
+    expect(sideEffects).toEqual(['notify']);
+    // Every pass resolves the acknowledgement to the same persisted value.
+    expect(acknowledged).toEqual([undefined, undefined]);
+  });
+
+  it('fails resume when the resumed body no longer matches the checkpoint', async () => {
     const suspendAction = defineAction<
       unknown,
       { reply: string },
@@ -1567,26 +1601,15 @@ describe('WorkflowRunner', () => {
       throw new Error('Workflow did not suspend as expected');
     }
 
-    const runtimeState = runner.getState() as ExecutionState;
-    const rebuilt = await WorkflowRunner.fromPersistedState(compiled, {
-      state: {
-        input: { ...runtimeState.input },
-        output: { ...runtimeState.output },
-        iteration: runtimeState.iteration,
-        accumulator: runtimeState.accumulator,
-        iterationStack: [...runtimeState.iterationStack],
-      },
+    // Simulate action code that changed between suspension and resume.
+    const checkpoint = persist(startResult.checkpoint);
+    suspendedTask(checkpoint).wait.reason = 'different_reason';
+    checkpoint.waits[0].reason = 'different_reason';
+
+    const rebuilt = WorkflowRunner.fromCheckpoint(compiled, {
+      checkpoint,
       context: new TestContext({}),
       snapshot: startResult.snapshot,
-      suspension: {
-        stepId: startResult.step.id,
-        reason: 'different_reason',
-        data: startResult.data,
-        stepExecId: startResult.stepExecId,
-        suspendIndex: startResult.suspendIndex,
-        suspendKey: startResult.suspendKey,
-        awaitResults: startResult.awaitResults,
-      },
     });
     const resumeResult = await rebuilt.resume({
       resumeData: { reply: 'value' },
@@ -1598,7 +1621,7 @@ describe('WorkflowRunner', () => {
         'NonDeterministicWorkflowError',
       );
       expect(String((resumeResult.error as Error).message)).toContain(
-        'expected reason \"different_reason\"',
+        'expected reason "different_reason"',
       );
     }
   });

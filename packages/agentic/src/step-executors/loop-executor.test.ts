@@ -4,19 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
+import type { LoopFrame, SequenceFrame } from '../checkpoint';
 import { BaseWorkflowContext } from '../context';
-import type { RuntimeSuspensionRequest } from '../runner-runtime-control';
-import {
-  StepType,
-  type EventEmitterLike,
-  type StepInfo,
-} from '../workflow-event-emitter';
-import type {
-  CompiledStep,
-  ExecutionState,
-  LoopStep,
-  Suspension,
-} from '../workflow-types';
+import { StepType, type EventEmitterLike } from '../workflow-event-emitter';
+import type { CompiledStep, ExecutionState, LoopStep } from '../workflow-types';
 import { compileValue } from '../workflow-values';
 
 import {
@@ -52,18 +43,13 @@ const createEnv = (executeFlow: jest.Mock): StepExecutorEnv => {
     context: new TestContext(),
     signal: new AbortController().signal,
     runId: 'run-loop',
+    runtime: {} as StepExecutorEnv['runtime'],
+    resolutions: new Map<string, unknown>(),
+    rejectResume: jest.fn(),
     buildInstanceStepInfo: jest.fn(),
     markSnapshot: jest.fn(),
     recordStepExecution: jest.fn(),
     emit: jest.fn(),
-    setCurrentStep: jest.fn(),
-    waitForStepSuspension: jest
-      .fn()
-      .mockImplementation(
-        () => new Promise<RuntimeSuspensionRequest>(() => undefined),
-      ),
-    clearStepSuspensions: jest.fn(),
-    primeStepResumeData: jest.fn(),
     captureTaskOutput: jest.fn(),
     executeFlow,
     executeStep: jest.fn(),
@@ -80,6 +66,30 @@ const createTaskStep = (id: string): CompiledStep => ({
   label: id,
   taskName: `task_${id}`,
 });
+const childFrame: SequenceFrame = {
+  kind: 'sequence',
+  index: 0,
+  child: {
+    kind: 'task',
+    stepId: 'child',
+    inputs: {},
+    awaitResults: {},
+    wait: {
+      waitId: 'child[0]@index:1',
+      step: { id: 'child[0]', name: 'child', type: StepType.Task },
+      suspendKey: 'index:1',
+    },
+  },
+};
+const recordItem = async (
+  _steps: CompiledStep[],
+  iterationState: ExecutionState,
+) => {
+  iterationState.output[`item_${iterationState.iteration?.index}`] =
+    iterationState.iteration?.item;
+
+  return undefined;
+};
 
 describe('executeLoop', () => {
   it('iterates items, accumulates values, and stops when the until condition is met', async () => {
@@ -125,24 +135,7 @@ describe('executeLoop', () => {
     expect(state.output).toMatchObject({ item_0: 2, item_1: 4, item_2: 6 });
   });
 
-  it('resumes after suspension and continues remaining iterations', async () => {
-    const innerSuspension: Suspension = {
-      step: { id: 'child', name: 'child', type: StepType.Task } as StepInfo,
-      continue: jest.fn().mockResolvedValue(undefined),
-    };
-    const executeFlow = jest
-      .fn()
-      .mockResolvedValueOnce(innerSuspension)
-      .mockImplementationOnce(
-        async (_steps: CompiledStep[], iterationState: ExecutionState) => {
-          iterationState.output[`item_${iterationState.iteration?.index}`] =
-            iterationState.iteration?.item;
-
-          return undefined;
-        },
-      );
-    const env = createEnv(executeFlow);
-    const state = createState();
+  it('records the suspended iteration and resumes it with the recorded items and accumulator', async () => {
     const step: LoopStep = {
       id: 'loop',
       type: StepType.Loop,
@@ -150,7 +143,6 @@ describe('executeLoop', () => {
       label: 'loop',
       name: 'collector',
       forEach: { item: 'entry', in: { kind: 'literal', value: [1, 2] } },
-      until: compileValue('=$iteration.index >= 1'),
       accumulate: {
         as: 'sum',
         initial: 0,
@@ -158,30 +150,55 @@ describe('executeLoop', () => {
       },
       steps: [createTaskStep('child')],
     };
-    const suspension = await executeLoop(env, step, state, []);
-    expect(suspension).toEqual(
-      expect.objectContaining({ step: innerSuspension.step }),
+    const suspendingFlow = jest
+      .fn()
+      .mockImplementationOnce(recordItem)
+      .mockResolvedValueOnce(childFrame);
+    const frame = await executeLoop(
+      createEnv(suspendingFlow),
+      step,
+      createState(),
+      [],
     );
 
-    const result = await suspension?.continue({ resumed: true });
+    expect(frame).toEqual({
+      kind: 'loop',
+      stepId: 'loop',
+      index: 1,
+      items: [1, 2],
+      accumulator: 1,
+      child: childFrame,
+    });
+
+    // The item list is not re-evaluated: a resumed loop keeps its items.
+    const resumedStep: LoopStep = {
+      ...step,
+      forEach: { item: 'entry', in: { kind: 'literal', value: [9, 9, 9] } },
+    };
+    const resumingFlow = jest.fn(recordItem);
+    const state = createState();
+    const result = await executeLoop(
+      createEnv(resumingFlow),
+      resumedStep,
+      state,
+      [],
+      frame as LoopFrame,
+    );
 
     expect(result).toBeUndefined();
-    expect(innerSuspension.continue).toHaveBeenCalledWith({ resumed: true });
-    expect(executeFlow).toHaveBeenCalledTimes(2);
-    expect(executeFlow).toHaveBeenNthCalledWith(
-      1,
+    expect(resumingFlow).toHaveBeenCalledTimes(1);
+    expect(resumingFlow).toHaveBeenCalledWith(
       step.steps,
-      expect.any(Object),
-      [0],
-    );
-    expect(executeFlow).toHaveBeenNthCalledWith(
-      2,
-      step.steps,
-      expect.any(Object),
+      expect.objectContaining({
+        iteration: { item: 2, index: 1 },
+        accumulator: 1,
+        iterationStack: [1],
+      }),
       [1],
+      childFrame,
     );
-    expect(state.output.collector).toEqual({ sum: 2 });
-    expect(state.accumulator).toBeUndefined();
+    expect(state.output.collector).toEqual({ sum: 3 });
+    expect(state.accumulator).toBe(3);
   });
 
   it('evaluates while loops before each iteration and can exit without running', async () => {
@@ -202,26 +219,7 @@ describe('executeLoop', () => {
     expect(executeFlow).not.toHaveBeenCalled();
   });
 
-  it('continues while loops after suspension until the condition becomes false', async () => {
-    const innerSuspension: Suspension = {
-      step: { id: 'child', name: 'child', type: StepType.Task } as StepInfo,
-      continue: jest.fn().mockResolvedValue(undefined),
-    };
-    const executeFlow = jest
-      .fn()
-      .mockResolvedValueOnce(innerSuspension)
-      .mockImplementationOnce(
-        async (_steps: CompiledStep[], iterationState: ExecutionState) => {
-          iterationState.output.should_continue = false;
-          iterationState.output.done = true;
-
-          return undefined;
-        },
-      );
-    const env = createEnv(executeFlow);
-    const state = createState();
-    state.output.should_continue = true;
-
+  it('resumes a while iteration without re-checking its guard', async () => {
     const step: LoopStep = {
       id: 'loop',
       type: StepType.Loop,
@@ -238,29 +236,45 @@ describe('executeLoop', () => {
       },
       steps: [createTaskStep('child')],
     };
-    const suspension = await executeLoop(env, step, state, []);
-    expect(suspension).toEqual(
-      expect.objectContaining({ step: innerSuspension.step }),
+    const state = createState();
+    state.output.should_continue = true;
+
+    const frame = await executeLoop(
+      createEnv(jest.fn().mockResolvedValueOnce(childFrame)),
+      step,
+      state,
+      [],
     );
 
-    const result = await suspension?.continue({ resumed: true });
+    expect(frame).toEqual({
+      kind: 'loop',
+      stepId: 'loop',
+      index: 0,
+      accumulator: 0,
+      child: childFrame,
+    });
+
+    // The guard is now false, but the suspended iteration already passed it.
+    const resumed = createState();
+    resumed.output.should_continue = false;
+    const executeFlow = jest.fn().mockResolvedValue(undefined);
+    const result = await executeLoop(
+      createEnv(executeFlow),
+      step,
+      resumed,
+      [],
+      frame as LoopFrame,
+    );
 
     expect(result).toBeUndefined();
-    expect(innerSuspension.continue).toHaveBeenCalledWith({ resumed: true });
-    expect(executeFlow).toHaveBeenCalledTimes(2);
-    expect(executeFlow).toHaveBeenNthCalledWith(
-      1,
+    expect(executeFlow).toHaveBeenCalledTimes(1);
+    expect(executeFlow).toHaveBeenCalledWith(
       step.steps,
-      expect.any(Object),
+      expect.objectContaining({ iteration: { item: undefined, index: 0 } }),
       [0],
+      childFrame,
     );
-    expect(executeFlow).toHaveBeenNthCalledWith(
-      2,
-      step.steps,
-      expect.any(Object),
-      [1],
-    );
-    expect(state.output.collector).toEqual({ count: 1 });
+    expect(resumed.output.collector).toEqual({ count: 1 });
   });
 });
 

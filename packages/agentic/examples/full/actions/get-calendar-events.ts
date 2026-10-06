@@ -7,7 +7,6 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
 const inputSchema = z.object({
@@ -22,7 +21,7 @@ const outputSchema = z.object({
     }),
   ),
 });
-const settingsSchema = SettingsSchema;
+const settingsSchema = z.strictObject({});
 
 type GetCalendarEventsInput = z.infer<typeof inputSchema>;
 type GetCalendarEventsOutput = z.infer<typeof outputSchema>;

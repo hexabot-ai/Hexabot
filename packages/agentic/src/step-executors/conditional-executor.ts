@@ -4,11 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
-import type {
-  ConditionalStep,
-  ExecutionState,
-  Suspension,
-} from '../workflow-types';
+import type { ConditionalFrame } from '../checkpoint';
+import type { ConditionalStep, ExecutionState } from '../workflow-types';
 import { evaluateValue } from '../workflow-values';
 
 import { markStepsSkipped } from './skip-helpers';
@@ -21,14 +18,55 @@ import type { StepExecutorEnv } from './types';
  * @param step The conditional step definition.
  * @param state Mutable workflow execution state.
  * @param path Path tokens locating this step within the workflow tree.
- * @returns A suspension if a branch pauses execution, otherwise void.
+ * @param frame Frame returned when the chosen branch previously suspended; its
+ * branch is re-entered without evaluating conditions again.
+ * @returns A frame if the chosen branch suspends, otherwise void.
  */
 export async function executeConditional(
   env: StepExecutorEnv,
   step: ConditionalStep,
   state: ExecutionState,
   path: Array<number | string>,
-): Promise<Suspension | void> {
+  frame?: ConditionalFrame,
+): Promise<ConditionalFrame | void> {
+  const branchIndex = frame
+    ? frame.branchIndex
+    : await chooseBranch(env, step, state);
+  if (branchIndex === undefined) {
+    step.branches.forEach((branch) =>
+      markStepsSkipped(env, branch.steps, state.iterationStack),
+    );
+
+    return undefined;
+  }
+
+  if (!frame) {
+    step.branches.forEach((candidate, candidateIndex) => {
+      if (candidateIndex !== branchIndex) {
+        markStepsSkipped(env, candidate.steps, state.iterationStack);
+      }
+    });
+  }
+
+  const child = await env.executeFlow(
+    step.branches[branchIndex].steps,
+    state,
+    [...path, 'branch', branchIndex],
+    frame?.child,
+  );
+
+  if (child) {
+    return { kind: 'conditional', stepId: step.id, branchIndex, child };
+  }
+
+  return undefined;
+}
+
+const chooseBranch = async (
+  env: StepExecutorEnv,
+  step: ConditionalStep,
+  state: ExecutionState,
+): Promise<number | undefined> => {
   for (let index = 0; index < step.branches.length; index += 1) {
     const branch = step.branches[index];
     const scope = {
@@ -44,40 +82,9 @@ export async function executeConditional(
         : true;
 
     if (conditionResult) {
-      step.branches.forEach((candidate, candidateIndex) => {
-        if (candidateIndex !== index) {
-          markStepsSkipped(env, candidate.steps, state.iterationStack);
-        }
-      });
-      const suspension = await env.executeFlow(branch.steps, state, [
-        ...path,
-        'branch',
-        index,
-      ]);
-
-      if (suspension) {
-        return {
-          ...suspension,
-          continue: async (resumeData: unknown) => {
-            const next = await suspension.continue(resumeData);
-            if (next) {
-              return next;
-            }
-
-            return undefined;
-          },
-        };
-      }
-
-      return undefined;
+      return index;
     }
   }
 
-  if (step.branches.length > 0) {
-    step.branches.forEach((branch) =>
-      markStepsSkipped(env, branch.steps, state.iterationStack),
-    );
-  }
-
   return undefined;
-}
+};

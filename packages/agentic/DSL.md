@@ -78,13 +78,15 @@ The `flow` array defines the run order. Each item is exactly one of the followin
 
 All branches and loop bodies can themselves contain nested `conditional` or `parallel` blocks.
 
-Parallel branches are isolated while they run: each branch sees the `$output`, `$iteration`, `$accumulator`, and context state from the moment the parallel block starts, plus its own writes. Sibling branch outputs are not visible until after the parallel block completes. Tasks inside parallel receive an `AbortSignal` and should stop promptly when it is aborted. Human-in-the-loop suspension is not supported inside parallel branches.
+Parallel branches are isolated while they run: each branch sees the `$output`, `$iteration`, `$accumulator`, and context state from the moment the parallel block starts, plus its own writes. Sibling branch outputs are not visible until after the parallel block completes. Tasks inside parallel receive an `AbortSignal` and should stop promptly when it is aborted.
+
+Branches may suspend. The block lets every branch finish or suspend, then suspends with one open wait per suspended branch; branches that finished are not run again on resume. With `wait_all`, the block completes once every wait is resolved. With `wait_any`, the first branch to complete wins and the waits of the other branches are dropped. A branch's writes to context state are local to the branch and are not kept across a suspension; pass data through `$output` instead.
 
 ## Human-in-the-loop pauses
 
 - Use a task whose `action` supports waiting (e.g., `await_user_input`) and set `settings.await_user: true`.
 - The engine should checkpoint the workflow, wait for a reply or timeout, then resume with the captured response stored under `$output.<task>`.
-- Do not place suspending actions inside a `parallel` block. `context.workflow.suspend()` inside parallel fails the workflow with `ParallelSuspensionError`.
+- Suspending actions may be used anywhere, including inside `parallel` branches and loops (see above).
 
 ## Final outputs
 

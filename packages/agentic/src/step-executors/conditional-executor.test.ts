@@ -4,18 +4,13 @@
  * Full terms: see LICENSE.md.
  */
 
+import type { SequenceFrame } from '../checkpoint';
 import { BaseWorkflowContext } from '../context';
-import type { RuntimeSuspensionRequest } from '../runner-runtime-control';
-import {
-  StepType,
-  type EventEmitterLike,
-  type StepInfo,
-} from '../workflow-event-emitter';
+import { StepType, type EventEmitterLike } from '../workflow-event-emitter';
 import type {
   CompiledStep,
   ConditionalStep,
   ExecutionState,
-  Suspension,
 } from '../workflow-types';
 
 import { executeConditional } from './conditional-executor';
@@ -53,18 +48,13 @@ const createEnv = (): StepExecutorEnv => {
     context: new TestContext(),
     signal: new AbortController().signal,
     runId: 'run-1',
+    runtime: {} as StepExecutorEnv['runtime'],
+    resolutions: new Map<string, unknown>(),
+    rejectResume: jest.fn(),
     buildInstanceStepInfo: jest.fn(),
     markSnapshot: jest.fn(),
     recordStepExecution: jest.fn(),
     emit: jest.fn(),
-    setCurrentStep: jest.fn(),
-    waitForStepSuspension: jest
-      .fn()
-      .mockImplementation(
-        () => new Promise<RuntimeSuspensionRequest>(() => undefined),
-      ),
-    clearStepSuspensions: jest.fn(),
-    primeStepResumeData: jest.fn(),
     captureTaskOutput: jest.fn(),
     executeFlow: jest.fn(),
     executeStep: jest.fn(),
@@ -112,61 +102,102 @@ describe('executeConditional', () => {
       step.branches[1].steps,
       state,
       [0, 'branch', 1],
+      undefined,
     );
   });
 
-  it('wraps and resumes from a suspended branch', async () => {
+  it('records the chosen branch when it suspends', async () => {
     const env = createEnv();
     const state = createState();
-    const innerSuspension: Suspension = {
-      step: { id: 'inner', name: 'inner', type: StepType.Task } as StepInfo,
-      reason: 'pause',
-      continue: jest.fn().mockResolvedValue(undefined),
+    const child: SequenceFrame = {
+      kind: 'sequence',
+      index: 0,
+      child: {
+        kind: 'task',
+        stepId: 'b',
+        inputs: {},
+        awaitResults: {},
+        wait: {
+          waitId: 'b@index:1',
+          step: { id: 'b', name: 'b', type: StepType.Task },
+          suspendKey: 'index:1',
+        },
+      },
     };
-    env.executeFlow = jest.fn().mockResolvedValue(innerSuspension);
+    env.executeFlow = jest.fn().mockResolvedValue(child);
 
     const step: ConditionalStep = {
       id: 'conditional',
       type: StepType.Conditional,
       label: 'conditional',
-      branches: [{ id: 'branch-0', steps: [createTaskStep('a')] }],
+      branches: [
+        {
+          id: 'branch-0',
+          condition: { kind: 'literal', value: false },
+          steps: [createTaskStep('a')],
+        },
+        { id: 'branch-1', steps: [createTaskStep('b')] },
+      ],
     };
-    const suspension = await executeConditional(env, step, state, []);
-    expect(suspension).toEqual(
-      expect.objectContaining({ step: innerSuspension.step, reason: 'pause' }),
-    );
-    expect(env.executeFlow).toHaveBeenCalledTimes(1);
+    const frame = await executeConditional(env, step, state, []);
 
-    await suspension?.continue('resume-data');
-    expect(innerSuspension.continue).toHaveBeenCalledWith('resume-data');
-    expect(env.executeFlow).toHaveBeenCalledTimes(1);
+    expect(frame).toEqual({
+      kind: 'conditional',
+      stepId: 'conditional',
+      branchIndex: 1,
+      child,
+    });
   });
 
-  it('forwards nested suspensions from branch continuation', async () => {
+  it('re-enters the recorded branch without evaluating conditions again', async () => {
     const env = createEnv();
     const state = createState();
-    const nextSuspension: Suspension = {
-      step: { id: 'next', name: 'next', type: StepType.Task } as StepInfo,
-      continue: jest.fn(),
+    const child: SequenceFrame = {
+      kind: 'sequence',
+      index: 0,
+      child: {
+        kind: 'task',
+        stepId: 'b',
+        inputs: {},
+        awaitResults: {},
+        wait: {
+          waitId: 'b@index:1',
+          step: { id: 'b', name: 'b', type: StepType.Task },
+          suspendKey: 'index:1',
+        },
+      },
     };
-    const innerSuspension: Suspension = {
-      step: { id: 'inner', name: 'inner', type: StepType.Task } as StepInfo,
-      continue: jest.fn().mockResolvedValue(nextSuspension),
-    };
-    env.executeFlow = jest.fn().mockResolvedValue(innerSuspension);
+    env.executeFlow = jest.fn().mockResolvedValue(undefined);
 
     const step: ConditionalStep = {
       id: 'conditional',
       type: StepType.Conditional,
       label: 'conditional',
-      branches: [{ id: 'branch-0', steps: [createTaskStep('a')] }],
+      branches: [
+        {
+          id: 'branch-0',
+          condition: { kind: 'literal', value: true },
+          steps: [createTaskStep('a')],
+        },
+        { id: 'branch-1', steps: [createTaskStep('b')] },
+      ],
     };
-    const suspension = await executeConditional(env, step, state, []);
-    const result = await suspension?.continue('resume-data');
+    const result = await executeConditional(env, step, state, [2], {
+      kind: 'conditional',
+      stepId: 'conditional',
+      branchIndex: 1,
+      child,
+    });
 
-    expect(result).toBe(nextSuspension);
-    expect(innerSuspension.continue).toHaveBeenCalledWith('resume-data');
-    expect(env.executeFlow).toHaveBeenCalledTimes(1);
+    expect(result).toBeUndefined();
+    expect(env.executeFlow).toHaveBeenCalledWith(
+      step.branches[1].steps,
+      state,
+      [2, 'branch', 1],
+      child,
+    );
+    // Skipped branches were already reported when the branch was chosen.
+    expect(env.markSnapshot).not.toHaveBeenCalled();
   });
 
   it('returns undefined when no branch matches', async () => {

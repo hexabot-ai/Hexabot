@@ -4,7 +4,9 @@
  * Full terms: see LICENSE.md.
  */
 
+import type { WaitInfo } from './checkpoint';
 import type { StepExecutionRecord } from './context';
+import type { WorkflowResumeRejectedError } from './errors';
 
 export enum StepType {
   Task = 'task',
@@ -31,17 +33,41 @@ export type WorkflowEventMap = {
   'hook:workflow:failure': { runId?: string; error: unknown };
   'hook:workflow:suspended': {
     runId?: string;
-    step: StepInfo;
-    reason?: string;
-    data?: unknown;
+    /** Every open wait of the run, in flow order. */
+    waits: WaitInfo[];
+  };
+  /** A resume payload was refused; the run is unchanged and the wait stays open. */
+  'hook:workflow:resume_rejected': {
+    runId?: string;
+    /** The wait the payload was meant for. */
+    wait: WaitInfo;
+    /** The payload as passed to `resume()`. */
+    resumeData: unknown;
+    error: WorkflowResumeRejectedError;
   };
   'hook:step:start': StepWorkflowEventPayload;
+  /** A suspended step whose wait was resolved re-runs its action body. */
+  'hook:step:resumed': StepWorkflowEventPayload & {
+    /** The wait this resume resolved. */
+    wait: WaitInfo;
+    /** The payload recorded for the wait, after its JSON round trip. */
+    resumeData: unknown;
+  };
+  /** A resumed step refused its payload and is suspended again on the same wait. */
+  'hook:step:resume_rejected': StepWorkflowEventPayload & {
+    wait: WaitInfo;
+    error: WorkflowResumeRejectedError;
+  };
   'hook:step:success': StepWorkflowEventPayload;
   'hook:step:error': StepWorkflowEventPayload & { error: unknown };
-  'hook:step:cancelled': StepWorkflowEventPayload & { error: unknown };
+  'hook:step:cancelled': StepWorkflowEventPayload & {
+    error: unknown;
+    /** The wait the step was suspended on, which is now dropped. */
+    wait?: WaitInfo;
+  };
   'hook:step:suspended': StepWorkflowEventPayload & {
-    reason?: string;
-    data?: unknown;
+    /** The wait this suspension opened. */
+    wait: WaitInfo;
   };
   'hook:step:skipped': { runId?: string; step: StepInfo; reason?: string };
 };

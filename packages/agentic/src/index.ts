@@ -13,7 +13,6 @@ export type { DefineActionParams } from './action/action';
 export type {
   Action,
   ActionExecutionArgs,
-  ActionExecutionOutcome,
   ActionMetadata,
   Actions,
   InferActionArgs,
@@ -22,7 +21,6 @@ export type {
   InferActionInput,
   InferActionOutput,
   InferActionSettings,
-  SuspensionNotice,
 } from './action/action.types';
 
 export {
@@ -60,9 +58,8 @@ export {
   WorkflowRunner,
   type FlowStepPath,
   type WorkflowCompileOptions,
-  type WorkflowResumeResult,
   type WorkflowRunOptions,
-  type WorkflowStartResult,
+  type WorkflowRunResult,
 } from './workflow';
 
 export { StepType } from './workflow-event-emitter';
@@ -88,17 +85,43 @@ export type {
   CompiledWorkflow,
   EvaluationScope,
   ExecutionState,
-  PersistedSuspension,
+  ResumeRejection,
   RunnerResumeArgs,
   RunnerStartArgs,
-  Suspension,
-  ResumeResult as WorkflowResumeOutcome,
-  StartResult as WorkflowStartOutcome,
+  SuspendedResult,
 } from './workflow-types';
 
-export { NonDeterministicWorkflowError } from './runner-runtime-control';
+export {
+  CHECKPOINT_VERSION,
+  collectWaits,
+  validateCheckpoint,
+  workflowCheckpointSchema,
+  type CheckpointValidationResult,
+  type ConditionalFrame,
+  type LoopFrame,
+  type ParallelBranchFrame,
+  type ParallelFrame,
+  type RecordedResult,
+  type SequenceFrame,
+  type StepFrame,
+  type TaskFrame,
+  type WaitInfo,
+  type WorkflowCheckpoint,
+} from './checkpoint';
 
-export { ParallelSuspensionError, WorkflowCancellationError } from './errors';
+export { fingerprintWorkflow } from './workflow-fingerprint';
+
+export {
+  NonDeterministicWorkflowError,
+  WorkflowCancellationError,
+  WorkflowCheckpointInvalidError,
+  WorkflowDefinitionDriftError,
+  WorkflowResumeError,
+  WorkflowResumeRejectedError,
+  WorkflowWaitAmbiguousError,
+  WorkflowWaitNotFoundError,
+  type WorkflowCheckpointInvalidCode,
+} from './errors';
 
 export {
   compileValue,
@@ -110,10 +133,6 @@ export {
   type JsonataFunctionImplementation,
   type JsonataFunctionRegistry,
 } from './workflow-values';
-
-export { createDeferred } from './utils/deferred';
-
-export type { Deferred } from './utils/deferred';
 
 export {
   assertSnakeCaseName,

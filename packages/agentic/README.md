@@ -5,9 +5,9 @@ Typed runtime and YAML DSL for orchestrating multi-step AI/automation workflows.
 ## Highlights
 - Declarative workflow DSL in YAML or JS objects with JSONata expressions (prefixed by `=`) and clear scopes (`$input`, `$context`, `$output`, `$iteration`, `$accumulator`).
 - Type-safe actions built with `defineAction`, Zod-validated IO, and merged settings (timeouts, retries, plus action-specific options) inherited from workflow defaults.
-- Resumable execution via `WorkflowRunner` and `context.workflow.suspend`, plus snapshots for persistence and replay.
+- Durable, resumable execution via `WorkflowRunner` and `context.workflow.suspend`: a suspended run yields a JSON checkpoint that any process can resume, including suspensions inside `parallel` blocks.
 - Flow primitives: sequential `do`, truly concurrent `parallel` blocks (`wait_all`/`wait_any`), `conditional` branches, and two loop variants: `loop.type: for_each` (iterables) and `loop.type: while` (pre-check condition).
-- Event emitter hooks for observability (`hook:workflow:start|finish|failure|suspended`, `hook:step:start|success|error|cancelled|suspended|skipped`).
+- Event emitter hooks for observability (`hook:workflow:start|finish|failure|suspended|resume_rejected`, `hook:step:start|resumed|resume_rejected|success|error|cancelled|suspended|skipped`).
 
 ## Installation
 
@@ -104,9 +104,9 @@ export const call_api = defineAction<
 });
 ```
 
-Settings are parsed and merged with workflow defaults before `execute` runs; retries and timeout wrappers are applied automatically. Each action receives an `AbortSignal` as `signal`; long-running actions should stop promptly when it is aborted. Awaiting `context.workflow.suspend(...)` pauses the workflow until `resume` is called, except inside `parallel` branches where suspension fails with `ParallelSuspensionError`.
+Settings are parsed and merged with workflow defaults before `execute` runs; retries and timeout wrappers are applied automatically. Each action receives an `AbortSignal` as `signal`; long-running actions should stop promptly when it is aborted. Awaiting `context.workflow.suspend(...)` pauses the workflow until `resume` is called; see [Suspension and human-in-the-loop](#suspension-and-human-in-the-loop).
 
-Parallel branches start concurrently with isolated `$output`, `$iteration`, `$accumulator`, and context state from the parallel entry point. `wait_all` merges successful branch output deltas in child order. `wait_any` advances with the first successful branch, aborts losing branches, and discards loser outputs.
+Parallel branches start concurrently with isolated `$output`, `$iteration`, `$accumulator`, and context state from the parallel entry point. `wait_all` merges successful branch output deltas in child order. `wait_any` advances with the first successful branch, aborts losing branches, and discards loser outputs. Branches may suspend: the block waits for every branch to finish or suspend, then suspends with one open wait per suspended branch.
 
 ## Running a workflow from YAML
 
@@ -137,9 +137,17 @@ const startResult = await runner.start({
 if (startResult.status === 'finished') {
   console.log('output', startResult.output);
 } else if (startResult.status === 'suspended') {
-  // persist startResult.snapshot and prompt the user; resume later:
-  const resumeResult = await runner.resume({ resumeData: { reply: 'go' } });
-  console.log(resumeResult.status, resumeResult.output);
+  // Persist startResult.checkpoint (plain JSON) and prompt the user; later:
+  const restored = workflow.buildRunnerFromCheckpoint({
+    checkpoint: startResult.checkpoint,
+    snapshot: startResult.snapshot,
+    context,
+  });
+  const resumeResult = await restored.resume({
+    waitId: startResult.waits[0].waitId,
+    resumeData: { reply: 'go' },
+  });
+  console.log(resumeResult.status);
 }
 ```
 
@@ -195,28 +203,72 @@ These helpers are registered on every expression and can be referenced from YAML
 Inside an action you can pause execution and surface metadata to the caller:
 
 ```ts
-export const await_user = defineAction<unknown, { reply?: string }, AppContext, Settings>({
+export const await_user = defineAction<unknown, { reply: string }, AppContext, Settings>({
   name: 'await_user',
   execute: async ({ context }) => {
-    const resumeData = await context.workflow.suspend({
+    const { reply } = await context.workflow.suspend({
       reason: 'awaiting_user',
       data: { prompt: 'Please confirm' },
+      accepts: z.object({ reply: z.string() }),
     });
-    return { reply: (resumeData as { reply?: string })?.reply };
+    return { reply };
   },
 });
 ```
 
-`Workflow.run` throws an error with suspension details (`stepId`, `reason`, `data`) when this happens; `WorkflowRunner.start` instead returns `{ status: 'suspended', ... }` so hosts can persist state and resume later with `runner.resume`.
+`accepts` declares the payload the wait accepts and types what `suspend()` resolves with. A payload that does not match it is refused without failing the run: the run stays suspended on the same wait, with the same `waitId`. An action can also refuse a payload it has read by throwing `WorkflowResumeRejectedError`.
 
-Suspending actions must not be placed inside `parallel` blocks.
+Payloads are stored as JSON, so `accepts` sees a payload in its JSON form: a `Date` arrives as its ISO string, and a resume without payload arrives as `undefined` (make the schema `.optional()` to allow it). Declare the JSON form, e.g. `z.coerce.date()` or `z.iso.datetime()` rather than `z.date()`; `suspend()` throws when part of the schema is a type JSON cannot carry, since no payload could ever resume that wait.
+
+`WorkflowRunner.start` and `resume` return `{ status: 'suspended', waits, checkpoint, snapshot }` when a run pauses. `Workflow.run` throws an error carrying the same `waits`.
+
+- **`waits`** lists every open wait (`waitId`, `step`, `suspendKey`, `reason`, `data`, and `accepts`, a JSON Schema of the payload when the action declared one, with `payloadOptional` when it may be left out). A run can hold several when branches of a `parallel` block suspend. `waitId` is opaque; do not parse it.
+- **`checkpoint`** is plain JSON holding everything needed to resume: the frames of the suspended control flow (sequence positions, chosen branches, loop items and accumulators, parallel branch outcomes), the outputs so far, and the suspended tasks' inputs and earlier resume payloads. Persist it as-is. It is built through JSON, so a resumed run sees the same values in process and after a restore (a `Date` becomes its ISO string); a run whose state JSON cannot encode, such as a `BigInt`, fails instead of suspending.
+
+To resume, possibly in another process:
+
+```ts
+const resumeData = { reply: 'go' };
+const validation = workflow.validateCheckpoint(stored.checkpoint, { waitId, resumeData });
+if (!validation.ok) {
+  // WorkflowCheckpointInvalidError | WorkflowDefinitionDriftError | WorkflowWaitNotFoundError
+  // | WorkflowWaitAmbiguousError (several waits are open and no waitId was given)
+  // | WorkflowResumeRejectedError (the payload does not match what the wait accepts)
+  throw validation.error;
+}
+
+const runner = workflow.buildRunnerFromCheckpoint({
+  checkpoint: stored.checkpoint,
+  snapshot: stored.snapshot,
+  context,
+});
+const result = await runner.resume({ waitId, resumeData });
+if (result.status === 'suspended' && result.rejection) {
+  // Refused payload: the checkpoint, snapshot and step log are unchanged, the wait is still open.
+}
+```
+
+`validateCheckpoint` runs no action and needs no context, so hosts can call it before claiming a wait. It checks a payload against the same wait `resume` would resolve: `waitId` may be omitted from both only when exactly one wait is open.
+
+Resuming skips every step that already completed. The suspended action's body **runs again from the top**: `suspend()` calls it already made resolve immediately with their recorded results, including the one being resumed. Guard side effects that happen before a `suspend()` with `context.workflow.hasRecordedResult()`:
+
+```ts
+if (!context.workflow.hasRecordedResult()) {
+  await sendPrompt(); // runs once, not once per resume
+}
+const reply = await context.workflow.suspend({ reason: 'awaiting_user' });
+```
+
+When an action suspends, its `signal` is aborted and its timeout stops counting; suspended time does not count toward `timeout_ms`. An action that implements its own retry loop instead of relying on `AbstractAction` should call `context.workflow.markSuspendCursor?.()` before its first attempt and the returned rewind function before each attempt, so a retry resolves the same `suspend()` calls again. See [SUSPENSION.md](./SUSPENSION.md) for the full design.
 
 ## Events and observability
 
 `WorkflowRunner` can publish lifecycle hooks to any emitter-like object with `emit`/`on` (`WorkflowEventEmitterLike`); `WorkflowEventEmitter` is the built-in helper and mirrors these events:
 
-- `hook:workflow:start | finish | failure | suspended`
-- `hook:step:start | success | error | cancelled | suspended | skipped`
+- `hook:workflow:start | finish | failure | suspended | resume_rejected`
+- `hook:step:start | resumed | resume_rejected | success | error | cancelled | suspended | skipped`
+
+Events about a wait (`hook:step:suspended`, `resumed`, `resume_rejected`, and `cancelled` when it drops a parked wait, plus `hook:workflow:resume_rejected`) carry its `wait` (`WaitInfo`), so hosts can match them by `waitId`. `resumed` and `hook:workflow:resume_rejected` also carry `resumeData`.
 
 Attach listeners to stream logs, emit metrics, or capture snapshots for debugging.
 

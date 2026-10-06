@@ -7,7 +7,6 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
 const inputSchema = z.object({
@@ -18,7 +17,9 @@ const outputSchema = z.object({
   text: z.string().optional(),
   attachments: z.array(z.string()).optional(),
 });
-const settingsSchema = SettingsSchema;
+const settingsSchema = z.strictObject({
+  await_user: z.boolean().optional(),
+});
 
 type AwaitUserInput = z.infer<typeof inputSchema>;
 type AwaitUserOutput = z.infer<typeof outputSchema>;

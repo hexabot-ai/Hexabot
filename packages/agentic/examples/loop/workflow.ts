@@ -23,8 +23,10 @@ async function main() {
   const context = new LoopExampleContext({ channel: 'chat' }, emitter);
 
   emitter.on('hook:workflow:start', () => context.log('workflow started'));
-  emitter.on('hook:workflow:suspended', ({ step, reason }) =>
-    context.log(`workflow suspended at "${step.name}"`, { reason }),
+  emitter.on('hook:workflow:suspended', ({ waits }) =>
+    waits.forEach(({ step, reason }) =>
+      context.log(`workflow suspended at "${step.name}"`, { reason }),
+    ),
   );
   emitter.on('hook:workflow:finish', ({ output }) =>
     context.log('workflow finished', output),

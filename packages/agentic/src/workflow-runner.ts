@@ -5,6 +5,21 @@
  */
 
 import {
+  assertFrameMatchesStep,
+  CHECKPOINT_VERSION,
+  collectWaits,
+  selectWait,
+  validateCheckpoint,
+  type ConditionalFrame,
+  type LoopFrame,
+  type ParallelFrame,
+  type SequenceFrame,
+  type StepFrame,
+  type TaskFrame,
+  type WaitInfo,
+  type WorkflowCheckpoint,
+} from './checkpoint';
+import {
   EWorkflowRunStatus,
   type ActionSnapshot,
   type ActionStatus,
@@ -14,39 +29,58 @@ import {
   type WorkflowSnapshot,
 } from './context';
 import { throwIfAborted } from './errors';
+import { checkResumePayload } from './resume-payload';
 import { RunnerRuntimeControl } from './runner-runtime-control';
 import { executeConditional as runConditionalExecutor } from './step-executors/conditional-executor';
 import { executeLoop as runLoopExecutor } from './step-executors/loop-executor';
 import { executeParallel as runParallelExecutor } from './step-executors/parallel-executor';
-import { wrapSuspensionContinuation } from './step-executors/suspension-continuation';
 import { executeTaskStep as runTaskExecutor } from './step-executors/task-executor';
 import type {
   StepExecutorEnv,
   StepExecutorEnvForkOverrides,
 } from './step-executors/types';
-import {
-  rebuildSuspension,
-  type SuspensionRebuilderDeps,
-} from './suspension-rebuilder';
+import { cloneAsJson } from './utils/clone';
 import {
   StepType,
   type StepInfo,
   type WorkflowEventMap,
 } from './workflow-event-emitter';
+import { fingerprintWorkflow } from './workflow-fingerprint';
 import type {
   CompiledStep,
   CompiledTask,
   CompiledWorkflow,
   ExecutionState,
-  PersistedSuspension,
-  ResumeResult,
+  ResumeRejection,
   RunnerResumeArgs,
   RunnerStartArgs,
-  StartResult,
-  Suspension,
+  SuspendedResult,
   WorkflowRunOptions,
+  WorkflowRunResult,
 } from './workflow-types';
 import { evaluateMapping } from './workflow-values';
+
+/** One start or resume pass over the flow. */
+type ExecutionPass = {
+  /** Resume payloads for the waits this pass satisfies, by wait id. */
+  resolutions: ReadonlyMap<string, unknown>;
+  /** Set when the resumed step refused its payload. */
+  rejection?: ResumeRejection;
+};
+
+/** What the runner reports about a run, put back when a resume is refused. */
+type RunReport = {
+  state?: ExecutionState;
+  snapshots: Record<string, ActionSnapshot>;
+  stepLog: Record<string, StepExecutionRecord>;
+};
+
+/** The suspended run a resume pass starts from. */
+type ResumedRun = {
+  checkpoint: WorkflowCheckpoint;
+  /** The report before the pass, restored if the payload is refused. */
+  report: RunReport;
+};
 
 /**
  * Executes a compiled workflow definition, tracking state, suspensions, and event hooks.
@@ -68,17 +102,11 @@ export class WorkflowRunner {
   // Detailed execution records for each task step, used by UI/telemetry.
   private stepLog: Record<string, StepExecutionRecord> = {};
 
-  // Suspension state when execution is paused awaiting external input.
-  private suspension?: Suspension;
+  // Checkpoint of the run while it is suspended awaiting external input.
+  private checkpoint?: WorkflowCheckpoint;
 
   // Control surface exposed to actions to suspend/resume the workflow.
   private runtimeControl?: RunnerRuntimeControl;
-
-  // Step currently being executed, used in event payloads and errors.
-  private currentStep?: StepInfo;
-
-  // Last payload provided to resume; exposed to actions via the context.
-  private lastResumeData?: unknown;
 
   // Mutable execution state including input and outputs.
   private state?: ExecutionState;
@@ -146,21 +174,13 @@ export class WorkflowRunner {
   }
 
   /**
-   * Read the step currently being executed.
+   * Read the checkpoint of a suspended run: everything a host must persist to
+   * resume it later, in this process or another one. Treat it as read-only.
    *
-   * @returns Metadata for the in-flight step, if any.
+   * @returns The checkpoint while the run is suspended, otherwise undefined.
    */
-  getCurrentStep(): StepInfo | undefined {
-    return this.currentStep;
-  }
-
-  /**
-   * Access the last payload supplied to a resume call.
-   *
-   * @returns The most recent resume data, or undefined if none.
-   */
-  getLastResumeData(): unknown {
-    return this.lastResumeData;
+  getCheckpoint(): WorkflowCheckpoint | undefined {
+    return this.checkpoint;
   }
 
   /**
@@ -170,13 +190,11 @@ export class WorkflowRunner {
    * @param args Input payload and context to seed execution.
    * @returns Execution result including status and snapshot.
    */
-  async start(args: RunnerStartArgs): Promise<StartResult> {
+  async start(args: RunnerStartArgs): Promise<WorkflowRunResult> {
     this.status = EWorkflowRunStatus.RUNNING;
     this.snapshots = {};
     this.stepLog = {};
-    this.suspension = undefined;
-    this.lastResumeData = undefined;
-    this.currentStep = undefined;
+    this.checkpoint = undefined;
     this.context = args.context;
     this.state = {
       input: this.compiled.inputParser.parse(args.inputData ?? {}),
@@ -184,85 +202,163 @@ export class WorkflowRunner {
       iterationStack: [],
     };
 
-    this.runtimeControl = new RunnerRuntimeControl(this);
+    this.runtimeControl = new RunnerRuntimeControl();
     this.context.attachWorkflowRuntime(this.runtimeControl);
 
     this.emit('hook:workflow:start', { runId: this.runId });
 
-    const state = this.state;
-    if (!state) {
-      throw new Error('Workflow state not initialized.');
-    }
-
-    const env = this.createExecutorEnv();
-
-    return this.runExecution(() =>
-      this.executeFlow(this.compiled.flow, state, [], 0, env),
-    );
+    return this.runExecution(new Map());
   }
 
   /**
-   * Resume a previously suspended workflow using the supplied resume data.
+   * Resume a suspended workflow by satisfying one of its open waits.
    *
-   * @param args Data provided to resume the suspended step.
+   * Execution re-enters the checkpoint's frames: completed work is skipped,
+   * the resolved step re-runs its action body, and waits left untouched stay
+   * parked.
+   *
+   * A payload the wait does not accept is refused, first against the wait's
+   * `accepts` JSON Schema without running anything, then by the action body.
+   * Either way the result is suspended on the same waits and carries
+   * `rejection`, and the checkpoint, snapshot and step log are left as they
+   * were. Events a refusing body emitted are not withdrawn, and its side
+   * effects, including writes to context state, are not undone.
+   *
+   * @param args Resume payload and, when several waits are open, the wait it satisfies.
    * @returns Execution result including status and snapshot.
+   * @throws {WorkflowWaitNotFoundError} When `waitId` is not an open wait.
+   * @throws {WorkflowWaitAmbiguousError} When several waits are open and no
+   * `waitId` is given.
    */
-  async resume(args: RunnerResumeArgs): Promise<ResumeResult> {
-    if (this.status !== EWorkflowRunStatus.SUSPENDED || !this.suspension) {
+  async resume(args: RunnerResumeArgs): Promise<WorkflowRunResult> {
+    if (this.status !== EWorkflowRunStatus.SUSPENDED || !this.checkpoint) {
       throw new Error('Cannot resume a workflow that is not suspended.');
     }
 
-    if (!this.context || !this.state) {
+    if (!this.context) {
       throw new Error('Workflow state is not initialized.');
     }
 
-    this.status = EWorkflowRunStatus.RUNNING;
-    this.lastResumeData = args.resumeData;
+    const wait = selectWait(this.checkpoint.waits, args.waitId);
+    const payload = checkResumePayload(wait, args.resumeData);
+    const result = payload.ok
+      ? await this.resolveWait(wait, payload.value)
+      : this.keepWaiting(this.checkpoint, {
+          waitId: wait.waitId,
+          error: payload.error,
+        });
+    if (result.status === EWorkflowRunStatus.SUSPENDED && result.rejection) {
+      this.emit('hook:workflow:resume_rejected', {
+        runId: this.runId,
+        wait,
+        resumeData: args.resumeData,
+        error: result.rejection.error,
+      });
+    }
 
-    const suspension: Suspension = this.suspension;
-
-    return this.runExecution(() => suspension.continue(args.resumeData));
+    return result;
   }
 
   /**
-   * Execute the provided workflow operation and normalize suspension, finish, and failure handling.
+   * Run the pass that resolves one wait with an accepted payload.
    *
-   * @param execute Function that advances workflow execution and may return a suspension.
+   * @param wait The wait being resolved.
+   * @param recorded The payload as the checkpoint records it.
+   * @returns Execution result including status and snapshot.
+   */
+  private async resolveWait(
+    wait: WaitInfo,
+    recorded: unknown,
+  ): Promise<WorkflowRunResult> {
+    const checkpoint = this.checkpoint;
+    if (!checkpoint) {
+      throw new Error('Cannot resume a workflow that is not suspended.');
+    }
+
+    const report: RunReport = {
+      state: this.state,
+      snapshots: { ...this.snapshots },
+      stepLog: { ...this.stepLog },
+    };
+    this.status = EWorkflowRunStatus.RUNNING;
+    this.context?.attachWorkflowRuntime(this.runtimeControl);
+
+    return this.runExecution(new Map([[wait.waitId, recorded]]), {
+      checkpoint,
+      report,
+    });
+  }
+
+  /**
+   * Run the flow from the top, or from a checkpoint, and normalize
+   * suspension, finish, and failure handling.
+   *
+   * @param resolutions Resume payloads for the waits this pass satisfies.
+   * @param resumed Suspended run to resume from; omitted on start.
    * @returns Result of the execution attempt.
    */
   private async runExecution(
-    execute: () => Promise<Suspension | void>,
-  ): Promise<StartResult> {
-    try {
-      const suspension = await execute();
+    resolutions: ReadonlyMap<string, unknown>,
+    resumed?: ResumedRun,
+  ): Promise<WorkflowRunResult> {
+    const pass: ExecutionPass = { resolutions };
 
-      if (suspension) {
-        this.suspension = suspension;
+    try {
+      // In-process and durable resumes start from the same detached JSON
+      // copy, so both see exactly what a host would have persisted.
+      const from = resumed ? cloneAsJson(resumed.checkpoint) : undefined;
+      if (from) {
+        this.state = {
+          input: from.input,
+          output: from.output,
+          iterationStack: [],
+        };
+      }
+
+      const state = this.state;
+      if (!state) {
+        throw new Error('Workflow state not initialized.');
+      }
+
+      const root = await this.executeFlow(
+        this.compiled.flow,
+        state,
+        [],
+        from?.root,
+        this.createExecutorEnv(pass),
+      );
+
+      // Only the refusing step ran in this pass, and it did not complete, so
+      // the run is put back as the checkpoint it started from describes it.
+      if (pass.rejection && resumed) {
+        this.state = resumed.report.state;
+        this.snapshots = resumed.report.snapshots;
+        this.stepLog = resumed.report.stepLog;
+
+        return this.keepWaiting(resumed.checkpoint, pass.rejection);
+      }
+
+      if (root) {
+        const next = this.buildCheckpoint(state, root);
+
+        this.checkpoint = next;
         this.status = EWorkflowRunStatus.SUSPENDED;
         this.emit('hook:workflow:suspended', {
           runId: this.runId,
-          step: suspension.step,
-          reason: suspension.reason,
-          data: suspension.data,
+          waits: next.waits,
         });
 
         return {
           status: EWorkflowRunStatus.SUSPENDED,
-          step: suspension.step,
-          reason: suspension.reason,
-          data: suspension.data,
-          stepExecId: suspension.stepExecId,
-          suspendIndex: suspension.suspendIndex,
-          suspendKey: suspension.suspendKey,
-          awaitResults: suspension.awaitResults,
+          waits: next.waits,
+          checkpoint: next,
           snapshot: this.getSnapshot(),
         };
       }
 
       const output = await this.evaluateWorkflowOutputs();
       this.status = EWorkflowRunStatus.FINISHED;
-      this.suspension = undefined;
-      this.currentStep = undefined;
+      this.checkpoint = undefined;
       this.emit('hook:workflow:finish', { runId: this.runId, output });
       if (!this.context) {
         throw new Error('Workflow context is not attached.');
@@ -276,7 +372,7 @@ export class WorkflowRunner {
       };
     } catch (error) {
       this.status = EWorkflowRunStatus.FAILED;
-      this.currentStep = undefined;
+      this.checkpoint = undefined;
       this.emit('hook:workflow:failure', { runId: this.runId, error });
       this.context?.attachWorkflowRuntime(undefined);
 
@@ -289,66 +385,105 @@ export class WorkflowRunner {
   }
 
   /**
-   * Rebuild a runner from persisted state, allowing hosts to resume after restarts.
+   * Leave the run suspended on `checkpoint` after a resume payload was
+   * refused.
+   *
+   * @param checkpoint The checkpoint the run was suspended on.
+   * @param rejection The refused wait and why.
+   * @returns The suspended result, carrying the rejection.
+   */
+  private keepWaiting(
+    checkpoint: WorkflowCheckpoint,
+    rejection: ResumeRejection,
+  ): SuspendedResult {
+    this.checkpoint = checkpoint;
+    this.status = EWorkflowRunStatus.SUSPENDED;
+
+    return {
+      status: EWorkflowRunStatus.SUSPENDED,
+      waits: checkpoint.waits,
+      checkpoint,
+      snapshot: this.getSnapshot(),
+      rejection,
+    };
+  }
+
+  /**
+   * Snapshot the suspended run as a detached JSON checkpoint.
+   *
+   * The checkpoint goes through the same JSON round trip a host applies when
+   * persisting it, so a resumed run sees the same values in process and
+   * after a restore.
+   *
+   * @param state Root execution state at suspension time.
+   * @param root Frame returned by the top-level flow.
+   * @returns The checkpoint to hand to the host.
+   * @throws When the run's state cannot be encoded as JSON.
+   */
+  private buildCheckpoint(
+    state: ExecutionState,
+    root: SequenceFrame,
+  ): WorkflowCheckpoint {
+    try {
+      return cloneAsJson({
+        version: CHECKPOINT_VERSION,
+        fingerprint: fingerprintWorkflow(this.compiled),
+        input: state.input,
+        output: state.output,
+        root,
+        waits: collectWaits(root),
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+
+      throw new Error(
+        `Cannot checkpoint the suspended run: its state is not JSON-serializable (${reason}).`,
+      );
+    }
+  }
+
+  /**
+   * Restore a suspended run from its persisted checkpoint, typically in a
+   * different process than the one that suspended it.
    *
    * @param compiled The compiled workflow definition.
-   * @param options Persisted state and metadata needed to rebuild the runner.
-   * @returns A runner positioned to continue from the prior suspension or status.
+   * @param options.checkpoint Checkpoint returned when the run suspended.
+   * @param options.context Freshly hydrated workflow context.
+   * @param options.snapshot Persisted action snapshot, to keep reporting past steps.
+   * @param options.runId Run identifier propagated through events.
+   * @returns A suspended runner ready for {@link resume}.
+   * @throws {WorkflowResumeError} When the checkpoint cannot resume against `compiled`.
    */
-  static async fromPersistedState(
+  static fromCheckpoint(
     compiled: CompiledWorkflow,
     options: {
-      state: ExecutionState;
+      checkpoint: unknown;
       context: BaseWorkflowContext;
-      snapshot: WorkflowSnapshot;
-      suspension?: PersistedSuspension;
+      snapshot?: WorkflowSnapshot;
       runId?: string;
-      lastResumeData?: unknown;
     },
-  ): Promise<WorkflowRunner> {
+  ): WorkflowRunner {
+    const validation = validateCheckpoint(compiled, options.checkpoint);
+    if (!validation.ok) {
+      throw validation.error;
+    }
+
+    const checkpoint = validation.checkpoint;
     const runner = new WorkflowRunner(compiled, {
       runId: options.runId,
     });
 
+    runner.checkpoint = checkpoint;
     runner.state = {
-      input: options.state.input ?? {},
-      output: options.state.output ?? {},
-      iteration: options.state.iteration,
-      accumulator: options.state.accumulator,
-      iterationStack: [...(options.state.iterationStack ?? [])],
+      input: checkpoint.input,
+      output: checkpoint.output,
+      iterationStack: [],
     };
     runner.context = options.context;
-    runner.snapshots = options.snapshot.actions ?? {};
-    runner.stepLog = {};
-    runner.status = options.snapshot.status ?? EWorkflowRunStatus.IDLE;
-    runner.lastResumeData = options.lastResumeData;
-    runner.runtimeControl = new RunnerRuntimeControl(runner);
+    runner.snapshots = { ...(options.snapshot?.actions ?? {}) };
+    runner.status = EWorkflowRunStatus.SUSPENDED;
+    runner.runtimeControl = new RunnerRuntimeControl();
     options.context.attachWorkflowRuntime(runner.runtimeControl);
-
-    if (options.suspension) {
-      const suspension = rebuildSuspension(
-        runner.createSuspensionRebuilderDeps(),
-        {
-          state: runner.state,
-          stepId: options.suspension.stepId,
-          reason: options.suspension.reason ?? undefined,
-          data: options.suspension.data,
-          stepExecId: options.suspension.stepExecId,
-          suspendIndex: options.suspension.suspendIndex,
-          suspendKey: options.suspension.suspendKey,
-          awaitResults: options.suspension.awaitResults,
-        },
-      );
-
-      if (!suspension) {
-        throw new Error(
-          `Unable to rebuild suspension for step ${options.suspension.stepId}`,
-        );
-      }
-
-      runner.suspension = suspension;
-      runner.status = EWorkflowRunStatus.SUSPENDED;
-    }
 
     return runner;
   }
@@ -465,10 +600,13 @@ export class WorkflowRunner {
   /**
    * Construct the environment object passed to step executors.
    *
+   * @param pass The execution pass, shared by every scope it forks.
+   * @param overrides Scope-specific replacements, e.g. for a parallel branch.
    * @returns A step executor environment bound to this runner.
-   * @throws When the workflow context is missing.
+   * @throws When the workflow context or runtime control is missing.
    */
   private createExecutorEnv(
+    pass: ExecutionPass,
     overrides: StepExecutorEnvForkOverrides = {},
   ): StepExecutorEnv {
     const context = overrides.context ?? this.context;
@@ -476,21 +614,22 @@ export class WorkflowRunner {
       throw new Error('Workflow context is not attached.');
     }
 
+    const runtime = overrides.runtime ?? this.runtimeControl;
+    if (!runtime) {
+      throw new Error('Workflow runtime control is not initialized.');
+    }
+
     const signal = overrides.signal ?? new AbortController().signal;
-    const setCurrentStep =
-      overrides.setCurrentStep ??
-      ((step?: StepInfo) => {
-        this.currentStep = step;
-      });
-    const captureTaskOutput =
-      overrides.captureTaskOutput ??
-      ((task: CompiledTask, state: ExecutionState, result: unknown) =>
-        this.captureTaskOutput(task, state, result));
     const executorEnv: StepExecutorEnv = {
       compiled: this.compiled,
       context,
       signal,
       runId: this.runId,
+      runtime,
+      resolutions: pass.resolutions,
+      rejectResume: (rejection) => {
+        pass.rejection = rejection;
+      },
       buildInstanceStepInfo: (step, iterationStack) =>
         this.buildInstanceStepInfo(step, iterationStack),
       markSnapshot: (step, status, reason) =>
@@ -498,45 +637,17 @@ export class WorkflowRunner {
       recordStepExecution: (step, update) =>
         this.recordStepExecution(step, update),
       emit: (event, payload) => this.emit(event, payload),
-      setCurrentStep,
-      beginStepExecution: (stepId) => {
-        if (!this.runtimeControl) {
-          return `${stepId}#1`;
-        }
-
-        return this.runtimeControl.beginStepExecution(stepId);
-      },
-      waitForStepSuspension: (stepId) => {
-        if (!this.runtimeControl) {
-          throw new Error('Workflow runtime control is not initialized.');
-        }
-
-        return this.runtimeControl.waitForStepSuspension(stepId);
-      },
-      clearStepSuspensions: (stepId, error) => {
-        this.runtimeControl?.clearStepSuspensions(stepId, error);
-      },
-      primeStepResumeData: (stepId, resumeData) => {
-        this.runtimeControl?.primeStepResumeData(stepId, resumeData);
-      },
-      prepareStepReplay: (seed) => {
-        this.runtimeControl?.prepareStepReplay(seed);
-      },
-      recordStepSuspendResult: (params) => {
-        this.runtimeControl?.recordStepSuspendResult(params);
-      },
-      captureTaskOutput,
-      executeFlow: (steps, state, path, startIndex) =>
-        this.executeFlow(steps, state, path, startIndex, executorEnv),
-      executeStep: (step, state, path) =>
-        this.executeStep(step, state, path, executorEnv),
+      captureTaskOutput: (task, state, result) =>
+        this.captureTaskOutput(task, state, result),
+      executeFlow: (steps, state, path, frame) =>
+        this.executeFlow(steps, state, path, frame, executorEnv),
+      executeStep: (step, state, path, frame) =>
+        this.executeStep(step, state, path, frame, executorEnv),
       fork: (forkOverrides) =>
-        this.createExecutorEnv({
+        this.createExecutorEnv(pass, {
           context: forkOverrides.context ?? context,
           signal: forkOverrides.signal ?? signal,
-          setCurrentStep: forkOverrides.setCurrentStep ?? setCurrentStep,
-          captureTaskOutput:
-            forkOverrides.captureTaskOutput ?? captureTaskOutput,
+          runtime: forkOverrides.runtime ?? runtime,
         }),
     };
 
@@ -544,56 +655,45 @@ export class WorkflowRunner {
   }
 
   /**
-   * Build dependencies used to reconstruct a suspension from persisted state.
-   *
-   * @returns Dependency bag for suspension rebuilders.
-   */
-  private createSuspensionRebuilderDeps(): SuspensionRebuilderDeps {
-    return {
-      compiled: this.compiled,
-      context: this.context,
-      runId: this.runId,
-      createExecutorEnv: () => this.createExecutorEnv(),
-      buildInstanceStepInfo: (step, iterationStack) =>
-        this.buildInstanceStepInfo(step, iterationStack),
-      captureTaskOutput: (task, state, result) =>
-        this.captureTaskOutput(task, state, result),
-      markSnapshot: (step, status, reason) =>
-        this.markSnapshot(step, status, reason),
-      emit: (event, payload) => this.emit(event, payload),
-      executeFlow: (steps, state, path, startIndex) =>
-        this.executeFlow(steps, state, path, startIndex),
-    };
-  }
-
-  /**
-   * Walk a list of compiled steps, threading state and returning a suspension when encountered.
+   * Walk a list of compiled steps, threading state and returning a frame when
+   * one of them suspends.
    *
    * @param steps The steps to execute sequentially.
    * @param state Mutable execution state shared across steps.
    * @param path Path tokens leading to the current step for tracing.
-   * @param startIndex Index to resume from within the flow.
-   * @returns A suspension if execution pauses, otherwise void.
+   * @param frame Frame of a previous suspension within these steps.
+   * @param env Executor environment of the current scope.
+   * @returns A frame if execution pauses, otherwise void.
    */
   private async executeFlow(
     steps: CompiledStep[],
     state: ExecutionState,
     path: Array<number | string>,
-    startIndex = 0,
-    env = this.createExecutorEnv(),
-  ): Promise<Suspension | void> {
-    // Walk the flow sequentially; if a step suspends, wrap its continuation so we resume at the same index.
-    for (let index = startIndex; index < steps.length; index += 1) {
+    frame: SequenceFrame | undefined,
+    env: StepExecutorEnv,
+  ): Promise<SequenceFrame | void> {
+    if (frame) {
+      state.accumulator = frame.accumulator;
+    }
+
+    for (let index = frame?.index ?? 0; index < steps.length; index += 1) {
       throwIfAborted(env.signal);
 
-      const step = steps[index];
-      const stepPath = [...path, index];
-      const suspension = await this.executeStep(step, state, stepPath, env);
+      const child = await this.executeStep(
+        steps[index],
+        state,
+        [...path, index],
+        frame && index === frame.index ? frame.child : undefined,
+        env,
+      );
 
-      if (suspension) {
-        return wrapSuspensionContinuation(suspension, () =>
-          this.executeFlow(steps, state, path, index + 1, env),
-        );
+      if (child) {
+        return {
+          kind: 'sequence',
+          index,
+          accumulator: state.accumulator,
+          child,
+        };
       }
     }
 
@@ -606,25 +706,41 @@ export class WorkflowRunner {
    * @param step The step to run.
    * @param state The shared execution state.
    * @param path Tokens describing the location of the step in the workflow.
-   * @returns A suspension if the step pauses execution, otherwise void.
+   * @param frame Frame of a previous suspension of this step.
+   * @param env Executor environment of the current scope.
+   * @returns A frame if the step pauses execution, otherwise void.
    */
   private async executeStep(
     step: CompiledStep,
     state: ExecutionState,
     path: Array<number | string>,
-    env = this.createExecutorEnv(),
-  ): Promise<Suspension | void> {
+    frame: StepFrame | undefined,
+    env: StepExecutorEnv,
+  ): Promise<StepFrame | void> {
     throwIfAborted(env.signal);
+    assertFrameMatchesStep(frame, step, path);
 
     switch (step.type) {
       case StepType.Task:
-        return runTaskExecutor(env, step, state, path);
+        return runTaskExecutor(env, step, state, path, frame as TaskFrame);
       case StepType.Parallel:
-        return runParallelExecutor(env, step, state, path);
+        return runParallelExecutor(
+          env,
+          step,
+          state,
+          path,
+          frame as ParallelFrame,
+        );
       case StepType.Conditional:
-        return runConditionalExecutor(env, step, state, path);
+        return runConditionalExecutor(
+          env,
+          step,
+          state,
+          path,
+          frame as ConditionalFrame,
+        );
       case StepType.Loop:
-        return runLoopExecutor(env, step, state, path);
+        return runLoopExecutor(env, step, state, path, frame as LoopFrame);
     }
   }
 

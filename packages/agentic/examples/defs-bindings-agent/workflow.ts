@@ -52,9 +52,10 @@ async function main() {
   }
 
   if (result.status === 'suspended') {
+    const [wait] = result.waits;
     console.log(
-      `Workflow suspended at step ${result.step.id} for reason "${result.reason}"`,
-      result.data,
+      `Workflow suspended at step ${wait.step.id} for reason "${wait.reason}"`,
+      wait.data,
     );
 
     return;

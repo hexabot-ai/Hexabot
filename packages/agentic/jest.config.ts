@@ -13,6 +13,8 @@ const config: Config = {
   testMatch: ['<rootDir>/src/**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   collectCoverageFrom: ['src/**/*.ts'],
+  // The default babel provider fails to load under Node 24 (test-exclude).
+  coverageProvider: 'v8',
 };
 
 export default config;
