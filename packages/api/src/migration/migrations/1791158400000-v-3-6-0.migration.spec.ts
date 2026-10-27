@@ -27,6 +27,7 @@ const WorkflowRunEntity = new EntitySchema({
     updatedAt: { name: 'updated_at', type: 'datetime', updateDate: true },
   },
 });
+const AWAITING_OPERATOR_INDEX = 'IDX_workflow_runs_awaiting_operator';
 const LEGACY_COLUMNS = [
   'suspended_step',
   'suspension_reason',
@@ -45,6 +46,12 @@ describe('Migration v3.6.0', () => {
   const columnNames = async (): Promise<string[]> =>
     (
       (await queryRunner.query(`PRAGMA table_info("workflow_runs")`)) as Array<{
+        name: string;
+      }>
+    ).map(({ name }) => name);
+  const indexNames = async (): Promise<string[]> =>
+    (
+      (await queryRunner.query(`PRAGMA index_list("workflow_runs")`)) as Array<{
         name: string;
       }>
     ).map(({ name }) => name);
@@ -205,6 +212,60 @@ describe('Migration v3.6.0', () => {
     expect(await columnNames()).toContain('checkpoint');
   });
 
+  it('adds an indexed awaiting_operator flag', async () => {
+    await inTransaction(() =>
+      new Migration1791158400000_V3_6_0().up(queryRunner),
+    );
+
+    const column = (
+      (await queryRunner.query(`PRAGMA table_info("workflow_runs")`)) as Array<{
+        name: string;
+        notnull: number;
+        dflt_value: string | null;
+      }>
+    ).find(({ name }) => name === 'awaiting_operator');
+    expect(column).toMatchObject({ notnull: 1, dflt_value: '0' });
+    expect(await indexNames()).toContain(AWAITING_OPERATOR_INDEX);
+    expect((await findRun('done')).awaiting_operator).toBe(0);
+  });
+
+  it('flags the runs whose checkpoint holds a wait only an admin resolves', async () => {
+    const migration = new Migration1791158400000_V3_6_0();
+    const logger = { warn: jest.fn(), log: jest.fn() };
+    await inTransaction(() => migration.up(queryRunner));
+    const checkpoint = (...reasons: string[]) =>
+      JSON.stringify({
+        version: 1,
+        waits: reasons.map((reason, index) => ({
+          waitId: `wait-${index}`,
+          reason,
+        })),
+      });
+    await queryRunner.query(
+      `INSERT INTO "workflow_runs" ("id", "status", "checkpoint") VALUES ` +
+        `('approval', 'suspended', ?), ` +
+        `('resume', 'suspended', ?), ` +
+        `('child-only', 'suspended', ?), ` +
+        `('malformed', 'suspended', 'not json')`,
+      [
+        checkpoint('awaiting_user_response', 'awaiting_approval'),
+        checkpoint('awaiting_resume'),
+        checkpoint('awaiting_child_workflow'),
+      ],
+    );
+
+    await inTransaction(() => migration.up(queryRunner, { logger } as never));
+
+    expect((await findRun('approval')).awaiting_operator).toBe(1);
+    expect((await findRun('resume')).awaiting_operator).toBe(1);
+    expect((await findRun('child-only')).awaiting_operator).toBe(0);
+    expect((await findRun('malformed')).awaiting_operator).toBe(0);
+    expect(logger.log).toHaveBeenCalledWith(
+      expect.stringContaining('2 workflow run(s) waiting on an admin'),
+    );
+    expect(await indexNames()).toContain(AWAITING_OPERATOR_INDEX);
+  });
+
   it('does nothing when the table does not exist yet', async () => {
     await queryRunner.query(`DROP TABLE "memory_records"`);
     await queryRunner.query(`DROP TABLE "workflow_runs"`);
@@ -225,6 +286,8 @@ describe('Migration v3.6.0', () => {
 
     const columns = await columnNames();
     expect(columns).not.toContain('checkpoint');
+    expect(columns).not.toContain('awaiting_operator');
+    expect(await indexNames()).not.toContain(AWAITING_OPERATOR_INDEX);
     expect(columns).toEqual(expect.arrayContaining(LEGACY_COLUMNS));
     expect((await findRun('resumable')).status).toBe('failed');
     expect(

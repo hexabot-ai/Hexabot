@@ -9,6 +9,7 @@ import {
   QueryRunner,
   TableColumn,
   TableColumnOptions,
+  TableIndex,
 } from 'typeorm';
 
 import { MigrationServices } from '../types';
@@ -27,6 +28,25 @@ const CHECKPOINT_COLUMN: ColumnSpec = {
   sqliteType: 'text',
   column: { name: 'checkpoint', type: 'json', isNullable: true },
 };
+/** Whether the checkpoint holds an open wait only an admin resolves. */
+const AWAITING_OPERATOR_COLUMN: ColumnSpec = {
+  sqliteType: 'boolean NOT NULL DEFAULT (0)',
+  column: {
+    name: 'awaiting_operator',
+    type: 'boolean',
+    isNullable: false,
+    default: false,
+  },
+};
+/** Named as the entity names it, so `synchronize` leaves it alone. */
+const AWAITING_OPERATOR_INDEX = 'IDX_workflow_runs_awaiting_operator';
+/** Reasons of the waits an admin resolves, as of v3.6.0. */
+const OPERATOR_WAIT_REASONS: readonly unknown[] = [
+  'awaiting_approval',
+  'awaiting_resume',
+];
+/** Runs flagged per `UPDATE`, to stay under bound parameter limits. */
+const FLAG_BATCH_SIZE = 500;
 /** Suspension columns of the previous engine, replaced by the checkpoint. */
 const LEGACY_SUSPENSION_COLUMNS: ColumnSpec[] = [
   {
@@ -99,6 +119,11 @@ const LEGACY_SUSPENSION_COLUMNS: ColumnSpec[] = [
  * The execution state the previous engine kept in `metadata.state` is
  * dropped as well.
  *
+ * It also adds the indexed `awaiting_operator` flag, which lists the runs
+ * waiting on an admin (`await_approval`, `suspend_workflow`) without reading
+ * every checkpoint. Runs already holding such a wait, which only databases
+ * that ran pre-release builds can have, are flagged from their checkpoint.
+ *
  * `workflow_runs` only exists through TypeORM `synchronize`; when it is
  * missing, synchronize creates it (with its foreign keys) and there is nothing
  * to migrate.
@@ -141,6 +166,15 @@ export default class Migration1791158400000_V3_6_0
     for (const spec of LEGACY_SUSPENSION_COLUMNS) {
       await this.dropColumn(queryRunner, spec);
     }
+
+    await this.addColumn(queryRunner, AWAITING_OPERATOR_COLUMN);
+    await this.createAwaitingOperatorIndex(queryRunner);
+    const flagged = await this.flagOperatorWaits(queryRunner);
+    if (flagged > 0) {
+      services?.logger?.log(
+        `${flagged} workflow run(s) waiting on an admin were flagged.`,
+      );
+    }
   }
 
   public async down(
@@ -163,6 +197,9 @@ export default class Migration1791158400000_V3_6_0
       );
     }
 
+    // SQLite refuses to drop an indexed column.
+    await this.dropAwaitingOperatorIndex(queryRunner);
+    await this.dropColumn(queryRunner, AWAITING_OPERATOR_COLUMN);
     await this.dropColumn(queryRunner, CHECKPOINT_COLUMN);
 
     for (const spec of LEGACY_SUSPENSION_COLUMNS) {
@@ -184,10 +221,7 @@ export default class Migration1791158400000_V3_6_0
     options: { withoutCheckpointOnly: boolean; error: string },
   ): Promise<number> {
     const { driver } = queryRunner.connection;
-    const table = this.tablePath(queryRunner)
-      .split('.')
-      .map((part) => driver.escape(part))
-      .join('.');
+    const table = this.escapedTablePath(queryRunner);
     const [query, parameters] = driver.escapeQueryWithParameters(
       `UPDATE ${table} SET "status" = 'failed', "error" = :error, ` +
         `"failed_at" = :now, "updated_at" = :now ` +
@@ -239,6 +273,112 @@ export default class Migration1791158400000_V3_6_0
       .where(hasState)
       .callListeners(false)
       .execute();
+  }
+
+  /**
+   * Flag the runs whose checkpoint holds an open wait only an admin
+   * resolves. Checkpoints are read in JS: SQLite stores them as text, and a
+   * malformed one counts as holding no such wait.
+   *
+   * @returns The number of runs flagged.
+   */
+  private async flagOperatorWaits(queryRunner: QueryRunner): Promise<number> {
+    const { driver } = queryRunner.connection;
+    const table = this.escapedTablePath(queryRunner);
+    const rows = (await queryRunner.query(
+      `SELECT "id", "checkpoint" FROM ${table} WHERE "checkpoint" IS NOT NULL`,
+    )) as Array<{ id: string; checkpoint: unknown }>;
+    const ids = rows
+      .filter(({ checkpoint }) => this.hasOperatorWait(checkpoint))
+      .map(({ id }) => id);
+
+    for (let start = 0; start < ids.length; start += FLAG_BATCH_SIZE) {
+      const [query, parameters] = driver.escapeQueryWithParameters(
+        `UPDATE ${table} SET "awaiting_operator" = :flag WHERE "id" IN (:...ids)`,
+        {
+          // better-sqlite3 cannot bind booleans.
+          flag: this.isSqlite(queryRunner) ? 1 : true,
+          ids: ids.slice(start, start + FLAG_BATCH_SIZE),
+        },
+        {},
+      );
+      await queryRunner.query(query, parameters);
+    }
+
+    return ids.length;
+  }
+
+  private hasOperatorWait(checkpoint: unknown): boolean {
+    let value = checkpoint;
+    if (typeof value === 'string') {
+      try {
+        value = JSON.parse(value);
+      } catch {
+        return false;
+      }
+    }
+
+    const waits = (value as { waits?: unknown } | null)?.waits;
+
+    return (
+      Array.isArray(waits) &&
+      waits.some((wait: unknown) =>
+        OPERATOR_WAIT_REASONS.includes(
+          (wait as { reason?: unknown } | null)?.reason,
+        ),
+      )
+    );
+  }
+
+  private async createAwaitingOperatorIndex(
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    if (this.isSqlite(queryRunner)) {
+      await queryRunner.query(
+        `CREATE INDEX IF NOT EXISTS "${AWAITING_OPERATOR_INDEX}" ` +
+          `ON "${WORKFLOW_RUNS_TABLE}" ("awaiting_operator")`,
+      );
+
+      return;
+    }
+
+    if (await this.hasAwaitingOperatorIndex(queryRunner)) {
+      return;
+    }
+
+    await queryRunner.createIndex(
+      WORKFLOW_RUNS_TABLE,
+      new TableIndex({
+        name: AWAITING_OPERATOR_INDEX,
+        columnNames: ['awaiting_operator'],
+      }),
+    );
+  }
+
+  private async dropAwaitingOperatorIndex(
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    if (this.isSqlite(queryRunner)) {
+      await queryRunner.query(
+        `DROP INDEX IF EXISTS "${AWAITING_OPERATOR_INDEX}"`,
+      );
+
+      return;
+    }
+
+    if (await this.hasAwaitingOperatorIndex(queryRunner)) {
+      await queryRunner.dropIndex(WORKFLOW_RUNS_TABLE, AWAITING_OPERATOR_INDEX);
+    }
+  }
+
+  private async hasAwaitingOperatorIndex(
+    queryRunner: QueryRunner,
+  ): Promise<boolean> {
+    const table = await queryRunner.getTable(WORKFLOW_RUNS_TABLE);
+
+    return !!table?.indices.some(
+      (index) => index.name === AWAITING_OPERATOR_INDEX,
+    );
   }
 
   private async addColumn(
@@ -296,6 +436,16 @@ export default class Migration1791158400000_V3_6_0
       WORKFLOW_RUNS_TABLE,
       schema,
     );
+  }
+
+  /** {@link tablePath}, escaped for raw SQL. */
+  private escapedTablePath(queryRunner: QueryRunner): string {
+    const { driver } = queryRunner.connection;
+
+    return this.tablePath(queryRunner)
+      .split('.')
+      .map((part) => driver.escape(part))
+      .join('.');
   }
 
   private isSqlite(queryRunner: QueryRunner): boolean {

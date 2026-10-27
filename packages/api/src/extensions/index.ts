@@ -50,4 +50,8 @@ export * from './actions/messaging/list.action';
 
 export * from './actions/web/send-mail.action';
 
+export * from './actions/workflow/await-approval.action';
+
 export * from './actions/workflow/call-workflow.action';
+
+export * from './actions/workflow/suspend-workflow.action';

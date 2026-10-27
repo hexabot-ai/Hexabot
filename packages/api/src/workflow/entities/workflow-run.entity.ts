@@ -38,6 +38,7 @@ import { WorkflowOrmEntity } from './workflow.entity';
 
 @Entity({ name: 'workflow_runs' })
 @Index(['parentRun'])
+@Index('IDX_workflow_runs_awaiting_operator', ['awaitingOperator'])
 export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
   plainCls = workflowRunSchema;
 
@@ -141,6 +142,14 @@ export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
    */
   @JsonColumn({ nullable: true })
   checkpoint?: WorkflowCheckpoint | null;
+
+  /**
+   * Whether the stored checkpoint holds an open wait only an admin resolves
+   * (`await_approval`, `suspend_workflow`). Derived from the checkpoint by
+   * `WorkflowRunService` whenever it is written; backs the pending list.
+   */
+  @Column({ name: 'awaiting_operator', default: false })
+  awaitingOperator!: boolean;
 
   /** Error message when the run fails. */
   @Column({ name: 'error', type: 'text', nullable: true })

@@ -15,6 +15,7 @@ import { workflowRunFullSchema, workflowRunSchema } from '@hexabot-ai/types';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDate,
   IsIn,
   IsNotEmpty,
@@ -114,6 +115,14 @@ export class WorkflowRunCreateDto {
   @IsOptional()
   @IsObject()
   checkpoint?: WorkflowCheckpoint | null;
+
+  @ApiPropertyOptional({
+    description: 'Whether the run waits on an admin decision',
+    type: Boolean,
+  })
+  @IsOptional()
+  @IsBoolean()
+  awaitingOperator?: boolean;
 
   @ApiPropertyOptional({ description: 'Error message if failed', type: String })
   @IsOptional()

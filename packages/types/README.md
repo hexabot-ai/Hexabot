@@ -25,6 +25,15 @@ separate customer-facing channels from internal tooling channels.
 `WorkflowRun` includes a nullable `checkpoint`: the opaque agentic checkpoint a
 suspended run resumes from, cleared once the run finishes or fails. Its
 `waits` list the open waits of the run (step, reason and data of each).
+`awaitingOperator` is `true` while the checkpoint holds a wait only an admin
+resolves.
+
+Operator waits use the reasons `AWAITING_APPROVAL_REASON` (`awaiting_approval`,
+from `await_approval`) and `AWAITING_RESUME_REASON` (`awaiting_resume`, from
+`suspend_workflow`), listed in `WORKFLOW_OPERATOR_WAIT_REASONS`. Their wait
+`data` is described by `workflowApprovalWaitDataSchema` (`message`,
+`details`) and `workflowResumeWaitDataSchema` (`message`, `details`,
+`payload_schema`).
 
 ## Standard Export Pattern
 

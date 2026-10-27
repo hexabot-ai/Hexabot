@@ -64,7 +64,7 @@ describe('HexabotWorkflowRunMcpTools', () => {
         {},
         request,
       ),
-    ).resolves.toEqual({ accepted: true, run });
+    ).resolves.toEqual({ accepted: true, run: { ...run, openWaits: [] } });
 
     const [event] = agenticService.handleEvent.mock.calls[0];
     expect(event.getWorkflowId()).toBe('workflow-id');
@@ -73,6 +73,57 @@ describe('HexabotWorkflowRunMcpTools', () => {
       { prompt: 'hello' },
       { type: 'object', properties: {} },
     );
+  });
+
+  it('summarizes the open waits of a run instead of returning its checkpoint and YAML', async () => {
+    const wait = {
+      waitId: 'review@index:1',
+      step: { id: 'review', name: 'review', type: 'task' },
+      suspendKey: 'index:1',
+      reason: 'awaiting_approval',
+      data: { message: 'Refund 42 EUR?' },
+      accepts: { type: 'object' },
+    };
+    const run = {
+      id: 'run-id',
+      status: 'suspended',
+      checkpoint: { version: 1, fingerprint: 'f', root: {}, waits: [wait] },
+      workflowVersion: {
+        id: 'version-id',
+        definitionYml: 'defs: {}\nflow: []\noutputs: {}\n',
+      },
+    };
+    const workflowService = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'workflow-id',
+        type: WorkflowType.manual,
+        inputSchema: { type: 'object', properties: {} },
+      }),
+      validateManualInput: jest.fn().mockReturnValue({}),
+    };
+    const agenticService = {
+      handleEvent: jest.fn().mockResolvedValue(run),
+    };
+    const tools = buildWorkflowRunTools({ workflowService, agenticService });
+
+    await expect(
+      tools.runWorkflow({ workflowId: 'workflow-id', input: {} }, {}, request),
+    ).resolves.toEqual({
+      accepted: true,
+      run: {
+        id: 'run-id',
+        status: 'suspended',
+        workflowVersion: { id: 'version-id' },
+        openWaits: [
+          {
+            waitId: 'review@index:1',
+            reason: 'awaiting_approval',
+            step: wait.step,
+            data: { message: 'Refund 42 EUR?' },
+          },
+        ],
+      },
+    });
   });
 
   it('searches workflow runs without nested workflow YAML definitions or checkpoints', async () => {
@@ -110,6 +161,85 @@ describe('HexabotWorkflowRunMcpTools', () => {
             version: 3,
             checksum: 'checksum',
           },
+        },
+      ],
+      total: 1,
+      limit: 20,
+      skip: 0,
+    });
+  });
+
+  it('lists the runs waiting on an admin with their open admin waits', async () => {
+    const approvalWait = {
+      waitId: 'approve@index:1',
+      step: { id: 'approve', name: 'approve', type: 'task' },
+      suspendKey: 'index:1',
+      reason: 'awaiting_approval',
+      data: { message: 'Refund 42 EUR?' },
+      accepts: { type: 'object' },
+    };
+    const run = {
+      id: 'run-id',
+      status: 'suspended',
+      awaitingOperator: true,
+      checkpoint: {
+        version: 1,
+        waits: [
+          approvalWait,
+          {
+            waitId: 'ask@index:1',
+            step: { id: 'ask', name: 'ask', type: 'task' },
+            suspendKey: 'index:1',
+            reason: 'awaiting_user_response',
+          },
+        ],
+      },
+      workflowVersion: {
+        id: 'version-id',
+        definitionYml: 'defs: {}\nflow: []\noutputs: {}\n',
+      },
+    };
+    const workflowRunService = {
+      findAndPopulate: jest.fn().mockResolvedValue([run]),
+      count: jest.fn().mockResolvedValue(1),
+      withAwaitingOperatorScope: jest.fn((options) => ({
+        ...options,
+        where: { ...options.where, scoped: true },
+      })),
+    };
+    const tools = buildWorkflowRunTools({ workflowRunService });
+    const result = await tools.listPendingWorkflowRuns({
+      workflowId: '11111111-1111-4111-8111-111111111111',
+      limit: 20,
+      skip: 0,
+      sortBy: 'suspendedAt',
+      sortDirection: 'DESC',
+    });
+
+    expect(workflowRunService.findAndPopulate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workflow: { id: '11111111-1111-4111-8111-111111111111' },
+          scoped: true,
+        },
+        order: { suspendedAt: 'DESC' },
+      }),
+    );
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'run-id',
+          status: 'suspended',
+          awaitingOperator: true,
+          workflowVersion: { id: 'version-id' },
+          openWaits: [
+            {
+              waitId: 'approve@index:1',
+              reason: 'awaiting_approval',
+              step: approvalWait.step,
+              data: { message: 'Refund 42 EUR?' },
+            },
+          ],
         },
       ],
       total: 1,

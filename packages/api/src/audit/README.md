@@ -157,6 +157,9 @@ Currently provided decorators:
 
 - `AuditAuthLogin()`
 - `AuditAuthLogout()`
+- `AuditWorkflowRunOperation(operation)`: admin `approve`, `reject`, `resume`
+  and `cancel` operations on a suspended workflow run (`workflowrun.<operation>`).
+  Comments and resume data are not mapped.
 
 Example:
 

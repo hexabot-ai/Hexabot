@@ -9,9 +9,12 @@ import type {
   WorkflowResumeRejectedError,
 } from '@hexabot-ai/agentic';
 import {
+  AWAITING_APPROVAL_REASON,
+  AWAITING_RESUME_REASON,
   DirectionType,
   McpServerTransport,
   MemoryScope,
+  WORKFLOW_OPERATOR_WAIT_REASONS,
   WorkflowType,
   WorkflowVersionAction,
   MemoryDefinition,
@@ -24,6 +27,8 @@ import { TriggerEventWrapper } from './lib/trigger-event-wrapper';
 import { SchemaInstance } from './utils/schema-instance';
 
 export {
+  AWAITING_APPROVAL_REASON,
+  AWAITING_RESUME_REASON,
   DirectionType,
   McpServerTransport,
   MemoryScope,
@@ -40,12 +45,22 @@ export type MemoryValue = Record<string, unknown>;
 export const AWAITING_CHILD_WORKFLOW_REASON = 'awaiting_child_workflow';
 
 /**
- * Suspension reasons of waits that the host resolves itself. Inbound events
- * (messages, webhooks, manual triggers) never resolve these waits; they only
- * resolve the other open waits of a run.
+ * Suspension reasons of the waits an admin (operator) resolves through the
+ * workflow run API: `await_approval` and `suspend_workflow`.
+ */
+export const OPERATOR_WAIT_REASONS: ReadonlySet<string> = new Set(
+  WORKFLOW_OPERATOR_WAIT_REASONS,
+);
+
+/**
+ * Suspension reasons of waits that the host resolves itself: a child run's
+ * result, or an admin's decision. Inbound events (messages, webhooks, manual
+ * triggers) never resolve these waits; they only resolve the other open waits
+ * of a run.
  */
 export const HOST_RESOLVED_WAIT_REASONS: ReadonlySet<string> = new Set([
   AWAITING_CHILD_WORKFLOW_REASON,
+  ...OPERATOR_WAIT_REASONS,
 ]);
 
 /**
@@ -126,6 +141,38 @@ export type ResumeOutcome =
   | { status: 'no_wait'; run: WorkflowRunFull }
   /** The run can never resume; it was marked failed. */
   | { status: 'unresumable'; run: WorkflowRunFull };
+
+export type ResumeWaitOptions = {
+  run: WorkflowRunFull;
+  event: TriggerEventWrapper;
+  /** Open wait to resolve. */
+  waitId: string;
+  resumeData: unknown;
+};
+
+/**
+ * What happened to a wait the host resolved on behalf of an admin. On top of
+ * {@link ResumeOutcome}, `failed` means the wait was resolved but the run
+ * failed while it went on.
+ */
+export type ResumeWaitOutcome =
+  | ResumeOutcome
+  | { status: 'failed'; run: WorkflowRunFull; error: unknown };
+
+export type CancelRunOptions = {
+  run: WorkflowRunFull;
+  /** Failure message stored on the run and its cancelled steps. */
+  message: string;
+  /** Event used to deliver the failed result to a waiting parent run. */
+  event?: TriggerEventWrapper;
+};
+
+/** What happened to a suspended run the host tried to cancel. */
+export type CancelRunOutcome =
+  /** The run was failed, along with its suspended descendants. */
+  | { status: 'cancelled'; run: WorkflowRunFull }
+  /** Another caller resumed or cancelled this suspension first. */
+  | { status: 'claim_lost'; run: WorkflowRunFull };
 
 export type WorkflowContextState = Record<string, unknown> & {
   initiatorId: string;

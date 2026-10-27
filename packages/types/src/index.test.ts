@@ -67,6 +67,11 @@ import {
   workflowRunFullSchema,
   workflowRunSchema,
   workflowVersionFullSchema,
+  AWAITING_APPROVAL_REASON,
+  AWAITING_RESUME_REASON,
+  WORKFLOW_OPERATOR_WAIT_REASONS,
+  workflowApprovalWaitDataSchema,
+  workflowResumeWaitDataSchema,
 } from "./index";
 
 describe("@hexabot-ai/types schemas", () => {
@@ -1224,6 +1229,40 @@ describe("@hexabot-ai/types schemas", () => {
     expect(full.triggeredBy?.id).toBe("s_1");
     expect(full.parentRun?.workflow).toBe("parent_wf_1");
     expect(typeof resolveRunDurationMs(run)).toBe("number");
+    expect(run.awaitingOperator).toBe(false);
+  });
+
+  it("parses the operator wait flag and wait data", () => {
+    const run = workflowRunSchema.parse({
+      id: "run_3",
+      createdAt: now,
+      updatedAt: now,
+      status: "suspended",
+      context: {},
+      workflowId: "wf_1",
+      awaitingOperator: 1,
+    });
+
+    expect(run.awaitingOperator).toBe(true);
+    expect(WORKFLOW_OPERATOR_WAIT_REASONS).toEqual([
+      AWAITING_APPROVAL_REASON,
+      AWAITING_RESUME_REASON,
+    ]);
+    expect(
+      workflowApprovalWaitDataSchema.parse({
+        message: "Refund 42 EUR?",
+        details: { order: "A-1" },
+      }),
+    ).toEqual({ message: "Refund 42 EUR?", details: { order: "A-1" } });
+    expect(
+      workflowApprovalWaitDataSchema.safeParse({ details: {} }).success,
+    ).toBe(false);
+    expect(
+      workflowResumeWaitDataSchema.parse({
+        message: null,
+        payload_schema: { type: "object" },
+      }),
+    ).toEqual({ message: null, payload_schema: { type: "object" } });
   });
 
   it("falls back to subscriber parsing when user keys exist but are undefined", () => {
