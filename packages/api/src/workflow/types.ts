@@ -4,9 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import type {
-  WaitInfo,
-  WorkflowResumeRejectedError,
+import {
+  EWorkflowRunStatus,
+  type WaitInfo,
+  type WorkflowResumeRejectedError,
+  type WorkflowRunStatus,
 } from '@hexabot-ai/agentic';
 import {
   AWAITING_APPROVAL_REASON,
@@ -23,6 +25,7 @@ import {
 } from '@hexabot-ai/types';
 
 import type { WorkflowRuntimeContext } from './contexts/workflow-runtime.context';
+import type { WorkflowRunOrmEntity } from './entities/workflow-run.entity';
 import { TriggerEventWrapper } from './lib/trigger-event-wrapper';
 import { SchemaInstance } from './utils/schema-instance';
 
@@ -135,7 +138,11 @@ export type ResumeOutcome =
       run: WorkflowRunFull;
       error: WorkflowResumeRejectedError;
     }
-  /** Another caller resumed this suspension first. */
+  /**
+   * Another caller resumed this suspension first; or the run was taken over
+   * (its thread was closed) or recovered while this caller ran it, and the
+   * outcome of that pass was dropped.
+   */
   | { status: 'claim_lost'; run: WorkflowRunFull }
   /** None of the open waits is one this caller resolves. */
   | { status: 'no_wait'; run: WorkflowRunFull }
@@ -173,6 +180,61 @@ export type CancelRunOutcome =
   | { status: 'cancelled'; run: WorkflowRunFull }
   /** Another caller resumed or cancelled this suspension first. */
   | { status: 'claim_lost'; run: WorkflowRunFull };
+
+/** Statuses of the runs held under a claim by the pass running them. */
+export const CLAIMED_WORKFLOW_RUN_STATUSES: readonly WorkflowRunStatus[] = [
+  EWorkflowRunStatus.IDLE,
+  EWorkflowRunStatus.RUNNING,
+];
+
+/** Statuses of the runs that have not ended. */
+export const ACTIVE_WORKFLOW_RUN_STATUSES: readonly WorkflowRunStatus[] = [
+  ...CLAIMED_WORKFLOW_RUN_STATUSES,
+  EWorkflowRunStatus.SUSPENDED,
+];
+
+/** Claims renewed per `UPDATE`, to stay under bound parameter limits. */
+export const WORKFLOW_RUN_CLAIM_RENEW_BATCH_SIZE = 500;
+
+/** The token of a claim on a run, and when the claim lapses. */
+export type RunClaim = { claimId: string; expiresAt: Date };
+
+/** A claim held by this process, as renewals read it. */
+export type HeldClaim = { runId: string; claimId: string };
+
+/** A run whose claim lapsed, as recovery reads it. */
+export type ExpiredClaim = {
+  id: string;
+  claimId: string;
+  hasCheckpoint: boolean;
+  recoveryCount: number;
+};
+
+/** Values a claimed run is written with. */
+export type RunSettlement = Partial<
+  Pick<
+    WorkflowRunOrmEntity,
+    | 'status'
+    | 'checkpoint'
+    | 'awaitingOperator'
+    | 'snapshot'
+    | 'context'
+    | 'stepLog'
+    | 'input'
+    | 'output'
+    | 'error'
+    | 'suspendedAt'
+    | 'finishedAt'
+    | 'failedAt'
+    | 'recoveryCount'
+  >
+>;
+
+/** Run state persisted when a runner pass ends. */
+export type RunStateUpdate = Pick<
+  RunSettlement,
+  'snapshot' | 'context' | 'stepLog' | 'input' | 'output'
+>;
 
 export type WorkflowContextState = Record<string, unknown> & {
   initiatorId: string;

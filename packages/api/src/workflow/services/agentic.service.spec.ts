@@ -22,6 +22,7 @@ import {
 import type { User, WorkflowRunFull, WorkflowFull } from '@hexabot-ai/types';
 import { ModuleRef } from '@nestjs/core';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
 import { ActionService } from '@/actions/actions.service';
@@ -48,7 +49,7 @@ import {
   WorkflowVersionAction,
 } from '@/workflow/types';
 
-import { AgenticService } from './agentic.service';
+import { AgenticService, WorkflowRunClaimLostError } from './agentic.service';
 import { WorkflowRunService } from './workflow-run.service';
 import { WorkflowVersionService } from './workflow-version.service';
 import { WorkflowService } from './workflow.service';
@@ -231,6 +232,7 @@ describe('AgenticService (TypeORM)', () => {
   let workflowVersionService: WorkflowVersionService;
   let workflowRunService: WorkflowRunService;
   let eventEmitter: EventEmitter2;
+  let dataSource: DataSource;
   let workflow: WorkflowFull;
   let initiator: User;
   let workflowVersionId: string | null;
@@ -351,6 +353,7 @@ describe('AgenticService (TypeORM)', () => {
       },
     });
 
+    dataSource = testing.module.get(DataSource);
     [
       agenticService,
       workflowService,
@@ -1683,11 +1686,15 @@ describe('AgenticService (TypeORM)', () => {
         childWorkflow.id,
         childRun.id,
       );
-      await workflowRunService.markSuspended(parentRun.id, {
-        checkpoint: buildCheckpoint([replyWait, childWait]),
-        snapshot: suspendedSnapshot,
-        context: { parent: true },
-      });
+      await workflowRunService.markSuspended(
+        parentRun.id,
+        {
+          checkpoint: buildCheckpoint([replyWait, childWait]),
+          snapshot: suspendedSnapshot,
+          context: { parent: true },
+        },
+        null,
+      );
 
       await expect(agenticService.handleEvent(event)).resolves.toEqual(
         expect.objectContaining({
@@ -2256,6 +2263,251 @@ describe('AgenticService (TypeORM)', () => {
       expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
         'suspended',
       );
+    });
+  });
+  describe('claim leases', () => {
+    const approval = {
+      decision: 'approved',
+      decided_by: { id: 'admin-1', name: 'Jane Doe' },
+      decided_at: '2026-01-02T10:00:00.000Z',
+    };
+    /** Read the claim token of a run, which the run schemas strip. */
+    const readClaimId = async (runId: string) =>
+      (
+        await dataSource
+          .getRepository(WorkflowRunOrmEntity)
+          .findOneByOrFail({ id: runId })
+      ).claimId ?? null;
+    /** Tell whether this process holds the claim the run is under. */
+    const isHeld = async (runId: string) => {
+      const claimId = await readClaimId(runId);
+
+      return !!claimId && workflowRunService.holdsClaim(claimId);
+    };
+    /** Read the claim a run is under, and whether this process holds it. */
+    const readHold = async (runId: string) => {
+      const claimId = (await readClaimId(runId))!;
+
+      return { claimId, held: workflowRunService.holdsClaim(claimId) };
+    };
+    const finished = (output: Record<string, unknown> = {}) => ({
+      status: 'finished' as const,
+      output,
+      snapshot: finishedSnapshot,
+    });
+    /** Take a run over, as closing its thread does. */
+    const takeOver = async (runId: string) =>
+      await workflowRunService.markFailed(
+        runId,
+        { error: 'Thread was closed' },
+        null,
+      );
+
+    it('holds the claim on a new run only while its pass runs', async () => {
+      const holds: { claimId: string; held: boolean }[] = [];
+      const runner = finishedRunner({ done: true });
+      runner.start.mockImplementation(async () => {
+        const [run] = await workflowRunService.find({});
+        holds.push(await readHold(run.id));
+
+        return finished({ done: true });
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+      const run = await agenticService.handleEvent(createEvent({ text: 'hi' }));
+
+      expect(run).toEqual(expect.objectContaining({ status: 'finished' }));
+      expect(holds).toEqual([{ claimId: expect.any(String), held: true }]);
+      expect(workflowRunService.holdsClaim(holds[0].claimId)).toBe(false);
+      expect(await readClaimId(run!.id)).toBeNull();
+    });
+
+    it('releases the claim on a resumed run whose runner throws', async () => {
+      const run = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const holds: { claimId: string; held: boolean }[] = [];
+      const runner = finishedRunner({});
+      runner.resume.mockImplementation(async () => {
+        holds.push(await readHold(run.id));
+        throw new Error('runner-crash');
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'reply' })),
+      ).resolves.toBeNull();
+
+      expect(holds).toEqual([{ claimId: expect.any(String), held: true }]);
+      expect(workflowRunService.holdsClaim(holds[0].claimId)).toBe(false);
+      expect(await workflowRunService.findOne(run.id)).toEqual(
+        expect.objectContaining({ status: 'failed', error: 'runner-crash' }),
+      );
+      expect(await readClaimId(run.id)).toBeNull();
+    });
+
+    it('fails a run that cannot start instead of leaving it idle', async () => {
+      workflowContextFactoryMock.create.mockRejectedValueOnce(
+        new Error('Unsupported triggerType: nope'),
+      );
+      const runner = finishedRunner({});
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+      const createSpy = jest.spyOn(workflowRunService, 'createFromEvent');
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hi' })),
+      ).resolves.toBeNull();
+
+      const { claimId } = await createSpy.mock.results[0].value;
+      const [run] = await workflowRunService.find({});
+      expect(run).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Unsupported triggerType: nope',
+        }),
+      );
+      expect(runner.start).not.toHaveBeenCalled();
+      expect(workflowRunService.holdsClaim(claimId)).toBe(false);
+      expect(await readClaimId(run.id)).toBeNull();
+    });
+
+    it('keeps a run failed when its thread is closed during its first pass', async () => {
+      const runner = finishedRunner({ done: true });
+      runner.start.mockImplementation(async () => {
+        const [run] = await workflowRunService.find({});
+        await takeOver(run.id);
+
+        return finished({ done: true });
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hi' })),
+      ).resolves.toBeNull();
+
+      const [run] = await workflowRunService.find({});
+      expect(run).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Thread was closed',
+          output: null,
+        }),
+      );
+    });
+
+    it('drops the outcome of a resume whose run was taken over, and leaves its parent alone', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([
+          buildChildWait('call_child', childWorkflow.id, childRun.id),
+        ]),
+      });
+      const runner = finishedRunner({ child: 'done' });
+      runner.resume.mockImplementation(async () => {
+        await takeOver(childRun.id);
+
+        return finished({ child: 'done' });
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const outcome = await agenticService.resumeWait({
+        run: childRun,
+        event: createEvent(),
+        waitId: buildApprovalWait().waitId,
+        resumeData: approval,
+      });
+
+      expect(outcome.status).toBe('claim_lost');
+      expect(await workflowRunService.findOne(childRun.id)).toEqual(
+        expect.objectContaining({ status: 'failed', output: { saved: true } }),
+      );
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'suspended',
+      );
+    });
+
+    it('reports a resume whose outcome could not be written as still waiting', async () => {
+      const run = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(finishedRunner({ done: true })));
+      jest
+        .spyOn(workflowRunService, 'persistResult')
+        .mockRejectedValueOnce(new Error('database unavailable'));
+
+      await expect(
+        agenticService.resumeWait({
+          run,
+          event: createEvent(),
+          waitId: buildApprovalWait().waitId,
+          resumeData: approval,
+        }),
+      ).rejects.toThrow('database unavailable');
+
+      // Recovery puts it back on its wait once its claim lapses.
+      expect((await workflowRunService.findOne(run.id))?.status).toBe(
+        'running',
+      );
+      expect(await isHeld(run.id)).toBe(false);
+    });
+
+    it('rejects a call whose child run was taken over during its first pass', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = (await workflowRunService.findOneAndPopulate(
+        (
+          await workflowRunService.create({
+            workflow: workflow.id,
+            workflowVersion: workflowVersionId,
+            triggeredBy: initiator.id,
+            status: 'running',
+            input: { parent: true },
+          })
+        ).id,
+      ))!;
+      const runner = finishedRunner({ child: 'done' });
+      runner.start.mockImplementation(async () => {
+        const [childRun] = await workflowRunService.find({
+          where: { workflow: { id: childWorkflow.id } },
+        });
+        await takeOver(childRun.id);
+
+        return finished({ child: 'done' });
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.callWorkflow({
+          workflowId: childWorkflow.id,
+          input: {},
+          parentContext: {
+            workflowRunId: parentRun.id,
+            event: createEvent({ text: 'call child' }),
+          } as any,
+        }),
+      ).rejects.toThrow(WorkflowRunClaimLostError);
     });
   });
 });

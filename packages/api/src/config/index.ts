@@ -60,6 +60,12 @@ export const config: Config = {
       process.env.MCP_SERVER_INSTRUCTIONS ||
       'Use these tools to inspect and manage Hexabot API resources. Credential values are never exposed.',
   },
+  workflow: {
+    runClaimTtl: Math.max(
+      parseIntWithFallback(process.env.WORKFLOW_RUN_CLAIM_TTL, 60_000),
+      1_000,
+    ),
+  },
   security: {
     httpsEnabled: process.env.HTTPS_ENABLED === 'true',
     trustProxy: process.env.HTTPS_ENABLED === 'true', // Nginx in use ?

@@ -20,6 +20,7 @@ import { LoggerService } from '@/logger/logger.service';
 import { stringifyError } from '@/utils/helpers/misc';
 
 import { WorkflowContextFactory } from '../contexts/workflow-context-factory';
+import type { WorkflowRuntimeContext } from '../contexts/workflow-runtime.context';
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
 import {
   getChildRunId,
@@ -59,6 +60,20 @@ type RunWorkflowExecution = {
   run: WorkflowRunFull;
   result: WorkflowRunResult;
 };
+
+/**
+ * Thrown when a pass ends without being able to settle its run: the run was
+ * taken over (its thread was closed) or recovered (its claim lapsed) while
+ * the pass ran, so the outcome of the pass is dropped.
+ */
+export class WorkflowRunClaimLostError extends Error {
+  constructor(readonly runId: string) {
+    super(
+      `Workflow run ${runId} was settled by another caller while this pass ran`,
+    );
+    this.name = 'WorkflowRunClaimLostError';
+  }
+}
 
 @Injectable()
 export class AgenticService implements WorkflowCallService {
@@ -165,6 +180,15 @@ export class AgenticService implements WorkflowCallService {
 
       return execution.run;
     } catch (err) {
+      if (err instanceof WorkflowRunClaimLostError) {
+        this.logger.warn(
+          'Workflow run was taken over or recovered while the event ran it',
+          { runId: err.runId },
+        );
+
+        return null;
+      }
+
       this.logger.error(
         'Unable to process incoming event through agentic workflow',
         err,
@@ -223,67 +247,130 @@ export class AgenticService implements WorkflowCallService {
 
   /**
    * Create a run for a workflow and execute it from its first step.
+   *
+   * The run is created under a claim, held until its first pass is over. A
+   * run that cannot start (no definition, a context or runner that cannot be
+   * built) is failed right away.
+   *
+   * @throws {WorkflowRunClaimLostError} When the run was taken over (its
+   * thread was closed) or recovered while it ran; its outcome is dropped.
    */
   private async startRun(
     options: StartRunOptions,
   ): Promise<RunWorkflowExecution> {
     const { event } = options;
-    const run = await this.workflowRunService.createFromEvent(
+    const { run, claimId } = await this.workflowRunService.createFromEvent(
       options.workflow,
       event,
       { parentRun: options.parentRun, input: options.input },
     );
-    const compiled = this.workflowCompiler.compile(run, event);
-    if (!compiled) {
-      throw new Error(MISSING_DEFINITION_ERROR);
-    }
+    const result = await this.workflowRunService.withHeldClaim(
+      run.id,
+      claimId,
+      async () => {
+        let context: WorkflowRuntimeContext | undefined;
+        let runner: WorkflowRunner | undefined;
+        let passResult: WorkflowRunResult;
+        try {
+          const compiled = this.workflowCompiler.compile(run, event);
+          if (!compiled) {
+            throw new Error(MISSING_DEFINITION_ERROR);
+          }
 
-    const { definition, workflow } = compiled;
-    const context = await this.workflowContextFactory.create(
-      run,
-      event,
-      definition,
+          const { definition, workflow } = compiled;
+          context = await this.workflowContextFactory.create(
+            run,
+            event,
+            definition,
+          );
+          runner = await workflow.buildAsyncRunner({ runId: run.id });
+
+          this.logger.debug('Marking workflow run as running', {
+            runId: run.id,
+            workflowId: run.workflow?.id,
+            triggeredById: run.triggeredBy?.id,
+          });
+          const marked = await this.workflowRunService.markRunning(
+            run.id,
+            claimId,
+            { context: context.state },
+          );
+          if (!marked) {
+            throw new WorkflowRunClaimLostError(run.id);
+          }
+
+          passResult = await runner.start({
+            inputData: run.input ?? {},
+            context,
+          });
+        } catch (err) {
+          if (!(err instanceof WorkflowRunClaimLostError)) {
+            this.logger.error('Workflow runner threw during execution', err);
+            await this.persistCrashOrLog(
+              run,
+              runner,
+              context?.state,
+              err,
+              claimId,
+            );
+          }
+
+          throw err;
+        }
+
+        const settled = await this.workflowRunService.persistResult(
+          run,
+          runner,
+          passResult,
+          context.state,
+          claimId,
+        );
+        if (!settled) {
+          throw new WorkflowRunClaimLostError(run.id);
+        }
+
+        return passResult;
+      },
     );
-    const runner = await workflow.buildAsyncRunner({ runId: run.id });
 
-    this.logger.debug('Marking workflow run as running', {
-      runId: run.id,
-      workflowId: run.workflow?.id,
-      triggeredById: run.triggeredBy?.id,
-    });
-    await this.workflowRunService.markRunning(run.id, {
-      context: context.state,
-    });
-
-    let result: WorkflowRunResult;
-    try {
-      result = await runner.start({
-        inputData: run.input ?? {},
-        context,
-      });
-    } catch (err) {
-      this.logger.error('Workflow runner threw during execution', err);
-      await this.workflowRunService.persistCrash(
-        run,
-        runner,
-        context.state,
-        err,
-      );
-
-      throw err;
-    }
-
-    await this.workflowRunService.persistResult(
-      run,
-      runner,
-      result,
-      context.state,
-    );
     if (result.status === 'suspended') {
       await this.deliverMissedChildResults(run, result.waits, event);
     }
 
     return { run: await this.reloadRun(run), result };
+  }
+
+  /**
+   * Fail a run whose pass threw. An error writing it is only logged, so the
+   * caller rethrows the error of the pass; the run is then recovered once
+   * its claim lapses.
+   *
+   * @returns `false` when the run could not be settled.
+   */
+  private async persistCrashOrLog(
+    run: WorkflowRunFull,
+    runner: WorkflowRunner | undefined,
+    contextState: Record<string, unknown> | null | undefined,
+    error: unknown,
+    claimId: string,
+  ): Promise<boolean> {
+    try {
+      return await this.workflowRunService.persistCrash(
+        run,
+        runner,
+        contextState,
+        error,
+        claimId,
+      );
+    } catch (writeError) {
+      this.logger.error(
+        'Unable to persist the failure of a workflow run; it is recovered once its claim lapses',
+        writeError,
+        { runId: run.id },
+      );
+
+      return false;
+    }
   }
 
   /**
@@ -361,7 +448,13 @@ export class AgenticService implements WorkflowCallService {
       });
     } catch (error) {
       const current = await this.reloadRun(run);
-      if (current.status === 'suspended' && isSameSuspension(current, run)) {
+      // Still waiting; or still held by a pass that could not write its
+      // outcome, which recovery puts back on this wait once its claim lapses.
+      if (
+        (current.status === 'suspended' && isSameSuspension(current, run)) ||
+        current.status === 'idle' ||
+        current.status === 'running'
+      ) {
         throw error;
       }
 
@@ -488,11 +581,11 @@ export class AgenticService implements WorkflowCallService {
       event,
       definition,
     );
-    const claimed = await this.workflowRunService.claimSuspended(
+    const claimId = await this.workflowRunService.claimSuspended(
       run.id,
       run.suspendedAt ?? null,
     );
-    if (!claimed) {
+    if (!claimId) {
       this.logger.warn('Workflow run was already resumed by another caller', {
         runId: run.id,
         waitId: wait.waitId,
@@ -501,66 +594,95 @@ export class AgenticService implements WorkflowCallService {
       return { status: 'claim_lost', run: await this.reloadRun(run) };
     }
 
-    this.logger.debug('Marking workflow run as running', {
+    this.logger.debug('Workflow run claimed for a resume', {
       runId: run.id,
       workflowId: run.workflow?.id,
       triggeredById: run.triggeredBy?.id,
       waitId: wait.waitId,
     });
-    await this.workflowRunService.markRunning(run.id, {
-      context: context.state,
-    });
+    const pass = await this.workflowRunService.withHeldClaim(
+      run.id,
+      claimId,
+      async () => {
+        let runner: WorkflowRunner | undefined;
+        let result: WorkflowRunResult;
+        try {
+          runner = workflow.buildRunnerFromCheckpoint({
+            checkpoint: accepted.checkpoint,
+            context,
+            snapshot: run.snapshot ?? undefined,
+            runId: run.id,
+          });
+          result = await runner.resume({ waitId: wait.waitId, resumeData });
+        } catch (error) {
+          this.logger.error('Workflow runner threw during execution', error);
+          const settled = await this.workflowRunService.persistCrash(
+            run,
+            runner,
+            context.state,
+            error,
+            claimId,
+          );
 
-    let runner: WorkflowRunner | undefined;
-    let result: WorkflowRunResult;
-    try {
-      runner = workflow.buildRunnerFromCheckpoint({
-        checkpoint: accepted.checkpoint,
-        context,
-        snapshot: run.snapshot ?? undefined,
-        runId: run.id,
-      });
-      result = await runner.resume({ waitId: wait.waitId, resumeData });
-    } catch (err) {
-      this.logger.error('Workflow runner threw during execution', err);
-      await this.workflowRunService.persistCrash(
-        run,
-        runner,
-        context.state,
-        err,
-      );
+          return { kind: 'crashed', error, settled } as const;
+        }
+
+        if (result.status === 'suspended' && result.rejection) {
+          // The step that read the payload refused it: the runner put the run
+          // back as its checkpoint describes it, so only the claim is undone.
+          this.logRejection(run, wait, result.rejection.error);
+          const settled = await this.workflowRunService.releaseClaim(
+            run.id,
+            claimId,
+          );
+
+          return {
+            kind: 'rejected',
+            result,
+            error: result.rejection.error,
+            settled,
+          } as const;
+        }
+
+        const settled = await this.workflowRunService.persistResult(
+          run,
+          runner,
+          result,
+          context.state,
+          claimId,
+        );
+
+        return { kind: 'settled', result, settled } as const;
+      },
+    );
+
+    // The run was taken over or recovered while this pass ran: its outcome
+    // is dropped, and whoever settled the run delivers what has to be.
+    if (!pass.settled) {
+      return { status: 'claim_lost', run: await this.reloadRun(run) };
+    }
+
+    if (pass.kind === 'crashed') {
       await this.resumeParentRunFromChild(
         run,
-        toFailedCallWorkflowResult(run, err),
+        toFailedCallWorkflowResult(run, pass.error),
         event,
       );
 
-      throw err;
+      throw pass.error;
     }
 
-    if (result.status === 'suspended' && result.rejection) {
-      // The step that read the payload refused it: the runner put the run
-      // back as its checkpoint describes it, so only the claim is undone.
-      this.logRejection(run, wait, result.rejection.error);
-      await this.workflowRunService.releaseClaim(run.id, {
-        context: run.context ?? null,
-      });
-      await this.deliverMissedChildResults(run, result.waits, event);
+    if (pass.kind === 'rejected') {
+      await this.deliverMissedChildResults(run, pass.result.waits, event);
 
       return {
         status: 'rejected',
         run: await this.reloadRun(run),
-        error: result.rejection.error,
+        error: pass.error,
       };
     }
 
-    await this.workflowRunService.persistResult(
-      run,
-      runner,
-      result,
-      context.state,
-    );
-
+    const { result } = pass;
     if (result.status === 'suspended') {
       await this.deliverMissedChildResults(run, result.waits, event);
     } else {
@@ -584,11 +706,11 @@ export class AgenticService implements WorkflowCallService {
     error: unknown,
     event: TriggerEventWrapper,
   ): Promise<ResumeOutcome> {
-    const claimed = await this.workflowRunService.claimSuspended(
+    const claimId = await this.workflowRunService.claimSuspended(
       run.id,
       run.suspendedAt ?? null,
     );
-    if (!claimed) {
+    if (!claimId) {
       return { status: 'claim_lost', run: await this.reloadRun(run) };
     }
 
@@ -604,7 +726,15 @@ export class AgenticService implements WorkflowCallService {
         : {}),
     });
     const message = `Cannot resume workflow run: ${stringifyError(error)}`;
-    await this.workflowRunService.markFailed(run.id, { error: message });
+    const failed = await this.workflowRunService.markFailed(
+      run.id,
+      { error: message },
+      claimId,
+    );
+    if (!failed) {
+      return { status: 'claim_lost', run: await this.reloadRun(run) };
+    }
+
     await this.resumeParentRunFromChild(
       run,
       toFailedCallWorkflowResult(run, message),

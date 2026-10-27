@@ -38,8 +38,36 @@ const AWAITING_OPERATOR_COLUMN: ColumnSpec = {
     default: false,
   },
 };
-/** Named as the entity names it, so `synchronize` leaves it alone. */
-const AWAITING_OPERATOR_INDEX = 'IDX_workflow_runs_awaiting_operator';
+/** Token of the claim an idle or running run is held under. */
+const CLAIM_ID_COLUMN: ColumnSpec = {
+  sqliteType: 'varchar(36)',
+  column: { name: 'claim_id', type: 'varchar', length: '36', isNullable: true },
+};
+/** When the claim on a run lapses unless its holder renews it. */
+const CLAIM_EXPIRES_AT_COLUMN: ColumnSpec = {
+  sqliteType: 'datetime',
+  column: { name: 'claim_expires_at', type: 'timestamptz', isNullable: true },
+};
+/** Times in a row a run was put back on its wait after its holder stopped. */
+const RECOVERY_COUNT_COLUMN: ColumnSpec = {
+  sqliteType: 'integer NOT NULL DEFAULT (0)',
+  column: {
+    name: 'recovery_count',
+    type: 'int',
+    isNullable: false,
+    default: 0,
+  },
+};
+type IndexSpec = { name: string; column: string };
+/** Named as the entity names them, so `synchronize` leaves them alone. */
+const AWAITING_OPERATOR_INDEX: IndexSpec = {
+  name: 'IDX_workflow_runs_awaiting_operator',
+  column: 'awaiting_operator',
+};
+const CLAIM_EXPIRES_AT_INDEX: IndexSpec = {
+  name: 'IDX_workflow_runs_claim_expires_at',
+  column: 'claim_expires_at',
+};
 /** Reasons of the waits an admin resolves, as of v3.6.0. */
 const OPERATOR_WAIT_REASONS: readonly unknown[] = [
   'awaiting_approval',
@@ -124,6 +152,12 @@ const LEGACY_SUSPENSION_COLUMNS: ColumnSpec[] = [
  * every checkpoint. Runs already holding such a wait, which only databases
  * that ran pre-release builds can have, are flagged from their checkpoint.
  *
+ * Last, it adds the claim an idle or running run is held under: its token,
+ * when it lapses (indexed: recovery looks runs up by it), and how many times
+ * in a row the run was put back on its wait after the process running it
+ * stopped. Runs left idle or running before this upgrade have no claim, so
+ * nothing would ever settle them: they are failed.
+ *
  * `workflow_runs` only exists through TypeORM `synchronize`; when it is
  * missing, synchronize creates it (with its foreign keys) and there is nothing
  * to migrate.
@@ -168,11 +202,23 @@ export default class Migration1791158400000_V3_6_0
     }
 
     await this.addColumn(queryRunner, AWAITING_OPERATOR_COLUMN);
-    await this.createAwaitingOperatorIndex(queryRunner);
+    await this.createIndex(queryRunner, AWAITING_OPERATOR_INDEX);
     const flagged = await this.flagOperatorWaits(queryRunner);
     if (flagged > 0) {
       services?.logger?.log(
         `${flagged} workflow run(s) waiting on an admin were flagged.`,
+      );
+    }
+
+    await this.addColumn(queryRunner, CLAIM_ID_COLUMN);
+    await this.addColumn(queryRunner, CLAIM_EXPIRES_AT_COLUMN);
+    await this.addColumn(queryRunner, RECOVERY_COUNT_COLUMN);
+    await this.createIndex(queryRunner, CLAIM_EXPIRES_AT_INDEX);
+    const interrupted = await this.failUnclaimedActiveRuns(queryRunner);
+    if (interrupted > 0) {
+      services?.logger?.warn(
+        `${interrupted} idle or running workflow run(s) were left by a ` +
+          'stopped process and were marked as failed.',
       );
     }
   }
@@ -198,7 +244,11 @@ export default class Migration1791158400000_V3_6_0
     }
 
     // SQLite refuses to drop an indexed column.
-    await this.dropAwaitingOperatorIndex(queryRunner);
+    await this.dropIndex(queryRunner, CLAIM_EXPIRES_AT_INDEX);
+    await this.dropColumn(queryRunner, RECOVERY_COUNT_COLUMN);
+    await this.dropColumn(queryRunner, CLAIM_EXPIRES_AT_COLUMN);
+    await this.dropColumn(queryRunner, CLAIM_ID_COLUMN);
+    await this.dropIndex(queryRunner, AWAITING_OPERATOR_INDEX);
     await this.dropColumn(queryRunner, AWAITING_OPERATOR_COLUMN);
     await this.dropColumn(queryRunner, CHECKPOINT_COLUMN);
 
@@ -228,6 +278,37 @@ export default class Migration1791158400000_V3_6_0
         `WHERE "status" = 'suspended'` +
         (options.withoutCheckpointOnly ? ` AND "checkpoint" IS NULL` : ''),
       { error: options.error, now: new Date() },
+      {},
+    );
+    const result = await queryRunner.query(query, parameters, true);
+
+    return result.affected ?? 0;
+  }
+
+  /**
+   * Mark as failed the idle and running runs that hold no claim: they were
+   * left by a process that stopped before this upgrade, and recovery only
+   * settles the runs whose claim lapsed.
+   *
+   * @returns The number of runs marked as failed.
+   */
+  private async failUnclaimedActiveRuns(
+    queryRunner: QueryRunner,
+  ): Promise<number> {
+    const { driver } = queryRunner.connection;
+    const table = this.escapedTablePath(queryRunner);
+    const [query, parameters] = driver.escapeQueryWithParameters(
+      `UPDATE ${table} SET "status" = 'failed', "error" = :error, ` +
+        `"failed_at" = :now, "updated_at" = :now, "checkpoint" = NULL, ` +
+        `"awaiting_operator" = :notAwaiting ` +
+        `WHERE "status" IN ('idle', 'running') AND "claim_id" IS NULL`,
+      {
+        error:
+          'This run was interrupted before the v3.6.0 upgrade and cannot be resumed.',
+        now: new Date(),
+        // better-sqlite3 cannot bind booleans.
+        notAwaiting: this.isSqlite(queryRunner) ? 0 : false,
+      },
       {},
     );
     const result = await queryRunner.query(query, parameters, true);
@@ -330,55 +411,51 @@ export default class Migration1791158400000_V3_6_0
     );
   }
 
-  private async createAwaitingOperatorIndex(
+  private async createIndex(
     queryRunner: QueryRunner,
+    index: IndexSpec,
   ): Promise<void> {
     if (this.isSqlite(queryRunner)) {
       await queryRunner.query(
-        `CREATE INDEX IF NOT EXISTS "${AWAITING_OPERATOR_INDEX}" ` +
-          `ON "${WORKFLOW_RUNS_TABLE}" ("awaiting_operator")`,
+        `CREATE INDEX IF NOT EXISTS "${index.name}" ` +
+          `ON "${WORKFLOW_RUNS_TABLE}" ("${index.column}")`,
       );
 
       return;
     }
 
-    if (await this.hasAwaitingOperatorIndex(queryRunner)) {
+    if (await this.hasIndex(queryRunner, index)) {
       return;
     }
 
     await queryRunner.createIndex(
       WORKFLOW_RUNS_TABLE,
-      new TableIndex({
-        name: AWAITING_OPERATOR_INDEX,
-        columnNames: ['awaiting_operator'],
-      }),
+      new TableIndex({ name: index.name, columnNames: [index.column] }),
     );
   }
 
-  private async dropAwaitingOperatorIndex(
+  private async dropIndex(
     queryRunner: QueryRunner,
+    index: IndexSpec,
   ): Promise<void> {
     if (this.isSqlite(queryRunner)) {
-      await queryRunner.query(
-        `DROP INDEX IF EXISTS "${AWAITING_OPERATOR_INDEX}"`,
-      );
+      await queryRunner.query(`DROP INDEX IF EXISTS "${index.name}"`);
 
       return;
     }
 
-    if (await this.hasAwaitingOperatorIndex(queryRunner)) {
-      await queryRunner.dropIndex(WORKFLOW_RUNS_TABLE, AWAITING_OPERATOR_INDEX);
+    if (await this.hasIndex(queryRunner, index)) {
+      await queryRunner.dropIndex(WORKFLOW_RUNS_TABLE, index.name);
     }
   }
 
-  private async hasAwaitingOperatorIndex(
+  private async hasIndex(
     queryRunner: QueryRunner,
+    index: IndexSpec,
   ): Promise<boolean> {
     const table = await queryRunner.getTable(WORKFLOW_RUNS_TABLE);
 
-    return !!table?.indices.some(
-      (index) => index.name === AWAITING_OPERATOR_INDEX,
-    );
+    return !!table?.indices.some(({ name }) => name === index.name);
   }
 
   private async addColumn(

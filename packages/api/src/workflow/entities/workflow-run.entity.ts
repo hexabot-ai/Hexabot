@@ -39,6 +39,7 @@ import { WorkflowOrmEntity } from './workflow.entity';
 @Entity({ name: 'workflow_runs' })
 @Index(['parentRun'])
 @Index('IDX_workflow_runs_awaiting_operator', ['awaitingOperator'])
+@Index('IDX_workflow_runs_claim_expires_at', ['claimExpiresAt'])
 export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
   plainCls = workflowRunSchema;
 
@@ -150,6 +151,30 @@ export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
    */
   @Column({ name: 'awaiting_operator', default: false })
   awaitingOperator!: boolean;
+
+  /**
+   * Token of the claim an `idle` or `running` run is held under, set if and
+   * only if the run is in one of those states. The writes that end a pass
+   * only apply under this token, so a pass whose run was recovered or taken
+   * over meanwhile cannot overwrite it. Internal: not exposed.
+   */
+  @Column({ name: 'claim_id', type: 'varchar', length: 36, nullable: true })
+  claimId?: string | null;
+
+  /**
+   * When the claim lapses unless the process holding it renews it. Any node
+   * recovers a run whose claim lapsed. Internal: not exposed.
+   */
+  @DatetimeColumn({ name: 'claim_expires_at', nullable: true })
+  claimExpiresAt?: Date | null;
+
+  /**
+   * How many times in a row the run was put back on its wait after the
+   * process resuming it stopped; reset whenever a pass settles the run.
+   * Internal: not exposed.
+   */
+  @Column({ name: 'recovery_count', type: 'integer', default: 0 })
+  recoveryCount!: number;
 
   /** Error message when the run fails. */
   @Column({ name: 'error', type: 'text', nullable: true })

@@ -4,24 +4,21 @@
  * Full terms: see LICENSE.md.
  */
 
+import { randomUUID } from 'crypto';
+
 import {
   EWorkflowRunStatus,
   type StepExecutionRecord,
   type WorkflowCheckpoint,
   type WorkflowRunner,
   type WorkflowRunResult,
-  type WorkflowSnapshot,
 } from '@hexabot-ai/agentic';
-import {
-  Workflow,
-  WorkflowFull,
-  WorkflowRun,
-  WorkflowRunFull,
-} from '@hexabot-ai/types';
+import { Workflow, WorkflowFull, WorkflowRunFull } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { FindManyOptions, FindOptionsWhere, In, IsNull, Not } from 'typeorm';
 
+import { config } from '@/config';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
 import { stringifyError } from '@/utils/helpers/misc';
 
@@ -35,25 +32,24 @@ import {
   isBlockedOnOperator,
 } from '../lib/workflow-run-waits';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
+import {
+  ACTIVE_WORKFLOW_RUN_STATUSES,
+  ExpiredClaim,
+  RunClaim,
+  RunStateUpdate,
+} from '../types';
 
-/** Run state persisted when a runner pass ends. */
-type RunStateUpdate = {
-  snapshot?: WorkflowSnapshot | null;
-  context?: Record<string, unknown> | null;
-  stepLog?: Record<string, StepExecutionRecord> | null;
-  input?: Record<string, unknown> | null;
-  output?: Record<string, unknown> | null;
-};
-
-const ACTIVE_WORKFLOW_RUN_STATUSES = [
-  EWorkflowRunStatus.IDLE,
-  EWorkflowRunStatus.RUNNING,
-  EWorkflowRunStatus.SUSPENDED,
-];
 const MAX_CALL_STACK_DEPTH = 10;
 
 @Injectable()
 export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
+  /**
+   * Claims held by the passes running in this process (claim token → run
+   * id). They are renewed until the pass releases them; the claim of a pass
+   * that died with its process lapses, and its run is recovered.
+   */
+  private readonly heldClaims = new Map<string, string>();
+
   /**
    * Creates the service with the underlying repository injected.
    *
@@ -64,7 +60,9 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   }
 
   /**
-   * Create a run of a workflow for an event and load it with relations.
+   * Create a run of a workflow for an event and load it with relations. The
+   * run is created `idle` under a claim, which the caller holds while it
+   * starts the run.
    *
    * Child calls inherit the same event metadata, initiator, and thread as the
    * parent, but store an explicit `parentRun` relation so future events can
@@ -74,7 +72,8 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * @param event - Event that triggers the run.
    * @param options.parentRun - Calling run, when the run is a child workflow call.
    * @param options.input - Start input override for child calls.
-   * @returns The created run populated with relations.
+   * @returns The created run populated with relations, and the token of its
+   * claim.
    */
   async createFromEvent(
     workflow: WorkflowFull,
@@ -83,7 +82,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       parentRun?: WorkflowRunFull;
       input?: Record<string, unknown>;
     } = {},
-  ): Promise<WorkflowRunFull> {
+  ): Promise<{ run: WorkflowRunFull; claimId: string }> {
     const initiator = event.getInitiator();
     if (!workflow.definition) {
       throw new Error('Workflow definition is required to create a run');
@@ -92,38 +91,44 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       ...(workflow.definition.context ?? {}),
       ...event.getContextData(),
     };
-    const run = await this.create({
-      workflow: workflow.id,
-      workflowVersion: workflow.currentVersion?.id ?? null,
-      triggeredBy: initiator.id,
-      thread: event.getThreadId() ?? null,
-      parentRun: options.parentRun?.id ?? null,
-      input: options.input ?? event.buildInput(),
-      context: Object.keys(initialContext).length > 0 ? initialContext : null,
-      metadata: event.getMetadata(),
-    });
+    const claim = this.newClaim();
+    const run = await this.repository.createClaimed(
+      {
+        workflow: workflow.id,
+        workflowVersion: workflow.currentVersion?.id ?? null,
+        triggeredBy: initiator.id,
+        thread: event.getThreadId() ?? null,
+        parentRun: options.parentRun?.id ?? null,
+        input: options.input ?? event.buildInput(),
+        context: Object.keys(initialContext).length > 0 ? initialContext : null,
+        metadata: event.getMetadata(),
+      },
+      claim,
+    );
     const populated = await this.findOneAndPopulate(run.id);
 
     if (!populated) {
       throw new Error(`Unable to load workflow run ${run.id}`);
     }
 
-    return populated;
+    return { run: populated, claimId: claim.claimId };
   }
 
   /**
-   * Mark a run as running and persist the context it runs with.
+   * Mark a claimed run as running and persist the context it runs with.
    *
    * @param runId - Identifier of the run to update.
+   * @param claimId - Token of the claim the caller holds.
    * @param payload - Hydrated context state of the run.
-   * @returns Updated workflow run marked as `running`.
+   * @returns `false` when the run is not held under that claim anymore.
    */
   async markRunning(
     runId: string,
+    claimId: string,
     payload: { context?: Record<string, unknown> | null },
-  ): Promise<WorkflowRun> {
-    return await this.updateOne(runId, {
-      status: 'running',
+  ): Promise<boolean> {
+    return await this.repository.updateClaimed(runId, claimId, {
+      status: EWorkflowRunStatus.RUNNING,
       ...payload,
     });
   }
@@ -134,91 +139,116 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    *
    * @param runId - Identifier of the run to claim.
    * @param suspendedAt - Suspension timestamp of the run as it was loaded.
-   * @returns `true` when the run was claimed and is now `running`.
+   * @returns The token of the claim, the run being now `running`, or `null`
+   * when another caller claimed the suspension first.
    */
   async claimSuspended(
     runId: string,
     suspendedAt: Date | null,
-  ): Promise<boolean> {
-    return await this.repository.claimSuspended(runId, suspendedAt);
+  ): Promise<string | null> {
+    const claim = this.newClaim();
+
+    return (await this.repository.claimSuspended(runId, suspendedAt, claim))
+      ? claim.claimId
+      : null;
   }
 
   /**
    * Put a claimed run back to `suspended` after its resume payload was
-   * refused. The checkpoint and `suspendedAt` are left unchanged, so the run
-   * stays on the same suspension.
+   * refused. The claim wrote nothing else, so the run is back on the same
+   * suspension, with the same checkpoint, context and `suspendedAt`.
    *
    * @param runId - Identifier of the run to release.
-   * @param payload - Context state the run had before it was claimed.
-   * @returns Updated workflow run marked as `suspended`.
+   * @param claimId - Token of the claim the caller holds.
+   * @returns `false` when the run is not held under that claim anymore.
    */
-  async releaseClaim(
-    runId: string,
-    payload: { context?: Record<string, unknown> | null },
-  ): Promise<WorkflowRun> {
-    return await this.updateOne(runId, {
-      status: 'suspended',
-      ...payload,
-    });
+  async releaseClaim(runId: string, claimId: string): Promise<boolean> {
+    return await this.repository.settle(
+      runId,
+      { status: EWorkflowRunStatus.SUSPENDED },
+      claimId,
+    );
   }
 
   /**
-   * Mark a run as suspended and persist its checkpoint.
+   * Mark a claimed run as suspended and persist its checkpoint.
    *
    * @param runId - Identifier of the run to update.
    * @param payload - Checkpoint to resume from, and the run state.
-   * @returns Updated workflow run marked as `suspended`.
+   * @param claimId - Token of the claim the pass ran under; `null` writes
+   * the run whoever holds it.
+   * @returns `false` when the run is not held under that claim anymore.
    */
   async markSuspended(
     runId: string,
     payload: { checkpoint: WorkflowCheckpoint } & RunStateUpdate,
-  ): Promise<WorkflowRun> {
-    return await this.updateOne(runId, {
-      status: 'suspended',
-      suspendedAt: new Date(),
-      awaitingOperator: hasOperatorWait(payload.checkpoint.waits),
-      ...payload,
-    });
+    claimId: string | null,
+  ): Promise<boolean> {
+    return await this.repository.settle(
+      runId,
+      {
+        status: EWorkflowRunStatus.SUSPENDED,
+        suspendedAt: new Date(),
+        awaitingOperator: hasOperatorWait(payload.checkpoint.waits),
+        ...payload,
+      },
+      claimId,
+    );
   }
 
   /**
-   * Mark a run as finished and store final state/output.
+   * Mark a claimed run as finished and store final state/output.
    *
    * @param runId - Identifier of the run to update.
    * @param payload - Final state changes and optional output payload.
-   * @returns Updated workflow run marked as `finished`.
+   * @param claimId - Token of the claim the pass ran under; `null` writes
+   * the run whoever holds it.
+   * @returns `false` when the run is not held under that claim anymore.
    */
   async markFinished(
     runId: string,
     payload: RunStateUpdate,
-  ): Promise<WorkflowRun> {
-    return await this.updateOne(runId, {
-      status: 'finished',
-      checkpoint: null,
-      awaitingOperator: false,
-      finishedAt: new Date(),
-      ...payload,
-    });
+    claimId: string | null,
+  ): Promise<boolean> {
+    return await this.repository.settle(
+      runId,
+      {
+        status: EWorkflowRunStatus.FINISHED,
+        checkpoint: null,
+        awaitingOperator: false,
+        finishedAt: new Date(),
+        ...payload,
+      },
+      claimId,
+    );
   }
 
   /**
-   * Mark a run as failed and persist the failure reason and state.
+   * Mark a claimed run as failed and persist the failure reason and state.
    *
    * @param runId - Identifier of the run to update.
    * @param payload - Optional error message and state changes.
-   * @returns Updated workflow run marked as `failed`.
+   * @param claimId - Token of the claim the pass ran under; `null` takes
+   * an active run over whoever holds it, whose pass then cannot write it.
+   * @returns `false` when the run is not active, or not held under that
+   * claim anymore.
    */
   async markFailed(
     runId: string,
     payload: RunStateUpdate & { error?: string | null },
-  ): Promise<WorkflowRun> {
-    return await this.updateOne(runId, {
-      status: 'failed',
-      checkpoint: null,
-      awaitingOperator: false,
-      failedAt: new Date(),
-      ...payload,
-    });
+    claimId: string | null,
+  ): Promise<boolean> {
+    return await this.repository.settle(
+      runId,
+      {
+        status: EWorkflowRunStatus.FAILED,
+        checkpoint: null,
+        awaitingOperator: false,
+        failedAt: new Date(),
+        ...payload,
+      },
+      claimId,
+    );
   }
 
   /**
@@ -228,13 +258,17 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * @param runner - Runner of the pass.
    * @param result - Outcome of the pass.
    * @param contextState - Context state the run was left with.
+   * @param claimId - Token of the claim the pass ran under.
+   * @returns `false` when the run was settled by another caller while the
+   * pass ran; the outcome of the pass is then dropped.
    */
   async persistResult(
     run: WorkflowRunFull,
     runner: WorkflowRunner,
     result: WorkflowRunResult,
     contextState: Record<string, unknown> | null,
-  ): Promise<void> {
+    claimId: string,
+  ): Promise<boolean> {
     const state = runner.getState();
     const runState = {
       snapshot: result.snapshot,
@@ -247,6 +281,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       status: result.status,
     });
 
+    let settled: boolean;
     switch (result.status) {
       case 'suspended':
         this.logger.log('Workflow run suspended', {
@@ -256,20 +291,28 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
             reason,
           })),
         });
-        await this.markSuspended(run.id, {
-          ...runState,
-          checkpoint: result.checkpoint,
-          output: result.checkpoint.output,
-        });
+        settled = await this.markSuspended(
+          run.id,
+          {
+            ...runState,
+            checkpoint: result.checkpoint,
+            output: result.checkpoint.output,
+          },
+          claimId,
+        );
         break;
       case 'finished':
         this.logger.log('Workflow run finished', {
           runId: run.id,
         });
-        await this.markFinished(run.id, {
-          ...runState,
-          output: result.output,
-        });
+        settled = await this.markFinished(
+          run.id,
+          {
+            ...runState,
+            output: result.output,
+          },
+          claimId,
+        );
         break;
       case 'failed':
       default:
@@ -277,13 +320,23 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
           runId: run.id,
           error: stringifyError(result.error),
         });
-        await this.markFailed(run.id, {
-          ...runState,
-          output: state?.output ?? run.output ?? null,
-          error: stringifyError(result.error),
-        });
+        settled = await this.markFailed(
+          run.id,
+          {
+            ...runState,
+            output: state?.output ?? run.output ?? null,
+            error: stringifyError(result.error),
+          },
+          claimId,
+        );
         break;
     }
+
+    if (!settled) {
+      this.warnClaimLost(run.id, result.status);
+    }
+
+    return settled;
   }
 
   /**
@@ -291,15 +344,20 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    *
    * @param run - Run the runner went through.
    * @param runner - The runner that threw, if it was created at all.
-   * @param contextState - Context state the run was left with.
+   * @param contextState - Context state the run was left with; `undefined`
+   * leaves the stored context as it is.
    * @param error - Error the runner threw.
+   * @param claimId - Token of the claim the pass ran under.
+   * @returns `false` when the run was settled by another caller while the
+   * pass ran.
    */
   async persistCrash(
     run: WorkflowRunFull,
     runner: WorkflowRunner | undefined,
-    contextState: Record<string, unknown> | null,
+    contextState: Record<string, unknown> | null | undefined,
     error: unknown,
-  ): Promise<void> {
+    claimId: string,
+  ): Promise<boolean> {
     const state = runner?.getState();
 
     this.logger.error(
@@ -311,18 +369,135 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
         triggeredById: run.triggeredBy?.id ?? null,
       },
     );
-    await this.markFailed(run.id, {
-      ...(runner
-        ? {
-            snapshot: runner.getSnapshot(),
-            stepLog: this.buildStepLog(runner, run.stepLog),
-          }
-        : {}),
-      context: contextState,
-      input: state?.input ?? run.input ?? {},
-      output: state?.output ?? run.output ?? null,
-      error: stringifyError(error),
-    });
+    const settled = await this.markFailed(
+      run.id,
+      {
+        ...(runner
+          ? {
+              snapshot: runner.getSnapshot(),
+              stepLog: this.buildStepLog(runner, run.stepLog),
+            }
+          : {}),
+        context: contextState,
+        input: state?.input ?? run.input ?? {},
+        output: state?.output ?? run.output ?? null,
+        error: stringifyError(error),
+      },
+      claimId,
+    );
+    if (!settled) {
+      this.warnClaimLost(run.id, 'failed');
+    }
+
+    return settled;
+  }
+
+  /**
+   * Run a pass while this process holds the claim on its run: the claim is
+   * renewed until the pass is over, however it ends, so the run is not
+   * recovered meanwhile. Once the process stops, the claim lapses and the
+   * run is recovered.
+   *
+   * @param runId - Identifier of the claimed run.
+   * @param claimId - Token of the claim.
+   * @param pass - The pass, which settles the run under that claim.
+   * @returns What the pass returns.
+   */
+  async withHeldClaim<T>(
+    runId: string,
+    claimId: string,
+    pass: () => Promise<T>,
+  ): Promise<T> {
+    this.heldClaims.set(claimId, runId);
+    try {
+      return await pass();
+    } finally {
+      this.heldClaims.delete(claimId);
+    }
+  }
+
+  /**
+   * Tell whether a pass of this process holds a claim.
+   *
+   * @param claimId - Token of the claim.
+   */
+  holdsClaim(claimId: string): boolean {
+    return this.heldClaims.has(claimId);
+  }
+
+  /**
+   * Push back the lapse of the claims held in this process.
+   *
+   * @returns The number of claims renewed.
+   */
+  async renewHeldClaims(): Promise<number> {
+    if (this.heldClaims.size === 0) {
+      return 0;
+    }
+
+    return await this.repository.renewClaims(
+      [...this.heldClaims].map(([claimId, runId]) => ({ runId, claimId })),
+      this.claimExpiry(),
+    );
+  }
+
+  /**
+   * Find the active runs whose claim lapsed: the process that held them
+   * stopped, or could not renew their claim for a whole TTL.
+   *
+   * @param now - Claims lapsed before this time are returned.
+   */
+  async findExpiredClaims(now: Date): Promise<ExpiredClaim[]> {
+    return await this.repository.findExpiredClaims(now);
+  }
+
+  /**
+   * Put a run whose resume died back on the suspension it was claimed from.
+   * The claim wrote only the status, so the checkpoint, `suspendedAt`,
+   * `awaitingOperator`, snapshot, step log and context are as they were
+   * before it: the run waits on the same open waits.
+   *
+   * @param expired - The run and its lapsed claim.
+   * @param now - Time the claim was found lapsed at.
+   * @returns `false` when the run was settled or its claim renewed meanwhile.
+   */
+  async putBackExpired(expired: ExpiredClaim, now: Date): Promise<boolean> {
+    return await this.repository.recoverExpired(
+      expired.id,
+      expired.claimId,
+      now,
+      {
+        status: EWorkflowRunStatus.SUSPENDED,
+        recoveryCount: expired.recoveryCount + 1,
+      },
+    );
+  }
+
+  /**
+   * Fail a run whose claim lapsed.
+   *
+   * @param expired - The run and its lapsed claim.
+   * @param now - Time the claim was found lapsed at.
+   * @param error - Failure reason stored on the run.
+   * @returns `false` when the run was settled or its claim renewed meanwhile.
+   */
+  async failExpired(
+    expired: ExpiredClaim,
+    now: Date,
+    error: string,
+  ): Promise<boolean> {
+    return await this.repository.recoverExpired(
+      expired.id,
+      expired.claimId,
+      now,
+      {
+        status: EWorkflowRunStatus.FAILED,
+        error,
+        failedAt: now,
+        checkpoint: null,
+        awaitingOperator: false,
+      },
+    );
   }
 
   /**
@@ -339,8 +514,8 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
     run: WorkflowRunFull,
     message: string,
   ): Promise<boolean> {
-    const claimed = await this.claimSuspended(run.id, run.suspendedAt ?? null);
-    if (!claimed) {
+    const claimId = await this.claimSuspended(run.id, run.suspendedAt ?? null);
+    if (!claimId) {
       return false;
     }
 
@@ -350,11 +525,18 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       runId: run.id,
       waitIds: waits.map((wait) => wait.waitId),
     });
-    await this.markFailed(run.id, {
-      snapshot,
-      stepLog,
-      error: message,
-    });
+    const settled = await this.markFailed(
+      run.id,
+      {
+        snapshot,
+        stepLog,
+        error: message,
+      },
+      claimId,
+    );
+    if (!settled) {
+      return false;
+    }
 
     const error = new Error(message);
     for (const wait of waits) {
@@ -590,6 +772,28 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   }
 
   /**
+   * Build a new claim, lapsing one TTL from now unless it is renewed.
+   */
+  private newClaim(): RunClaim {
+    return { claimId: randomUUID(), expiresAt: this.claimExpiry() };
+  }
+
+  private claimExpiry(): Date {
+    return new Date(Date.now() + config.workflow.runClaimTtl);
+  }
+
+  /**
+   * Report a pass whose outcome is dropped because its run was settled by
+   * another caller while it ran.
+   */
+  private warnClaimLost(runId: string, status: string): void {
+    this.logger.warn(
+      'Dropping the outcome of a workflow run pass: the run was taken over or recovered while it ran',
+      { runId, status },
+    );
+  }
+
+  /**
    * Merge persisted step log entries with the latest runner log.
    */
   private buildStepLog(
@@ -671,10 +875,12 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * Fail all active runs linked to a thread, once it is closed.
    *
    * Suspended runs are cancelled as an admin would cancel them (see
-   * {@link cancelSuspended}); a run another caller claimed first is left
-   * alone. Child runs share the thread of their caller, so the whole call
-   * stack is cancelled here and no parent is resumed. Idle and running runs
-   * are only marked failed.
+   * {@link cancelSuspended}). Idle and running runs are only marked failed,
+   * taken over from the pass running them: that pass then cannot write its
+   * outcome over the failure. A run whose status changed since it was loaded
+   * (claimed, recovered) is handled once more from its new status. Child
+   * runs share the thread of their caller, so the whole call stack is
+   * cancelled here and no parent is resumed.
    *
    * @param threadId - The ID of the closed thread.
    */
@@ -688,18 +894,36 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
     });
 
     for (const run of activeRuns) {
-      if (run.status !== EWorkflowRunStatus.SUSPENDED) {
-        await this.markFailed(run.id, { error: message });
+      if (await this.abortActiveRun(run, message)) {
         continue;
       }
 
-      if (!(await this.cancelSuspended(run, message))) {
+      const current = await this.findOneAndPopulate(run.id);
+      if (
+        current &&
+        ACTIVE_WORKFLOW_RUN_STATUSES.includes(current.status) &&
+        !(await this.abortActiveRun(current, message))
+      ) {
         this.logger.warn(
-          'Leaving a run of a closed thread another caller claimed first',
-          { runId: run.id, threadId },
+          'Leaving a run of a closed thread whose status keeps changing',
+          { runId: run.id, threadId, status: current.status },
         );
       }
     }
+  }
+
+  /**
+   * Fail one active run of a closed thread, as loaded.
+   *
+   * @returns `false` when the run is not in the status it was loaded with.
+   */
+  private async abortActiveRun(
+    run: WorkflowRunFull,
+    message: string,
+  ): Promise<boolean> {
+    return run.status === EWorkflowRunStatus.SUSPENDED
+      ? await this.cancelSuspended(run, message)
+      : await this.markFailed(run.id, { error: message }, null);
   }
 
   /**

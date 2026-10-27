@@ -331,11 +331,15 @@ To resume a wait, typically from an HTTP request:
 3. claim the run (optimistic lock); two resumes of different waits of the same run must not
    interleave. Claim the suspension that was validated (a version or a suspension timestamp),
    not only the status: otherwise a caller holding a stale checkpoint can claim a run another
-   caller resumed and suspended again in the meantime;
+   caller resumed and suspended again in the meantime. Make the claim a lease with a token:
+   renew it while the pass runs, and leave the checkpoint as it is, so that a run whose process
+   died (its lease lapsed) can be put back on the checkpoint it was claimed from and resumed
+   again;
 4. `fromCheckpoint(...)`, then `resume({ waitId, resumeData })`;
-5. persist the new checkpoint (or clear it when the run finished or failed). When the result
-   carries `rejection`, the checkpoint is unchanged: release the claim and refuse the request,
-   leaving the run suspended.
+5. persist the new checkpoint (or clear it when the run finished or failed), only while the run
+   is still held under the token: a pass whose run was recovered or taken over meanwhile must
+   drop its outcome. When the result carries `rejection`, the checkpoint is unchanged: release
+   the claim and refuse the request, leaving the run suspended.
 
 A payload refused by `validateCheckpoint` in step 2 never reaches the runner, so no
 `hook:workflow:resume_rejected` is emitted for it; a host that keeps an audit trail of refusals

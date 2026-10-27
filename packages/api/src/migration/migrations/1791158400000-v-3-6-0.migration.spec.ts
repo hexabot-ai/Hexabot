@@ -28,6 +28,8 @@ const WorkflowRunEntity = new EntitySchema({
   },
 });
 const AWAITING_OPERATOR_INDEX = 'IDX_workflow_runs_awaiting_operator';
+const CLAIM_EXPIRES_AT_INDEX = 'IDX_workflow_runs_claim_expires_at';
+const CLAIM_COLUMNS = ['claim_id', 'claim_expires_at', 'recovery_count'];
 const LEGACY_COLUMNS = [
   'suspended_step',
   'suspension_reason',
@@ -266,6 +268,66 @@ describe('Migration v3.6.0', () => {
     expect(await indexNames()).toContain(AWAITING_OPERATOR_INDEX);
   });
 
+  it('adds the claim of an active run, with its lapse indexed', async () => {
+    await inTransaction(() =>
+      new Migration1791158400000_V3_6_0().up(queryRunner),
+    );
+
+    const columns = (await queryRunner.query(
+      `PRAGMA table_info("workflow_runs")`,
+    )) as Array<{ name: string; notnull: number; dflt_value: string | null }>;
+    const column = (name: string) =>
+      columns.find((candidate) => candidate.name === name);
+    expect(column('claim_id')).toMatchObject({ notnull: 0 });
+    expect(column('claim_expires_at')).toMatchObject({ notnull: 0 });
+    expect(column('recovery_count')).toMatchObject({
+      notnull: 1,
+      dflt_value: '0',
+    });
+    expect(await indexNames()).toContain(CLAIM_EXPIRES_AT_INDEX);
+    expect((await findRun('done')).recovery_count).toBe(0);
+  });
+
+  it('fails the runs a stopped process left idle or running', async () => {
+    const logger = { warn: jest.fn(), log: jest.fn() };
+    await queryRunner.query(
+      `INSERT INTO "workflow_runs" ("id", "status") VALUES ` +
+        `('idle', 'idle'), ('running', 'running')`,
+    );
+
+    await inTransaction(() =>
+      new Migration1791158400000_V3_6_0().up(queryRunner, {
+        logger,
+      } as never),
+    );
+
+    for (const id of ['idle', 'running']) {
+      const run = await findRun(id);
+      expect(run.status).toBe('failed');
+      expect(run.error).toContain('v3.6.0');
+      expect(run.failed_at).toBeTruthy();
+      expect(run.checkpoint).toBeNull();
+      expect(run.awaiting_operator).toBe(0);
+    }
+    expect((await findRun('done')).status).toBe('finished');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('2 idle or running workflow run(s)'),
+    );
+  });
+
+  it('keeps the runs held under a claim when it runs again', async () => {
+    const migration = new Migration1791158400000_V3_6_0();
+    await inTransaction(() => migration.up(queryRunner));
+    await queryRunner.query(
+      `INSERT INTO "workflow_runs" ("id", "status", "claim_id", "claim_expires_at") ` +
+        `VALUES ('claimed', 'running', 'claim-1', '2026-01-01 10:00:00.000')`,
+    );
+
+    await inTransaction(() => migration.up(queryRunner));
+
+    expect((await findRun('claimed')).status).toBe('running');
+  });
+
   it('does nothing when the table does not exist yet', async () => {
     await queryRunner.query(`DROP TABLE "memory_records"`);
     await queryRunner.query(`DROP TABLE "workflow_runs"`);
@@ -287,7 +349,9 @@ describe('Migration v3.6.0', () => {
     const columns = await columnNames();
     expect(columns).not.toContain('checkpoint');
     expect(columns).not.toContain('awaiting_operator');
+    expect(columns).toEqual(expect.not.arrayContaining(CLAIM_COLUMNS));
     expect(await indexNames()).not.toContain(AWAITING_OPERATOR_INDEX);
+    expect(await indexNames()).not.toContain(CLAIM_EXPIRES_AT_INDEX);
     expect(columns).toEqual(expect.arrayContaining(LEGACY_COLUMNS));
     expect((await findRun('resumable')).status).toBe('failed');
     expect(

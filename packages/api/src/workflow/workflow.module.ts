@@ -48,6 +48,7 @@ import { WebhookTriggerService } from './services/webhook-trigger.service';
 import { WorkflowCompiler } from './services/workflow-compiler.service';
 import { WorkflowEventRestorer } from './services/workflow-event-restorer.service';
 import { WorkflowRunOperatorService } from './services/workflow-run-operator.service';
+import { WorkflowRunRecoveryService } from './services/workflow-run-recovery.service';
 import { WorkflowRunService } from './services/workflow-run.service';
 import { WorkflowSchedulerService } from './services/workflow-scheduler.service';
 import { WorkflowVersionService } from './services/workflow-version.service';
@@ -104,6 +105,7 @@ import { WORKFLOW_CALL_SERVICE } from './types';
     AgenticService,
     WorkflowEventRestorer,
     WorkflowRunOperatorService,
+    WorkflowRunRecoveryService,
     WebhookTriggerService,
     WebhookTriggerGuard,
     { provide: WORKFLOW_CALL_SERVICE, useExisting: AgenticService },

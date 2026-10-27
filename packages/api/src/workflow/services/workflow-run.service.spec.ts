@@ -4,6 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
+import { randomUUID } from 'crypto';
+
 import {
   EWorkflowRunStatus,
   StepType,
@@ -14,7 +16,9 @@ import {
   WorkflowSnapshot,
 } from '@hexabot-ai/agentic';
 import { Workflow, WorkflowRun, WorkflowRunFull } from '@hexabot-ai/types';
+import { DataSource } from 'typeorm';
 
+import { config } from '@/config';
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
@@ -41,6 +45,8 @@ describe('WorkflowRunService (TypeORM)', () => {
   let workflowVersionService: WorkflowVersionService;
   let workflow: Workflow;
   let workflowRun: WorkflowRun;
+  let claimId: string;
+  let dataSource: DataSource;
   let workflowVersionId: string | null;
   let counter = 0;
   let creatorId: string;
@@ -90,6 +96,37 @@ describe('WorkflowRunService (TypeORM)', () => {
     },
     waits: [wait],
   };
+  /** Create an idle run held under a fresh claim, as `createFromEvent` does. */
+  const createClaimedRun = async () => {
+    const runClaimId = randomUUID();
+    const run = await workflowRunRepository.createClaimed(
+      {
+        workflow: workflow.id,
+        workflowVersion: workflowVersionId,
+        input: { foo: 'bar' },
+      },
+      { claimId: runClaimId, expiresAt: new Date(Date.now() + 60_000) },
+    );
+
+    return { run, claimId: runClaimId };
+  };
+  /** Read the claim columns of a run, which the run schemas strip. */
+  const readClaim = async (runId: string) => {
+    const entity = await dataSource
+      .getRepository(WorkflowRunOrmEntity)
+      .findOneByOrFail({ id: runId });
+
+    return {
+      claimId: entity.claimId ?? null,
+      claimExpiresAt: entity.claimExpiresAt ?? null,
+      recoveryCount: entity.recoveryCount,
+    };
+  };
+  const released = {
+    claimId: null,
+    claimExpiresAt: null,
+    recoveryCount: 0,
+  };
 
   beforeAll(async () => {
     const testing = await buildTestingMocks({
@@ -112,6 +149,7 @@ describe('WorkflowRunService (TypeORM)', () => {
       },
     });
 
+    dataSource = testing.module.get(DataSource);
     [
       workflowService,
       workflowRepository,
@@ -151,12 +189,7 @@ describe('WorkflowRunService (TypeORM)', () => {
     workflow = (await workflowService.findOne(workflow.id))!;
     workflowVersionId = workflow.currentVersion ?? null;
 
-    workflowRun = await workflowRunService.create({
-      workflow: workflow.id,
-      workflowVersion: workflowVersionId,
-      status: 'idle',
-      input: { foo: 'bar' },
-    });
+    ({ run: workflowRun, claimId } = await createClaimedRun());
   });
 
   afterEach(() => {
@@ -164,29 +197,20 @@ describe('WorkflowRunService (TypeORM)', () => {
     jest.useRealTimers();
   });
   describe('state transitions', () => {
-    it('marks a run as running with its context', async () => {
+    it('marks a claimed run as running with its context and keeps the claim', async () => {
       const payload = { context: { user: 'demo' } };
-      const updateSpy = jest.spyOn(workflowRunRepository, 'updateOne');
-      const updated = await workflowRunService.markRunning(
-        workflowRun.id,
-        payload,
-      );
-      const stored = await workflowRunService.findOne(workflowRun.id);
 
-      expect(updateSpy).toHaveBeenCalledWith(
-        workflowRun.id,
-        {
-          status: 'running',
-          ...payload,
-        },
-        undefined,
-      );
-      expect(updated.status).toBe('running');
-      expect(updated.context).toEqual(payload.context);
+      expect(
+        await workflowRunService.markRunning(workflowRun.id, claimId, payload),
+      ).toBe(true);
+
+      const stored = await workflowRunService.findOne(workflowRun.id);
       expect(stored?.status).toBe('running');
+      expect(stored?.context).toEqual(payload.context);
+      expect((await readClaim(workflowRun.id)).claimId).toBe(claimId);
     });
 
-    it('marks a run as suspended with its checkpoint', async () => {
+    it('marks a run as suspended with its checkpoint and releases its claim', async () => {
       const now = new Date('2024-10-10T10:00:00Z');
       jest.useFakeTimers().setSystemTime(now);
       const payload = {
@@ -195,25 +219,27 @@ describe('WorkflowRunService (TypeORM)', () => {
         context: { lang: 'en' },
         output: checkpoint.output,
       };
-      const updateSpy = jest.spyOn(workflowRunRepository, 'updateOne');
-      const updated = await workflowRunService.markSuspended(
-        workflowRun.id,
-        payload,
-      );
 
-      expect(updateSpy).toHaveBeenCalledWith(
-        workflowRun.id,
-        {
+      expect(
+        await workflowRunService.markSuspended(
+          workflowRun.id,
+          payload,
+          claimId,
+        ),
+      ).toBe(true);
+
+      const stored = await workflowRunService.findOne(workflowRun.id);
+      expect(stored).toEqual(
+        expect.objectContaining({
           status: 'suspended',
-          suspendedAt: now,
+          checkpoint,
+          context: payload.context,
           awaitingOperator: false,
-          ...payload,
-        },
-        undefined,
+        }),
       );
-      expect(updated.status).toBe('suspended');
-      expect(updated.checkpoint).toEqual(checkpoint);
-      expect(updated.suspendedAt?.getTime()).toBe(now.getTime());
+      expect(stored?.suspendedAt?.getTime()).toBe(now.getTime());
+      expect(stored?.updatedAt?.getTime()).toBe(now.getTime());
+      expect(await readClaim(workflowRun.id)).toEqual(released);
     });
 
     it('marks a run as finished with outputs', async () => {
@@ -224,29 +250,22 @@ describe('WorkflowRunService (TypeORM)', () => {
         context: { total: 1 },
         output: { message: 'complete' },
       };
-      const updateSpy = jest.spyOn(workflowRunRepository, 'updateOne');
-      const updated = await workflowRunService.markFinished(
-        workflowRun.id,
-        payload,
-      );
-      const stored = await workflowRunService.findOne(workflowRun.id);
 
-      expect(updateSpy).toHaveBeenCalledWith(
-        workflowRun.id,
-        {
+      expect(
+        await workflowRunService.markFinished(workflowRun.id, payload, claimId),
+      ).toBe(true);
+
+      const stored = await workflowRunService.findOne(workflowRun.id);
+      expect(stored).toEqual(
+        expect.objectContaining({
           status: 'finished',
           checkpoint: null,
           awaitingOperator: false,
-          finishedAt: now,
-          ...payload,
-        },
-        undefined,
+          output: payload.output,
+        }),
       );
-      expect(updated.status).toBe('finished');
-      expect(updated.finishedAt?.getTime()).toBe(now.getTime());
-      expect(updated.output).toEqual(payload.output);
-      expect(stored?.status).toBe('finished');
       expect(stored?.finishedAt?.getTime()).toBe(now.getTime());
+      expect(await readClaim(workflowRun.id)).toEqual(released);
     });
 
     it('marks a run as failed and captures errors', async () => {
@@ -257,113 +276,392 @@ describe('WorkflowRunService (TypeORM)', () => {
         context: { attempt: 1 },
         error: 'Unexpected failure',
       };
-      const updateSpy = jest.spyOn(workflowRunRepository, 'updateOne');
-      const updated = await workflowRunService.markFailed(
-        workflowRun.id,
-        payload,
-      );
-      const stored = await workflowRunService.findOne(workflowRun.id);
 
-      expect(updateSpy).toHaveBeenCalledWith(
-        workflowRun.id,
-        {
+      expect(
+        await workflowRunService.markFailed(workflowRun.id, payload, claimId),
+      ).toBe(true);
+
+      const stored = await workflowRunService.findOne(workflowRun.id);
+      expect(stored).toEqual(
+        expect.objectContaining({
           status: 'failed',
           checkpoint: null,
           awaitingOperator: false,
-          failedAt: now,
-          ...payload,
-        },
-        undefined,
+          error: payload.error,
+        }),
       );
-      expect(updated.status).toBe('failed');
-      expect(updated.failedAt?.getTime()).toBe(now.getTime());
-      expect(updated.error).toBe(payload.error);
-      expect(stored?.status).toBe('failed');
       expect(stored?.failedAt?.getTime()).toBe(now.getTime());
+      expect(await readClaim(workflowRun.id)).toEqual(released);
+    });
+
+    it('broadcasts the runs it writes, as updateOne does', async () => {
+      const emitSpy = jest.spyOn(workflowRunService.eventEmitter, 'emitAsync');
+
+      await workflowRunService.markFailed(
+        workflowRun.id,
+        { error: 'boom' },
+        claimId,
+      );
+
+      expect(emitSpy).toHaveBeenCalledWith(
+        'hook:workflowRun:postUpdate',
+        expect.objectContaining({
+          entity: expect.objectContaining({
+            id: workflowRun.id,
+            status: 'failed',
+          }),
+        }),
+      );
     });
   });
 
   describe('suspension claims', () => {
-    const suspend = async () =>
-      await workflowRunService.markSuspended(workflowRun.id, {
-        checkpoint,
-      });
+    /** Suspend the run under its claim, then load it. */
+    const suspend = async () => {
+      await workflowRunService.markSuspended(
+        workflowRun.id,
+        { checkpoint },
+        claimId,
+      );
+
+      return (await workflowRunService.findOne(workflowRun.id))!;
+    };
 
     it('clears the checkpoint once a run finishes or fails', async () => {
-      await suspend();
-      expect(
-        (await workflowRunService.markFinished(workflowRun.id, {})).checkpoint,
-      ).toBeNull();
+      for (const end of ['finished', 'failed'] as const) {
+        const { run, claimId: startClaimId } = await createClaimedRun();
+        await workflowRunService.markSuspended(
+          run.id,
+          { checkpoint },
+          startClaimId,
+        );
+        const suspended = (await workflowRunService.findOne(run.id))!;
+        const resumeClaimId = (await workflowRunService.claimSuspended(
+          run.id,
+          suspended.suspendedAt ?? null,
+        ))!;
 
-      await suspend();
-      expect(
-        (await workflowRunService.markFailed(workflowRun.id, {})).checkpoint,
-      ).toBeNull();
+        expect(
+          end === 'finished'
+            ? await workflowRunService.markFinished(run.id, {}, resumeClaimId)
+            : await workflowRunService.markFailed(run.id, {}, resumeClaimId),
+        ).toBe(true);
+        expect(await workflowRunService.findOne(run.id)).toEqual(
+          expect.objectContaining({ status: end, checkpoint: null }),
+        );
+      }
     });
 
-    it('claims a suspension exactly once', async () => {
+    it('claims a suspension exactly once, under a token and a lease', async () => {
       const suspended = await suspend();
+      const claimedAfter = Date.now();
       const claims = await Promise.all([
         workflowRunService.claimSuspended(
           workflowRun.id,
-          suspended.suspendedAt,
+          suspended.suspendedAt ?? null,
         ),
         workflowRunService.claimSuspended(
           workflowRun.id,
-          suspended.suspendedAt,
+          suspended.suspendedAt ?? null,
         ),
       ]);
+      const won = claims.filter((claim): claim is string => !!claim);
 
-      expect(claims.filter(Boolean)).toHaveLength(1);
-      expect((await workflowRunService.findOne(workflowRun.id))?.status).toBe(
-        'running',
+      expect(won).toHaveLength(1);
+      const stored = await workflowRunService.findOne(workflowRun.id);
+      expect(stored?.status).toBe('running');
+      // The claim writes nothing else, so the run can be put back as it was.
+      expect(stored?.context).toEqual(suspended.context);
+      expect(stored?.checkpoint).toEqual(checkpoint);
+      const claim = await readClaim(workflowRun.id);
+      expect(claim.claimId).toBe(won[0]);
+      expect(claim.claimExpiresAt!.getTime()).toBeGreaterThanOrEqual(
+        claimedAfter + config.workflow.runClaimTtl,
       );
     });
 
     it('refuses to claim a run that is not suspended', async () => {
       expect(
         await workflowRunService.claimSuspended(workflowRun.id, null),
-      ).toBe(false);
+      ).toBeNull();
     });
 
     it('refuses to claim a later suspension of the same run', async () => {
       jest.useFakeTimers().setSystemTime(new Date('2024-10-10T10:00:00Z'));
       const first = await suspend();
+      const resumeClaimId = await workflowRunService.claimSuspended(
+        workflowRun.id,
+        first.suspendedAt ?? null,
+      );
       jest.setSystemTime(new Date('2024-10-10T10:05:00Z'));
-      await suspend();
+      await workflowRunService.markSuspended(
+        workflowRun.id,
+        { checkpoint },
+        resumeClaimId,
+      );
       jest.useRealTimers();
 
       expect(
         await workflowRunService.claimSuspended(
           workflowRun.id,
-          first.suspendedAt,
+          first.suspendedAt ?? null,
         ),
-      ).toBe(false);
+      ).toBeNull();
     });
 
-    it('releases a claim back to the same suspension', async () => {
+    it('releases a claim back to the same suspension, as it was', async () => {
       const suspended = await suspend();
-      await workflowRunService.claimSuspended(
+      const resumeClaimId = (await workflowRunService.claimSuspended(
         workflowRun.id,
-        suspended.suspendedAt,
-      );
+        suspended.suspendedAt ?? null,
+      ))!;
 
-      const released = await workflowRunService.releaseClaim(workflowRun.id, {
-        context: { restored: true },
-      });
+      expect(
+        await workflowRunService.releaseClaim(workflowRun.id, resumeClaimId),
+      ).toBe(true);
 
-      expect(released.status).toBe('suspended');
-      expect(released.context).toEqual({ restored: true });
-      expect(released.checkpoint).toEqual(checkpoint);
-      expect(released.suspendedAt?.getTime()).toBe(
+      const stored = (await workflowRunService.findOne(workflowRun.id))!;
+      expect(stored.status).toBe('suspended');
+      expect(stored.context).toEqual(suspended.context);
+      expect(stored.checkpoint).toEqual(checkpoint);
+      expect(stored.suspendedAt?.getTime()).toBe(
         suspended.suspendedAt?.getTime(),
       );
+      expect(await readClaim(workflowRun.id)).toEqual(released);
       expect(
         await workflowRunService.claimSuspended(
           workflowRun.id,
-          released.suspendedAt,
+          stored.suspendedAt ?? null,
+        ),
+      ).toEqual(expect.any(String));
+    });
+
+    it('drops the writes of a pass whose run was taken over', async () => {
+      // The thread of the run was closed while its pass ran.
+      expect(
+        await workflowRunService.markFailed(
+          workflowRun.id,
+          { error: 'Thread was closed' },
+          null,
         ),
       ).toBe(true);
+
+      expect(
+        await workflowRunService.markRunning(workflowRun.id, claimId, {
+          context: {},
+        }),
+      ).toBe(false);
+      expect(
+        await workflowRunService.markSuspended(
+          workflowRun.id,
+          { checkpoint },
+          claimId,
+        ),
+      ).toBe(false);
+      expect(
+        await workflowRunService.markFinished(workflowRun.id, {}, claimId),
+      ).toBe(false);
+      expect(
+        await workflowRunService.releaseClaim(workflowRun.id, claimId),
+      ).toBe(false);
+      expect(await workflowRunService.findOne(workflowRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Thread was closed',
+        }),
+      );
+    });
+
+    it('refuses to settle a run under another claim', async () => {
+      expect(
+        await workflowRunService.markFinished(workflowRun.id, {}, randomUUID()),
+      ).toBe(false);
+
+      expect((await workflowRunService.findOne(workflowRun.id))?.status).toBe(
+        'idle',
+      );
+      expect((await readClaim(workflowRun.id)).claimId).toBe(claimId);
+    });
+
+    it('refuses to take over a run that is not active', async () => {
+      await suspend();
+
+      expect(
+        await workflowRunService.markFailed(
+          workflowRun.id,
+          { error: 'Thread was closed' },
+          null,
+        ),
+      ).toBe(false);
+      expect((await workflowRunService.findOne(workflowRun.id))?.status).toBe(
+        'suspended',
+      );
+    });
+  });
+
+  describe('claim leases', () => {
+    const operatorCheckpoint: WorkflowCheckpoint = {
+      ...checkpoint,
+      waits: [{ ...wait, reason: 'awaiting_approval' }],
+    };
+    /** Time at which every claim taken by the tests has lapsed. */
+    const later = () => new Date(Date.now() + 10 * 60_000);
+
+    it('holds a claim only while its pass runs, however it ends', async () => {
+      await expect(
+        workflowRunService.withHeldClaim(workflowRun.id, claimId, async () => {
+          expect(workflowRunService.holdsClaim(claimId)).toBe(true);
+          throw new Error('pass-crash');
+        }),
+      ).rejects.toThrow('pass-crash');
+
+      expect(workflowRunService.holdsClaim(claimId)).toBe(false);
+    });
+
+    it('renews only the claims held in this process', async () => {
+      const { run: other } = await createClaimedRun();
+      const before = await readClaim(workflowRun.id);
+      const otherBefore = await readClaim(other.id);
+      const updatedAt = (await workflowRunService.findOne(workflowRun.id))
+        ?.updatedAt;
+      jest.useFakeTimers().setSystemTime(Date.now() + 30_000);
+
+      expect(
+        await workflowRunService.withHeldClaim(workflowRun.id, claimId, () =>
+          workflowRunService.renewHeldClaims(),
+        ),
+      ).toBe(1);
+
+      expect(
+        (await readClaim(workflowRun.id)).claimExpiresAt!.getTime(),
+      ).toBeGreaterThan(before.claimExpiresAt!.getTime());
+      expect(
+        (await workflowRunService.findOne(workflowRun.id))?.updatedAt,
+      ).toEqual(updatedAt);
+      expect(await readClaim(other.id)).toEqual(otherBefore);
+      expect(await workflowRunService.renewHeldClaims()).toBe(0);
+    });
+
+    it('finds the active runs whose claim lapsed', async () => {
+      const { run: other, claimId: otherClaimId } = await createClaimedRun();
+      await workflowRunService.markSuspended(
+        other.id,
+        { checkpoint },
+        otherClaimId,
+      );
+      const suspended = (await workflowRunService.findOne(other.id))!;
+      const resumeClaimId = (await workflowRunService.claimSuspended(
+        other.id,
+        suspended.suspendedAt ?? null,
+      ))!;
+
+      expect(await workflowRunService.findExpiredClaims(new Date())).toEqual(
+        [],
+      );
+      expect(await workflowRunService.findExpiredClaims(later())).toEqual(
+        expect.arrayContaining([
+          {
+            id: workflowRun.id,
+            claimId,
+            hasCheckpoint: false,
+            recoveryCount: 0,
+          },
+          {
+            id: other.id,
+            claimId: resumeClaimId,
+            hasCheckpoint: true,
+            recoveryCount: 0,
+          },
+        ]),
+      );
+    });
+
+    it('puts a run whose resume died back on the suspension it was claimed from', async () => {
+      await workflowRunService.markSuspended(
+        workflowRun.id,
+        { checkpoint: operatorCheckpoint, snapshot, context: { lang: 'en' } },
+        claimId,
+      );
+      const suspended = (await workflowRunService.findOne(workflowRun.id))!;
+      const resumeClaimId = (await workflowRunService.claimSuspended(
+        workflowRun.id,
+        suspended.suspendedAt ?? null,
+      ))!;
+      const now = later();
+      const [expired] = await workflowRunService.findExpiredClaims(now);
+
+      expect(expired.claimId).toBe(resumeClaimId);
+      expect(await workflowRunService.putBackExpired(expired, now)).toBe(true);
+
+      const recovered = (await workflowRunService.findOne(workflowRun.id))!;
+      expect(recovered).toEqual(
+        expect.objectContaining({
+          status: 'suspended',
+          checkpoint: operatorCheckpoint,
+          snapshot,
+          context: { lang: 'en' },
+          awaitingOperator: true,
+        }),
+      );
+      expect(recovered.suspendedAt?.getTime()).toBe(
+        suspended.suspendedAt?.getTime(),
+      );
+      expect(await readClaim(workflowRun.id)).toEqual({
+        claimId: null,
+        claimExpiresAt: null,
+        recoveryCount: 1,
+      });
+      expect(
+        (
+          await workflowRunService.find(
+            workflowRunService.withAwaitingOperatorScope(),
+          )
+        ).map(({ id }) => id),
+      ).toEqual([workflowRun.id]);
+      // Another node finds nothing left to recover.
+      expect(await workflowRunService.putBackExpired(expired, now)).toBe(false);
+    });
+
+    it('fails a run whose claim lapsed before it ever suspended', async () => {
+      await workflowRunService.markRunning(workflowRun.id, claimId, {
+        context: { user: 'demo' },
+      });
+      const now = later();
+      const [expired] = await workflowRunService.findExpiredClaims(now);
+
+      expect(
+        await workflowRunService.failExpired(expired, now, 'Interrupted'),
+      ).toBe(true);
+
+      const recovered = (await workflowRunService.findOne(workflowRun.id))!;
+      expect(recovered).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Interrupted',
+          checkpoint: null,
+          awaitingOperator: false,
+          context: { user: 'demo' },
+        }),
+      );
+      expect(recovered.failedAt?.getTime()).toBe(now.getTime());
+      expect((await readClaim(workflowRun.id)).claimId).toBeNull();
+    });
+
+    it('leaves a run whose claim was renewed after it was found lapsed', async () => {
+      const now = later();
+      const [expired] = await workflowRunService.findExpiredClaims(now);
+      jest.useFakeTimers().setSystemTime(now.getTime() + 1);
+      await workflowRunService.withHeldClaim(workflowRun.id, claimId, () =>
+        workflowRunService.renewHeldClaims(),
+      );
+      jest.useRealTimers();
+
+      expect(
+        await workflowRunService.failExpired(expired, now, 'Interrupted'),
+      ).toBe(false);
+      expect((await workflowRunService.findOne(workflowRun.id))?.status).toBe(
+        'idle',
+      );
     });
   });
 
@@ -378,60 +676,78 @@ describe('WorkflowRunService (TypeORM)', () => {
       ...checkpoint,
       waits: [wait, approvalWait],
     };
+    const isAwaitingOperator = async (runId: string) =>
+      (await workflowRunService.findOne(runId))?.awaitingOperator;
+    /** Claim the current suspension of a run. */
+    const claim = async (runId: string) => {
+      const suspended = (await workflowRunService.findOne(runId))!;
+
+      return (await workflowRunService.claimSuspended(
+        runId,
+        suspended.suspendedAt ?? null,
+      ))!;
+    };
 
     it('flags a run suspended on an operator wait', async () => {
-      const suspended = await workflowRunService.markSuspended(workflowRun.id, {
-        checkpoint: operatorCheckpoint,
-      });
+      await workflowRunService.markSuspended(
+        workflowRun.id,
+        { checkpoint: operatorCheckpoint },
+        claimId,
+      );
 
-      expect(suspended.awaitingOperator).toBe(true);
+      expect(await isAwaitingOperator(workflowRun.id)).toBe(true);
     });
 
     it('does not flag a run suspended on other waits', async () => {
-      const suspended = await workflowRunService.markSuspended(workflowRun.id, {
-        checkpoint,
-      });
+      await workflowRunService.markSuspended(
+        workflowRun.id,
+        { checkpoint },
+        claimId,
+      );
 
-      expect(suspended.awaitingOperator).toBe(false);
+      expect(await isAwaitingOperator(workflowRun.id)).toBe(false);
     });
 
     it('keeps the flag while the run is claimed and clears it once the run ends', async () => {
-      const suspended = await workflowRunService.markSuspended(workflowRun.id, {
-        checkpoint: operatorCheckpoint,
-      });
-      await workflowRunService.claimSuspended(
+      await workflowRunService.markSuspended(
         workflowRun.id,
-        suspended.suspendedAt,
+        { checkpoint: operatorCheckpoint },
+        claimId,
       );
-      const released = await workflowRunService.releaseClaim(workflowRun.id, {
-        context: {},
-      });
+      const refusedClaimId = await claim(workflowRun.id);
+      expect(await isAwaitingOperator(workflowRun.id)).toBe(true);
+      await workflowRunService.releaseClaim(workflowRun.id, refusedClaimId);
+      expect(await isAwaitingOperator(workflowRun.id)).toBe(true);
 
-      expect(released.awaitingOperator).toBe(true);
-      expect(
-        (await workflowRunService.markFinished(workflowRun.id, {}))
-          .awaitingOperator,
-      ).toBe(false);
+      await workflowRunService.markFinished(
+        workflowRun.id,
+        {},
+        await claim(workflowRun.id),
+      );
+      expect(await isAwaitingOperator(workflowRun.id)).toBe(false);
 
-      await workflowRunService.markSuspended(workflowRun.id, {
-        checkpoint: operatorCheckpoint,
-      });
-      expect(
-        (await workflowRunService.markFailed(workflowRun.id, {}))
-          .awaitingOperator,
-      ).toBe(false);
+      const { run: other, claimId: otherClaimId } = await createClaimedRun();
+      await workflowRunService.markSuspended(
+        other.id,
+        { checkpoint: operatorCheckpoint },
+        otherClaimId,
+      );
+      await workflowRunService.markFailed(other.id, {}, await claim(other.id));
+      expect(await isAwaitingOperator(other.id)).toBe(false);
     });
 
     it('scopes find options to the runs waiting on an admin', async () => {
-      await workflowRunService.markSuspended(workflowRun.id, {
-        checkpoint: operatorCheckpoint,
-      });
-      const other = await workflowRunService.create({
-        workflow: workflow.id,
-        workflowVersion: workflowVersionId,
-        status: 'idle',
-      });
-      await workflowRunService.markSuspended(other.id, { checkpoint });
+      await workflowRunService.markSuspended(
+        workflowRun.id,
+        { checkpoint: operatorCheckpoint },
+        claimId,
+      );
+      const { run: other, claimId: otherClaimId } = await createClaimedRun();
+      await workflowRunService.markSuspended(
+        other.id,
+        { checkpoint },
+        otherClaimId,
+      );
 
       const scoped = workflowRunService.withAwaitingOperatorScope({
         where: { workflow: { id: workflow.id }, status: 'failed' },
@@ -996,23 +1312,63 @@ describe('WorkflowRunService (TypeORM)', () => {
       );
     });
 
-    it('leaves a suspended run of a thread another caller claimed first', async () => {
+    it('fails a suspended run of a thread claimed meanwhile, and drops the outcome of its pass', async () => {
       const run = await loadSuspendedRun();
       // A resume claimed the run after it was loaded.
-      await workflowRunService.claimSuspended(run.id, run.suspendedAt ?? null);
+      const resumeClaimId = (await workflowRunService.claimSuspended(
+        run.id,
+        run.suspendedAt ?? null,
+      ))!;
       jest
         .spyOn(workflowRunService, 'findAndPopulate')
         .mockResolvedValueOnce([run]);
-      const emitSpy = jest.spyOn(workflowRunService.eventEmitter, 'emit');
 
       await workflowRunService.abortActiveRunsForThread('thread-1');
 
-      expect((await workflowRunService.findOne(run.id))?.status).toBe(
-        'running',
+      expect(await workflowRunService.findOne(run.id)).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Thread was closed',
+        }),
       );
-      expect(emitSpy).not.toHaveBeenCalledWith(
-        'hook:workflow:failure',
-        expect.anything(),
+      // The resume ends afterwards: it cannot write over the failure.
+      expect(
+        await workflowRunService.markFinished(
+          run.id,
+          { output: { done: true } },
+          resumeClaimId,
+        ),
+      ).toBe(false);
+      expect((await workflowRunService.findOne(run.id))?.status).toBe('failed');
+    });
+
+    it('cancels a running run of a thread put back on its wait meanwhile', async () => {
+      const suspended = await loadSuspendedRun();
+      const resumeClaimId = (await workflowRunService.claimSuspended(
+        suspended.id,
+        suspended.suspendedAt ?? null,
+      ))!;
+      const running = (await workflowRunService.findOneAndPopulate(
+        suspended.id,
+      ))!;
+      // Its resume let go of it after it was loaded.
+      await workflowRunService.releaseClaim(suspended.id, resumeClaimId);
+      jest
+        .spyOn(workflowRunService, 'findAndPopulate')
+        .mockResolvedValueOnce([running]);
+
+      await workflowRunService.abortActiveRunsForThread('thread-1');
+
+      const stored = await workflowRunService.findOne(suspended.id);
+      expect(stored).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Thread was closed',
+          checkpoint: null,
+        }),
+      );
+      expect(stored?.snapshot?.actions?.[wait.step.id]).toEqual(
+        expect.objectContaining({ status: 'cancelled' }),
       );
     });
   });

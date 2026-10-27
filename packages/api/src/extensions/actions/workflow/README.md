@@ -116,3 +116,4 @@ Cancelling fails the run with `Cancelled by <admin>[: <reason>]`, marks the step
 - **Manual, webhook and scheduled triggers** start a new, independent run. A scheduled workflow that waits on approvals therefore leaves one pending run per tick.
 - Approving a wait of a child run resumes its waiting ancestors once the child ends.
 - Waits do not expire. Closing the conversation fails the run.
+- If the API process stops while it applies a decision, the run goes back to the pending list on the same wait, within about 1.5 × `WORKFLOW_RUN_CLAIM_TTL` (60 s by default): decide again. Steps that ran after the wait in the interrupted attempt run again. Until then, the endpoints answer 409 `run_not_suspended`. A run interrupted 3 times in a row is cancelled.
