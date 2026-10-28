@@ -28,19 +28,6 @@ export const getOpenWaits = (
 };
 
 /**
- * Tell whether two loads of a run hold the same suspension.
- */
-export const isSameSuspension = (
-  a: Pick<WorkflowRun, 'suspendedAt'>,
-  b: Pick<WorkflowRun, 'suspendedAt'>,
-): boolean => {
-  const time = (value?: Date | string | null) =>
-    value ? new Date(value).getTime() : null;
-
-  return time(a.suspendedAt) === time(b.suspendedAt);
-};
-
-/**
  * Tell whether an admin (operator) resolves this wait.
  */
 export const isOperatorWait = (wait: Pick<WaitInfo, 'reason'>): boolean =>

@@ -40,7 +40,8 @@ describe('WebhookTriggerService (TypeORM)', () => {
   let agenticService: AgenticService;
   const agenticServiceMock = {
     handleEvent: jest.fn().mockResolvedValue(null),
-  } as jest.Mocked<Pick<AgenticService, 'handleEvent'>>;
+    dispatchEvent: jest.fn().mockResolvedValue(null),
+  } as jest.Mocked<Pick<AgenticService, 'handleEvent' | 'dispatchEvent'>>;
   const workflowRunServiceMock = {
     findOne: jest.fn(),
   } as jest.Mocked<Pick<WorkflowRunService, 'findOne'>>;
@@ -171,6 +172,42 @@ describe('WebhookTriggerService (TypeORM)', () => {
       runId: run.id,
       status: 'finished',
       output: { result: 'ok' },
+      error: null,
+    });
+  });
+
+  it('answers an asynchronous trigger once the run is started', async () => {
+    const workflow = await createManualWorkflow({
+      type: 'object',
+      properties: {},
+      additionalProperties: true,
+    });
+    const run = {
+      id: randomUUID(),
+      status: 'idle',
+      output: null,
+      error: null,
+    };
+    const spy = jest
+      .spyOn(agenticService, 'dispatchEvent')
+      .mockResolvedValueOnce({
+        run: run as any,
+        // The pass goes on: the trigger must not wait for it.
+        settled: new Promise(() => {}),
+      });
+    const result = await webhookTriggerService.trigger(
+      workflow.id,
+      { foo: 'bar' },
+      { async: true },
+    );
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][1]?.workflow?.id).toEqual(workflow.id);
+    expect(agenticService.handleEvent).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      runId: run.id,
+      status: 'idle',
+      output: null,
       error: null,
     });
   });

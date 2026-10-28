@@ -100,10 +100,26 @@ describe('WebhookController', () => {
   it('forwards the workflow id and the raw body to the trigger service', async () => {
     const id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
     const input = { foo: 'bar' };
-    const result = await controller.trigger(id, input);
+    const res = { status: jest.fn() } as unknown as Response;
+    const result = await controller.trigger(id, input, undefined, res);
 
-    expect(webhookTriggerService.trigger).toHaveBeenCalledWith(id, input);
+    expect(webhookTriggerService.trigger).toHaveBeenCalledWith(id, input, {
+      async: undefined,
+    });
     expect(result).toEqual(triggerResult);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('answers 202 to an asynchronous trigger', async () => {
+    const id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const input = { foo: 'bar' };
+    const res = { status: jest.fn() } as unknown as Response;
+    await controller.trigger(id, input, true, res);
+
+    expect(webhookTriggerService.trigger).toHaveBeenCalledWith(id, input, {
+      async: true,
+    });
+    expect(res.status).toHaveBeenCalledWith(202);
   });
 
   it('delegates download requests to channel download service', async () => {

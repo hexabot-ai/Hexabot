@@ -88,7 +88,7 @@ Endpoints (session and CSRF token required, like every other mutating route):
 | `PATCH /api/workflowrun/:id/resume` | `workflowrun:update` | `{ waitId?, data? }` (`data` defaults to `{}`) |
 | `PATCH /api/workflowrun/:id/cancel` | `workflowrun:update` | `{ reason? }` |
 
-`waitId` is optional when the run has a single wait of the kind the route resolves. The run is resumed inside the request; the response is the run once it suspends again, finishes or fails, with its checkpoint (the same shape as `GET /api/workflowrun/:id`).
+`waitId` is optional when the run has a single wait of the kind the route resolves. Approve, reject and resume check the decision and claim the run, then answer `202 Accepted` with the run as it stands (`status: 'running'`, with its checkpoint; the same shape as `GET /api/workflowrun/:id`). The rest of the run goes on in the background: the steps up to its next wait or its end, the workflows it calls, and the parent runs waiting on it. Those can take minutes, longer than a proxy in front of the API waits for a response. Follow the run through `GET /api/workflowrun/:id` or the run's live updates. Cancel answers `200` with the failed run.
 
 Errors carry a `code`:
 
@@ -104,11 +104,11 @@ Errors carry a `code`:
 | 409 | `trigger_unavailable` | The run's trigger cannot be rebuilt (`reason`: closed conversation, deleted initiator, disabled source or channel). |
 | 409 | `unresumable` | The run can never resume (its checkpoint no longer matches its definition); it was marked failed. |
 | 409 | `resume_unavailable` | The run could not be resumed right now (e.g. its definition no longer compiles) and still waits. |
-| 422 | `payload_rejected` | The step refused the payload (`issues`); the run still waits on the same wait. |
+| 422 | `payload_rejected` | The wait refused the payload (`issues`); the run still waits on the same wait. |
 
-On a 409, reload the run before trying again. A run that fails after its wait was resolved (e.g. `on_reject: fail`) is returned with status 200 and `status: 'failed'`.
+On a 409, reload the run before trying again. These errors are all detected before the run is claimed. After the `202`, a run that fails (e.g. `on_reject: fail`) shows `status: 'failed'` in its updates. In the rare case where a step refuses the payload while it runs (a check its `accepts` schema could not express), the refusal is logged and the run goes back on the same wait.
 
-Cancelling fails the run with `Cancelled by <admin>[: <reason>]`, marks the steps that held open waits `cancelled`, cancels the suspended runs it called, and passes a failed result to a parent run waiting on it. Every operation is recorded in the audit log (`workflowrun.approve|reject|resume|cancel`); comments and data are not.
+Cancelling fails the run with `Cancelled by <admin>[: <reason>]`, marks the steps that held open waits `cancelled`, cancels the suspended runs it called, and passes a failed result to a parent run waiting on it; that parent goes on in the background. Every operation is recorded in the audit log (`workflowrun.approve|reject|resume|cancel`); comments and data are not.
 
 ## While a run waits on an admin
 
@@ -116,4 +116,4 @@ Cancelling fails the run with `Cancelled by <admin>[: <reason>]`, marks the step
 - **Manual, webhook and scheduled triggers** start a new, independent run. A scheduled workflow that waits on approvals therefore leaves one pending run per tick.
 - Approving a wait of a child run resumes its waiting ancestors once the child ends.
 - Waits do not expire. Closing the conversation fails the run.
-- If the API process stops while it applies a decision, the run goes back to the pending list on the same wait, within about 1.5 × `WORKFLOW_RUN_CLAIM_TTL` (60 s by default): decide again. Steps that ran after the wait in the interrupted attempt run again. Until then, the endpoints answer 409 `run_not_suspended`. A run interrupted 3 times in a row is cancelled.
+- If the API process stops while the run goes on after a decision (a crash or a deploy), the run goes back to the pending list on the same wait, within about 1.5 × `WORKFLOW_RUN_CLAIM_TTL` (60 s by default): decide again. Steps that ran after the wait in the interrupted attempt run again. Until then, the endpoints answer 409 `run_not_suspended`. A run interrupted 3 times in a row is cancelled.

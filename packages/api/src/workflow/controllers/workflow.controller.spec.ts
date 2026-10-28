@@ -97,7 +97,8 @@ describe('WorkflowController (TypeORM)', () => {
   let i18nService: I18nService<unknown>;
   const agenticServiceMock = {
     handleEvent: jest.fn().mockResolvedValue(null),
-  } as jest.Mocked<Pick<AgenticService, 'handleEvent'>>;
+    dispatchEvent: jest.fn().mockResolvedValue(null),
+  } as jest.Mocked<Pick<AgenticService, 'handleEvent' | 'dispatchEvent'>>;
   const workflowRunServiceMock = {
     findOne: jest.fn(),
   } as jest.Mocked<Pick<WorkflowRunService, 'findOne'>>;
@@ -748,7 +749,7 @@ describe('WorkflowController (TypeORM)', () => {
       createdWorkflowIds.add(manual.id);
       const input = { customerId: 'cust-1', retryCount: 1 };
       const userId = userFixtureIds.admin;
-      const spyAgenticService = jest.spyOn(agenticService, 'handleEvent');
+      const spyAgenticService = jest.spyOn(agenticService, 'dispatchEvent');
       const result = await workflowController.runManually(manual.id, input, {
         session: { passport: { user: { id: userId } } },
       } as any);
@@ -799,7 +800,7 @@ describe('WorkflowController (TypeORM)', () => {
         'Manual workflow input validation failed',
       );
       expect(response.details?.fieldErrors?.customerId).toBeDefined();
-      expect(agenticService.handleEvent).not.toHaveBeenCalled();
+      expect(agenticService.dispatchEvent).not.toHaveBeenCalled();
     });
 
     it('runs a scheduled workflow for an authenticated user', async () => {
@@ -813,7 +814,7 @@ describe('WorkflowController (TypeORM)', () => {
       createdWorkflowIds.add(scheduled.id);
       const input = { run: true };
       const userId = userFixtureIds.admin;
-      const spyAgenticService = jest.spyOn(agenticService, 'handleEvent');
+      const spyAgenticService = jest.spyOn(agenticService, 'dispatchEvent');
       const result = await workflowController.runManually(scheduled.id, input, {
         session: { passport: { user: { id: userId } } },
       } as any);
@@ -855,7 +856,7 @@ describe('WorkflowController (TypeORM)', () => {
           'Workflow must be manual or scheduled to run manually',
         ),
       );
-      expect(agenticService.handleEvent).not.toHaveBeenCalled();
+      expect(agenticService.dispatchEvent).not.toHaveBeenCalled();
     });
 
     it('throws when user session is missing', async () => {
@@ -875,7 +876,7 @@ describe('WorkflowController (TypeORM)', () => {
           'Only authenticated users can run workflows manually',
         ),
       );
-      expect(agenticService.handleEvent).not.toHaveBeenCalled();
+      expect(agenticService.dispatchEvent).not.toHaveBeenCalled();
     });
   });
 });

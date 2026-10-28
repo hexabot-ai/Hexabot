@@ -70,6 +70,15 @@ describe('WorkflowRunOperatorService', () => {
       checkpoint: { waits },
       ...overrides,
     }) as unknown as WorkflowRunFull;
+  /**
+   * An accepted resume whose pass never ends: an operation that waited for
+   * it would never return.
+   */
+  const accepted = (run: WorkflowRunFull) => ({
+    status: 'accepted',
+    run: { ...run, status: 'running' },
+    settled: new Promise(() => {}),
+  });
   /** Run `operation` and return the HTTP error it threw. */
   const failure = async (operation: Promise<unknown>) => {
     const error = await operation.then(
@@ -96,16 +105,13 @@ describe('WorkflowRunOperatorService', () => {
   describe('decide', () => {
     it('approves the only approval wait on behalf of the admin', async () => {
       const run = buildRun([replyWait, approvalWait]);
-      const resumed = { ...run, status: 'finished' };
+      const outcome = accepted(run);
       workflowRunService.findOneAndPopulate.mockResolvedValue(run);
-      agenticService.resumeWait.mockResolvedValue({
-        status: 'resumed',
-        run: resumed,
-      });
+      agenticService.resumeWait.mockResolvedValue(outcome);
 
       await expect(
         service.decide('run-1', 'approved', { comment: '  ok  ' }, actor),
-      ).resolves.toBe(resumed);
+      ).resolves.toBe(outcome.run);
       expect(eventRestorer.restore).toHaveBeenCalledWith(run);
       expect(agenticService.resumeWait).toHaveBeenCalledWith({
         run,
@@ -123,7 +129,7 @@ describe('WorkflowRunOperatorService', () => {
     it('rejects the requested wait without an empty comment', async () => {
       const run = buildRun([approvalWait, secondApprovalWait]);
       workflowRunService.findOneAndPopulate.mockResolvedValue(run);
-      agenticService.resumeWait.mockResolvedValue({ status: 'resumed', run });
+      agenticService.resumeWait.mockResolvedValue(accepted(run));
 
       await service.decide(
         'run-1',
@@ -141,19 +147,15 @@ describe('WorkflowRunOperatorService', () => {
       });
     });
 
-    it('returns a run that failed once the decision was applied', async () => {
+    it('answers with the claimed run, without waiting for the run to go on', async () => {
       const run = buildRun([approvalWait]);
-      const failed = { ...run, status: 'failed' };
+      const outcome = accepted(run);
       workflowRunService.findOneAndPopulate.mockResolvedValue(run);
-      agenticService.resumeWait.mockResolvedValue({
-        status: 'failed',
-        run: failed,
-        error: new Error('Rejected by Jane Doe'),
-      });
+      agenticService.resumeWait.mockResolvedValue(outcome);
 
       await expect(
         service.decide('run-1', 'rejected', {}, actor),
-      ).resolves.toBe(failed);
+      ).resolves.toEqual(expect.objectContaining({ status: 'running' }));
     });
 
     it('refuses a missing run', async () => {
@@ -303,7 +305,7 @@ describe('WorkflowRunOperatorService', () => {
     it('resumes the only resume wait with the admin data', async () => {
       const run = buildRun([approvalWait, resumeWait]);
       workflowRunService.findOneAndPopulate.mockResolvedValue(run);
-      agenticService.resumeWait.mockResolvedValue({ status: 'resumed', run });
+      agenticService.resumeWait.mockResolvedValue(accepted(run));
 
       await service.resume('run-1', { data: { reference: 'REF-1' } }, actor);
 
@@ -322,7 +324,7 @@ describe('WorkflowRunOperatorService', () => {
     it('defaults the data to an empty object', async () => {
       const run = buildRun([resumeWait]);
       workflowRunService.findOneAndPopulate.mockResolvedValue(run);
-      agenticService.resumeWait.mockResolvedValue({ status: 'resumed', run });
+      agenticService.resumeWait.mockResolvedValue(accepted(run));
 
       await service.resume('run-1', {}, actor);
 
@@ -350,6 +352,8 @@ describe('WorkflowRunOperatorService', () => {
       agenticService.cancelRun.mockResolvedValue({
         status: 'cancelled',
         run: failed,
+        // A parent going on, which the request does not wait for.
+        settled: new Promise(() => {}),
       });
 
       await expect(
@@ -486,8 +490,31 @@ describe('WorkflowRunOperatorService', () => {
 
       await deleteWorkflow();
 
-      expect(logger.error).toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        'Workflow run failed once a callee was deleted',
+        expect.any(Error),
+        { runId: 'caller-1', workflowId: deletedWorkflow.id },
+      );
       expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not wait for the callers to go on', async () => {
+      workflowRunService.prepareWorkflowDeletion.mockResolvedValue([
+        'caller-1',
+      ]);
+      workflowRunService.findOneAndPopulate.mockImplementation(
+        async (id: string) => buildRun([], { id }),
+      );
+      agenticService.resumeFromEndedChildren.mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      await deleteWorkflow();
+
+      expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledWith(
+        'caller-1',
+        event,
+      );
     });
 
     it('does nothing when no run called the workflow', async () => {

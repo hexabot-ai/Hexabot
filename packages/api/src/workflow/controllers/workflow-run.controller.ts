@@ -9,6 +9,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Patch,
   Query,
   Req,
@@ -183,9 +185,12 @@ export class WorkflowRunController extends BaseOrmController<WorkflowRunOrmEntit
    * @param body - Wait to approve (optional with a single approval wait) and
    * an optional comment.
    *
-   * @returns The run once it suspends again, finishes or fails.
+   * @returns `202` with the run once claimed (`running`). The rest of the
+   * run goes on in the background, since it may last longer than a request;
+   * the run's updates report whether it waits again, finishes or fails.
    */
   @Patch(':id/approve')
+  @HttpCode(HttpStatus.ACCEPTED)
   @AuditWorkflowRunOperation('approve')
   async approve(
     @UuidParam('id') id: string,
@@ -208,9 +213,12 @@ export class WorkflowRunController extends BaseOrmController<WorkflowRunOrmEntit
    * @param body - Wait to reject (optional with a single approval wait) and
    * an optional comment.
    *
-   * @returns The run once it suspends again, finishes or fails.
+   * @returns `202` with the run once claimed (`running`). The rest of the
+   * run goes on in the background, since it may last longer than a request;
+   * the run's updates report whether it waits again, finishes or fails.
    */
   @Patch(':id/reject')
+  @HttpCode(HttpStatus.ACCEPTED)
   @AuditWorkflowRunOperation('reject')
   async reject(
     @UuidParam('id') id: string,
@@ -232,9 +240,12 @@ export class WorkflowRunController extends BaseOrmController<WorkflowRunOrmEntit
    * @param body - Wait to resume (optional with a single resume wait) and the
    * data passed on to the workflow.
    *
-   * @returns The run once it suspends again, finishes or fails.
+   * @returns `202` with the run once claimed (`running`). The rest of the
+   * run goes on in the background, since it may last longer than a request;
+   * the run's updates report whether it waits again, finishes or fails.
    */
   @Patch(':id/resume')
+  @HttpCode(HttpStatus.ACCEPTED)
   @AuditWorkflowRunOperation('resume')
   async resume(
     @UuidParam('id') id: string,
@@ -255,7 +266,8 @@ export class WorkflowRunController extends BaseOrmController<WorkflowRunOrmEntit
    * @param id - The workflow run ID.
    * @param body - Optional reason stored on the run.
    *
-   * @returns The failed run.
+   * @returns The failed run. A waiting parent receives the failed result in
+   * the background.
    */
   @Patch(':id/cancel')
   @AuditWorkflowRunOperation('cancel')

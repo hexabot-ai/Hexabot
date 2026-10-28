@@ -158,13 +158,55 @@ export type ResumeWaitOptions = {
 };
 
 /**
- * What happened to a wait the host resolved on behalf of an admin. On top of
- * {@link ResumeOutcome}, `failed` means the wait was resolved but the run
- * failed while it went on.
+ * What happened to a wait the host resolved on behalf of an admin, once the
+ * run was claimed or refused. The pass that follows a claim goes on in the
+ * background, so an admin request does not wait for the rest of the run.
  */
 export type ResumeWaitOutcome =
+  /**
+   * The payload was accepted and the run claimed (`running`); `settled`
+   * resolves once its pass, and the runs it resumed in turn, are over.
+   */
+  | {
+      status: 'accepted';
+      run: WorkflowRunFull;
+      settled: Promise<ResumeWaitSettlement>;
+    }
+  | Exclude<ResumeOutcome, { status: 'resumed' | 'unresumable' }>
+  /**
+   * The run can never resume; it was marked failed. `settled` resolves once
+   * a parent waiting on it received the failed result.
+   */
+  | { status: 'unresumable'; run: WorkflowRunFull; settled: Promise<void> };
+
+/**
+ * How the background pass of an accepted resume ended. On top of
+ * {@link ResumeOutcome} (`rejected` when a step refused the payload while it
+ * ran, which puts the run back on the same wait), `crashed` means the pass, or
+ * the resume of a run it ended, threw; `run` is the run as stored since.
+ */
+export type ResumeWaitSettlement =
   | ResumeOutcome
-  | { status: 'failed'; run: WorkflowRunFull; error: unknown };
+  | { status: 'crashed'; run: WorkflowRunFull; error: unknown };
+
+/**
+ * A run an event was routed to, as soon as it is claimed, and the work left
+ * on it. Callers that must not wait for the run, such as an HTTP request,
+ * answer with `run` and leave `settled` to go on.
+ */
+export type WorkflowRunDispatch = {
+  /**
+   * The run once claimed: created (`idle`) or resumed (`running`); or as it
+   * was when the event did not resume it (held, refused or claimed by
+   * another caller).
+   */
+  run: WorkflowRunFull;
+  /**
+   * The run once its pass is over, or `undefined` when the pass threw (it is
+   * logged). Never rejects.
+   */
+  settled: Promise<WorkflowRunFull | undefined>;
+};
 
 export type CancelRunOptions = {
   run: WorkflowRunFull;
@@ -176,8 +218,12 @@ export type CancelRunOptions = {
 
 /** What happened to a suspended run the host tried to cancel. */
 export type CancelRunOutcome =
-  /** The run was failed, along with its suspended descendants. */
-  | { status: 'cancelled'; run: WorkflowRunFull }
+  /**
+   * The run was failed, along with its suspended descendants. `settled`
+   * resolves once a parent waiting on it received the failed result and went
+   * on.
+   */
+  | { status: 'cancelled'; run: WorkflowRunFull; settled: Promise<void> }
   /** Another caller resumed or cancelled this suspension first. */
   | { status: 'claim_lost'; run: WorkflowRunFull };
 

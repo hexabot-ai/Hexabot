@@ -53,9 +53,14 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
   that are not exposed as webhooks respond `404` without disclosing existence.
 - The JSON request body is the workflow input and is validated against the
   workflow `inputSchema` (`400` on mismatch).
-- The run executes synchronously; the `200` response carries the outcome:
-  `{ runId, status, output, error }`. When no run could be started the endpoint
-  responds `422`.
+- By default the run executes before the response: the `200` response carries
+  the outcome `{ runId, status, output, error }` once the run finishes, fails
+  or suspends. When no run could be started the endpoint responds `422`.
+- With `?async=true` (a query parameter, since the body is the workflow input)
+  the endpoint answers `202` as soon as the run is started:
+  `{ runId, status, output: null, error: null }`, where `status` is `idle` or
+  `running`. Use it for workflows that run longer than the caller, or a proxy
+  in front of the API (nginx answers `504` after 60 s by default), can wait.
 
 Also available:
 

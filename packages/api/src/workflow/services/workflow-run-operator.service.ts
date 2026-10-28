@@ -25,6 +25,7 @@ import { LoggerService } from '@/logger/logger.service';
 import { DeleteEntityEvent } from '@/utils/types/entity-event.types';
 
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
+import { runInBackground } from '../lib/run-in-background';
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
 import { getOpenWaits } from '../lib/workflow-run-waits';
 import {
@@ -102,7 +103,8 @@ export class WorkflowRunOperatorService {
    * single approval wait.
    * @param request.comment - Optional comment passed on to the workflow.
    * @param actor - Authenticated admin.
-   * @returns The run after the decision was applied.
+   * @returns The run once claimed with the decision (`running`); the rest of
+   * the run goes on in the background.
    */
   async decide(
     runId: string,
@@ -137,7 +139,8 @@ export class WorkflowRunOperatorService {
    * single resume wait.
    * @param request.data - JSON object passed on to the workflow.
    * @param actor - Authenticated admin.
-   * @returns The run after it was resumed.
+   * @returns The run once claimed with the data (`running`); the rest of the
+   * run goes on in the background.
    */
   async resume(
     runId: string,
@@ -166,7 +169,8 @@ export class WorkflowRunOperatorService {
    * @param runId - Suspended run.
    * @param request.reason - Optional reason stored on the run.
    * @param actor - Authenticated admin.
-   * @returns The failed run.
+   * @returns The failed run. A parent waiting on it receives the failed
+   * result in the background.
    */
   async cancel(
     runId: string,
@@ -229,7 +233,8 @@ export class WorkflowRunOperatorService {
    * its runs a failed result, so its `call_workflow` step fails instead of
    * waiting forever. This happens after the deletion so that a retry of the
    * step cannot start the workflow again. A run whose trigger cannot be
-   * rebuilt gets the result on its next event.
+   * rebuilt gets the result on its next event. The deletion does not wait
+   * for the callers to go on.
    */
   @OnEvent('hook:workflow:postDelete')
   async handleWorkflowDeleted(
@@ -290,7 +295,13 @@ export class WorkflowRunOperatorService {
       runId,
       workflowId,
     });
-    await this.agenticService.resumeFromEndedChildren(run.id, event);
+    // The run goes on from there, which may outlast the deletion request.
+    void runInBackground(
+      this.logger,
+      () => this.agenticService.resumeFromEndedChildren(run.id, event),
+      'Workflow run failed once a callee was deleted',
+      { runId, workflowId },
+    );
   }
 
   /**
@@ -399,7 +410,8 @@ export class WorkflowRunOperatorService {
   }
 
   /**
-   * Resume a run on one of its waits and map the outcome to a response.
+   * Resume a run on one of its waits and map the outcome to a response. The
+   * response does not wait for the run once it is claimed.
    */
   private async resolveWait(
     run: WorkflowRunFull,
@@ -429,8 +441,8 @@ export class WorkflowRunOperatorService {
     }
 
     switch (outcome.status) {
-      case 'resumed':
-      case 'failed':
+      case 'accepted':
+        // The run goes on in the background; its updates report how.
         return outcome.run;
       case 'rejected':
         throw operatorError(

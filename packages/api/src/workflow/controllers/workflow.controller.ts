@@ -279,7 +279,9 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
   }
 
   /**
-   * Manually triggers a workflow run for manual or scheduled workflows.
+   * Manually triggers a workflow run for manual or scheduled workflows. The
+   * response is sent once the run is started; the run goes on in the
+   * background, and its updates report how.
    *
    * @param id - The workflow ID to execute.
    * @param input - Optional workflow input payload (manual workflows only).
@@ -333,6 +335,7 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
       workflow,
       event,
       userId,
+      { wait: false },
     );
 
     return { accepted: true };

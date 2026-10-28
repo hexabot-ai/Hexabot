@@ -31,8 +31,10 @@ import { AgenticService } from './agentic.service';
 import { WorkflowService } from './workflow.service';
 
 /**
- * Outcome of a triggered workflow run, exposed to webhook callers. Execution
- * is synchronous, so the final status and workflow output are available.
+ * Outcome of a triggered workflow run, exposed to webhook callers. By default
+ * the run executes before the response, which carries its final status and
+ * output. An asynchronous trigger answers once the run is started: `status`
+ * is then `idle` or `running`, and `output` and `error` are `null`.
  */
 export type WorkflowTriggerResult = {
   runId: string;
@@ -110,14 +112,20 @@ export class WebhookTriggerService {
    *
    * Access control (existence, manual type, enabled webhook, credentials) is
    * enforced upstream by {@link WebhookTriggerGuard}; this method resolves the
-   * workflow, validates the payload, and dispatches the event. The workflow
-   * runs to completion before responding, so the result carries the final run
-   * status and output.
+   * workflow, validates the payload, and dispatches the event. By default the
+   * workflow runs until it finishes, fails or suspends before responding, so
+   * the result carries the final run status and output.
    *
    * @param id - The workflow ID to execute.
    * @param input - Optional workflow input payload.
+   * @param options.async - Respond once the run is started, without its
+   * output, for workflows that run longer than the caller can wait.
    */
-  async trigger(id: string, input: unknown): Promise<WorkflowTriggerResult> {
+  async trigger(
+    id: string,
+    input: unknown,
+    options: { async?: boolean } = {},
+  ): Promise<WorkflowTriggerResult> {
     const workflow = await this.workflowService.findOneAndPopulate(id);
     if (!workflow) {
       throw new NotFoundException(`Workflow with ID ${id} not found`);
@@ -129,7 +137,9 @@ export class WebhookTriggerService {
     );
     const initiatorId = workflow.createdBy?.id ?? null;
     const event = new ManualEventWrapper(manualInput, initiatorId);
-    const run = await this.dispatchTriggerEvent(workflow, event, initiatorId);
+    const run = await this.dispatchTriggerEvent(workflow, event, initiatorId, {
+      wait: !options.async,
+    });
     if (!run) {
       // The run could not be created (missing initiator/definition) or the
       // runner crashed before persisting a result.
@@ -141,8 +151,8 @@ export class WebhookTriggerService {
     return {
       runId: run.id,
       status: run.status,
-      output: run.output ?? null,
-      error: run.error ?? null,
+      output: options.async ? null : (run.output ?? null),
+      error: options.async ? null : (run.error ?? null),
     };
   }
 
@@ -150,11 +160,18 @@ export class WebhookTriggerService {
    * Resolves the initiator, targets the event at the given workflow, and hands
    * it to the agentic runner. Shared by webhook triggers and authenticated
    * manual runs so both paths dispatch identically.
+   *
+   * @param options.wait - Wait for the run to finish, fail or suspend
+   * (default). With `false`, return the run once it is started (`idle`, or
+   * `running` when the event resumed a suspended run); its pass goes on in the
+   * background.
+   * @returns The run, or `null` when no run could process the event.
    */
   async dispatchTriggerEvent(
     workflow: WorkflowFull,
     event: TriggerEventWrapper,
     initiatorId: string | null,
+    { wait = true }: { wait?: boolean } = {},
   ): Promise<WorkflowRunFull | null> {
     const initiator = initiatorId
       ? await this.userService.findOne(initiatorId)
@@ -163,6 +180,13 @@ export class WebhookTriggerService {
       event.setInitiator(initiator);
     }
     event.setWorkflowId(workflow.id);
+    if (!wait) {
+      const dispatched = await this.agenticService.dispatchEvent(event, {
+        workflow,
+      });
+
+      return dispatched?.run ?? null;
+    }
 
     return await this.agenticService.handleEvent(event, { workflow });
   }
