@@ -205,7 +205,8 @@
       "run_finished": "The run finished.",
       "waiting": "The run is waiting again.",
       "waiting_at": "The run is now waiting at step \"{{0}}\".",
-      "run_failed": "The run then failed: {{0}}"
+      "run_failed": "The run then failed: {{0}}",
+      "run_continuing": "The run goes on in the background."
     },
     "operator_error": {
       "wait_ambiguous": "This run has several open requests of this kind. Reload it and pick one.",

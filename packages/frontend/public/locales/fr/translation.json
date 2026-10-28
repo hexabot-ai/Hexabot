@@ -204,7 +204,8 @@
       "run_finished": "L'exécution est terminée.",
       "waiting": "L'exécution attend de nouveau.",
       "waiting_at": "L'exécution attend maintenant à l'étape « {{0}} ».",
-      "run_failed": "L'exécution a ensuite échoué : {{0}}"
+      "run_failed": "L'exécution a ensuite échoué : {{0}}",
+      "run_continuing": "L'exécution se poursuit en arrière-plan."
     },
     "operator_error": {
       "wait_ambiguous": "Cette exécution a plusieurs demandes ouvertes de ce type. Rechargez-la et choisissez-en une.",

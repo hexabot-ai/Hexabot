@@ -62,12 +62,35 @@ export const useOperatorMessages = () => {
 };
 
 /**
+ * Tell whether the cache holds a later state of a run than `run`. A run
+ * returned as soon as it was claimed goes on in the background, so its
+ * socket updates can arrive before the response.
+ */
+const isOlderThanCached = (
+  queryClient: ReturnType<typeof useTanstackQueryClient>,
+  run: WorkflowRunFull,
+) => {
+  const cached = queryClient.getQueryData<{ updatedAt?: Date | string }>([
+    QueryType.item,
+    EntityType.WORKFLOW_RUN,
+    run.id,
+  ]);
+
+  return (
+    !!cached?.updatedAt &&
+    new Date(cached.updatedAt).getTime() > new Date(run.updatedAt).getTime()
+  );
+};
+
+/**
  * Approve, reject, resume or cancel a suspended run.
  *
- * Each call resolves with the run once its resumed pass settled (it may wait
- * again, finish or fail). The returned run is cached and the pending lists
- * are refreshed; failures are reported, except a refused resume payload,
- * which the caller shows next to its form (`descriptor.inline`).
+ * Approve, reject and resume resolve with the run as soon as it is claimed
+ * (`running`): the rest of the run goes on in the background and reaches the
+ * cache through socket updates. Cancel resolves with the failed run. The
+ * returned run is cached unless a later state already is, and the pending
+ * lists are refreshed; failures are reported, except a refused resume
+ * payload, which the caller shows next to its form (`descriptor.inline`).
  */
 export const useWorkflowRunOperator = () => {
   const queryClient = useTanstackQueryClient();
@@ -107,7 +130,9 @@ export const useWorkflowRunOperator = () => {
       }
     },
     onSuccess: (run, { action }) => {
-      normalizeAndCache(run);
+      if (!isOlderThanCached(queryClient, run)) {
+        normalizeAndCache(run);
+      }
       void invalidatePendingWorkflowRuns(queryClient);
 
       if (run.status === EWorkflowRunStatus.FAILED) {

@@ -382,9 +382,11 @@ const ACTION_OUTCOME_KEYS: Record<OperatorAction, TTranslationKeys> = {
 };
 
 /**
- * Describe the run an operator request returned: the request succeeded, but
- * the run may have reached another wait or failed afterwards (e.g. a step
- * with `on_reject: fail`).
+ * Describe the run an operator request returned: the request succeeded. An
+ * approve, reject or resume returns the run as soon as it is claimed
+ * (`running`), and the run goes on in the background; otherwise the run may
+ * have reached another wait or failed afterwards (e.g. a step with
+ * `on_reject: fail`).
  *
  * @param run - Run returned by the operator endpoint.
  * @param action - Operation that was applied.
@@ -430,6 +432,17 @@ export const getOperatorOutcome = (
       key,
       severity: "success",
       detail: { key: "message.operator_outcome.run_finished" },
+    };
+  }
+
+  if (
+    run.status === EWorkflowRunStatus.RUNNING ||
+    run.status === EWorkflowRunStatus.IDLE
+  ) {
+    return {
+      key,
+      severity: "success",
+      detail: { key: "message.operator_outcome.run_continuing" },
     };
   }
 

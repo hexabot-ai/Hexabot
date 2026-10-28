@@ -348,6 +348,23 @@ describe("operator utils", () => {
       });
     });
 
+    it("reports a run that goes on in the background", () => {
+      expect(
+        getOperatorOutcome(
+          {
+            status: EWorkflowRunStatus.RUNNING,
+            checkpoint: null,
+            error: null,
+          },
+          "approve",
+        ),
+      ).toEqual({
+        key: "message.operator_outcome.approved",
+        severity: "success",
+        detail: { key: "message.operator_outcome.run_continuing" },
+      });
+    });
+
     it("reports the next wait of a run suspended again", () => {
       expect(
         getOperatorOutcome(
