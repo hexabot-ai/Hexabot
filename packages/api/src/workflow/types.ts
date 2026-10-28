@@ -196,7 +196,8 @@ export type ResumeWaitSettlement =
  */
 export type WorkflowRunDispatch = {
   /**
-   * The run once claimed: created (`idle`) or resumed (`running`); or as it
+   * The run once claimed: created (`idle`), or resumed (`running`, or a later
+   * status when its pass got there before the run was read back); or as it
    * was when the event did not resume it (held, refused or claimed by
    * another caller).
    */

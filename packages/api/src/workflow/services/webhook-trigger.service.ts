@@ -33,8 +33,12 @@ import { WorkflowService } from './workflow.service';
 /**
  * Outcome of a triggered workflow run, exposed to webhook callers. By default
  * the run executes before the response, which carries its final status and
- * output. An asynchronous trigger answers once the run is started: `status`
- * is then `idle` or `running`, and `output` and `error` are `null`.
+ * output. An asynchronous trigger answers without waiting for the run:
+ * `output` and `error` are then `null`, and `status` is the run's status at
+ * that time. It is `idle` for a new run, `running` for a suspended run the
+ * call resumed, or `suspended` for one the call reached without resuming it
+ * (the run refused the body, or a called workflow's result is delivered to it
+ * instead).
  */
 export type WorkflowTriggerResult = {
   runId: string;
@@ -118,8 +122,8 @@ export class WebhookTriggerService {
    *
    * @param id - The workflow ID to execute.
    * @param input - Optional workflow input payload.
-   * @param options.async - Respond once the run is started, without its
-   * output, for workflows that run longer than the caller can wait.
+   * @param options.async - Respond without waiting for the run, and without
+   * its output, for workflows that run longer than the caller can wait.
    */
   async trigger(
     id: string,
@@ -162,9 +166,8 @@ export class WebhookTriggerService {
    * manual runs so both paths dispatch identically.
    *
    * @param options.wait - Wait for the run to finish, fail or suspend
-   * (default). With `false`, return the run once it is started (`idle`, or
-   * `running` when the event resumed a suspended run); its pass goes on in the
-   * background.
+   * (default). With `false`, return the run as soon as the event reached it
+   * (see `WorkflowRunDispatch.run`); its pass goes on in the background.
    * @returns The run, or `null` when no run could process the event.
    */
   async dispatchTriggerEvent(

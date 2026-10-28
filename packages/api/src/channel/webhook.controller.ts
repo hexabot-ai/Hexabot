@@ -47,8 +47,8 @@ export class WebhookController {
    * {@link WebhookTriggerGuard} authenticates the request; this handler only
    * forwards the workflow ID and payload to the service. By default the run
    * executes before the response, which carries its final status and output.
-   * With `?async=true`, the endpoint answers `202` as soon as the run is
-   * started, without its output, for runs longer than the caller (or a proxy
+   * With `?async=true`, the endpoint answers `202` without waiting for the
+   * run, and without its output, for runs longer than the caller (or a proxy
    * in front of the API) can wait.
    *
    * The whole request body is the workflow input, so third-party services
@@ -61,7 +61,7 @@ export class WebhookController {
    * registration order.
    *
    * @param input - Optional workflow input payload (the request body).
-   * @param isAsync - Answer once the run is started (`?async=true`).
+   * @param isAsync - Answer without waiting for the run (`?async=true`).
    */
   @Roles('public')
   @UseGuards(WebhookTriggerGuard)

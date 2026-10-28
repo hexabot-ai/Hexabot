@@ -57,10 +57,27 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
   the outcome `{ runId, status, output, error }` once the run finishes, fails
   or suspends. When no run could be started the endpoint responds `422`.
 - With `?async=true` (a query parameter, since the body is the workflow input)
-  the endpoint answers `202` as soon as the run is started:
-  `{ runId, status, output: null, error: null }`, where `status` is `idle` or
-  `running`. Use it for workflows that run longer than the caller, or a proxy
-  in front of the API (nginx answers `504` after 60 s by default), can wait.
+  the endpoint answers `202` without waiting for the run:
+  `{ runId, status, output: null, error: null }`. Use it for workflows that
+  run longer than the caller, or a proxy in front of the API (nginx answers
+  `504` after 60 s by default), can wait. `output` and `error` are always
+  `null`. `status` is the run's status when the response is sent:
+  - `idle`: a new run was started. This is the usual case.
+  - `running`: the call resumed a suspended run of the workflow that was
+    waiting for outside input. Only custom actions open such waits in a manual
+    workflow. The run may already have moved on (`suspended`, `finished` or
+    `failed`) by the time it is read back for the response.
+  - `suspended`: the call reached a suspended run without resuming it, and
+    started no new run. Either the run refused the body as its resume data, or
+    it waits on a workflow it called that has already ended, and the call
+    delivers that result to it in the background.
+- An asynchronous call is fire-and-forget. The webhook credentials only allow
+  starting the workflow, and nothing sends the outcome back to the caller. To
+  follow the run, look it up by `runId`: in the admin, with
+  `GET /api/workflowrun/:runId` (admin session, `workflowrun:read`), or with
+  the MCP tool `hexabot_workflow_run_get` and a personal access token. A
+  workflow can also report its own outcome, e.g. with a last `http_request`
+  step that calls the caller back.
 
 Also available:
 
