@@ -52,6 +52,7 @@ export const OverviewContent = ({
   if (step) {
     return (
       <StepOverview
+        run={run}
         step={step}
         waits={waits}
         labels={labels}

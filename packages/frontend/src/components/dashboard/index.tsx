@@ -17,6 +17,7 @@ import {
   DASHBOARD_WIDGET_REQUIREMENTS,
   filterVisibleDashboardItems,
   getVisibleDashboardKpis,
+  hasDashboardPermissions,
   getVisibleQuickActions,
 } from "./utils/permissions.util";
 import { AttentionRequired } from "./widgets/AttentionRequired";
@@ -58,7 +59,15 @@ const DASHBOARD_WIDGETS = [
     Component: AttentionRequired,
     area: "side",
     size: { xs: 12 },
-    requires: DASHBOARD_WIDGET_REQUIREMENTS.attentionRequired,
+    isVisible: (hasPermission) =>
+      hasDashboardPermissions(
+        DASHBOARD_WIDGET_REQUIREMENTS.pendingApprovals,
+        hasPermission,
+      ) ||
+      hasDashboardPermissions(
+        DASHBOARD_WIDGET_REQUIREMENTS.attentionRequired,
+        hasPermission,
+      ),
   },
   {
     id: "recent-runs",

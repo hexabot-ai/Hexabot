@@ -15,6 +15,7 @@ import { useAuthRedirection } from "@/hooks/auth/useAuthRedirection";
 import useAvailableMenuItems from "@/hooks/useAvailableMenuItems";
 import { useConfig } from "@/hooks/useConfig";
 import { useEntityMutationSubscription } from "@/hooks/useEntityMutationSubscription";
+import { usePendingWorkflowRunsSync } from "@/hooks/usePendingWorkflowRunsSync";
 import { getMenuItems } from "@/utils/menu.util";
 import { WorkflowEventProvider } from "@/websocket/workflow-event-hooks";
 
@@ -26,6 +27,7 @@ export const AuthenticatedLayout: React.FC<
   LayoutProps & { hasNoPadding?: boolean }
 > = ({ children, hasNoPadding, isPublicRoute }) => {
   useEntityMutationSubscription();
+  usePendingWorkflowRunsSync();
 
   const [isDesktopNavigationExpanded, setIsDesktopNavigationExpanded] =
     React.useState(false);

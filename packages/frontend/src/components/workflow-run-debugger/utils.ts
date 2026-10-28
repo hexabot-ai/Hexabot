@@ -8,7 +8,10 @@ import { EWorkflowRunStatus, type WaitInfo } from "@hexabot-ai/agentic";
 import type { WorkflowRun } from "@hexabot-ai/types";
 
 import type { BadgeWithTitleProps } from "@/app-components/displays/Badge";
-import { WORKFLOW_STATUS } from "@/constants/workflow.constants";
+import {
+  WORKFLOW_RUN_AWAITING_OPERATOR_STATUS,
+  WORKFLOW_STATUS,
+} from "@/constants/workflow.constants";
 import { normalizeDate } from "@/utils/date";
 
 import type { InitiatorIdentity } from "./types";
@@ -49,9 +52,12 @@ export const formatRunTimestamp = (
 
 export const getStatusBadge = (
   status: EWorkflowRunStatus,
+  awaitingOperator = false,
 ): BadgeWithTitleProps => {
   const { key: _key, ...statusBadge } =
-    WORKFLOW_STATUS[status] ?? WORKFLOW_STATUS[EWorkflowRunStatus.IDLE];
+    status === EWorkflowRunStatus.SUSPENDED && awaitingOperator
+      ? WORKFLOW_RUN_AWAITING_OPERATOR_STATUS
+      : (WORKFLOW_STATUS[status] ?? WORKFLOW_STATUS[EWorkflowRunStatus.IDLE]);
 
   return statusBadge;
 };

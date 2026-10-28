@@ -70,8 +70,8 @@ export const green = {
   200: "hsl(120, 75%, 87%)",
   300: "hsl(120, 61%, 77%)",
   400: "hsl(120, 44%, 53%)",
-  500: "hsl(120, 59%, 30%)",
-  600: "hsl(120, 70%, 25%)",
+  500: "hsl(120, 45%, 42%)",
+  600: "hsl(120, 50%, 35%)",
   700: "hsl(120, 75%, 16%)",
   800: "hsl(120, 84%, 10%)",
   900: "hsl(120, 87%, 6%)",
@@ -128,9 +128,10 @@ export const colorSchemes = {
         main: red[400],
         dark: red[800],
       },
+      // Dark enough for white button text and for text on light surfaces
       success: {
         light: green[300],
-        main: green[400],
+        main: green[500],
         dark: green[800],
       },
       grey: {
@@ -178,9 +179,10 @@ export const colorSchemes = {
         main: red[500],
         dark: red[700],
       },
+      // Light enough for text on dark surfaces
       success: {
-        light: green[400],
-        main: green[500],
+        light: green[300],
+        main: green[400],
         dark: green[700],
       },
       grey: {

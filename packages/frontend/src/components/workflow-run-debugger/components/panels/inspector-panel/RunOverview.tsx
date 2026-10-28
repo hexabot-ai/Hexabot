@@ -62,7 +62,7 @@ export const RunOverview = ({
     {waits.length > 0 ? (
       <>
         <Divider />
-        <WaitsSummary labels={labels} waits={waits} />
+        <WaitsSummary run={run} labels={labels} waits={waits} />
       </>
     ) : null}
     <Divider />

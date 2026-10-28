@@ -30,6 +30,7 @@ export const DashboardSidebarPageItem = ({
   icon,
   href,
   action,
+  iconAdornment,
   tooltip,
   defaultExpanded = false,
   expanded = defaultExpanded,
@@ -120,6 +121,7 @@ export const DashboardSidebarPageItem = ({
           >
             {icon}
           </ListItemIcon>
+          {mini && iconAdornment}
         </Box>
       )}
 

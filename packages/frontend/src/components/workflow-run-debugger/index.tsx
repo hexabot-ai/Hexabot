@@ -48,7 +48,13 @@ export const WorkflowRunDebuggerPage = () => {
         minHeight="calc(100dvh - 182px)"
         maxHeight="calc(100dvh - 182px)"
       >
-        <WorkflowRunDebugger {...params} />
+        {params.workflowId && !workflow ? null : (
+          <WorkflowRunDebugger
+            workflow={workflow}
+            initiatorId={params.initiatorId}
+            runId={params.runId}
+          />
+        )}
       </Box>
     </WorkflowActionsProvider>
   );

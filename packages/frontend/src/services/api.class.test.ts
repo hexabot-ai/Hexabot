@@ -19,9 +19,11 @@ const createRequestMock = () => {
   return {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
   } as unknown as AxiosInstance & {
     get: ReturnType<typeof vi.fn>;
     post: ReturnType<typeof vi.fn>;
+    patch: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -123,5 +125,74 @@ describe("ApiClient workflow import/export", () => {
 describe("RAG helper API route", () => {
   it("maps RagHelper autocomplete requests to /helper/rag", () => {
     expect(ROUTES[EntityType.RAG_HELPER]).toBe("/helper/rag");
+  });
+});
+
+describe("ApiClient workflow run operator actions", () => {
+  const run = { id: "run id", status: "finished" };
+  const setup = () => {
+    const request = createRequestMock();
+
+    request.get.mockResolvedValueOnce({ data: { _csrf: "csrf-token" } });
+    request.patch.mockResolvedValueOnce({ data: run });
+
+    return { request, client: new ApiClient(request) };
+  };
+
+  it("approves a wait with its comment", async () => {
+    const { request, client } = setup();
+    const result = await client.approveWorkflowRun("run id", {
+      waitId: "step@index:0",
+      comment: "Looks good",
+    });
+
+    expect(request.patch).toHaveBeenCalledWith(
+      "/workflowrun/run%20id/approve",
+      { waitId: "step@index:0", comment: "Looks good", _csrf: "csrf-token" },
+    );
+    expect(result).toBe(run);
+  });
+
+  it("rejects a wait without sending an empty comment", async () => {
+    const { request, client } = setup();
+
+    await client.rejectWorkflowRun("run-1", { waitId: "w1", comment: "" });
+
+    expect(request.patch).toHaveBeenCalledWith("/workflowrun/run-1/reject", {
+      waitId: "w1",
+      _csrf: "csrf-token",
+    });
+  });
+
+  it("resumes a wait with its data", async () => {
+    const { request, client } = setup();
+
+    await client.resumeWorkflowRun("run-1", {
+      waitId: "w1",
+      data: { reference: "ABC" },
+    });
+
+    expect(request.patch).toHaveBeenCalledWith("/workflowrun/run-1/resume", {
+      waitId: "w1",
+      data: { reference: "ABC" },
+      _csrf: "csrf-token",
+    });
+  });
+
+  it("cancels a run with an optional reason", async () => {
+    const { request, client } = setup();
+
+    await client.cancelWorkflowRun("run-1", { reason: "Duplicate" });
+
+    expect(request.patch).toHaveBeenCalledWith("/workflowrun/run-1/cancel", {
+      reason: "Duplicate",
+      _csrf: "csrf-token",
+    });
+  });
+
+  it("maps pending runs to /workflowrun/pending", () => {
+    expect(ROUTES[EntityType.WORKFLOW_RUN_PENDING]).toBe(
+      "/workflowrun/pending",
+    );
   });
 });

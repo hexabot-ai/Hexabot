@@ -13,7 +13,7 @@ import { alpha, Components, Theme } from "@mui/material/styles";
 import { toggleButtonClasses } from "@mui/material/ToggleButton";
 import { toggleButtonGroupClasses } from "@mui/material/ToggleButtonGroup";
 
-import { brand, gray } from "../themePrimitives";
+import { brand, gray, green, red } from "../themePrimitives";
 
 const buttonsCustomizations: Components<Theme> = {
   MuiButtonBase: {
@@ -71,6 +71,42 @@ const buttonsCustomizations: Components<Theme> = {
               },
               "&:active": {
                 backgroundColor: brand[700],
+                backgroundImage: "none",
+              },
+            },
+          },
+          // Status colors get white text like primary; their palette `main`
+          // is too light for it, so they use a darker shade of the scale.
+          {
+            props: {
+              color: "success",
+              variant: "contained",
+            },
+            style: {
+              color: "white",
+              backgroundColor: green[500],
+              "&:hover": {
+                backgroundColor: green[600],
+              },
+              "&:active": {
+                backgroundColor: green[600],
+                backgroundImage: "none",
+              },
+            },
+          },
+          {
+            props: {
+              color: "error",
+              variant: "contained",
+            },
+            style: {
+              color: "white",
+              backgroundColor: red[400],
+              "&:hover": {
+                backgroundColor: red[500],
+              },
+              "&:active": {
+                backgroundColor: red[600],
                 backgroundImage: "none",
               },
             },

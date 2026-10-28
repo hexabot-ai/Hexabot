@@ -5,12 +5,18 @@
  */
 
 import type { WaitInfo } from "@hexabot-ai/agentic";
-import { Chip, Stack, Typography } from "@mui/material";
+import type { WorkflowRun } from "@hexabot-ai/types";
+import { Stack, Typography } from "@mui/material";
+
+import { isOperatorWait } from "../../../operator.utils";
+import { OperatorWaitCard } from "../../operator/OperatorWaitCard";
+import { WaitReasonChip } from "../../operator/WaitReasonChip";
 
 import type { OverviewLabels } from "./overview.types";
 import { SummaryItem } from "./SummaryItem";
 
 type WaitsSummaryProps = {
+  run: WorkflowRun | null;
   labels: Pick<
     OverviewLabels,
     "openWaits" | "waitPayloadRequired" | "waitPayloadOptional"
@@ -29,12 +35,21 @@ const getPayloadLabel = (
     : labels.waitPayloadRequired;
 };
 
-export const WaitsSummary = ({ labels, waits }: WaitsSummaryProps) => (
+/**
+ * Open waits of a run (or of a step): the waits an admin resolves are shown
+ * with their request and actions, the others (replies, called workflows) as
+ * a compact row.
+ */
+export const WaitsSummary = ({ run, labels, waits }: WaitsSummaryProps) => (
   <SummaryItem
     label={labels.openWaits}
     value={
       <Stack spacing={1}>
         {waits.map((wait) => {
+          if (run && isOperatorWait(wait)) {
+            return <OperatorWaitCard key={wait.waitId} run={run} wait={wait} />;
+          }
+
           const payloadLabel = getPayloadLabel(wait, labels);
 
           return (
@@ -49,14 +64,7 @@ export const WaitsSummary = ({ labels, waits }: WaitsSummaryProps) => (
               <Typography variant="body2" fontWeight={500}>
                 {wait.step.name}
               </Typography>
-              {wait.reason ? (
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  color="warning"
-                  label={wait.reason}
-                />
-              ) : null}
+              <WaitReasonChip reason={wait.reason} />
               {payloadLabel ? (
                 <Typography variant="caption" color="text.secondary">
                   {payloadLabel}

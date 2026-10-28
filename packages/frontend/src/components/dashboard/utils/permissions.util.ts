@@ -5,7 +5,7 @@
  */
 
 import { Action } from "@hexabot-ai/types";
-import { Activity, Play, Webhook, XCircle } from "lucide-react";
+import { Activity, Play, UserRoundCheck, Webhook, XCircle } from "lucide-react";
 
 import { EntityType, RouterType } from "@/services/types";
 
@@ -43,6 +43,7 @@ export const DASHBOARD_WIDGET_REQUIREMENTS = {
     [EntityType.STATS, Action.READ],
     [EntityType.WORKFLOW_RUN, Action.READ],
   ],
+  pendingApprovals: [[EntityType.WORKFLOW_RUN, Action.READ]],
   threadSnapshot: [
     [EntityType.STATS, Action.READ],
     [EntityType.THREAD, Action.READ],
@@ -85,6 +86,13 @@ export const DASHBOARD_QUICK_ACTIONS = [
       [EntityType.SOURCE, Action.READ],
       [EntityType.SOURCE, Action.CREATE],
     ],
+  },
+  {
+    id: "approvals",
+    label: "button.review_approvals",
+    icon: UserRoundCheck,
+    url: "/workflow/approvals",
+    requires: [[EntityType.WORKFLOW_RUN, Action.READ]],
   },
   {
     id: "failed",

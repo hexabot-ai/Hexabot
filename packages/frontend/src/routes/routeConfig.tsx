@@ -30,6 +30,7 @@ import { Subscribers } from "@/components/subscribers";
 import { Translations } from "@/components/translations";
 import { Users } from "@/components/users";
 import { WorkflowEditor } from "@/components/visual-editor/v4";
+import { WorkflowApprovals } from "@/components/workflow-approvals";
 import { WorkflowRunDebuggerPage } from "@/components/workflow-run-debugger";
 import { WorkflowRuns } from "@/components/workflow-runs";
 import { LayoutProps } from "@/layout";
@@ -77,6 +78,13 @@ export const routes: RouteObjectItem[] = [
   {
     path: "/workflow/runs",
     Component: WorkflowRuns,
+    handle: {
+      requiredPermissions: [[EntityType.WORKFLOW_RUN, Action.READ]],
+    },
+  },
+  {
+    path: "/workflow/approvals",
+    Component: WorkflowApprovals,
     handle: {
       requiredPermissions: [[EntityType.WORKFLOW_RUN, Action.READ]],
     },

@@ -187,7 +187,49 @@
       "workflow_run": "Monitor workflow execution history.",
       "mcp_server": "Configure external MCP server connections.",
       "menu": "Manage persistent chatbot menu items.",
-      "setting": "Configure application and service settings."
+      "setting": "Configure application and service settings.",
+      "workflow_approvals": "Workflow runs paused until an admin approves, rejects or provides input. Decide here, or open a run to see its context."
+    },
+    "operator_request_handled": "This request is no longer open: it was handled elsewhere or the run moved on.",
+    "operator_wait_no_message": "No message was provided for this request.",
+    "reject_may_fail_hint": "Depending on the step settings, rejecting either lets the workflow continue or ends the run.",
+    "cancel_run_explanation": "The run will be marked as failed. Workflow runs it called and that are still waiting are cancelled too, and a run waiting on this one receives a failure.",
+    "resume_data_any_object": "No schema is declared for this step: send any JSON object.",
+    "json_invalid": "This is not valid JSON.",
+    "json_must_be_object": "The data must be a JSON object.",
+    "operator_outcome": {
+      "approved": "Request approved.",
+      "rejected": "Request rejected.",
+      "resumed": "Run resumed.",
+      "cancelled": "Run cancelled.",
+      "run_finished": "The run finished.",
+      "waiting": "The run is waiting again.",
+      "waiting_at": "The run is now waiting at step \"{{0}}\".",
+      "run_failed": "The run then failed: {{0}}"
+    },
+    "operator_error": {
+      "wait_ambiguous": "This run has several open requests of this kind. Reload it and pick one.",
+      "wait_kind_mismatch": "This request expects another kind of answer. The run was reloaded.",
+      "run_not_suspended": "This run is no longer waiting. It was reloaded.",
+      "wait_not_found": "This request was already handled. The run was reloaded.",
+      "no_matching_wait": "This run no longer waits for this kind of answer. It was reloaded.",
+      "claim_lost": "Someone else handled this run first. It was reloaded.",
+      "unresumable": "This run can no longer be resumed (its workflow changed) and was marked as failed.",
+      "resume_unavailable": "This run cannot be resumed right now and is still waiting. Try again later.",
+      "payload_rejected": "The step refused this data. The run is still waiting.",
+      "run_not_found": "This run no longer exists.",
+      "forbidden": "You are not allowed to resolve workflow runs.",
+      "invalid_request": "The request is invalid.",
+      "unknown_outcome": "No answer was received in time: the request may still have been applied. The run was reloaded.",
+      "trigger_unavailable": {
+        "initiator_unavailable": "This run cannot resume: the user or subscriber who started it no longer exists.",
+        "thread_unavailable": "This run cannot resume: its conversation no longer exists.",
+        "thread_closed": "This run cannot resume: its conversation is closed.",
+        "channel_unavailable": "This run cannot resume: its channel is no longer available.",
+        "source_disabled": "This run cannot resume: its source is disabled.",
+        "unsupported_trigger": "This run cannot resume: its trigger cannot be rebuilt.",
+        "unknown": "This run cannot resume: its trigger is no longer available."
+      }
     }
   },
   "menu": {
@@ -228,7 +270,8 @@
     "settings": "Settings",
     "audit_trail": "Audit Trail",
     "home": "Home",
-    "admin": "Admin"
+    "admin": "Admin",
+    "approvals": "Approvals"
   },
   "title": {
     "workflow_export_credentials": "Include credentials?",
@@ -296,7 +339,11 @@
     "new_mcp_token": "New MCP Token",
     "mcp_token_created": "MCP Token Created",
     "revoke_mcp_token": "Revoke MCP Token",
-    "assign_conversation": "Assign Conversation"
+    "assign_conversation": "Assign Conversation",
+    "workflow_approvals": "Approvals",
+    "approve_request": "Review request",
+    "resume_run": "Provide input",
+    "cancel_run": "Cancel run"
   },
   "dashboard": {
     "kpi": {
@@ -321,7 +368,12 @@
       "failed_run_title": "Failed run: {{0}}",
       "no_error_details": "No error details available",
       "failed_at_unknown": "Failure time unavailable",
-      "view_more": "View {{0}} more"
+      "view_more": "View {{0}} more",
+      "waiting_title": "Waiting on you",
+      "waiting_empty": "Nothing is waiting on an admin.",
+      "waiting_loading": "Loading pending runs...",
+      "waiting_error": "Unable to load pending runs.",
+      "view_all_approvals": "View all"
     },
     "thread_snapshot": {
       "title": "Thread Snapshot",
@@ -704,11 +756,27 @@
       "finished": "Finished",
       "idle": "Idle",
       "running": "Running",
-      "suspended": "Suspended"
+      "suspended": "Suspended",
+      "awaiting_operator": "Waiting on admin"
     },
     "read_only": "Read only",
     "view": "View",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "request": "Request",
+    "waiting_since": "Waiting since",
+    "waiting_since_date": "Waiting since {{0}}",
+    "comment": "Comment (optional)",
+    "cancel_reason": "Reason (optional)",
+    "resume_data": "Data to send",
+    "details": "Details",
+    "more_requests": "Other requests are open on this run: open it to see them",
+    "pending_approvals_count": "{{0}} runs waiting on an admin",
+    "wait_reasons": {
+      "awaiting_approval": "Approval",
+      "awaiting_resume": "Input needed",
+      "awaiting_user_response": "Reply",
+      "awaiting_child_workflow": "Called workflow"
+    }
   },
   "placeholder": {
     "username": "Username",
@@ -722,7 +790,8 @@
     "title": "Title",
     "type_message_here": "Type message here ....",
     "latest_run": "Latest run",
-    "run_at": "Run {{0}}"
+    "run_at": "Run {{0}}",
+    "operator_comment": "Shared with the workflow, e.g. why you decided so"
   },
   "button": {
     "login": "Sign In",
@@ -791,7 +860,15 @@
     "next": "Next",
     "skip": "Skip",
     "done": "Done",
-    "see_definition": "See definition"
+    "see_definition": "See definition",
+    "approve": "Approve",
+    "reject": "Reject",
+    "resume": "Resume",
+    "cancel_run": "Cancel run",
+    "review": "Review",
+    "provide_input": "Provide input",
+    "keep_waiting": "Keep waiting",
+    "review_approvals": "Review approvals"
   },
   "input": {
     "search": "Search",

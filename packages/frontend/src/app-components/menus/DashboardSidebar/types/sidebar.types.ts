@@ -7,11 +7,16 @@
 import { Action } from "@hexabot-ai/types";
 import { PopoverProps, type TooltipProps } from "@mui/material";
 import { type LucideIcon } from "lucide-react";
-import { PropsWithChildren } from "react";
+import { ComponentType, PropsWithChildren } from "react";
 
 import { type TTranslationKeys } from "@/i18n/i18n.types";
 import { EntityType } from "@/services/types";
 import { User } from "@/types/user.types";
+
+export type TMenuItemBadgeProps = {
+  /** `count` next to the label, `dot` over the icon of a mini sidebar. */
+  variant?: "count" | "dot";
+};
 
 type TMenuItem = {
   Icon?: LucideIcon;
@@ -21,6 +26,8 @@ type TMenuItem = {
   onClick?: () => void;
   tooltip?: Partial<TooltipProps>;
   requires?: { [key in EntityType]?: Action[] };
+  /** Live counter shown on the item (and on its collapsed parent group). */
+  Badge?: ComponentType<TMenuItemBadgeProps>;
 };
 
 export type TMenu = TMenuItem & {
@@ -57,6 +64,8 @@ export interface DashboardSidebarPageItemProps {
   icon?: React.ReactNode;
   href?: string;
   action?: React.ReactNode;
+  /** Shown over the icon when the sidebar is mini (e.g. a badge dot). */
+  iconAdornment?: React.ReactNode;
   tooltip?: Partial<TooltipProps>;
   defaultExpanded?: boolean;
   expanded?: boolean;

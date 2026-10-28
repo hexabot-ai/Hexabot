@@ -71,7 +71,7 @@ export const RunHistoryMenu = ({
           const workflowVersion = workflowVersionId
             ? getWorkflowVersionFromCache(workflowVersionId)
             : undefined;
-          const statusBadge = getStatusBadge(status);
+          const statusBadge = getStatusBadge(status, run.awaitingOperator);
           const statusLabel = run.status ?? status;
           const timestamp = formatRunTimestamp(i18n.language, run.createdAt);
 

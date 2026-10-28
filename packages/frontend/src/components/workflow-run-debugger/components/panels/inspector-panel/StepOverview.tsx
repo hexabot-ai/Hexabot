@@ -5,6 +5,7 @@
  */
 
 import type { StepExecutionRecord, WaitInfo } from "@hexabot-ai/agentic";
+import type { WorkflowRun } from "@hexabot-ai/types";
 import { Divider, Stack, Typography } from "@mui/material";
 
 import { ActionStatusIndicator } from "../step-trace-panel/ActionStatusIndicator";
@@ -17,6 +18,7 @@ import { SummaryItem } from "./SummaryItem";
 import { WaitsSummary } from "./WaitsSummary";
 
 type StepOverviewProps = {
+  run: WorkflowRun | null;
   step: StepExecutionRecord;
   waits: WaitInfo[];
   labels: OverviewLabels;
@@ -30,6 +32,7 @@ type StepOverviewProps = {
 };
 
 export const StepOverview = ({
+  run,
   step,
   waits,
   labels,
@@ -65,7 +68,7 @@ export const StepOverview = ({
     {waits.length > 0 ? (
       <>
         <Divider />
-        <WaitsSummary labels={labels} waits={waits} />
+        <WaitsSummary run={run} labels={labels} waits={waits} />
       </>
     ) : null}
     <Divider />

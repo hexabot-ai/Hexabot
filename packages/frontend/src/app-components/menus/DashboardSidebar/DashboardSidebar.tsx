@@ -144,6 +144,10 @@ export const DashboardSidebar = ({
 
   const renderMenuItems = menu.map((item) => {
     if (item.submenuItems?.length && item.Icon) {
+      const isExpanded = expandedItemIds.includes(item.text);
+      // A collapsed group shows the badge of its first badged item
+      const GroupBadge = item.submenuItems.find((sub) => sub.Badge)?.Badge;
+
       return (
         <DashboardSidebarPageItem
           key={item.text}
@@ -151,7 +155,9 @@ export const DashboardSidebar = ({
           title={t(item.text)}
           icon={<item.Icon />}
           tooltip={item.tooltip}
-          expanded={expandedItemIds.includes(item.text)}
+          action={GroupBadge && !isExpanded ? <GroupBadge /> : undefined}
+          iconAdornment={GroupBadge ? <GroupBadge variant="dot" /> : undefined}
+          expanded={isExpanded}
           selected={item.submenuItems.some(
             (sub) => !!sub.href && isSelected(sub.href),
           )}
@@ -174,6 +180,8 @@ export const DashboardSidebar = ({
                   icon={sub.Icon && <sub.Icon />}
                   href={sub.href}
                   tooltip={sub.tooltip}
+                  action={sub.Badge && <sub.Badge />}
+                  iconAdornment={sub.Badge && <sub.Badge variant="dot" />}
                   selected={sub.href ? isSelected(sub.href) : false}
                 />
               ))}
@@ -190,6 +198,8 @@ export const DashboardSidebar = ({
           icon={<item.Icon />}
           href={item.href}
           tooltip={item.tooltip}
+          action={item.Badge && <item.Badge />}
+          iconAdornment={item.Badge && <item.Badge variant="dot" />}
           selected={isSelected(item.href)}
         />
       );

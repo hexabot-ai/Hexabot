@@ -13,6 +13,7 @@ import {
   MessagesSquare,
   Pause,
   Play,
+  UserRoundCheck,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -54,6 +55,14 @@ export const WORKFLOW_STATUS: Record<EWorkflowRunStatus, FlowTypeInfo> = {
     color: theme.palette.warning.main,
     labelKey: "label.workflow_run_status.suspended",
   },
+};
+
+/** Suspended run that only an admin can resume (approval or resume wait). */
+export const WORKFLOW_RUN_AWAITING_OPERATOR_STATUS: FlowTypeInfo = {
+  key: WorkflowType.conversational,
+  icon: UserRoundCheck,
+  color: theme.palette.warning.main,
+  labelKey: "label.workflow_run_status.awaiting_operator",
 };
 
 type WorkflowTypeInfo = {
