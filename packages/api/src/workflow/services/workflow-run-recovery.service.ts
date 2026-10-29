@@ -18,13 +18,12 @@ import { config } from '@/config';
 import { LoggerService } from '@/logger/logger.service';
 import { stringifyError } from '@/utils/helpers/misc';
 
-import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
 import { getChildRunId, resolveRunId } from '../lib/workflow-call-stack';
 import { getOpenWaits } from '../lib/workflow-run-waits';
 import { ACTIVE_WORKFLOW_RUN_STATUSES, ExpiredClaim } from '../types';
 
 import { AgenticService } from './agentic.service';
-import { WorkflowEventRestorer } from './workflow-event-restorer.service';
+import { WorkflowCallStackService } from './workflow-call-stack.service';
 import { WorkflowRunService } from './workflow-run.service';
 
 /**
@@ -70,7 +69,7 @@ export class WorkflowRunRecoveryService
   constructor(
     private readonly workflowRunService: WorkflowRunService,
     private readonly agenticService: AgenticService,
-    private readonly eventRestorer: WorkflowEventRestorer,
+    private readonly callStack: WorkflowCallStackService,
     private readonly eventEmitter: EventEmitter2,
     private readonly logger: LoggerService,
   ) {}
@@ -249,9 +248,7 @@ export class WorkflowRunRecoveryService
     }
 
     await this.cancelOrphanChildren(run, waits);
-    if (waits.some((wait) => getChildRunId(wait))) {
-      await this.deliverEndedChildren(run);
-    }
+    await this.callStack.reconcile([run.id]);
 
     return true;
   }
@@ -297,13 +294,7 @@ export class WorkflowRunRecoveryService
       `Parent workflow run ${run.id} was interrupted`,
     );
 
-    const parentRunId = resolveRunId(run.parentRun);
-    const parentRun = parentRunId
-      ? await this.workflowRunService.findOneAndPopulate(parentRunId)
-      : null;
-    if (parentRun?.status === EWorkflowRunStatus.SUSPENDED) {
-      await this.deliverEndedChildren(parentRun);
-    }
+    await this.callStack.reconcile([resolveRunId(run.parentRun)]);
 
     return true;
   }
@@ -314,11 +305,7 @@ export class WorkflowRunRecoveryService
    * parent receives the failed result.
    */
   private async cancel(run: WorkflowRunFull, message: string): Promise<void> {
-    const outcome = await this.agenticService.cancelRun({
-      run,
-      message,
-      event: await this.restoreEvent(run),
-    });
+    const outcome = await this.agenticService.cancelRun({ run, message });
     this.logger.warn('Cancelled an interrupted workflow run', {
       runId: run.id,
       reason: message,
@@ -380,33 +367,6 @@ export class WorkflowRunRecoveryService
           message,
         );
       }
-    }
-  }
-
-  /**
-   * Deliver to a suspended run the results of the child runs that ended
-   * while it was not suspended. A run whose trigger cannot be rebuilt gets
-   * them on its next event or suspension.
-   */
-  private async deliverEndedChildren(run: WorkflowRunFull): Promise<void> {
-    const event = await this.restoreEvent(run);
-    if (event) {
-      await this.agenticService.resumeFromEndedChildren(run.id, event);
-    }
-  }
-
-  private async restoreEvent(
-    run: WorkflowRunFull,
-  ): Promise<TriggerEventWrapper | undefined> {
-    try {
-      return await this.eventRestorer.restore(run);
-    } catch (error) {
-      this.logger.warn('Unable to rebuild the trigger of a recovered run', {
-        runId: run.id,
-        error: stringifyError(error),
-      });
-
-      return undefined;
     }
   }
 

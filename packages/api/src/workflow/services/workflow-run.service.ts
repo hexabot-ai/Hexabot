@@ -9,7 +9,6 @@ import { randomUUID } from 'crypto';
 import {
   EWorkflowRunStatus,
   type StepExecutionRecord,
-  type WorkflowCheckpoint,
   type WorkflowRunner,
   type WorkflowRunResult,
 } from '@hexabot-ai/agentic';
@@ -23,32 +22,32 @@ import { BaseOrmService } from '@/utils/generics/base-orm.service';
 import { stringifyError } from '@/utils/helpers/misc';
 
 import { WorkflowRunOrmEntity } from '../entities/workflow-run.entity';
+import {
+  failedValues,
+  finishedValues,
+  RunLease,
+  suspendedValues,
+} from '../lib/run-lease';
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
 import { resolveRunId } from '../lib/workflow-call-stack';
 import {
   cancelOpenWaits,
   getOpenWaits,
-  hasOperatorWait,
   isBlockedOnOperator,
 } from '../lib/workflow-run-waits';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
-import {
-  ACTIVE_WORKFLOW_RUN_STATUSES,
-  ExpiredClaim,
-  RunClaim,
-  RunStateUpdate,
-} from '../types';
+import { ACTIVE_WORKFLOW_RUN_STATUSES, ExpiredClaim, RunClaim } from '../types';
 
 const MAX_CALL_STACK_DEPTH = 10;
 
 @Injectable()
 export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   /**
-   * Claims held by the passes running in this process (claim token → run
-   * id). They are renewed until the pass releases them; the claim of a pass
-   * that died with its process lapses, and its run is recovered.
+   * Leases held in this process, by claim token. Their claims are renewed
+   * until they end; the claims of a process that stopped lapse, and their
+   * runs are recovered.
    */
-  private readonly heldClaims = new Map<string, string>();
+  private readonly leases = new Map<string, RunLease>();
 
   /**
    * Creates the service with the underlying repository injected.
@@ -61,8 +60,8 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
 
   /**
    * Create a run of a workflow for an event and load it with relations. The
-   * run is created `idle` under a claim, which the caller holds while it
-   * starts the run.
+   * run is created `idle` under a claim, whose lease the caller hands to the
+   * run's first pass.
    *
    * Child calls inherit the same event metadata, initiator, and thread as the
    * parent, but store an explicit `parentRun` relation so future events can
@@ -72,8 +71,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * @param event - Event that triggers the run.
    * @param options.parentRun - Calling run, when the run is a child workflow call.
    * @param options.input - Start input override for child calls.
-   * @returns The created run populated with relations, and the token of its
-   * claim.
+   * @returns The created run populated with relations, and the lease on it.
    */
   async createFromEvent(
     workflow: WorkflowFull,
@@ -82,7 +80,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       parentRun?: WorkflowRunFull;
       input?: Record<string, unknown>;
     } = {},
-  ): Promise<{ run: WorkflowRunFull; claimId: string }> {
+  ): Promise<{ run: WorkflowRunFull; lease: RunLease }> {
     const initiator = event.getInitiator();
     if (!workflow.definition) {
       throw new Error('Workflow definition is required to create a run');
@@ -111,26 +109,18 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       throw new Error(`Unable to load workflow run ${run.id}`);
     }
 
-    return { run: populated, claimId: claim.claimId };
+    // Held only once handed over: a run that cannot be loaded is left to
+    // lapse, and recovery fails it.
+    return { run: populated, lease: this.hold(run.id, claim) };
   }
 
   /**
-   * Mark a claimed run as running and persist the context it runs with.
+   * Load the latest persisted state of a run, with relations.
    *
-   * @param runId - Identifier of the run to update.
-   * @param claimId - Token of the claim the caller holds.
-   * @param payload - Hydrated context state of the run.
-   * @returns `false` when the run is not held under that claim anymore.
+   * @returns The run as stored, or `run` itself when it no longer exists.
    */
-  async markRunning(
-    runId: string,
-    claimId: string,
-    payload: { context?: Record<string, unknown> | null },
-  ): Promise<boolean> {
-    return await this.repository.updateClaimed(runId, claimId, {
-      status: EWorkflowRunStatus.RUNNING,
-      ...payload,
-    });
+  async reload(run: WorkflowRunFull): Promise<WorkflowRunFull> {
+    return (await this.findOneAndPopulate(run.id)) ?? run;
   }
 
   /**
@@ -139,126 +129,29 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    *
    * @param runId - Identifier of the run to claim.
    * @param suspendedAt - Suspension timestamp of the run as it was loaded.
-   * @returns The token of the claim, the run being now `running`, or `null`
-   * when another caller claimed the suspension first.
+   * @returns The lease on the run, now `running`, or `null` when another
+   * caller claimed the suspension first.
    */
   async claimSuspended(
     runId: string,
     suspendedAt: Date | null,
-  ): Promise<string | null> {
+  ): Promise<RunLease | null> {
     const claim = this.newClaim();
 
     return (await this.repository.claimSuspended(runId, suspendedAt, claim))
-      ? claim.claimId
+      ? this.hold(runId, claim)
       : null;
   }
 
   /**
-   * Put a claimed run back to `suspended` after its resume payload was
-   * refused. The claim wrote nothing else, so the run is back on the same
-   * suspension, with the same checkpoint, context and `suspendedAt`.
-   *
-   * @param runId - Identifier of the run to release.
-   * @param claimId - Token of the claim the caller holds.
-   * @returns `false` when the run is not held under that claim anymore.
-   */
-  async releaseClaim(runId: string, claimId: string): Promise<boolean> {
-    return await this.repository.settle(
-      runId,
-      { status: EWorkflowRunStatus.SUSPENDED },
-      claimId,
-    );
-  }
-
-  /**
-   * Mark a claimed run as suspended and persist its checkpoint.
-   *
-   * @param runId - Identifier of the run to update.
-   * @param payload - Checkpoint to resume from, and the run state.
-   * @param claimId - Token of the claim the pass ran under; `null` writes
-   * the run whoever holds it.
-   * @returns `false` when the run is not held under that claim anymore.
-   */
-  async markSuspended(
-    runId: string,
-    payload: { checkpoint: WorkflowCheckpoint } & RunStateUpdate,
-    claimId: string | null,
-  ): Promise<boolean> {
-    return await this.repository.settle(
-      runId,
-      {
-        status: EWorkflowRunStatus.SUSPENDED,
-        suspendedAt: new Date(),
-        awaitingOperator: hasOperatorWait(payload.checkpoint.waits),
-        ...payload,
-      },
-      claimId,
-    );
-  }
-
-  /**
-   * Mark a claimed run as finished and store final state/output.
-   *
-   * @param runId - Identifier of the run to update.
-   * @param payload - Final state changes and optional output payload.
-   * @param claimId - Token of the claim the pass ran under; `null` writes
-   * the run whoever holds it.
-   * @returns `false` when the run is not held under that claim anymore.
-   */
-  async markFinished(
-    runId: string,
-    payload: RunStateUpdate,
-    claimId: string | null,
-  ): Promise<boolean> {
-    return await this.repository.settle(
-      runId,
-      {
-        status: EWorkflowRunStatus.FINISHED,
-        checkpoint: null,
-        awaitingOperator: false,
-        finishedAt: new Date(),
-        ...payload,
-      },
-      claimId,
-    );
-  }
-
-  /**
-   * Mark a claimed run as failed and persist the failure reason and state.
-   *
-   * @param runId - Identifier of the run to update.
-   * @param payload - Optional error message and state changes.
-   * @param claimId - Token of the claim the pass ran under; `null` takes
-   * an active run over whoever holds it, whose pass then cannot write it.
-   * @returns `false` when the run is not active, or not held under that
-   * claim anymore.
-   */
-  async markFailed(
-    runId: string,
-    payload: RunStateUpdate & { error?: string | null },
-    claimId: string | null,
-  ): Promise<boolean> {
-    return await this.repository.settle(
-      runId,
-      {
-        status: EWorkflowRunStatus.FAILED,
-        checkpoint: null,
-        awaitingOperator: false,
-        failedAt: new Date(),
-        ...payload,
-      },
-      claimId,
-    );
-  }
-
-  /**
-   * Persist the outcome of a runner pass and the run state it left.
+   * Persist the outcome of a runner pass and the run state it left, and
+   * give the claim back.
    *
    * @param run - Run the runner went through.
    * @param runner - Runner of the pass.
    * @param result - Outcome of the pass.
    * @param contextState - Context state the run was left with.
-   * @param claimId - Token of the claim the pass ran under.
+   * @param lease - Lease the pass ran under.
    * @returns `false` when the run was settled by another caller while the
    * pass ran; the outcome of the pass is then dropped.
    */
@@ -267,7 +160,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
     runner: WorkflowRunner,
     result: WorkflowRunResult,
     contextState: Record<string, unknown> | null,
-    claimId: string,
+    lease: RunLease,
   ): Promise<boolean> {
     const state = runner.getState();
     const runState = {
@@ -291,27 +184,20 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
             reason,
           })),
         });
-        settled = await this.markSuspended(
-          run.id,
-          {
+        settled = await lease.settle(
+          suspendedValues({
             ...runState,
             checkpoint: result.checkpoint,
             output: result.checkpoint.output,
-          },
-          claimId,
+          }),
         );
         break;
       case 'finished':
         this.logger.log('Workflow run finished', {
           runId: run.id,
         });
-        settled = await this.markFinished(
-          run.id,
-          {
-            ...runState,
-            output: result.output,
-          },
-          claimId,
+        settled = await lease.settle(
+          finishedValues({ ...runState, output: result.output }),
         );
         break;
       case 'failed':
@@ -320,14 +206,12 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
           runId: run.id,
           error: stringifyError(result.error),
         });
-        settled = await this.markFailed(
-          run.id,
-          {
+        settled = await lease.settle(
+          failedValues({
             ...runState,
             output: state?.output ?? run.output ?? null,
             error: stringifyError(result.error),
-          },
-          claimId,
+          }),
         );
         break;
     }
@@ -347,7 +231,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * @param contextState - Context state the run was left with; `undefined`
    * leaves the stored context as it is.
    * @param error - Error the runner threw.
-   * @param claimId - Token of the claim the pass ran under.
+   * @param lease - Lease the pass ran under.
    * @returns `false` when the run was settled by another caller while the
    * pass ran.
    */
@@ -356,7 +240,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
     runner: WorkflowRunner | undefined,
     contextState: Record<string, unknown> | null | undefined,
     error: unknown,
-    claimId: string,
+    lease: RunLease,
   ): Promise<boolean> {
     const state = runner?.getState();
 
@@ -369,9 +253,8 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
         triggeredById: run.triggeredBy?.id ?? null,
       },
     );
-    const settled = await this.markFailed(
-      run.id,
-      {
+    const settled = await lease.settle(
+      failedValues({
         ...(runner
           ? {
               snapshot: runner.getSnapshot(),
@@ -382,8 +265,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
         input: state?.input ?? run.input ?? {},
         output: state?.output ?? run.output ?? null,
         error: stringifyError(error),
-      },
-      claimId,
+      }),
     );
     if (!settled) {
       this.warnClaimLost(run.id, 'failed');
@@ -393,36 +275,12 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   }
 
   /**
-   * Run a pass while this process holds the claim on its run: the claim is
-   * renewed until the pass is over, however it ends, so the run is not
-   * recovered meanwhile. Once the process stops, the claim lapses and the
-   * run is recovered.
-   *
-   * @param runId - Identifier of the claimed run.
-   * @param claimId - Token of the claim.
-   * @param pass - The pass, which settles the run under that claim.
-   * @returns What the pass returns.
-   */
-  async withHeldClaim<T>(
-    runId: string,
-    claimId: string,
-    pass: () => Promise<T>,
-  ): Promise<T> {
-    this.heldClaims.set(claimId, runId);
-    try {
-      return await pass();
-    } finally {
-      this.heldClaims.delete(claimId);
-    }
-  }
-
-  /**
-   * Tell whether a pass of this process holds a claim.
+   * Tell whether this process holds a claim.
    *
    * @param claimId - Token of the claim.
    */
   holdsClaim(claimId: string): boolean {
-    return this.heldClaims.has(claimId);
+    return this.leases.has(claimId);
   }
 
   /**
@@ -431,12 +289,12 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * @returns The number of claims renewed.
    */
   async renewHeldClaims(): Promise<number> {
-    if (this.heldClaims.size === 0) {
+    if (this.leases.size === 0) {
       return 0;
     }
 
     return await this.repository.renewClaims(
-      [...this.heldClaims].map(([claimId, runId]) => ({ runId, claimId })),
+      [...this.leases.values()],
       this.claimExpiry(),
     );
   }
@@ -514,8 +372,8 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
     run: WorkflowRunFull,
     message: string,
   ): Promise<boolean> {
-    const claimId = await this.claimSuspended(run.id, run.suspendedAt ?? null);
-    if (!claimId) {
+    const lease = await this.claimSuspended(run.id, run.suspendedAt ?? null);
+    if (!lease) {
       return false;
     }
 
@@ -525,14 +383,8 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       runId: run.id,
       waitIds: waits.map((wait) => wait.waitId),
     });
-    const settled = await this.markFailed(
-      run.id,
-      {
-        snapshot,
-        stepLog,
-        error: message,
-      },
-      claimId,
+    const settled = await lease.settle(
+      failedValues({ snapshot, stepLog, error: message }),
     );
     if (!settled) {
       return false;
@@ -607,7 +459,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * The suspended runs its runs called are cancelled, along with their own
    * suspended descendants: nothing would ever take their result. The runs
    * that called its runs are left waiting; once the workflow is gone,
-   * `AgenticService.resumeFromEndedChildren` sends them a failed result.
+   * `WorkflowCallStackService.reconcile` sends them a failed result.
    *
    * @param workflow - Workflow about to be deleted.
    * @returns Ids of the runs that called an active run of the workflow.
@@ -692,7 +544,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * For call-and-return stacks, the parent can be suspended while the child is
    * either running or suspended for the same initiator/thread. The next external
    * event must resume the deepest suspended leaf first; once that child
-   * completes, AgenticService resumes its parent internally with the child
+   * completes, WorkflowCallStackService resumes its parent with the child
    * result.
    *
    * @param triggeredById - Identifier of the subscriber whose suspended run should be fetched.
@@ -776,6 +628,19 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    */
   private newClaim(): RunClaim {
     return { claimId: randomUUID(), expiresAt: this.claimExpiry() };
+  }
+
+  /**
+   * Hold a claim this process just took: it is renewed until its lease
+   * ends.
+   */
+  private hold(runId: string, claim: RunClaim): RunLease {
+    const lease = new RunLease(runId, claim.claimId, this.repository, (ended) =>
+      this.leases.delete(ended.claimId),
+    );
+    this.leases.set(lease.claimId, lease);
+
+    return lease;
   }
 
   private claimExpiry(): Date {
@@ -921,9 +786,17 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
     run: WorkflowRunFull,
     message: string,
   ): Promise<boolean> {
-    return run.status === EWorkflowRunStatus.SUSPENDED
-      ? await this.cancelSuspended(run, message)
-      : await this.markFailed(run.id, { error: message }, null);
+    if (run.status === EWorkflowRunStatus.SUSPENDED) {
+      return await this.cancelSuspended(run, message);
+    }
+
+    // Taken over from whoever holds it: no token, and its pass then cannot
+    // write over the failure.
+    return await this.repository.settle(
+      run.id,
+      failedValues({ error: message }),
+      null,
+    );
   }
 
   /**

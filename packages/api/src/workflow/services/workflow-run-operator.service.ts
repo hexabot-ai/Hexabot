@@ -25,7 +25,6 @@ import { LoggerService } from '@/logger/logger.service';
 import { DeleteEntityEvent } from '@/utils/types/entity-event.types';
 
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
-import { runInBackground } from '../lib/run-in-background';
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
 import { getOpenWaits } from '../lib/workflow-run-waits';
 import {
@@ -36,6 +35,7 @@ import {
 import type { ResumeWaitOutcome } from '../types';
 
 import { AgenticService } from './agentic.service';
+import { WorkflowCallStackService } from './workflow-call-stack.service';
 import {
   WorkflowEventRestorer,
   WorkflowTriggerUnavailableError,
@@ -90,6 +90,7 @@ export class WorkflowRunOperatorService {
   constructor(
     private readonly workflowRunService: WorkflowRunService,
     private readonly agenticService: AgenticService,
+    private readonly callStack: WorkflowCallStackService,
     private readonly eventRestorer: WorkflowEventRestorer,
     private readonly logger: LoggerService,
   ) {}
@@ -180,27 +181,12 @@ export class WorkflowRunOperatorService {
     const run = await this.findSuspendedRun(runId);
     const reason = request.reason?.trim();
     const message = `Cancelled by ${actor.name}${reason ? `: ${reason}` : ''}`;
-    const event = run.parentRun
-      ? await this.restoreEvent(run).catch((error: unknown) => {
-          // The parent then catches the result up on its next event.
-          this.logger.warn(
-            'Unable to rebuild the trigger to notify the parent run',
-            { runId, error: error instanceof Error ? error.message : error },
-          );
-
-          return undefined;
-        })
-      : undefined;
     this.logger.log('Admin cancelled a workflow run', {
       runId,
       actorId: actor.id,
     });
 
-    const outcome = await this.agenticService.cancelRun({
-      run,
-      message,
-      event,
-    });
+    const outcome = await this.agenticService.cancelRun({ run, message });
     if (outcome.status === 'claim_lost') {
       throw this.claimLost();
     }
@@ -231,10 +217,10 @@ export class WorkflowRunOperatorService {
   /**
    * Once a workflow is deleted, send each suspended run that called one of
    * its runs a failed result, so its `call_workflow` step fails instead of
-   * waiting forever. This happens after the deletion so that a retry of the
-   * step cannot start the workflow again. A run whose trigger cannot be
-   * rebuilt gets the result on its next event. The deletion does not wait
-   * for the callers to go on.
+   * waiting forever (see {@link WorkflowCallStackService.reconcile}). This
+   * happens after the deletion so that a retry of the step cannot start the
+   * workflow again. A run still running gets the result once it suspends.
+   * The deletion does not wait for the callers to go on.
    */
   @OnEvent('hook:workflow:postDelete')
   async handleWorkflowDeleted(
@@ -249,59 +235,14 @@ export class WorkflowRunOperatorService {
     }
 
     this.callersOfDeletedWorkflows.delete(workflowId);
-    for (const runId of callerRunIds) {
-      try {
-        await this.notifyCallerOfDeletedWorkflow(runId, workflowId);
-      } catch (error) {
-        this.logger.error(
-          'Workflow run failed once a callee was deleted',
-          error,
-          { runId, workflowId },
-        );
-      }
-    }
-  }
-
-  /**
-   * Send a run the failed result of its call to a deleted workflow.
-   */
-  private async notifyCallerOfDeletedWorkflow(
-    runId: string,
-    workflowId: string,
-  ): Promise<void> {
-    const run = await this.workflowRunService.findOneAndPopulate(runId);
-    // A run still running gets the result once it suspends.
-    if (run?.status !== 'suspended') {
-      return;
-    }
-
-    let event: TriggerEventWrapper;
-    try {
-      event = await this.eventRestorer.restore(run);
-    } catch (error) {
-      this.logger.warn(
-        'Unable to rebuild the trigger to notify a run that a callee was deleted; it gets the result on its next event',
-        {
-          runId,
-          workflowId,
-          error: error instanceof Error ? error.message : error,
-        },
-      );
-
-      return;
-    }
-
-    this.logger.log('Notifying a workflow run that a callee was deleted', {
-      runId,
+    this.logger.log('Notifying the callers of a deleted workflow', {
       workflowId,
+      runIds: callerRunIds,
     });
-    // The run goes on from there, which may outlast the deletion request.
-    void runInBackground(
-      this.logger,
-      () => this.agenticService.resumeFromEndedChildren(run.id, event),
-      'Workflow run failed once a callee was deleted',
-      { runId, workflowId },
-    );
+    for (const runId of callerRunIds) {
+      // Each caller goes on from there, which may outlast the request.
+      void this.callStack.reconcile([runId]);
+    }
   }
 
   /**
@@ -467,7 +408,7 @@ export class WorkflowRunOperatorService {
           ConflictException,
           HttpStatus.CONFLICT,
           'unresumable',
-          `The run can no longer be resumed and was marked failed: ${outcome.run.error ?? 'unknown error'}`,
+          `The run can no longer be resumed and was marked failed: ${outcome.error}`,
         );
     }
   }

@@ -190,11 +190,7 @@ describe('WebhookTriggerService (TypeORM)', () => {
     };
     const spy = jest
       .spyOn(agenticService, 'dispatchEvent')
-      .mockResolvedValueOnce({
-        run: run as any,
-        // The pass goes on: the trigger must not wait for it.
-        settled: new Promise(() => {}),
-      });
+      .mockResolvedValueOnce(run as any);
     const result = await webhookTriggerService.trigger(
       workflow.id,
       { foo: 'bar' },

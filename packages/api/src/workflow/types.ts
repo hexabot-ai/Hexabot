@@ -7,7 +7,10 @@
 import {
   EWorkflowRunStatus,
   type WaitInfo,
+  type Workflow as AgenticWorkflow,
+  type WorkflowCheckpoint,
   type WorkflowResumeRejectedError,
+  type WorkflowRunResult,
   type WorkflowRunStatus,
 } from '@hexabot-ai/agentic';
 import {
@@ -21,11 +24,11 @@ import {
   WorkflowVersionAction,
   MemoryDefinition,
   WorkflowRunFull,
-  WorkflowFull,
 } from '@hexabot-ai/types';
 
 import type { WorkflowRuntimeContext } from './contexts/workflow-runtime.context';
 import type { WorkflowRunOrmEntity } from './entities/workflow-run.entity';
+import type { RunLease } from './lib/run-lease';
 import { TriggerEventWrapper } from './lib/trigger-event-wrapper';
 import { SchemaInstance } from './utils/schema-instance';
 
@@ -111,15 +114,6 @@ export interface WorkflowCallService {
 
 export const WORKFLOW_CALL_SERVICE = Symbol('WORKFLOW_CALL_SERVICE');
 
-export type StartRunOptions = {
-  workflow: WorkflowFull;
-  event: TriggerEventWrapper;
-  /** Present when this run is a child workflow call. */
-  parentRun?: WorkflowRunFull;
-  /** Start input override for child calls. */
-  input?: Record<string, unknown>;
-};
-
 export type ResumeRunOptions = {
   run: WorkflowRunFull;
   event: TriggerEventWrapper;
@@ -128,26 +122,52 @@ export type ResumeRunOptions = {
   resumeData: unknown;
 };
 
-/** What happened to a suspended run the host tried to resume. */
-export type ResumeOutcome =
-  /** The wait was resolved and the run went on. */
-  | { status: 'resumed'; run: WorkflowRunFull }
-  /** The payload was refused; the run is unchanged and still waiting. */
+/**
+ * Why a resume left its suspended run as it was: nothing was claimed or
+ * written.
+ */
+export type ResumeRefusal =
+  /** The payload was refused; the run still waits on the same wait. */
+  | { status: 'rejected'; error: WorkflowResumeRejectedError }
+  /** Another caller claimed this suspension first. */
+  | { status: 'claim_lost' }
+  /** None of the open waits is one this caller resolves. */
+  | { status: 'no_wait' };
+
+/**
+ * A resume that claimed its run; its pass has not run yet. Hand it to
+ * `WorkflowRunExecutor.resume`, which ends its lease.
+ */
+export type ClaimedResume = {
+  status: 'claimed';
+  run: WorkflowRunFull;
+  event: TriggerEventWrapper;
+  /** The definition the run pinned, compiled. */
+  workflow: AgenticWorkflow;
+  checkpoint: WorkflowCheckpoint;
+  context: WorkflowRuntimeContext;
+  wait: WaitInfo;
+  resumeData: unknown;
+  lease: RunLease;
+};
+
+/** How a pass of a run ended. */
+export type RunPass =
+  /** The runner's result was persisted. */
+  | { status: 'settled'; result: WorkflowRunResult }
+  /** A step refused the payload; the run is back on the same suspension. */
   | {
       status: 'rejected';
-      run: WorkflowRunFull;
+      waits: WaitInfo[];
       error: WorkflowResumeRejectedError;
     }
+  /** The runner threw; the run was failed. */
+  | { status: 'crashed'; error: unknown }
   /**
-   * Another caller resumed this suspension first; or the run was taken over
-   * (its thread was closed) or recovered while this caller ran it, and the
-   * outcome of that pass was dropped.
+   * The run was taken over (its thread was closed) or recovered (its claim
+   * lapsed) while the pass ran: the outcome of the pass was dropped.
    */
-  | { status: 'claim_lost'; run: WorkflowRunFull }
-  /** None of the open waits is one this caller resolves. */
-  | { status: 'no_wait'; run: WorkflowRunFull }
-  /** The run can never resume; it was marked failed. */
-  | { status: 'unresumable'; run: WorkflowRunFull };
+  | { status: 'claim_lost' };
 
 export type ResumeWaitOptions = {
   run: WorkflowRunFull;
@@ -159,74 +179,38 @@ export type ResumeWaitOptions = {
 
 /**
  * What happened to a wait the host resolved on behalf of an admin, once the
- * run was claimed or refused. The pass that follows a claim goes on in the
- * background, so an admin request does not wait for the rest of the run.
+ * run was claimed or refused. The work that follows goes on in the
+ * background (`WorkflowJobs`), so an admin request does not wait for the
+ * rest of the run.
  */
 export type ResumeWaitOutcome =
   /**
-   * The payload was accepted and the run claimed (`running`); `settled`
-   * resolves once its pass, and the runs it resumed in turn, are over.
+   * The payload was accepted and the run claimed: `running`, or a later
+   * status when its pass got there before the run was read back.
    */
-  | {
-      status: 'accepted';
-      run: WorkflowRunFull;
-      settled: Promise<ResumeWaitSettlement>;
-    }
-  | Exclude<ResumeOutcome, { status: 'resumed' | 'unresumable' }>
+  | { status: 'accepted'; run: WorkflowRunFull }
+  | ResumeRefusal
   /**
-   * The run can never resume; it was marked failed. `settled` resolves once
-   * a parent waiting on it received the failed result.
+   * The run can never resume; it was marked failed with `error`, which a
+   * parent waiting on it receives.
    */
-  | { status: 'unresumable'; run: WorkflowRunFull; settled: Promise<void> };
-
-/**
- * How the background pass of an accepted resume ended. On top of
- * {@link ResumeOutcome} (`rejected` when a step refused the payload while it
- * ran, which puts the run back on the same wait), `crashed` means the pass, or
- * the resume of a run it ended, threw; `run` is the run as stored since.
- */
-export type ResumeWaitSettlement =
-  | ResumeOutcome
-  | { status: 'crashed'; run: WorkflowRunFull; error: unknown };
-
-/**
- * A run an event was routed to, as soon as it is claimed, and the work left
- * on it. Callers that must not wait for the run, such as an HTTP request,
- * answer with `run` and leave `settled` to go on.
- */
-export type WorkflowRunDispatch = {
-  /**
-   * The run once claimed: created (`idle`), or resumed (`running`, or a later
-   * status when its pass got there before the run was read back); or as it
-   * was when the event did not resume it (held, refused or claimed by
-   * another caller).
-   */
-  run: WorkflowRunFull;
-  /**
-   * The run once its pass is over, or `undefined` when the pass threw (it is
-   * logged). Never rejects.
-   */
-  settled: Promise<WorkflowRunFull | undefined>;
-};
+  | { status: 'unresumable'; error: string };
 
 export type CancelRunOptions = {
   run: WorkflowRunFull;
   /** Failure message stored on the run and its cancelled steps. */
   message: string;
-  /** Event used to deliver the failed result to a waiting parent run. */
-  event?: TriggerEventWrapper;
 };
 
 /** What happened to a suspended run the host tried to cancel. */
 export type CancelRunOutcome =
   /**
-   * The run was failed, along with its suspended descendants. `settled`
-   * resolves once a parent waiting on it received the failed result and went
-   * on.
+   * The run was failed, along with its suspended descendants; a parent
+   * waiting on it receives the failed result in the background.
    */
-  | { status: 'cancelled'; run: WorkflowRunFull; settled: Promise<void> }
+  | { status: 'cancelled'; run: WorkflowRunFull }
   /** Another caller resumed or cancelled this suspension first. */
-  | { status: 'claim_lost'; run: WorkflowRunFull };
+  | { status: 'claim_lost' };
 
 /** Statuses of the runs held under a claim by the pass running them. */
 export const CLAIMED_WORKFLOW_RUN_STATUSES: readonly WorkflowRunStatus[] = [

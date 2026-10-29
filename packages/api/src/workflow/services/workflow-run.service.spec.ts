@@ -29,6 +29,14 @@ import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import { WorkflowRunOrmEntity } from '../entities/workflow-run.entity';
 import { WorkflowVersionOrmEntity } from '../entities/workflow-version.entity';
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
+import {
+  failedValues,
+  finishedValues,
+  putBackValues,
+  RunLease,
+  runningValues,
+  suspendedValues,
+} from '../lib/run-lease';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
 import { WorkflowRepository } from '../repositories/workflow.repository';
 import { WorkflowType, WorkflowVersionAction } from '../types';
@@ -110,6 +118,13 @@ describe('WorkflowRunService (TypeORM)', () => {
 
     return { run, claimId: runClaimId };
   };
+  /**
+   * The lease of a claim this process did not take, such as the claim of a
+   * run created by `createClaimedRun`: it writes the run under that claim,
+   * but this process does not renew it.
+   */
+  const leaseOn = (runId: string, runClaimId: string) =>
+    new RunLease(runId, runClaimId, workflowRunRepository, () => undefined);
   /** Read the claim columns of a run, which the run schemas strip. */
   const readClaim = async (runId: string) => {
     const entity = await dataSource
@@ -201,7 +216,7 @@ describe('WorkflowRunService (TypeORM)', () => {
       const payload = { context: { user: 'demo' } };
 
       expect(
-        await workflowRunService.markRunning(workflowRun.id, claimId, payload),
+        await leaseOn(workflowRun.id, claimId).update(runningValues(payload)),
       ).toBe(true);
 
       const stored = await workflowRunService.findOne(workflowRun.id);
@@ -221,11 +236,7 @@ describe('WorkflowRunService (TypeORM)', () => {
       };
 
       expect(
-        await workflowRunService.markSuspended(
-          workflowRun.id,
-          payload,
-          claimId,
-        ),
+        await leaseOn(workflowRun.id, claimId).settle(suspendedValues(payload)),
       ).toBe(true);
 
       const stored = await workflowRunService.findOne(workflowRun.id);
@@ -252,7 +263,7 @@ describe('WorkflowRunService (TypeORM)', () => {
       };
 
       expect(
-        await workflowRunService.markFinished(workflowRun.id, payload, claimId),
+        await leaseOn(workflowRun.id, claimId).settle(finishedValues(payload)),
       ).toBe(true);
 
       const stored = await workflowRunService.findOne(workflowRun.id);
@@ -278,7 +289,7 @@ describe('WorkflowRunService (TypeORM)', () => {
       };
 
       expect(
-        await workflowRunService.markFailed(workflowRun.id, payload, claimId),
+        await leaseOn(workflowRun.id, claimId).settle(failedValues(payload)),
       ).toBe(true);
 
       const stored = await workflowRunService.findOne(workflowRun.id);
@@ -297,10 +308,8 @@ describe('WorkflowRunService (TypeORM)', () => {
     it('broadcasts the runs it writes, as updateOne does', async () => {
       const emitSpy = jest.spyOn(workflowRunService.eventEmitter, 'emitAsync');
 
-      await workflowRunService.markFailed(
-        workflowRun.id,
-        { error: 'boom' },
-        claimId,
+      await leaseOn(workflowRun.id, claimId).settle(
+        failedValues({ error: 'boom' }),
       );
 
       expect(emitSpy).toHaveBeenCalledWith(
@@ -318,10 +327,8 @@ describe('WorkflowRunService (TypeORM)', () => {
   describe('suspension claims', () => {
     /** Suspend the run under its claim, then load it. */
     const suspend = async () => {
-      await workflowRunService.markSuspended(
-        workflowRun.id,
-        { checkpoint },
-        claimId,
+      await leaseOn(workflowRun.id, claimId).settle(
+        suspendedValues({ checkpoint }),
       );
 
       return (await workflowRunService.findOne(workflowRun.id))!;
@@ -330,21 +337,19 @@ describe('WorkflowRunService (TypeORM)', () => {
     it('clears the checkpoint once a run finishes or fails', async () => {
       for (const end of ['finished', 'failed'] as const) {
         const { run, claimId: startClaimId } = await createClaimedRun();
-        await workflowRunService.markSuspended(
-          run.id,
-          { checkpoint },
-          startClaimId,
+        await leaseOn(run.id, startClaimId).settle(
+          suspendedValues({ checkpoint }),
         );
         const suspended = (await workflowRunService.findOne(run.id))!;
-        const resumeClaimId = (await workflowRunService.claimSuspended(
+        const resumeLease = (await workflowRunService.claimSuspended(
           run.id,
           suspended.suspendedAt ?? null,
         ))!;
 
         expect(
           end === 'finished'
-            ? await workflowRunService.markFinished(run.id, {}, resumeClaimId)
-            : await workflowRunService.markFailed(run.id, {}, resumeClaimId),
+            ? await resumeLease.settle(finishedValues({}))
+            : await resumeLease.settle(failedValues({})),
         ).toBe(true);
         expect(await workflowRunService.findOne(run.id)).toEqual(
           expect.objectContaining({ status: end, checkpoint: null }),
@@ -365,16 +370,17 @@ describe('WorkflowRunService (TypeORM)', () => {
           suspended.suspendedAt ?? null,
         ),
       ]);
-      const won = claims.filter((claim): claim is string => !!claim);
+      const won = claims.filter((claim): claim is RunLease => !!claim);
 
       expect(won).toHaveLength(1);
+      expect(workflowRunService.holdsClaim(won[0].claimId)).toBe(true);
       const stored = await workflowRunService.findOne(workflowRun.id);
       expect(stored?.status).toBe('running');
       // The claim writes nothing else, so the run can be put back as it was.
       expect(stored?.context).toEqual(suspended.context);
       expect(stored?.checkpoint).toEqual(checkpoint);
       const claim = await readClaim(workflowRun.id);
-      expect(claim.claimId).toBe(won[0]);
+      expect(claim.claimId).toBe(won[0].claimId);
       expect(claim.claimExpiresAt!.getTime()).toBeGreaterThanOrEqual(
         claimedAfter + config.workflow.runClaimTtl,
       );
@@ -389,16 +395,12 @@ describe('WorkflowRunService (TypeORM)', () => {
     it('refuses to claim a later suspension of the same run', async () => {
       jest.useFakeTimers().setSystemTime(new Date('2024-10-10T10:00:00Z'));
       const first = await suspend();
-      const resumeClaimId = await workflowRunService.claimSuspended(
+      const resumeLease = (await workflowRunService.claimSuspended(
         workflowRun.id,
         first.suspendedAt ?? null,
-      );
+      ))!;
       jest.setSystemTime(new Date('2024-10-10T10:05:00Z'));
-      await workflowRunService.markSuspended(
-        workflowRun.id,
-        { checkpoint },
-        resumeClaimId,
-      );
+      await resumeLease.settle(suspendedValues({ checkpoint }));
       jest.useRealTimers();
 
       expect(
@@ -409,16 +411,14 @@ describe('WorkflowRunService (TypeORM)', () => {
       ).toBeNull();
     });
 
-    it('releases a claim back to the same suspension, as it was', async () => {
+    it('puts a claimed run back on the same suspension, as it was', async () => {
       const suspended = await suspend();
-      const resumeClaimId = (await workflowRunService.claimSuspended(
+      const resumeLease = (await workflowRunService.claimSuspended(
         workflowRun.id,
         suspended.suspendedAt ?? null,
       ))!;
 
-      expect(
-        await workflowRunService.releaseClaim(workflowRun.id, resumeClaimId),
-      ).toBe(true);
+      expect(await resumeLease.settle(putBackValues())).toBe(true);
 
       const stored = (await workflowRunService.findOne(workflowRun.id))!;
       expect(stored.status).toBe('suspended');
@@ -428,41 +428,42 @@ describe('WorkflowRunService (TypeORM)', () => {
         suspended.suspendedAt?.getTime(),
       );
       expect(await readClaim(workflowRun.id)).toEqual(released);
+      expect(workflowRunService.holdsClaim(resumeLease.claimId)).toBe(false);
       expect(
         await workflowRunService.claimSuspended(
           workflowRun.id,
           stored.suspendedAt ?? null,
         ),
-      ).toEqual(expect.any(String));
+      ).toBeInstanceOf(RunLease);
     });
 
     it('drops the writes of a pass whose run was taken over', async () => {
       // The thread of the run was closed while its pass ran.
       expect(
-        await workflowRunService.markFailed(
+        await workflowRunRepository.settle(
           workflowRun.id,
-          { error: 'Thread was closed' },
+          failedValues({ error: 'Thread was closed' }),
           null,
         ),
       ).toBe(true);
 
       expect(
-        await workflowRunService.markRunning(workflowRun.id, claimId, {
-          context: {},
-        }),
-      ).toBe(false);
-      expect(
-        await workflowRunService.markSuspended(
-          workflowRun.id,
-          { checkpoint },
-          claimId,
+        await leaseOn(workflowRun.id, claimId).update(
+          runningValues({
+            context: {},
+          }),
         ),
       ).toBe(false);
       expect(
-        await workflowRunService.markFinished(workflowRun.id, {}, claimId),
+        await leaseOn(workflowRun.id, claimId).settle(
+          suspendedValues({ checkpoint }),
+        ),
       ).toBe(false);
       expect(
-        await workflowRunService.releaseClaim(workflowRun.id, claimId),
+        await leaseOn(workflowRun.id, claimId).settle(finishedValues({})),
+      ).toBe(false);
+      expect(
+        await leaseOn(workflowRun.id, claimId).settle(putBackValues()),
       ).toBe(false);
       expect(await workflowRunService.findOne(workflowRun.id)).toEqual(
         expect.objectContaining({
@@ -474,7 +475,7 @@ describe('WorkflowRunService (TypeORM)', () => {
 
     it('refuses to settle a run under another claim', async () => {
       expect(
-        await workflowRunService.markFinished(workflowRun.id, {}, randomUUID()),
+        await leaseOn(workflowRun.id, randomUUID()).settle(finishedValues({})),
       ).toBe(false);
 
       expect((await workflowRunService.findOne(workflowRun.id))?.status).toBe(
@@ -487,9 +488,9 @@ describe('WorkflowRunService (TypeORM)', () => {
       await suspend();
 
       expect(
-        await workflowRunService.markFailed(
+        await workflowRunRepository.settle(
           workflowRun.id,
-          { error: 'Thread was closed' },
+          failedValues({ error: 'Thread was closed' }),
           null,
         ),
       ).toBe(false);
@@ -506,19 +507,45 @@ describe('WorkflowRunService (TypeORM)', () => {
     };
     /** Time at which every claim taken by the tests has lapsed. */
     const later = () => new Date(Date.now() + 10 * 60_000);
+    /** Suspend the run, then claim its suspension in this process. */
+    const claimRun = async () => {
+      await leaseOn(workflowRun.id, claimId).settle(
+        suspendedValues({ checkpoint }),
+      );
+      const suspended = (await workflowRunService.findOne(workflowRun.id))!;
 
-    it('holds a claim only while its pass runs, however it ends', async () => {
-      await expect(
-        workflowRunService.withHeldClaim(workflowRun.id, claimId, async () => {
-          expect(workflowRunService.holdsClaim(claimId)).toBe(true);
-          throw new Error('pass-crash');
-        }),
-      ).rejects.toThrow('pass-crash');
+      return (await workflowRunService.claimSuspended(
+        workflowRun.id,
+        suspended.suspendedAt ?? null,
+      ))!;
+    };
 
-      expect(workflowRunService.holdsClaim(claimId)).toBe(false);
+    it('holds a claim from the moment it is taken until its lease ends', async () => {
+      const lease = await claimRun();
+      expect(workflowRunService.holdsClaim(lease.claimId)).toBe(true);
+
+      lease.end();
+
+      expect(workflowRunService.holdsClaim(lease.claimId)).toBe(false);
+      // Nothing was written: the claim lapses, and recovery takes the run over.
+      expect((await readClaim(workflowRun.id)).claimId).toBe(lease.claimId);
+    });
+
+    it('ends a lease once it settles its run, even when the write fails', async () => {
+      const lease = await claimRun();
+      jest
+        .spyOn(workflowRunRepository, 'settle')
+        .mockRejectedValueOnce(new Error('database unavailable'));
+
+      await expect(lease.settle(putBackValues())).rejects.toThrow(
+        'database unavailable',
+      );
+
+      expect(workflowRunService.holdsClaim(lease.claimId)).toBe(false);
     });
 
     it('renews only the claims held in this process', async () => {
+      const lease = await claimRun();
       const { run: other } = await createClaimedRun();
       const before = await readClaim(workflowRun.id);
       const otherBefore = await readClaim(other.id);
@@ -526,11 +553,7 @@ describe('WorkflowRunService (TypeORM)', () => {
         ?.updatedAt;
       jest.useFakeTimers().setSystemTime(Date.now() + 30_000);
 
-      expect(
-        await workflowRunService.withHeldClaim(workflowRun.id, claimId, () =>
-          workflowRunService.renewHeldClaims(),
-        ),
-      ).toBe(1);
+      expect(await workflowRunService.renewHeldClaims()).toBe(1);
 
       expect(
         (await readClaim(workflowRun.id)).claimExpiresAt!.getTime(),
@@ -539,18 +562,17 @@ describe('WorkflowRunService (TypeORM)', () => {
         (await workflowRunService.findOne(workflowRun.id))?.updatedAt,
       ).toEqual(updatedAt);
       expect(await readClaim(other.id)).toEqual(otherBefore);
+      lease.end();
       expect(await workflowRunService.renewHeldClaims()).toBe(0);
     });
 
     it('finds the active runs whose claim lapsed', async () => {
       const { run: other, claimId: otherClaimId } = await createClaimedRun();
-      await workflowRunService.markSuspended(
-        other.id,
-        { checkpoint },
-        otherClaimId,
+      await leaseOn(other.id, otherClaimId).settle(
+        suspendedValues({ checkpoint }),
       );
       const suspended = (await workflowRunService.findOne(other.id))!;
-      const resumeClaimId = (await workflowRunService.claimSuspended(
+      const resumeLease = (await workflowRunService.claimSuspended(
         other.id,
         suspended.suspendedAt ?? null,
       ))!;
@@ -568,7 +590,7 @@ describe('WorkflowRunService (TypeORM)', () => {
           },
           {
             id: other.id,
-            claimId: resumeClaimId,
+            claimId: resumeLease.claimId,
             hasCheckpoint: true,
             recoveryCount: 0,
           },
@@ -577,20 +599,24 @@ describe('WorkflowRunService (TypeORM)', () => {
     });
 
     it('puts a run whose resume died back on the suspension it was claimed from', async () => {
-      await workflowRunService.markSuspended(
-        workflowRun.id,
-        { checkpoint: operatorCheckpoint, snapshot, context: { lang: 'en' } },
-        claimId,
+      await leaseOn(workflowRun.id, claimId).settle(
+        suspendedValues({
+          checkpoint: operatorCheckpoint,
+          snapshot,
+          context: { lang: 'en' },
+        }),
       );
       const suspended = (await workflowRunService.findOne(workflowRun.id))!;
-      const resumeClaimId = (await workflowRunService.claimSuspended(
+      const resumeLease = (await workflowRunService.claimSuspended(
         workflowRun.id,
         suspended.suspendedAt ?? null,
       ))!;
+      // The process resuming it stops.
+      resumeLease.end();
       const now = later();
       const [expired] = await workflowRunService.findExpiredClaims(now);
 
-      expect(expired.claimId).toBe(resumeClaimId);
+      expect(expired.claimId).toBe(resumeLease.claimId);
       expect(await workflowRunService.putBackExpired(expired, now)).toBe(true);
 
       const recovered = (await workflowRunService.findOne(workflowRun.id))!;
@@ -623,9 +649,11 @@ describe('WorkflowRunService (TypeORM)', () => {
     });
 
     it('fails a run whose claim lapsed before it ever suspended', async () => {
-      await workflowRunService.markRunning(workflowRun.id, claimId, {
-        context: { user: 'demo' },
-      });
+      await leaseOn(workflowRun.id, claimId).update(
+        runningValues({
+          context: { user: 'demo' },
+        }),
+      );
       const now = later();
       const [expired] = await workflowRunService.findExpiredClaims(now);
 
@@ -648,19 +676,19 @@ describe('WorkflowRunService (TypeORM)', () => {
     });
 
     it('leaves a run whose claim was renewed after it was found lapsed', async () => {
+      const lease = await claimRun();
       const now = later();
       const [expired] = await workflowRunService.findExpiredClaims(now);
       jest.useFakeTimers().setSystemTime(now.getTime() + 1);
-      await workflowRunService.withHeldClaim(workflowRun.id, claimId, () =>
-        workflowRunService.renewHeldClaims(),
-      );
+      await workflowRunService.renewHeldClaims();
       jest.useRealTimers();
+      lease.end();
 
       expect(
         await workflowRunService.failExpired(expired, now, 'Interrupted'),
       ).toBe(false);
       expect((await workflowRunService.findOne(workflowRun.id))?.status).toBe(
-        'idle',
+        'running',
       );
     });
   });
@@ -689,64 +717,48 @@ describe('WorkflowRunService (TypeORM)', () => {
     };
 
     it('flags a run suspended on an operator wait', async () => {
-      await workflowRunService.markSuspended(
-        workflowRun.id,
-        { checkpoint: operatorCheckpoint },
-        claimId,
+      await leaseOn(workflowRun.id, claimId).settle(
+        suspendedValues({ checkpoint: operatorCheckpoint }),
       );
 
       expect(await isAwaitingOperator(workflowRun.id)).toBe(true);
     });
 
     it('does not flag a run suspended on other waits', async () => {
-      await workflowRunService.markSuspended(
-        workflowRun.id,
-        { checkpoint },
-        claimId,
+      await leaseOn(workflowRun.id, claimId).settle(
+        suspendedValues({ checkpoint }),
       );
 
       expect(await isAwaitingOperator(workflowRun.id)).toBe(false);
     });
 
     it('keeps the flag while the run is claimed and clears it once the run ends', async () => {
-      await workflowRunService.markSuspended(
-        workflowRun.id,
-        { checkpoint: operatorCheckpoint },
-        claimId,
+      await leaseOn(workflowRun.id, claimId).settle(
+        suspendedValues({ checkpoint: operatorCheckpoint }),
       );
-      const refusedClaimId = await claim(workflowRun.id);
+      const refusedLease = await claim(workflowRun.id);
       expect(await isAwaitingOperator(workflowRun.id)).toBe(true);
-      await workflowRunService.releaseClaim(workflowRun.id, refusedClaimId);
+      await refusedLease.settle(putBackValues());
       expect(await isAwaitingOperator(workflowRun.id)).toBe(true);
 
-      await workflowRunService.markFinished(
-        workflowRun.id,
-        {},
-        await claim(workflowRun.id),
-      );
+      await (await claim(workflowRun.id)).settle(finishedValues({}));
       expect(await isAwaitingOperator(workflowRun.id)).toBe(false);
 
       const { run: other, claimId: otherClaimId } = await createClaimedRun();
-      await workflowRunService.markSuspended(
-        other.id,
-        { checkpoint: operatorCheckpoint },
-        otherClaimId,
+      await leaseOn(other.id, otherClaimId).settle(
+        suspendedValues({ checkpoint: operatorCheckpoint }),
       );
-      await workflowRunService.markFailed(other.id, {}, await claim(other.id));
+      await (await claim(other.id)).settle(failedValues({}));
       expect(await isAwaitingOperator(other.id)).toBe(false);
     });
 
     it('scopes find options to the runs waiting on an admin', async () => {
-      await workflowRunService.markSuspended(
-        workflowRun.id,
-        { checkpoint: operatorCheckpoint },
-        claimId,
+      await leaseOn(workflowRun.id, claimId).settle(
+        suspendedValues({ checkpoint: operatorCheckpoint }),
       );
       const { run: other, claimId: otherClaimId } = await createClaimedRun();
-      await workflowRunService.markSuspended(
-        other.id,
-        { checkpoint },
-        otherClaimId,
+      await leaseOn(other.id, otherClaimId).settle(
+        suspendedValues({ checkpoint }),
       );
 
       const scoped = workflowRunService.withAwaitingOperatorScope({
@@ -1315,7 +1327,7 @@ describe('WorkflowRunService (TypeORM)', () => {
     it('fails a suspended run of a thread claimed meanwhile, and drops the outcome of its pass', async () => {
       const run = await loadSuspendedRun();
       // A resume claimed the run after it was loaded.
-      const resumeClaimId = (await workflowRunService.claimSuspended(
+      const resumeLease = (await workflowRunService.claimSuspended(
         run.id,
         run.suspendedAt ?? null,
       ))!;
@@ -1333,18 +1345,14 @@ describe('WorkflowRunService (TypeORM)', () => {
       );
       // The resume ends afterwards: it cannot write over the failure.
       expect(
-        await workflowRunService.markFinished(
-          run.id,
-          { output: { done: true } },
-          resumeClaimId,
-        ),
+        await resumeLease.settle(finishedValues({ output: { done: true } })),
       ).toBe(false);
       expect((await workflowRunService.findOne(run.id))?.status).toBe('failed');
     });
 
     it('cancels a running run of a thread put back on its wait meanwhile', async () => {
       const suspended = await loadSuspendedRun();
-      const resumeClaimId = (await workflowRunService.claimSuspended(
+      const resumeLease = (await workflowRunService.claimSuspended(
         suspended.id,
         suspended.suspendedAt ?? null,
       ))!;
@@ -1352,7 +1360,7 @@ describe('WorkflowRunService (TypeORM)', () => {
         suspended.id,
       ))!;
       // Its resume let go of it after it was loaded.
-      await workflowRunService.releaseClaim(suspended.id, resumeClaimId);
+      await resumeLease.settle(putBackValues());
       jest
         .spyOn(workflowRunService, 'findAndPopulate')
         .mockResolvedValueOnce([running]);

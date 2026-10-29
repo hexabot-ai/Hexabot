@@ -19,6 +19,7 @@ import { WorkflowOrmEntity } from '../entities/workflow.entity';
 import { ManualEventWrapper } from '../lib/trigger-event-wrapper';
 
 import { AgenticService } from './agentic.service';
+import { WorkflowCallStackService } from './workflow-call-stack.service';
 import {
   WorkflowEventRestorer,
   WorkflowTriggerUnavailableError,
@@ -42,11 +43,8 @@ describe('WorkflowRunOperatorService', () => {
     findOneAndPopulate: jest.fn(),
     prepareWorkflowDeletion: jest.fn(),
   };
-  const agenticService = {
-    resumeWait: jest.fn(),
-    cancelRun: jest.fn(),
-    resumeFromEndedChildren: jest.fn(),
-  };
+  const agenticService = { resumeWait: jest.fn(), cancelRun: jest.fn() };
+  const callStack = { reconcile: jest.fn() };
   const eventRestorer = { restore: jest.fn() };
   const logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
   let service: WorkflowRunOperatorService;
@@ -54,6 +52,7 @@ describe('WorkflowRunOperatorService', () => {
     new WorkflowRunOperatorService(
       workflowRunService as unknown as WorkflowRunService,
       agenticService as unknown as AgenticService,
+      callStack as unknown as WorkflowCallStackService,
       eventRestorer as unknown as WorkflowEventRestorer,
       logger as unknown as LoggerService,
     );
@@ -77,7 +76,6 @@ describe('WorkflowRunOperatorService', () => {
   const accepted = (run: WorkflowRunFull) => ({
     status: 'accepted',
     run: { ...run, status: 'running' },
-    settled: new Promise(() => {}),
   });
   /** Run `operation` and return the HTTP error it threw. */
   const failure = async (operation: Promise<unknown>) => {
@@ -99,6 +97,7 @@ describe('WorkflowRunOperatorService', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     eventRestorer.restore.mockResolvedValue(event);
+    callStack.reconcile.mockResolvedValue(undefined);
     service = buildService();
   });
 
@@ -267,14 +266,21 @@ describe('WorkflowRunOperatorService', () => {
       ],
       [
         'an unresumable run',
-        { status: 'unresumable' },
+        {
+          status: 'unresumable',
+          error: 'Cannot resume workflow run: drift',
+        },
         409,
-        { code: 'unresumable' },
+        {
+          code: 'unresumable',
+          message:
+            'The run can no longer be resumed and was marked failed: Cannot resume workflow run: drift',
+        },
       ],
     ])('maps %s', async (_label, outcome, status, body) => {
       const run = buildRun([approvalWait]);
       workflowRunService.findOneAndPopulate.mockResolvedValue(run);
-      agenticService.resumeWait.mockResolvedValue({ ...outcome, run });
+      agenticService.resumeWait.mockResolvedValue(outcome);
 
       expect(
         await failure(service.decide('run-1', 'approved', {}, actor)),
@@ -352,8 +358,6 @@ describe('WorkflowRunOperatorService', () => {
       agenticService.cancelRun.mockResolvedValue({
         status: 'cancelled',
         run: failed,
-        // A parent going on, which the request does not wait for.
-        settled: new Promise(() => {}),
       });
 
       await expect(
@@ -362,34 +366,9 @@ describe('WorkflowRunOperatorService', () => {
       expect(agenticService.cancelRun).toHaveBeenCalledWith({
         run,
         message: 'Cancelled by Jane Doe: stale',
-        event: undefined,
       });
-      // Only a parent run needs the trigger.
+      // A waiting parent is resumed with a trigger the call stack rebuilds.
       expect(eventRestorer.restore).not.toHaveBeenCalled();
-    });
-
-    it('rebuilds the trigger to notify a parent run, when it can', async () => {
-      const run = buildRun([approvalWait], {
-        parentRun: 'parent-1' as unknown as WorkflowRunFull['parentRun'],
-      });
-      workflowRunService.findOneAndPopulate.mockResolvedValue(run);
-      agenticService.cancelRun.mockResolvedValue({ status: 'cancelled', run });
-
-      await service.cancel('run-1', {}, actor);
-      expect(agenticService.cancelRun).toHaveBeenLastCalledWith({
-        run,
-        message: 'Cancelled by Jane Doe',
-        event,
-      });
-
-      eventRestorer.restore.mockRejectedValue(
-        new WorkflowTriggerUnavailableError('thread_closed', 'Closed'),
-      );
-      await service.cancel('run-1', {}, actor);
-      expect(agenticService.cancelRun).toHaveBeenLastCalledWith(
-        expect.objectContaining({ event: undefined }),
-      );
-      expect(logger.warn).toHaveBeenCalled();
     });
 
     it('refuses runs it cannot cancel', async () => {
@@ -402,7 +381,7 @@ describe('WorkflowRunOperatorService', () => {
 
       const run = buildRun([replyWait]);
       workflowRunService.findOneAndPopulate.mockResolvedValue(run);
-      agenticService.cancelRun.mockResolvedValue({ status: 'claim_lost', run });
+      agenticService.cancelRun.mockResolvedValue({ status: 'claim_lost' });
       expect(await failure(service.cancel('run-1', {}, actor))).toEqual({
         status: 409,
         body: expect.objectContaining({ code: 'claim_lost' }),
@@ -421,19 +400,14 @@ describe('WorkflowRunOperatorService', () => {
       await service.handleWorkflowDeleted(deleteEvent);
     };
 
-    it('notifies the suspended callers once the workflow is deleted', async () => {
-      const caller = buildRun([], { id: 'caller-1' });
+    it('reconciles each caller once the workflow is deleted', async () => {
       workflowRunService.prepareWorkflowDeletion.mockImplementation(
         async () => {
-          // Callers are only notified after the deletion.
-          expect(agenticService.resumeFromEndedChildren).not.toHaveBeenCalled();
+          // Callers are only reconciled after the deletion.
+          expect(callStack.reconcile).not.toHaveBeenCalled();
 
           return ['caller-1', 'caller-2'];
         },
-      );
-      workflowRunService.findOneAndPopulate.mockImplementation(
-        async (id: string) =>
-          id === 'caller-1' ? caller : buildRun([], { id, status: 'running' }),
       );
 
       await deleteWorkflow();
@@ -441,80 +415,25 @@ describe('WorkflowRunOperatorService', () => {
       expect(workflowRunService.prepareWorkflowDeletion).toHaveBeenCalledWith(
         deletedWorkflow,
       );
-      expect(eventRestorer.restore).toHaveBeenCalledWith(caller);
-      // A caller still running gets the result once it suspends.
-      expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledTimes(1);
-      expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledWith(
-        'caller-1',
-        event,
-      );
+      expect(callStack.reconcile.mock.calls).toEqual([
+        [['caller-1']],
+        [['caller-2']],
+      ]);
 
-      // The callers are notified once.
+      // The callers are reconciled once.
       await service.handleWorkflowDeleted(deleteEvent);
-      expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledTimes(1);
-    });
-
-    it('leaves a caller whose trigger cannot be rebuilt to its next event', async () => {
-      workflowRunService.prepareWorkflowDeletion.mockResolvedValue([
-        'caller-1',
-        'caller-2',
-      ]);
-      workflowRunService.findOneAndPopulate.mockImplementation(
-        async (id: string) => buildRun([], { id }),
-      );
-      eventRestorer.restore.mockRejectedValueOnce(
-        new WorkflowTriggerUnavailableError('thread_closed', 'Closed'),
-      );
-
-      await deleteWorkflow();
-
-      expect(logger.warn).toHaveBeenCalled();
-      expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledTimes(1);
-      expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledWith(
-        'caller-2',
-        event,
-      );
-    });
-
-    it('notifies the other callers when one fails', async () => {
-      workflowRunService.prepareWorkflowDeletion.mockResolvedValue([
-        'caller-1',
-        'caller-2',
-      ]);
-      workflowRunService.findOneAndPopulate.mockImplementation(
-        async (id: string) => buildRun([], { id }),
-      );
-      agenticService.resumeFromEndedChildren.mockRejectedValueOnce(
-        new Error('Called workflow workflow-b was deleted'),
-      );
-
-      await deleteWorkflow();
-
-      expect(logger.error).toHaveBeenCalledWith(
-        'Workflow run failed once a callee was deleted',
-        expect.any(Error),
-        { runId: 'caller-1', workflowId: deletedWorkflow.id },
-      );
-      expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledTimes(2);
+      expect(callStack.reconcile).toHaveBeenCalledTimes(2);
     });
 
     it('does not wait for the callers to go on', async () => {
       workflowRunService.prepareWorkflowDeletion.mockResolvedValue([
         'caller-1',
       ]);
-      workflowRunService.findOneAndPopulate.mockImplementation(
-        async (id: string) => buildRun([], { id }),
-      );
-      agenticService.resumeFromEndedChildren.mockReturnValue(
-        new Promise(() => {}),
-      );
+      callStack.reconcile.mockReturnValue(new Promise(() => {}));
 
       await deleteWorkflow();
 
-      expect(agenticService.resumeFromEndedChildren).toHaveBeenCalledWith(
-        'caller-1',
-        event,
-      );
+      expect(callStack.reconcile).toHaveBeenCalledWith(['caller-1']);
     });
 
     it('does nothing when no run called the workflow', async () => {
@@ -522,8 +441,7 @@ describe('WorkflowRunOperatorService', () => {
 
       await deleteWorkflow();
 
-      expect(workflowRunService.findOneAndPopulate).not.toHaveBeenCalled();
-      expect(agenticService.resumeFromEndedChildren).not.toHaveBeenCalled();
+      expect(callStack.reconcile).not.toHaveBeenCalled();
     });
   });
 });

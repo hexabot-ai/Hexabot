@@ -45,8 +45,11 @@ import { MemoryDefinitionService } from './services/memory-definition.service';
 import { MemoryRecordService } from './services/memory-record.service';
 import { MemoryService } from './services/memory.service';
 import { WebhookTriggerService } from './services/webhook-trigger.service';
+import { WorkflowCallStackService } from './services/workflow-call-stack.service';
 import { WorkflowCompiler } from './services/workflow-compiler.service';
 import { WorkflowEventRestorer } from './services/workflow-event-restorer.service';
+import { WorkflowJobs } from './services/workflow-jobs.service';
+import { WorkflowRunExecutor } from './services/workflow-run-executor.service';
 import { WorkflowRunOperatorService } from './services/workflow-run-operator.service';
 import { WorkflowRunRecoveryService } from './services/workflow-run-recovery.service';
 import { WorkflowRunService } from './services/workflow-run.service';
@@ -102,6 +105,9 @@ import { WORKFLOW_CALL_SERVICE } from './types';
     ScheduledWorkflowContext,
     WorkflowContextFactory,
     WorkflowCompiler,
+    WorkflowRunExecutor,
+    WorkflowCallStackService,
+    WorkflowJobs,
     AgenticService,
     WorkflowEventRestorer,
     WorkflowRunOperatorService,

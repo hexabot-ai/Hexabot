@@ -27,7 +27,7 @@ export type CompiledRun = {
 
 /**
  * Compiles the workflow definition a run pins against the registered actions
- * and binding kinds, so `AgenticService` can start or resume it.
+ * and binding kinds, so `WorkflowRunExecutor` can start or resume it.
  */
 @Injectable()
 export class WorkflowCompiler {

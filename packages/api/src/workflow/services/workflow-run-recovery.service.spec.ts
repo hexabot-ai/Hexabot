@@ -28,6 +28,14 @@ import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import { WorkflowRunOrmEntity } from '../entities/workflow-run.entity';
 import { WorkflowVersionOrmEntity } from '../entities/workflow-version.entity';
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
+import {
+  failedValues,
+  finishedValues,
+  putBackValues,
+  RunLease,
+  runningValues,
+  suspendedValues,
+} from '../lib/run-lease';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
 import { WorkflowRepository } from '../repositories/workflow.repository';
 import {
@@ -38,7 +46,7 @@ import {
 } from '../types';
 
 import { AgenticService } from './agentic.service';
-import { WorkflowEventRestorer } from './workflow-event-restorer.service';
+import { WorkflowCallStackService } from './workflow-call-stack.service';
 import { WorkflowRunRecoveryService } from './workflow-run-recovery.service';
 import { WorkflowRunService } from './workflow-run.service';
 import { WorkflowVersionService } from './workflow-version.service';
@@ -58,12 +66,8 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
   let dataSource: DataSource;
   let workflow: Workflow;
   let counter = 0;
-  const restoredEvent = { restored: true };
-  const agenticServiceMock = {
-    resumeFromEndedChildren: jest.fn(),
-    cancelRun: jest.fn(),
-  };
-  const eventRestorerMock = { restore: jest.fn() };
+  const agenticServiceMock = { cancelRun: jest.fn() };
+  const callStackMock = { reconcile: jest.fn() };
   const websocketGatewayMock = {
     joinSockets: jest.fn(),
     broadcastWorkflowEvent: jest.fn(),
@@ -124,16 +128,36 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
 
     return { run, claimId };
   };
+  /**
+   * The lease of a claim another process took, such as the claim of a run
+   * created by `createRun`: it writes the run under that claim, but this
+   * process does not renew it.
+   */
+  const leaseOn = (runId: string, claimId: string) =>
+    new RunLease(runId, claimId, workflowRunRepository, () => undefined);
+  /**
+   * Claim the current suspension of a run for a resume whose process then
+   * stops: nothing holds or renews its claim.
+   */
+  const interruptResume = async (runId: string) => {
+    const loaded = (await workflowRunService.findOne(runId))!;
+    const lease = (await workflowRunService.claimSuspended(
+      runId,
+      loaded.suspendedAt ?? null,
+    ))!;
+    lease.end();
+  };
   /** Create a run suspended on `waits`, under no claim. */
   const createSuspendedRun = async (
     waits: WaitInfo[],
     options: { parentRun?: string | null } = {},
   ) => {
     const { run, claimId } = await createRun(options);
-    await workflowRunService.markSuspended(
-      run.id,
-      { checkpoint: buildCheckpoint(waits), context: context() },
-      claimId,
+    await leaseOn(run.id, claimId).settle(
+      suspendedValues({
+        checkpoint: buildCheckpoint(waits),
+        context: context(),
+      }),
     );
 
     return (await workflowRunService.findOneAndPopulate(run.id))!;
@@ -147,12 +171,9 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
     options: { parentRun?: string | null } = {},
   ) => {
     const suspended = await createSuspendedRun(waits, options);
-    const claimId = (await workflowRunService.claimSuspended(
-      suspended.id,
-      suspended.suspendedAt ?? null,
-    ))!;
+    await interruptResume(suspended.id);
 
-    return { suspended, claimId };
+    return { suspended };
   };
   const readRecoveryCount = async (runId: string) =>
     (
@@ -172,7 +193,7 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
         WorkflowRunRepository,
         WorkflowVersionService,
         { provide: AgenticService, useValue: agenticServiceMock },
-        { provide: WorkflowEventRestorer, useValue: eventRestorerMock },
+        { provide: WorkflowCallStackService, useValue: callStackMock },
         { provide: WEBSOCKET_GATEWAY, useValue: websocketGatewayMock },
       ],
       typeorm: {
@@ -221,7 +242,7 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
       action: WorkflowVersionAction.create,
       createdBy: userFixtureIds.admin,
     });
-    eventRestorerMock.restore.mockResolvedValue(restoredEvent);
+    callStackMock.reconcile.mockResolvedValue(undefined);
     agenticServiceMock.cancelRun.mockResolvedValue({ status: 'cancelled' });
   });
 
@@ -263,7 +284,7 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
       runId: suspended.id,
       waits: [approvalWait],
     });
-    expect(agenticServiceMock.resumeFromEndedChildren).not.toHaveBeenCalled();
+    expect(callStackMock.reconcile).toHaveBeenCalledWith([suspended.id]);
     expect(agenticServiceMock.cancelRun).not.toHaveBeenCalled();
     expect(
       await workflowRunService.cancelSuspended(recovered, 'Cancelled'),
@@ -275,37 +296,29 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
     const { run: child, claimId: childClaimId } = await createRun({
       parentRun: parent.id,
     });
-    await workflowRunService.markFinished(child.id, {}, childClaimId);
+    await leaseOn(child.id, childClaimId).settle(finishedValues({}));
     await workflowRunService.updateOne(parent.id, {
       checkpoint: buildCheckpoint([childWait(child.id)]),
     });
-    const loaded = (await workflowRunService.findOne(parent.id))!;
-    await workflowRunService.claimSuspended(
-      parent.id,
-      loaded.suspendedAt ?? null,
-    );
+    await interruptResume(parent.id);
 
     expect(await recoveryService.recoverExpiredRuns(later())).toBe(1);
 
     expect((await workflowRunService.findOne(parent.id))?.status).toBe(
       'suspended',
     );
-    expect(eventRestorerMock.restore).toHaveBeenCalledWith(
-      expect.objectContaining({ id: parent.id }),
-    );
-    expect(agenticServiceMock.resumeFromEndedChildren).toHaveBeenCalledWith(
-      parent.id,
-      restoredEvent,
-    );
+    expect(callStackMock.reconcile).toHaveBeenCalledWith([parent.id]);
   });
 
   it('fails the runs whose first pass died, and lets a waiting parent know', async () => {
     const parent = await createSuspendedRun([approvalWait]);
     const { run: idle } = await createRun({ parentRun: parent.id });
     const { run: running, claimId: runningClaimId } = await createRun();
-    await workflowRunService.markRunning(running.id, runningClaimId, {
-      context: context(),
-    });
+    await leaseOn(running.id, runningClaimId).update(
+      runningValues({
+        context: context(),
+      }),
+    );
     const grandChild = await createSuspendedRun([approvalWait], {
       parentRun: running.id,
     });
@@ -337,26 +350,24 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
         error: `Parent workflow run ${running.id} was interrupted`,
       }),
     );
-    expect(agenticServiceMock.resumeFromEndedChildren).toHaveBeenCalledWith(
-      parent.id,
-      restoredEvent,
-    );
+    expect(callStackMock.reconcile).toHaveBeenCalledWith([parent.id]);
   });
 
   it('leaves live claims, and the claims this process holds', async () => {
     const { run: live } = await createRun({
       expiresAt: new Date(Date.now() + 60 * 60_000),
     });
-    const { run: held, claimId: heldClaimId } = await createRun();
+    const held = await createSuspendedRun([approvalWait]);
+    const lease = (await workflowRunService.claimSuspended(
+      held.id,
+      held.suspendedAt ?? null,
+    ))!;
 
-    expect(
-      await workflowRunService.withHeldClaim(held.id, heldClaimId, () =>
-        recoveryService.recoverExpiredRuns(later()),
-      ),
-    ).toBe(0);
+    expect(await recoveryService.recoverExpiredRuns(later())).toBe(0);
+    lease.end();
 
     expect((await workflowRunService.findOne(live.id))?.status).toBe('idle');
-    expect((await workflowRunService.findOne(held.id))?.status).toBe('idle');
+    expect((await workflowRunService.findOne(held.id))?.status).toBe('running');
   });
 
   it('recovers a run once when two nodes sweep together', async () => {
@@ -378,21 +389,18 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
     ).toHaveLength(1);
   });
 
-  it('keeps a run waiting when its trigger cannot be rebuilt, and goes on', async () => {
-    const { run: child, claimId: childClaimId } = await createRun();
-    const { suspended } = await createInterruptedResume([childWait(child.id)]);
+  it('goes on with the other runs once one cannot be recovered', async () => {
+    const { suspended } = await createInterruptedResume([approvalWait]);
     const { run: other } = await createRun();
-    await workflowRunService.markFinished(child.id, {}, childClaimId);
-    eventRestorerMock.restore.mockRejectedValueOnce(
-      new Error('Thread is closed'),
+    callStackMock.reconcile.mockRejectedValueOnce(
+      new Error('database unavailable'),
     );
 
-    expect(await recoveryService.recoverExpiredRuns(later())).toBe(2);
+    expect(await recoveryService.recoverExpiredRuns(later())).toBe(1);
 
     expect((await workflowRunService.findOne(suspended.id))?.status).toBe(
       'suspended',
     );
-    expect(agenticServiceMock.resumeFromEndedChildren).not.toHaveBeenCalled();
     expect((await workflowRunService.findOne(other.id))?.status).toBe('failed');
   });
 
@@ -407,11 +415,7 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
     await workflowRunService.updateOne(parent.id, {
       checkpoint: buildCheckpoint([childWait(waitedOn.id)]),
     });
-    const loaded = (await workflowRunService.findOne(parent.id))!;
-    await workflowRunService.claimSuspended(
-      parent.id,
-      loaded.suspendedAt ?? null,
-    );
+    await interruptResume(parent.id);
 
     await recoveryService.recoverExpiredRuns(later());
 
@@ -434,10 +438,8 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
     const { suspended } = await createInterruptedResume([approvalWait], {
       parentRun: parent.id,
     });
-    await workflowRunService.markFailed(
-      parent.id,
-      { error: 'Cancelled' },
-      parentClaimId,
+    await leaseOn(parent.id, parentClaimId).settle(
+      failedValues({ error: 'Cancelled' }),
     );
 
     await recoveryService.recoverExpiredRuns(later());
@@ -445,19 +447,12 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
     expect(agenticServiceMock.cancelRun).toHaveBeenCalledWith({
       run: expect.objectContaining({ id: suspended.id, status: 'suspended' }),
       message: 'Workflow run was interrupted and its caller has ended',
-      event: restoredEvent,
     });
   });
 
   it('cancels a run interrupted three times in a row', async () => {
     const { suspended } = await createInterruptedResume([approvalWait]);
-    const interrupt = async () => {
-      const loaded = (await workflowRunService.findOne(suspended.id))!;
-      await workflowRunService.claimSuspended(
-        suspended.id,
-        loaded.suspendedAt ?? null,
-      );
-    };
+    const interrupt = () => interruptResume(suspended.id);
 
     await recoveryService.recoverExpiredRuns(later());
     await interrupt();
@@ -484,11 +479,11 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
 
     // A pass that settles the run resets the count.
     const loaded = (await workflowRunService.findOne(suspended.id))!;
-    const claimId = (await workflowRunService.claimSuspended(
+    const lease = (await workflowRunService.claimSuspended(
       suspended.id,
       loaded.suspendedAt ?? null,
     ))!;
-    await workflowRunService.releaseClaim(suspended.id, claimId);
+    await lease.settle(putBackValues());
 
     expect(await readRecoveryCount(suspended.id)).toBe(0);
   });

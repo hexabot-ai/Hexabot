@@ -102,8 +102,8 @@ export const CallWorkflowAction = createAction<
     }
 
     // If the child suspends, this action suspends the parent at the call site.
-    // A future event resumes the child leaf first; AgenticService then resumes
-    // this parent action with the final child payload.
+    // A future event resumes the child leaf first; WorkflowCallStackService
+    // then resumes this parent action with the final child payload.
     const resumeData = await context.workflow.suspend({
       reason: AWAITING_CHILD_WORKFLOW_REASON,
       data,

@@ -11,7 +11,9 @@ import { stringifyError } from '@/utils/helpers/misc';
 
 import {
   AWAITING_CHILD_WORKFLOW_REASON,
+  type CallWorkflowFailedResult,
   type CallWorkflowResult,
+  type RunPass,
 } from '../types';
 
 /**
@@ -25,6 +27,31 @@ export const resolveRunId = (
   }
 
   return run?.id ?? null;
+};
+
+/**
+ * Tell which runs to reconcile once a pass of `run` is over (see
+ * `WorkflowCallStackService.reconcile`): the run itself when it is back to
+ * `suspended`, since child runs may have ended while it was not; its parent
+ * when it ended. A run whose claim was lost is left to whoever settled it.
+ */
+export const followUps = (
+  run: Pick<WorkflowRunFull, 'id' | 'parentRun'>,
+  pass: RunPass,
+): (string | null)[] => {
+  switch (pass.status) {
+    case 'claim_lost':
+      return [];
+    case 'rejected':
+      return [run.id];
+    case 'settled':
+      return pass.result.status === 'suspended'
+        ? [run.id]
+        : [resolveRunId(run.parentRun)];
+    case 'crashed':
+    default:
+      return [resolveRunId(run.parentRun)];
+  }
 };
 
 /**
@@ -44,9 +71,46 @@ export const getChildRunId = (wait: WaitInfo): string | undefined => {
 };
 
 /**
+ * Read the workflow a `call_workflow` wait called.
+ *
+ * @returns The called workflow id, or `undefined` when the wait names none.
+ */
+export const getCalledWorkflowId = (wait: WaitInfo): string | undefined => {
+  const workflowId = (wait.data as { workflow_id?: unknown } | null)
+    ?.workflow_id;
+
+  return typeof workflowId === 'string' ? workflowId : undefined;
+};
+
+/**
+ * Build the `call_workflow` payload of a child run that no longer exists.
+ *
+ * @param wait - The parent's wait on the child run.
+ * @param childRunId - Id of the deleted child run.
+ * @param workflowExists - Whether the called workflow still exists, so only
+ * its run was deleted.
+ */
+export const toDeletedCallWorkflowResult = (
+  wait: WaitInfo,
+  childRunId: string,
+  workflowExists: boolean,
+): CallWorkflowFailedResult => {
+  const workflowId = getCalledWorkflowId(wait);
+
+  return {
+    status: 'failed',
+    workflow_id: workflowId ?? '',
+    workflow_run_id: childRunId,
+    error: workflowExists
+      ? `Called workflow run ${childRunId} was deleted`
+      : `Called workflow ${workflowId} was deleted`,
+  };
+};
+
+/**
  * Build the `call_workflow` payload of a child run that failed.
  */
-export const toFailedCallWorkflowResult = (
+const toFailedCallWorkflowResult = (
   run: WorkflowRunFull,
   error: unknown,
 ): CallWorkflowResult => ({
@@ -57,9 +121,9 @@ export const toFailedCallWorkflowResult = (
 });
 
 /**
- * Convert a child run terminal/suspended result into the `call_workflow`
- * contract. The same payload shape is used for immediate returns and for
- * resuming a parent after the child completed in a later event.
+ * Convert the result of a child run's first pass into the `call_workflow`
+ * contract, returned to the calling step. A parent resumed once the child
+ * ended later reads it with {@link toEndedCallWorkflowResult} instead.
  */
 export const toCallWorkflowResult = (
   run: WorkflowRunFull,

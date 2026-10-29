@@ -167,7 +167,7 @@ export class WebhookTriggerService {
    *
    * @param options.wait - Wait for the run to finish, fail or suspend
    * (default). With `false`, return the run as soon as the event reached it
-   * (see `WorkflowRunDispatch.run`); its pass goes on in the background.
+   * (see `AgenticService.dispatchEvent`); its pass goes on in the background.
    * @returns The run, or `null` when no run could process the event.
    */
   async dispatchTriggerEvent(
@@ -183,14 +183,9 @@ export class WebhookTriggerService {
       event.setInitiator(initiator);
     }
     event.setWorkflowId(workflow.id);
-    if (!wait) {
-      const dispatched = await this.agenticService.dispatchEvent(event, {
-        workflow,
-      });
 
-      return dispatched?.run ?? null;
-    }
-
-    return await this.agenticService.handleEvent(event, { workflow });
+    return wait
+      ? await this.agenticService.handleEvent(event, { workflow })
+      : await this.agenticService.dispatchEvent(event, { workflow });
   }
 }

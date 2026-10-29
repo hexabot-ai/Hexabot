@@ -111,6 +111,8 @@ It's also possible to access the API reference documentation by running `pnpm --
 
 All REST endpoints are prefixed with `/api`.
 
+How workflow runs execute, wait and resume, including workflows that call each other and runs whose process stopped, is explained with examples in [Workflow runs](src/workflow/README.md).
+
 Workflow runs can pause until an admin approves, rejects or resumes them (`await_approval`, `suspend_workflow`); see [Workflow actions](src/extensions/actions/workflow/README.md) for the actions and the `/api/workflowrun` endpoints that resolve them.
 
 For detailed information about the API routes and usage, refer to the API documentation or visit [https://docs.hexabot.ai](https://docs.hexabot.ai).
