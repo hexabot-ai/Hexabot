@@ -1837,7 +1837,26 @@ describe('AgenticService (TypeORM)', () => {
       });
     });
 
-    it('unwinds an unresumable child into its parent and starts one new run', async () => {
+    /** A parent that fails once it receives the failed result of its child. */
+    const failingParentRunner = () =>
+      buildRunnerMock({
+        resumeResult: {
+          status: 'failed',
+          error: new Error('Cannot resume child'),
+          snapshot: failedSnapshot,
+        },
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: failedSnapshot,
+      });
+    /**
+     * Suspend a parent run on a child run that can never resume (it has no
+     * checkpoint). The parent resumes with `parentRunner` and the new run the
+     * event starts runs with `freshRunner`, whichever of them comes first.
+     */
+    const setUpUnresumableChild = async (
+      parentRunner: jest.Mocked<WorkflowRunner>,
+      freshRunner: jest.Mocked<WorkflowRunner>,
+    ) => {
       const childWorkflow = await createWorkflowWithDefinition();
       const parentRun = await createSuspendedRun({ checkpoint: null });
       const childRun = await createSuspendedRun({
@@ -1854,21 +1873,23 @@ describe('AgenticService (TypeORM)', () => {
       await workflowRunService.updateOne(parentRun.id, {
         checkpoint: buildCheckpoint([childWait]),
       });
-      const parentResumeRunner = buildRunnerMock({
-        resumeResult: {
-          status: 'failed',
-          error: new Error('Cannot resume child'),
-          snapshot: failedSnapshot,
-        },
-        state: { input: {}, output: {}, iterationStack: [] },
-        snapshot: failedSnapshot,
-      });
-      const freshRunner = finishedRunner({ fresh: true });
       jest
         .spyOn(AgenticWorkflow, 'fromDefinition')
         .mockReturnValueOnce(buildWorkflowInstance(finishedRunner({})))
-        .mockReturnValueOnce(buildWorkflowInstance(parentResumeRunner))
-        .mockReturnValueOnce(buildWorkflowInstance(freshRunner));
+        .mockReturnValue(
+          buildWorkflowInstance(freshRunner, {
+            buildRunnerFromCheckpoint: jest.fn(() => parentRunner),
+          }),
+        );
+
+      return { childWorkflow, parentRun, childRun, childWait };
+    };
+
+    it('unwinds an unresumable child into its parent and starts one new run', async () => {
+      const parentRunner = failingParentRunner();
+      const freshRunner = finishedRunner({ fresh: true });
+      const { childWorkflow, parentRun, childRun, childWait } =
+        await setUpUnresumableChild(parentRunner, freshRunner);
 
       await agenticService.handleEvent(createEvent({ text: 'hello again' }));
 
@@ -1878,7 +1899,7 @@ describe('AgenticService (TypeORM)', () => {
       expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
         'failed',
       );
-      expect(parentResumeRunner.resume).toHaveBeenCalledWith({
+      expect(parentRunner.resume).toHaveBeenCalledWith({
         waitId: childWait.waitId,
         resumeData: {
           status: 'failed',
@@ -1890,6 +1911,85 @@ describe('AgenticService (TypeORM)', () => {
       });
       expect(freshRunner.start).toHaveBeenCalledTimes(1);
       expect(await countRuns()).toBe(3);
+    });
+
+    it('lets the parent of an unresumable run go on before the new run starts when the caller waits', async () => {
+      const steps: string[] = [];
+      const parentRunner = failingParentRunner();
+      const resume = parentRunner.resume.getMockImplementation()!;
+      parentRunner.resume.mockImplementation(async (options) => {
+        steps.push('parent resumed');
+        // Leave the new run time to start, were it not waiting.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        steps.push('parent went on');
+
+        return await resume(options);
+      });
+      const freshRunner = finishedRunner({ fresh: true });
+      const start = freshRunner.start.getMockImplementation()!;
+      freshRunner.start.mockImplementation(async (options) => {
+        steps.push('new run started');
+
+        return await start(options);
+      });
+      await setUpUnresumableChild(parentRunner, freshRunner);
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hello again' })),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          status: 'finished',
+          output: { fresh: true },
+        }),
+      );
+      expect(steps).toEqual([
+        'parent resumed',
+        'parent went on',
+        'new run started',
+      ]);
+    });
+
+    it('answers a dispatched event with the new run while the parent of an unresumable run goes on', async () => {
+      const parentRunner = failingParentRunner();
+      const resume = parentRunner.resume.getMockImplementation()!;
+      let releaseParent!: () => void;
+      const parentResumed = new Promise<void>((markResumed) => {
+        parentRunner.resume.mockImplementation(async (options) => {
+          const released = new Promise<void>((release) => {
+            releaseParent = release;
+          });
+          markResumed();
+          await released;
+
+          return await resume(options);
+        });
+      });
+      const freshRunner = finishedRunner({ fresh: true });
+      const { parentRun, childRun } = await setUpUnresumableChild(
+        parentRunner,
+        freshRunner,
+      );
+      // The parent is only released once the event is answered: an answer
+      // that waited for it would never come.
+      const dispatched = await agenticService.dispatchEvent(
+        createEvent({ text: 'hello again' }),
+      );
+
+      expect(dispatched?.run).toEqual(
+        expect.objectContaining({ status: 'idle' }),
+      );
+      expect([parentRun.id, childRun.id]).not.toContain(dispatched!.run.id);
+      await parentResumed;
+      releaseParent();
+      expect(await dispatched!.settled).toEqual(
+        expect.objectContaining({
+          id: dispatched!.run.id,
+          status: 'finished',
+        }),
+      );
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'failed',
+      );
     });
 
     it('fails the parent when it refuses the child result', async () => {

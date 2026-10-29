@@ -94,6 +94,18 @@ type ResumeClaim =
   | UnresumableRun
   | Exclude<ResumeOutcome, { status: 'resumed' | 'unresumable' }>;
 
+/** How an event is routed to its run. */
+type DispatchOptions = {
+  /** The target workflow, when the caller already resolved it. */
+  workflow?: WorkflowFull;
+  /**
+   * The caller waits until the run settles. A parent the event sends a failed
+   * result to then goes on before the new run starts, so the messages of a
+   * conversation keep their order.
+   */
+  callerWaits?: boolean;
+};
+
 /**
  * Thrown when a pass ends without being able to settle its run: the run was
  * taken over (its thread was closed) or recovered (its claim lapsed) while
@@ -135,7 +147,10 @@ export class AgenticService implements WorkflowCallService {
     event: TriggerEventWrapper,
     options: { workflow?: WorkflowFull } = {},
   ): Promise<WorkflowRunFull | null> {
-    const dispatched = await this.dispatchEvent(event, options);
+    const dispatched = await this.dispatchOrLog(event, {
+      ...options,
+      callerWaits: true,
+    });
 
     return (await dispatched?.settled) ?? null;
   }
@@ -144,7 +159,8 @@ export class AgenticService implements WorkflowCallService {
    * Route an event to its run like {@link handleEvent}, without waiting for
    * the run: this returns once the run is claimed, and its pass goes on in
    * the background. Callers that must answer quickly, such as HTTP requests,
-   * use it; the run's updates report how it goes on.
+   * use it; the run's updates report how it goes on. A parent the event sends
+   * a failed result to goes on alongside the new run, not before it.
    *
    * @returns The claimed run and the work left on it, or `null` when no run
    * could process the event.
@@ -152,6 +168,17 @@ export class AgenticService implements WorkflowCallService {
   async dispatchEvent(
     event: TriggerEventWrapper,
     options: { workflow?: WorkflowFull } = {},
+  ): Promise<WorkflowRunDispatch | null> {
+    return await this.dispatchOrLog(event, options);
+  }
+
+  /**
+   * Route an event to its run (see {@link dispatch}). An error is only
+   * logged: no run processed the event.
+   */
+  private async dispatchOrLog(
+    event: TriggerEventWrapper,
+    options: DispatchOptions,
   ): Promise<WorkflowRunDispatch | null> {
     try {
       return await this.dispatch(event, options);
@@ -168,7 +195,7 @@ export class AgenticService implements WorkflowCallService {
    */
   private async dispatch(
     event: TriggerEventWrapper,
-    options: { workflow?: WorkflowFull },
+    options: DispatchOptions,
   ): Promise<WorkflowRunDispatch | null> {
     const initiator = event.getInitiator();
     const requestedWorkflowId = event.getWorkflowId();
@@ -228,14 +255,6 @@ export class AgenticService implements WorkflowCallService {
         case 'no_wait':
           return this.holdEvent(suspendedRun, event);
         case 'unresumable':
-          // Only the run this event targeted falls through to a new run: a
-          // parent failing further up the call stack must not start another
-          // one. That parent goes on alongside the new run.
-          unresumableSettled = this.inBackground(
-            claim.notifyParent,
-            'Unable to send the parent of a workflow run that can no longer be resumed its failed result',
-            { runId: suspendedRun.id },
-          );
           this.logger.warn(
             'Suspended workflow run can no longer be resumed; starting a new run',
             {
@@ -244,6 +263,20 @@ export class AgenticService implements WorkflowCallService {
               workflowId: suspendedRun.workflow?.id,
             },
           );
+          // Only the run this event targeted falls through to a new run: a
+          // parent failing further up the call stack must not start another
+          // one. When the caller waits for the run, that parent goes on first,
+          // so the messages of a conversation keep their order; nothing is
+          // claimed for the new run yet, so waiting here is safe. Otherwise it
+          // goes on alongside the new run, which the caller answers with.
+          unresumableSettled = this.inBackground(
+            claim.notifyParent,
+            'Unable to send the parent of a workflow run that can no longer be resumed its failed result',
+            { runId: suspendedRun.id },
+          );
+          if (options.callerWaits) {
+            await unresumableSettled;
+          }
           break;
         default:
           return { run: claim.run, settled: Promise.resolve(claim.run) };
