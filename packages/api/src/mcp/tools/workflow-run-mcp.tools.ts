@@ -28,7 +28,7 @@ import {
   getOpenWaits,
   isOperatorWait,
 } from '@/workflow/lib/workflow-run-waits';
-import { AgenticService } from '@/workflow/services/agentic.service';
+import { WebhookTriggerService } from '@/workflow/services/webhook-trigger.service';
 import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowType } from '@/workflow/types';
@@ -53,7 +53,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
   constructor(
     private readonly workflowService: WorkflowService,
     private readonly workflowRunService: WorkflowRunService,
-    private readonly agenticService: AgenticService,
+    private readonly webhookTriggerService: WebhookTriggerService,
   ) {
     super();
   }
@@ -75,7 +75,9 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     request?: HexabotMcpRequest,
   ) {
     const actor = this.getActor(request);
-    const workflow = await this.workflowService.findOne(args.workflowId);
+    const workflow = await this.workflowService.findOneAndPopulate(
+      args.workflowId,
+    );
     if (!workflow) {
       throw new NotFoundException(`Workflow ${args.workflowId} not found`);
     }
@@ -102,14 +104,17 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
             ),
             actor.id,
           );
-    event.setInitiator(actor);
-    event.setWorkflowId(workflow.id);
-
-    const run = await this.agenticService.handleEvent(event);
+    // Throws, and the tool reports the error, when a suspended run of the
+    // workflow refuses the input or another request resumed it first.
+    const run = await this.webhookTriggerService.dispatchTriggerEvent(
+      workflow,
+      event,
+      actor.id,
+    );
 
     return {
       accepted: true,
-      run: run ? this.withoutWorkflowDefinition(this.withOpenWaits(run)) : run,
+      run: this.withoutWorkflowDefinition(this.withOpenWaits(run)),
     };
   }
 

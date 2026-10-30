@@ -25,9 +25,11 @@ import type {
   CancelRunOptions,
   CancelRunOutcome,
   ClaimedResume,
+  ResumeRefusal,
   ResumeWaitOptions,
   ResumeWaitOutcome,
   RunPass,
+  TriggerEventOutcome,
   WorkflowCallService,
 } from '../types';
 import { HOST_RESOLVED_WAIT_REASONS } from '../types';
@@ -69,6 +71,12 @@ type DispatchedRun = {
    * over, or `undefined` when the pass threw (logged).
    */
   proceed: () => Promise<WorkflowRunFull | undefined>;
+  /**
+   * Set when the event left the suspended run it reached as it was: the run
+   * refused the payload, or another caller claimed it first. Nothing is left
+   * to run.
+   */
+  refusal?: Extract<ResumeRefusal, { status: 'rejected' | 'claim_lost' }>;
 };
 
 /**
@@ -109,9 +117,13 @@ export class AgenticService implements WorkflowCallService {
    * otherwise start a new run using the latest configured workflow, and wait
    * until the run settles.
    *
-   * Callers that already resolved the target workflow (e.g. the webhook
-   * trigger path) can pass it through `options.workflow` to avoid a redundant
-   * lookup.
+   * Callers that already resolved the target workflow can pass it through
+   * `options.workflow` to avoid a redundant lookup.
+   *
+   * This is for events no one answers, such as chat messages: a suspended
+   * run that refused the payload, or that another caller claimed first, is
+   * returned as it is. Callers that answer the event use
+   * {@link triggerEvent}.
    *
    * @returns The run once its pass is over, or `null` when no run processed
    * the event or its pass threw.
@@ -124,41 +136,48 @@ export class AgenticService implements WorkflowCallService {
       ...options,
       callerWaits: true,
     });
-    try {
-      return (await dispatched?.proceed()) ?? null;
-    } catch (error) {
-      this.logger.error(EVENT_FAILURE_MESSAGE, error, {
-        runId: dispatched?.run.id,
-      });
 
-      return null;
-    }
+    return dispatched ? await this.proceedOrLog(dispatched) : null;
   }
 
   /**
-   * Route an event to its run like {@link handleEvent}, without waiting for
-   * the run: this returns once the run is claimed, and its pass goes on in
-   * the background. Callers that must answer quickly, such as HTTP requests,
-   * use it; the run's updates report how it goes on. A parent the event sends
-   * a failed result to goes on alongside the new run, not before it.
+   * Route an event to its run like {@link handleEvent}, for callers that
+   * answer whoever sent it: manual runs, webhooks and the MCP run tool. A
+   * suspended run the event reached without resuming it is reported instead
+   * of returned (see {@link TriggerEventOutcome}).
    *
-   * @returns The claimed run (see {@link DispatchedRun.run}), or `null` when
-   * no run could process the event.
+   * @param options.workflow - The target workflow, when already resolved.
+   * @param options.wait - Wait until the run settles (default). With
+   * `false`, return once the run is claimed: its pass goes on in the
+   * background, for callers that must answer quickly, such as HTTP requests;
+   * the run's updates report how it goes on. A parent the event sends a
+   * failed result to then goes on alongside the new run, not before it.
    */
-  async dispatchEvent(
+  async triggerEvent(
     event: TriggerEventWrapper,
-    options: { workflow?: WorkflowFull } = {},
-  ): Promise<WorkflowRunFull | null> {
-    const dispatched = await this.dispatchOrLog(event, options);
+    { workflow, wait = true }: { workflow?: WorkflowFull; wait?: boolean } = {},
+  ): Promise<TriggerEventOutcome> {
+    const dispatched = await this.dispatchOrLog(event, {
+      workflow,
+      callerWaits: wait,
+    });
     if (!dispatched) {
-      return null;
+      return { status: 'unprocessed' };
+    }
+    if (dispatched.refusal) {
+      return { ...dispatched.refusal, runId: dispatched.run.id };
+    }
+    if (!wait) {
+      this.jobs.spawn(dispatched.proceed, EVENT_FAILURE_MESSAGE, {
+        runId: dispatched.run.id,
+      });
+
+      return { status: 'dispatched', run: dispatched.run };
     }
 
-    this.jobs.spawn(dispatched.proceed, EVENT_FAILURE_MESSAGE, {
-      runId: dispatched.run.id,
-    });
+    const run = await this.proceedOrLog(dispatched);
 
-    return dispatched.run;
+    return run ? { status: 'dispatched', run } : { status: 'unprocessed' };
   }
 
   /**
@@ -317,6 +336,26 @@ export class AgenticService implements WorkflowCallService {
   }
 
   /**
+   * Run the work left on a dispatched run and wait for it. An error is only
+   * logged.
+   *
+   * @returns The run once its pass is over, or `null` when the pass threw.
+   */
+  private async proceedOrLog(
+    dispatched: DispatchedRun,
+  ): Promise<WorkflowRunFull | null> {
+    try {
+      return (await dispatched.proceed()) ?? null;
+    } catch (error) {
+      this.logger.error(EVENT_FAILURE_MESSAGE, error, {
+        runId: dispatched.run.id,
+      });
+
+      return null;
+    }
+  }
+
+  /**
    * Claim the suspended run an event resumes, or create a new run for it.
    * The work left on the run is up to the caller.
    */
@@ -402,7 +441,7 @@ export class AgenticService implements WorkflowCallService {
           // The payload was refused, or another caller claimed the run.
           const run = await this.workflowRunService.reload(suspendedRun);
 
-          return { run, proceed: async () => run };
+          return { run, proceed: async () => run, refusal: claim };
         }
       }
     }

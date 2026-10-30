@@ -188,6 +188,11 @@ fields from populated workflow-version relations, and the resume checkpoint.
 `hexabot_workflow_run` and `hexabot_workflow_run_pending` replace the checkpoint
 with `openWaits` (`waitId`, `reason`, `step`, `data`), its only content the run
 output and step log do not hold; the pending tool lists admin waits only.
+`hexabot_workflow_run` can reach a suspended run of the workflow that waits
+for outside input instead of starting a new run. When that run refuses the
+input, or another request resumed it first, the tool returns an error (its
+message lists the refused fields) instead of `accepted: true`; the run still
+waits on the same input.
 Deciding on a wait is only possible through the REST API
 (`PATCH /api/workflowrun/:id/approve|reject|resume|cancel`). `hexabot_workflow_run_debug` returns the
 executed YAML once as top-level `workflowDefinitionYml` only when

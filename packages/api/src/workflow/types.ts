@@ -196,6 +196,32 @@ export type ResumeWaitOutcome =
    */
   | { status: 'unresumable'; error: string };
 
+/**
+ * What an event did, for the callers that answer whoever sent it: manual
+ * runs, webhooks and the MCP run tool. Unlike a chat message, which no one
+ * answers, an event that left the suspended run it reached as it was is an
+ * error to report, not a run that goes on.
+ */
+export type TriggerEventOutcome =
+  /**
+   * The event reached its run: created (`idle`), resumed (`running`), or
+   * held by a run that waits on a workflow it called. When the caller
+   * waited, the run as it is once its pass is over.
+   */
+  | { status: 'dispatched'; run: WorkflowRunFull }
+  /**
+   * The suspended run the event reached refused its payload; it still waits
+   * on the same wait.
+   */
+  | { status: 'rejected'; runId: string; error: WorkflowResumeRejectedError }
+  /** Another caller claimed the suspended run the event reached first. */
+  | { status: 'claim_lost'; runId: string }
+  /**
+   * No run processed the event, or the pass the caller waited for did not
+   * end it: the runner threw (logged), or the run was taken over meanwhile.
+   */
+  | { status: 'unprocessed' };
+
 export type CancelRunOptions = {
   run: WorkflowRunFull;
   /** Failure message stored on the run and its cancelled steps. */

@@ -56,6 +56,16 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
 - By default the run executes before the response: the `200` response carries
   the outcome `{ runId, status, output, error }` once the run finishes, fails
   or suspends. When no run could be started the endpoint responds `422`.
+- A call can reach a suspended run of the workflow that waits for outside
+  input instead of starting a new run (see `running` below). When that run
+  refuses the body, the endpoint responds `422` with
+  `{ statusCode, code: "payload_rejected", message, issues, runId }`: the run
+  still waits on the same input, and nothing was started. When another request
+  resumed or cancelled that run first, it responds `409` with
+  `{ statusCode, code: "claim_lost", message, runId }`. Both apply with or
+  without `?async=true`. The body is only checked this way against what the
+  wait declares it accepts; a step that refuses it once resumed leaves the run
+  back to `suspended` (`200`), or reports it later (`?async=true`).
 - With `?async=true` (a query parameter, since the body is the workflow input)
   the endpoint answers `202` without waiting for the run:
   `{ runId, status, output: null, error: null }`. Use it for workflows that
@@ -68,9 +78,8 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
     workflow. The run may already have moved on (`suspended`, `finished` or
     `failed`) by the time it is read back for the response.
   - `suspended`: the call reached a suspended run without resuming it, and
-    started no new run. Either the run refused the body as its resume data, or
-    it waits on a workflow it called that has already ended, and the call
-    delivers that result to it in the background.
+    started no new run: the run waits on a workflow it called that has
+    already ended, and the call delivers that result to it in the background.
 - An asynchronous call is fire-and-forget. The webhook credentials only allow
   starting the workflow, and nothing sends the outcome back to the caller. To
   follow the run, look it up by `runId`: in the admin, with

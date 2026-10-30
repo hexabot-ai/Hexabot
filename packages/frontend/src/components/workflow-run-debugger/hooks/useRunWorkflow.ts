@@ -57,7 +57,13 @@ export const useRunWorkflow = (workflow?: Workflow | null) => {
       toast.success(t("message.workflow_run_started"));
     },
     onError: (error) => {
-      toast.error(error);
+      // A `409` here is a run another request resumed first, not the
+      // duplicate entry the generic toast reads it as.
+      toast.error(
+        (error as { code?: unknown } | null)?.code === "claim_lost"
+          ? error.message
+          : error,
+      );
     },
   });
 

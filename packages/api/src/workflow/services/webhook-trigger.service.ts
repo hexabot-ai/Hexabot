@@ -12,6 +12,8 @@ import {
 } from '@hexabot-ai/types';
 import {
   BadRequestException,
+  ConflictException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -36,9 +38,10 @@ import { WorkflowService } from './workflow.service';
  * output. An asynchronous trigger answers without waiting for the run:
  * `output` and `error` are then `null`, and `status` is the run's status at
  * that time. It is `idle` for a new run, `running` for a suspended run the
- * call resumed, or `suspended` for one the call reached without resuming it
- * (the run refused the body, or a called workflow's result is delivered to it
- * instead).
+ * call resumed, or `suspended` for one that waits on a workflow it called,
+ * whose result the call delivers to it instead. A body the suspended run
+ * refused is an error, not an outcome (see
+ * {@link WebhookTriggerService.dispatchTriggerEvent}).
  */
 export type WorkflowTriggerResult = {
   runId: string;
@@ -144,13 +147,6 @@ export class WebhookTriggerService {
     const run = await this.dispatchTriggerEvent(workflow, event, initiatorId, {
       wait: !options.async,
     });
-    if (!run) {
-      // The run could not be created (missing initiator/definition) or the
-      // runner crashed before persisting a result.
-      throw new UnprocessableEntityException(
-        'Workflow run could not be started',
-      );
-    }
 
     return {
       runId: run.id,
@@ -162,20 +158,25 @@ export class WebhookTriggerService {
 
   /**
    * Resolves the initiator, targets the event at the given workflow, and hands
-   * it to the agentic runner. Shared by webhook triggers and authenticated
-   * manual runs so both paths dispatch identically.
+   * it to the agentic runner. Shared by webhook triggers, authenticated
+   * manual runs and the MCP run tool so they dispatch, and fail, identically.
    *
    * @param options.wait - Wait for the run to finish, fail or suspend
    * (default). With `false`, return the run as soon as the event reached it
-   * (see `AgenticService.dispatchEvent`); its pass goes on in the background.
-   * @returns The run, or `null` when no run could process the event.
+   * (see `AgenticService.triggerEvent`); its pass goes on in the background.
+   * @returns The run.
+   * @throws {UnprocessableEntityException} `payload_rejected` when the
+   * suspended run the event reached refused its input (the run still waits on
+   * the same wait), or when no run could process the event.
+   * @throws {ConflictException} `claim_lost` when another request resumed or
+   * cancelled that suspended run first.
    */
   async dispatchTriggerEvent(
     workflow: WorkflowFull,
     event: TriggerEventWrapper,
     initiatorId: string | null,
     { wait = true }: { wait?: boolean } = {},
-  ): Promise<WorkflowRunFull | null> {
+  ): Promise<WorkflowRunFull> {
     const initiator = initiatorId
       ? await this.userService.findOne(initiatorId)
       : null;
@@ -184,8 +185,34 @@ export class WebhookTriggerService {
     }
     event.setWorkflowId(workflow.id);
 
-    return wait
-      ? await this.agenticService.handleEvent(event, { workflow })
-      : await this.agenticService.dispatchEvent(event, { workflow });
+    const outcome = await this.agenticService.triggerEvent(event, {
+      workflow,
+      wait,
+    });
+    switch (outcome.status) {
+      case 'dispatched':
+        return outcome.run;
+      case 'rejected':
+        throw new UnprocessableEntityException({
+          statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+          code: 'payload_rejected',
+          message: outcome.error.message,
+          issues: outcome.error.issues ?? [],
+          runId: outcome.runId,
+        });
+      case 'claim_lost':
+        throw new ConflictException({
+          statusCode: HttpStatus.CONFLICT,
+          code: 'claim_lost',
+          message: 'The run was resumed or cancelled by another request',
+          runId: outcome.runId,
+        });
+      default:
+        // The run could not be created (missing initiator/definition) or the
+        // runner crashed before persisting a result.
+        throw new UnprocessableEntityException(
+          'Workflow run could not be started',
+        );
+    }
   }
 }

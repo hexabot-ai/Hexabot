@@ -6,11 +6,15 @@
 
 import { randomUUID } from 'crypto';
 
-import { Workflow as WorkflowHelper } from '@hexabot-ai/agentic';
+import {
+  Workflow as WorkflowHelper,
+  WorkflowResumeRejectedError,
+} from '@hexabot-ai/agentic';
 import {
   BadRequestException,
   NotFoundException,
   UnauthorizedException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
@@ -96,9 +100,11 @@ describe('WorkflowController (TypeORM)', () => {
   let runtimeBindingsService: RuntimeBindingsService;
   let i18nService: I18nService<unknown>;
   const agenticServiceMock = {
-    handleEvent: jest.fn().mockResolvedValue(null),
-    dispatchEvent: jest.fn().mockResolvedValue(null),
-  } as jest.Mocked<Pick<AgenticService, 'handleEvent' | 'dispatchEvent'>>;
+    triggerEvent: jest.fn().mockResolvedValue({
+      status: 'dispatched',
+      run: { id: 'run-id', status: 'idle' },
+    }),
+  } as jest.Mocked<Pick<AgenticService, 'triggerEvent'>>;
   const workflowRunServiceMock = {
     findOne: jest.fn(),
   } as jest.Mocked<Pick<WorkflowRunService, 'findOne'>>;
@@ -749,7 +755,7 @@ describe('WorkflowController (TypeORM)', () => {
       createdWorkflowIds.add(manual.id);
       const input = { customerId: 'cust-1', retryCount: 1 };
       const userId = userFixtureIds.admin;
-      const spyAgenticService = jest.spyOn(agenticService, 'dispatchEvent');
+      const spyAgenticService = jest.spyOn(agenticService, 'triggerEvent');
       const result = await workflowController.runManually(manual.id, input, {
         session: { passport: { user: { id: userId } } },
       } as any);
@@ -760,7 +766,52 @@ describe('WorkflowController (TypeORM)', () => {
       expect(eventArg.buildInput()).toEqual(input);
       expect(eventArg.getInitiator()?.id).toEqual(userId);
       expect(eventArg.getWorkflowId()).toEqual(manual.id);
+      expect(spyAgenticService.mock.calls[0][1]?.wait).toBe(false);
       expect(result).toEqual({ accepted: true });
+    });
+
+    it('answers 422 when a suspended run of the workflow refuses the input', async () => {
+      const manual = await workflowService.create({
+        ...buildWorkflowPayload(),
+        type: WorkflowType.manual,
+        inputSchema: { type: 'object', properties: {} },
+        createdBy: userFixtureIds.admin,
+      });
+      createdWorkflowIds.add(manual.id);
+      const error = new WorkflowResumeRejectedError(
+        'Resume payload for wait "ask" was rejected: quantity: Expected number',
+        { issues: ['quantity: Expected number'] },
+      );
+      jest
+        .spyOn(agenticService, 'triggerEvent')
+        .mockResolvedValueOnce({ status: 'rejected', runId: 'run-id', error });
+
+      await expect(
+        workflowController.runManually(manual.id, { quantity: 'ten' }, {
+          session: { passport: { user: { id: userFixtureIds.admin } } },
+        } as any),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    });
+
+    it('answers 422 when no run could be started', async () => {
+      const manual = await workflowService.create({
+        ...buildWorkflowPayload(),
+        type: WorkflowType.manual,
+        inputSchema: { type: 'object', properties: {} },
+        createdBy: userFixtureIds.admin,
+      });
+      createdWorkflowIds.add(manual.id);
+      jest
+        .spyOn(agenticService, 'triggerEvent')
+        .mockResolvedValueOnce({ status: 'unprocessed' });
+
+      await expect(
+        workflowController.runManually(manual.id, {}, {
+          session: { passport: { user: { id: userFixtureIds.admin } } },
+        } as any),
+      ).rejects.toThrow(
+        new UnprocessableEntityException('Workflow run could not be started'),
+      );
     });
 
     it('rejects a manual workflow run when input does not match the schema', async () => {
@@ -800,7 +851,7 @@ describe('WorkflowController (TypeORM)', () => {
         'Manual workflow input validation failed',
       );
       expect(response.details?.fieldErrors?.customerId).toBeDefined();
-      expect(agenticService.dispatchEvent).not.toHaveBeenCalled();
+      expect(agenticService.triggerEvent).not.toHaveBeenCalled();
     });
 
     it('runs a scheduled workflow for an authenticated user', async () => {
@@ -814,7 +865,7 @@ describe('WorkflowController (TypeORM)', () => {
       createdWorkflowIds.add(scheduled.id);
       const input = { run: true };
       const userId = userFixtureIds.admin;
-      const spyAgenticService = jest.spyOn(agenticService, 'dispatchEvent');
+      const spyAgenticService = jest.spyOn(agenticService, 'triggerEvent');
       const result = await workflowController.runManually(scheduled.id, input, {
         session: { passport: { user: { id: userId } } },
       } as any);
@@ -856,7 +907,7 @@ describe('WorkflowController (TypeORM)', () => {
           'Workflow must be manual or scheduled to run manually',
         ),
       );
-      expect(agenticService.dispatchEvent).not.toHaveBeenCalled();
+      expect(agenticService.triggerEvent).not.toHaveBeenCalled();
     });
 
     it('throws when user session is missing', async () => {
@@ -876,7 +927,7 @@ describe('WorkflowController (TypeORM)', () => {
           'Only authenticated users can run workflows manually',
         ),
       );
-      expect(agenticService.dispatchEvent).not.toHaveBeenCalled();
+      expect(agenticService.triggerEvent).not.toHaveBeenCalled();
     });
   });
 });

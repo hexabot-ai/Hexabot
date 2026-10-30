@@ -68,7 +68,7 @@ flowchart TD
   repo["WorkflowRunRepository<br/>guarded UPDATEs"]
   recovery["WorkflowRunRecoveryService<br/>renew leases, recover lapsed runs"]
 
-  events -->|handleEvent, dispatchEvent| agentic
+  events -->|handleEvent, triggerEvent| agentic
   step -->|callWorkflow| agentic
   operator -->|resumeWait, cancelRun| agentic
   operator -->|reconcile callers of a deleted workflow| callstack
@@ -179,9 +179,9 @@ sequenceDiagram
    it with its lease. From now on this process renews the lease every TTL/4,
    until the lease ends.
 4. `dispatch` runs nothing itself: it returns `{ run, proceed }`, and
-   `handleEvent` calls `proceed()` because its caller waits. `dispatchEvent`
-   would instead give `proceed` to `WorkflowJobs` and answer at once with the
-   `idle` run.
+   `handleEvent` calls `proceed()` because its caller waits. `triggerEvent`
+   with `wait: false` would instead give `proceed` to `WorkflowJobs` and
+   answer at once with the `idle` run.
 5. `WorkflowRunExecutor.start` compiles the definition, builds the context
    and the runner, marks the run `running` through the lease, and starts the
    runner. All of it happens inside `runPass`, which writes how the pass ended
@@ -234,6 +234,17 @@ be refused in two places:
   to `suspended`. The pass ends `rejected`.
 
 Either way the run still waits on the same question.
+
+Who hears about a refusal before the claim depends on the entry point. No
+one answers a chat message, so `handleEvent` returns the run as it is. The
+triggers that answer their caller (webhooks, manual runs from the admin, the
+MCP run tool) go through `triggerEvent` instead, which returns `rejected`
+(`TriggerEventOutcome`), or `claim_lost` when another caller claimed the run
+first. `WebhookTriggerService.dispatchTriggerEvent` answers them `422`
+(`payload_rejected`, with `issues` and `runId`) and `409` (`claim_lost`),
+like the operator endpoints. A refusal during the pass is not reported this
+way: a caller that waited for the pass gets the run back to `suspended`, and
+the others answered once the run was claimed.
 
 ## Example 3: an admin approves
 

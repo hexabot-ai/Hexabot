@@ -4,7 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
-import { NotFoundException } from '@nestjs/common';
+import {
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 
 import { WorkflowType } from '@/workflow/types';
 
@@ -30,30 +33,34 @@ const defaultWorkflowService = () => ({
 const buildWorkflowRunTools = (overrides: Record<string, unknown> = {}) => {
   const workflowService = overrides.workflowService ?? defaultWorkflowService();
   const workflowRunService = overrides.workflowRunService ?? ({} as any);
-  const agenticService = overrides.agenticService ?? ({} as any);
+  const webhookTriggerService = overrides.webhookTriggerService ?? ({} as any);
 
   return new HexabotWorkflowRunMcpTools(
     workflowService as any,
     workflowRunService as any,
-    agenticService as any,
+    webhookTriggerService as any,
   );
 };
 
 describe('HexabotWorkflowRunMcpTools', () => {
   it('returns the created workflow run summary for manual workflow execution', async () => {
     const run = { id: 'run-id', status: 'finished' };
+    const workflow = {
+      id: 'workflow-id',
+      type: WorkflowType.manual,
+      inputSchema: { type: 'object', properties: {} },
+    };
     const workflowService = {
-      findOne: jest.fn().mockResolvedValue({
-        id: 'workflow-id',
-        type: WorkflowType.manual,
-        inputSchema: { type: 'object', properties: {} },
-      }),
+      findOneAndPopulate: jest.fn().mockResolvedValue(workflow),
       validateManualInput: jest.fn().mockReturnValue({ prompt: 'hello' }),
     };
-    const agenticService = {
-      handleEvent: jest.fn().mockResolvedValue(run),
+    const webhookTriggerService = {
+      dispatchTriggerEvent: jest.fn().mockResolvedValue(run),
     };
-    const tools = buildWorkflowRunTools({ workflowService, agenticService });
+    const tools = buildWorkflowRunTools({
+      workflowService,
+      webhookTriggerService,
+    });
 
     await expect(
       tools.runWorkflow(
@@ -66,9 +73,11 @@ describe('HexabotWorkflowRunMcpTools', () => {
       ),
     ).resolves.toEqual({ accepted: true, run: { ...run, openWaits: [] } });
 
-    const [event] = agenticService.handleEvent.mock.calls[0];
-    expect(event.getWorkflowId()).toBe('workflow-id');
-    expect(event.getInitiator()).toEqual(actor);
+    const [workflowArg, event, initiatorId] =
+      webhookTriggerService.dispatchTriggerEvent.mock.calls[0];
+    expect(workflowArg).toBe(workflow);
+    expect(event.buildInput()).toEqual({ prompt: 'hello' });
+    expect(initiatorId).toBe(actor.id);
     expect(workflowService.validateManualInput).toHaveBeenCalledWith(
       { prompt: 'hello' },
       { type: 'object', properties: {} },
@@ -94,17 +103,20 @@ describe('HexabotWorkflowRunMcpTools', () => {
       },
     };
     const workflowService = {
-      findOne: jest.fn().mockResolvedValue({
+      findOneAndPopulate: jest.fn().mockResolvedValue({
         id: 'workflow-id',
         type: WorkflowType.manual,
         inputSchema: { type: 'object', properties: {} },
       }),
       validateManualInput: jest.fn().mockReturnValue({}),
     };
-    const agenticService = {
-      handleEvent: jest.fn().mockResolvedValue(run),
+    const webhookTriggerService = {
+      dispatchTriggerEvent: jest.fn().mockResolvedValue(run),
     };
-    const tools = buildWorkflowRunTools({ workflowService, agenticService });
+    const tools = buildWorkflowRunTools({
+      workflowService,
+      webhookTriggerService,
+    });
 
     await expect(
       tools.runWorkflow({ workflowId: 'workflow-id', input: {} }, {}, request),
@@ -124,6 +136,40 @@ describe('HexabotWorkflowRunMcpTools', () => {
         ],
       },
     });
+  });
+
+  it('reports an input the suspended run refused instead of accepting it', async () => {
+    const workflowService = {
+      findOneAndPopulate: jest.fn().mockResolvedValue({
+        id: 'workflow-id',
+        type: WorkflowType.manual,
+        inputSchema: { type: 'object', properties: {} },
+      }),
+      validateManualInput: jest.fn().mockReturnValue({ quantity: 'ten' }),
+    };
+    const refusal = new UnprocessableEntityException({
+      statusCode: 422,
+      code: 'payload_rejected',
+      message:
+        'Resume payload for wait "ask" was rejected: quantity: Expected number',
+      issues: ['quantity: Expected number'],
+      runId: 'run-id',
+    });
+    const webhookTriggerService = {
+      dispatchTriggerEvent: jest.fn().mockRejectedValue(refusal),
+    };
+    const tools = buildWorkflowRunTools({
+      workflowService,
+      webhookTriggerService,
+    });
+
+    await expect(
+      tools.runWorkflow(
+        { workflowId: 'workflow-id', input: { quantity: 'ten' } },
+        {},
+        request,
+      ),
+    ).rejects.toBe(refusal);
   });
 
   it('searches workflow runs without nested workflow YAML definitions or checkpoints', async () => {

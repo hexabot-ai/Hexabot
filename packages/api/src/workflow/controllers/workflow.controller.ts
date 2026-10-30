@@ -281,7 +281,10 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
   /**
    * Manually triggers a workflow run for manual or scheduled workflows. The
    * response is sent once the run is started; the run goes on in the
-   * background, and its updates report how.
+   * background, and its updates report how. A suspended run that refuses the
+   * input answers `422` (`payload_rejected`), one another request resumed
+   * first `409` (`claim_lost`), and an event no run could process `422` (see
+   * `WebhookTriggerService.dispatchTriggerEvent`).
    *
    * @param id - The workflow ID to execute.
    * @param input - Optional workflow input payload (manual workflows only).

@@ -327,6 +327,15 @@ describe('AgenticService (TypeORM)', () => {
     return populated;
   };
   const countRuns = async () => (await workflowRunService.find({})).length;
+  /** Trigger an event without waiting for its run, and return that run. */
+  const dispatchEvent = async (event: ManualEventWrapper) => {
+    const outcome = await agenticService.triggerEvent(event, { wait: false });
+    if (outcome.status !== 'dispatched') {
+      throw new Error(`Expected a dispatched event, got ${outcome.status}`);
+    }
+
+    return outcome.run;
+  };
 
   beforeAll(async () => {
     const testing = await buildTestingMocks({
@@ -1053,7 +1062,9 @@ describe('AgenticService (TypeORM)', () => {
       );
 
       await expect(agenticService.handleEvent(event)).resolves.toBeNull();
-      await expect(agenticService.dispatchEvent(event)).resolves.toBeNull();
+      await expect(
+        agenticService.triggerEvent(event, { wait: false }),
+      ).resolves.toEqual({ status: 'unprocessed' });
       expect(findSuspendedSpy).not.toHaveBeenCalled();
       expect(await countRuns()).toBe(0);
     });
@@ -1155,6 +1166,95 @@ describe('AgenticService (TypeORM)', () => {
       expect(run.status).toBe('idle');
       expect(runner.start).not.toHaveBeenCalled();
       expect(persistCrashSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('triggerEvent', () => {
+    it('answers with the run once its pass is over', async () => {
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(finishedRunner({ done: true })));
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'hi' })),
+      ).resolves.toEqual({
+        status: 'dispatched',
+        run: expect.objectContaining({ status: 'finished' }),
+      });
+    });
+
+    it.each([true, false])(
+      'reports a payload the suspended run refused (wait: %s)',
+      async (wait) => {
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildWait()]),
+        });
+        const runner = finishedRunner({ done: true });
+        const refusal = new WorkflowResumeRejectedError('Payload refused', {
+          issues: ['text: Required'],
+        });
+        jest.spyOn(AgenticWorkflow, 'fromDefinition').mockReturnValue(
+          buildWorkflowInstance(runner, {
+            validateCheckpoint: validateCheckpointMock(refusal),
+          }),
+        );
+        const claimSpy = jest.spyOn(workflowRunService, 'claimSuspended');
+
+        await expect(
+          agenticService.triggerEvent(createEvent({ unexpected: true }), {
+            wait,
+          }),
+        ).resolves.toEqual({
+          status: 'rejected',
+          runId: baseRun.id,
+          error: refusal,
+        });
+        expect(claimSpy).not.toHaveBeenCalled();
+        expect(runner.resume).not.toHaveBeenCalled();
+        expect(runner.start).not.toHaveBeenCalled();
+        expect((await workflowRunService.findOne(baseRun.id))?.status).toBe(
+          'suspended',
+        );
+        expect(await countRuns()).toBe(1);
+      },
+    );
+
+    it.each([true, false])(
+      'reports a suspended run another caller claimed first (wait: %s)',
+      async (wait) => {
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildWait()]),
+        });
+        const runner = finishedRunner({ done: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+        jest
+          .spyOn(workflowRunService, 'claimSuspended')
+          .mockResolvedValueOnce(null);
+
+        await expect(
+          agenticService.triggerEvent(createEvent({ text: 'reply' }), {
+            wait,
+          }),
+        ).resolves.toEqual({ status: 'claim_lost', runId: baseRun.id });
+        expect(runner.resume).not.toHaveBeenCalled();
+        expect(runner.start).not.toHaveBeenCalled();
+        expect(await countRuns()).toBe(1);
+      },
+    );
+
+    it('reports a pass it waited for that threw', async () => {
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(finishedRunner({})));
+      jest
+        .spyOn(WorkflowCompiler.prototype, 'compile')
+        .mockReturnValueOnce(undefined);
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'hi' })),
+      ).resolves.toEqual({ status: 'unprocessed' });
     });
   });
 
@@ -2236,16 +2336,16 @@ describe('AgenticService (TypeORM)', () => {
       );
       // The parent is only released once the event is answered: an answer
       // that waited for it would never come.
-      const dispatched = await agenticService.dispatchEvent(
+      const dispatched = await dispatchEvent(
         createEvent({ text: 'hello again' }),
       );
 
       expect(dispatched).toEqual(expect.objectContaining({ status: 'idle' }));
-      expect([parentRun.id, childRun.id]).not.toContain(dispatched!.id);
+      expect([parentRun.id, childRun.id]).not.toContain(dispatched.id);
       await parentResumed;
       releaseParent();
       await jobs.onIdle();
-      expect((await workflowRunService.findOne(dispatched!.id))?.status).toBe(
+      expect((await workflowRunService.findOne(dispatched.id))?.status).toBe(
         'finished',
       );
       expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
@@ -3192,12 +3292,10 @@ describe('AgenticService (TypeORM)', () => {
         .spyOn(AgenticWorkflow, 'fromDefinition')
         .mockReturnValue(buildWorkflowInstance(runner));
 
-      const dispatched = await agenticService.dispatchEvent(
-        createEvent({ text: 'hi' }),
-      );
+      const dispatched = await dispatchEvent(createEvent({ text: 'hi' }));
 
       expect(dispatched).toEqual(expect.objectContaining({ status: 'idle' }));
-      const runId = dispatched!.id;
+      const runId = dispatched.id;
       expect(await isHeld(runId)).toBe(true);
 
       await started;
@@ -3226,9 +3324,7 @@ describe('AgenticService (TypeORM)', () => {
         .spyOn(AgenticWorkflow, 'fromDefinition')
         .mockReturnValue(buildWorkflowInstance(runner));
 
-      const dispatched = await agenticService.dispatchEvent(
-        createEvent({ text: 'reply' }),
-      );
+      const dispatched = await dispatchEvent(createEvent({ text: 'reply' }));
 
       expect(dispatched).toEqual(
         expect.objectContaining({ id: run.id, status: 'running' }),
