@@ -244,7 +244,9 @@ first. `WebhookTriggerService.dispatchTriggerEvent` answers them `422`
 (`payload_rejected`, with `issues` and `runId`) and `409` (`claim_lost`),
 like the operator endpoints. A refusal during the pass is not reported this
 way: a caller that waited for the pass gets the run back to `suspended`, and
-the others answered once the run was claimed.
+the others answered once the run was claimed. A webhook call without
+authentication never reaches a suspended run at all: it acts as the
+workflow's creator, so it passes `resume: false` and always starts a new run.
 
 ## Example 3: an admin approves
 

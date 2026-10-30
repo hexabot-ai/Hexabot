@@ -13,6 +13,7 @@ import { I18nService } from '@/i18n/services/i18n.service';
 import { messagingWorkflowDefinition } from '@/utils/test/fixtures/workflow';
 
 import { ManualEventWrapper } from '../lib/trigger-event-wrapper';
+import { WorkflowType } from '../types';
 
 import { WorkflowCompiler } from './workflow-compiler.service';
 
@@ -27,9 +28,13 @@ describe('WorkflowCompiler', () => {
     runtimeBindingsService as unknown as RuntimeBindingsService,
     i18n as unknown as I18nService,
   );
-  const buildRun = (definitionYml?: string) =>
+  const buildRun = (
+    definitionYml?: string,
+    type: WorkflowType = WorkflowType.conversational,
+  ) =>
     ({
       id: 'run-1',
+      workflow: { id: 'workflow-1', type },
       workflowVersion: definitionYml ? { definitionYml } : null,
     }) as unknown as WorkflowRunFull;
   const event = new ManualEventWrapper({}, 'user-1');
@@ -94,5 +99,26 @@ describe('WorkflowCompiler', () => {
     expect(() => compiler.compile(buildRun('flow: [unclosed'), event)).toThrow(
       'Invalid workflow YAML',
     );
+  });
+
+  it('refuses a definition with an action its workflow type cannot run', () => {
+    actionService.getRegistry.mockReturnValueOnce({
+      await_reply: { workflowTypes: [WorkflowType.conversational] },
+    } as any);
+    const fromDefinition = jest.spyOn(AgenticWorkflow, 'fromDefinition');
+    const definitionYml = [
+      'defs:',
+      '  ask:',
+      '    kind: task',
+      '    action: await_reply',
+      'flow:',
+      '  - do: ask',
+      'outputs: {}',
+    ].join('\n');
+
+    expect(() =>
+      compiler.compile(buildRun(definitionYml, WorkflowType.manual), event),
+    ).toThrow('Actions not available in manual workflows: ask (await_reply)');
+    expect(fromDefinition).not.toHaveBeenCalled();
   });
 });

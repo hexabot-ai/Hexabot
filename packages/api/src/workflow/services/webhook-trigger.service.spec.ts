@@ -81,11 +81,15 @@ describe('WebhookTriggerService (TypeORM)', () => {
       webhookTrigger: null,
     };
   };
-  const createManualWorkflow = async (inputSchema: JsonSchema) => {
+  const createManualWorkflow = async (
+    inputSchema: JsonSchema,
+    webhookTrigger: Record<string, unknown> | null = null,
+  ) => {
     const created = await workflowService.create({
       ...buildWorkflowPayload(),
       type: WorkflowType.manual,
       inputSchema,
+      webhookTrigger,
       createdBy: userFixtureIds.admin,
     } as any);
     createdWorkflowIds.add(created.id);
@@ -213,6 +217,42 @@ describe('WebhookTriggerService (TypeORM)', () => {
       error: null,
     });
   });
+
+  it.each([
+    {
+      label: 'without authentication',
+      webhookTrigger: { enabled: true, authType: WebhookAuthType.none },
+      resume: false,
+    },
+    {
+      label: 'with JWT authentication',
+      webhookTrigger: {
+        enabled: true,
+        authType: WebhookAuthType.jwt,
+        jwtSecretCredentialId: 'cred-jwt-secret',
+        jwtAlgorithm: WebhookJwtAlgorithm.HS256,
+      },
+      resume: true,
+    },
+  ])(
+    'lets a call $label resume a suspended run: $resume',
+    async ({ webhookTrigger, resume }) => {
+      const workflow = await createManualWorkflow(
+        { type: 'object', properties: {}, additionalProperties: true },
+        webhookTrigger,
+      );
+      const spy = jest
+        .spyOn(agenticService, 'triggerEvent')
+        .mockResolvedValueOnce({
+          status: 'dispatched',
+          run: { id: randomUUID(), status: 'idle' } as any,
+        });
+
+      await webhookTriggerService.trigger(workflow.id, {});
+
+      expect(spy.mock.calls[0][1]?.resume).toBe(resume);
+    },
+  );
 
   it('throws when no run could be started for the event', async () => {
     const workflow = await createManualWorkflow({

@@ -17,7 +17,10 @@ import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
 import { I18nService } from '@/i18n/services/i18n.service';
 
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
-import { parseWorkflowDefinition } from '../lib/workflow-definition';
+import {
+  assertTaskActionsSupported,
+  parseWorkflowDefinition,
+} from '../lib/workflow-definition';
 
 /** The definition a run pins, and the workflow compiled from it. */
 export type CompiledRun = {
@@ -42,7 +45,8 @@ export class WorkflowCompiler {
    *
    * @returns The compiled run, or `undefined` when the run pins no definition.
    * @throws When the definition no longer parses or compiles against the
-   * registered actions and binding kinds.
+   * registered actions and binding kinds, or uses an action the run's
+   * workflow type cannot run.
    */
   compile(
     run: WorkflowRunFull,
@@ -53,8 +57,12 @@ export class WorkflowCompiler {
       return undefined;
     }
 
+    const actions = this.actionService.getRegistry();
+    // Saving a version refuses these as well; this also covers the versions
+    // saved before that check.
+    assertTaskActionsSupported(definition, run.workflow.type, actions);
     const workflow = AgenticWorkflow.fromDefinition(definition, {
-      actions: this.actionService.getRegistry(),
+      actions,
       bindingKinds: this.runtimeBindingsService.getRegistry(),
       jsonataFunctions: this.buildJsonataFunctions(event),
     });

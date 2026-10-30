@@ -1244,6 +1244,39 @@ describe('AgenticService (TypeORM)', () => {
       },
     );
 
+    it.each([true, false])(
+      'starts a new run instead of resuming one when told to (wait: %s)',
+      async (wait) => {
+        const suspendedRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildWait()]),
+        });
+        const runner = finishedRunner({ fresh: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+
+        const outcome = await agenticService.triggerEvent(
+          createEvent({ text: 'reply' }),
+          { wait, resume: false },
+        );
+        await jobs.onIdle();
+
+        expect(outcome).toEqual({
+          status: 'dispatched',
+          run: expect.objectContaining({ id: expect.any(String) }),
+        });
+        expect(outcome.status === 'dispatched' && outcome.run.id).not.toBe(
+          suspendedRun.id,
+        );
+        expect(runner.start).toHaveBeenCalledTimes(1);
+        expect(runner.resume).not.toHaveBeenCalled();
+        expect(
+          (await workflowRunService.findOne(suspendedRun.id))?.status,
+        ).toBe('suspended');
+        expect(await countRuns()).toBe(2);
+      },
+    );
+
     it('reports a pass it waited for that threw', async () => {
       jest
         .spyOn(AgenticWorkflow, 'fromDefinition')

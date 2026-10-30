@@ -5,18 +5,20 @@
  */
 
 import {
+  extractTaskDefinitions,
   issueMessages,
   validateWorkflow,
   WorkflowDefinition,
 } from '@hexabot-ai/agentic';
+import { WorkflowType } from '@hexabot-ai/types';
 
 import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
 
 export const parseWorkflowDefinition = (
   definitionYaml: string,
 ): WorkflowDefinition => {
-  // @todo: we should rather use compile in order to check if
-  // actions provided in the yml matches the workflow type (workflowTypes)
+  // Actions are checked against the workflow type by
+  // `assertTaskActionsSupported`, where the workflow is known.
   const validation = validateWorkflow(definitionYaml, {
     bindingKinds: RuntimeBindingsService.getRegistry(),
   });
@@ -28,4 +30,37 @@ export const parseWorkflowDefinition = (
   }
 
   return validation.data;
+};
+
+/**
+ * Refuse a definition with a task whose action workflows of the given type
+ * cannot run (`BaseAction.workflowTypes`). An action without workflow types
+ * runs in any workflow, and one that is not registered is left to the
+ * definition's own validation.
+ *
+ * @param definition The workflow definition.
+ * @param workflowType The type of the workflow the definition belongs to.
+ * @param actions The registered actions, by name.
+ * @throws Listing each offending task as `<task> (<action>)`.
+ */
+export const assertTaskActionsSupported = (
+  definition: WorkflowDefinition,
+  workflowType: WorkflowType,
+  actions: Record<string, { workflowTypes?: readonly WorkflowType[] }>,
+): void => {
+  const unsupported = Object.entries(extractTaskDefinitions(definition.defs))
+    .filter(([, task]) => {
+      const workflowTypes = actions[task.action]?.workflowTypes;
+
+      return (
+        workflowTypes !== undefined && !workflowTypes.includes(workflowType)
+      );
+    })
+    .map(([taskId, task]) => `${taskId} (${task.action})`);
+
+  if (unsupported.length > 0) {
+    throw new Error(
+      `Actions not available in ${workflowType} workflows: ${unsupported.join(', ')}`,
+    );
+  }
 };

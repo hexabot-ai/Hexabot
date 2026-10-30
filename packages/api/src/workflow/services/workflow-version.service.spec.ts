@@ -11,8 +11,10 @@ import {
   DEFAULT_TIMEOUT_MS,
   validateWorkflow,
 } from '@hexabot-ai/agentic';
+import { BadRequestException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 
+import { ActionService } from '@/actions/actions.service';
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
@@ -174,6 +176,81 @@ describe('WorkflowVersionService (TypeORM)', () => {
       expect(created.parentVersion).toBe(initial.id);
       expect(created.createdBy).toBe(userFixtureIds.admin);
       expect(created.message).toBe('Update workflow');
+    });
+
+    describe('actions the workflow type cannot run', () => {
+      const definitionYml = [
+        'defs:',
+        '  ask:',
+        '    kind: task',
+        '    action: await_reply',
+        'flow:',
+        '  - do: ask',
+        'outputs: {}',
+      ].join('\n');
+      const countVersions = async (workflowId: string) =>
+        await workflowVersionService.count({
+          where: { workflow: { id: workflowId } },
+        });
+
+      beforeEach(() => {
+        jest.spyOn(ActionService.prototype, 'getRegistry').mockReturnValue({
+          await_reply: { workflowTypes: [WorkflowType.conversational] },
+        } as any);
+      });
+
+      afterEach(() => {
+        jest.restoreAllMocks();
+      });
+
+      it('refuses the definition', async () => {
+        const workflow = await createWorkflow({ type: WorkflowType.manual });
+
+        await expect(
+          workflowVersionService.createSnapshot({
+            workflow: workflow.id,
+            definitionYml,
+            action: WorkflowVersionAction.update,
+            createdBy: userFixtureIds.admin,
+          }),
+        ).rejects.toThrow(
+          new BadRequestException(
+            'Actions not available in manual workflows: ask (await_reply)',
+          ),
+        );
+        // Only the blank version created with the workflow.
+        expect(await countVersions(workflow.id)).toBe(1);
+      });
+
+      it('refuses the definition inside a transaction', async () => {
+        const workflow = await createWorkflow({ type: WorkflowType.manual });
+        const dataSource = getLastTypeOrmDataSource();
+
+        await expect(
+          dataSource.transaction((manager) =>
+            workflowVersionService.createSnapshotWithManager(manager, {
+              workflow: workflow.id,
+              definitionYml,
+              action: WorkflowVersionAction.create,
+              createdBy: userFixtureIds.admin,
+            }),
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(await countVersions(workflow.id)).toBe(1);
+      });
+
+      it('accepts it in a workflow of a type the action runs in', async () => {
+        const workflow = await createWorkflow();
+
+        await expect(
+          workflowVersionService.createSnapshot({
+            workflow: workflow.id,
+            definitionYml,
+            action: WorkflowVersionAction.update,
+            createdBy: userFixtureIds.admin,
+          }),
+        ).resolves.toEqual(expect.objectContaining({ version: 1 }));
+      });
     });
   });
 

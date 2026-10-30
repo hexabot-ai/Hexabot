@@ -50,7 +50,9 @@ export class WebhookController {
    * With `?async=true`, the endpoint answers `202` without waiting for the
    * run, and without its output, for runs longer than the caller (or a proxy
    * in front of the API) can wait. Either way, a body the suspended run it
-   * reaches refuses answers `422` (`payload_rejected`).
+   * reaches refuses answers `422` (`payload_rejected`). Only an
+   * authenticated call reaches a suspended run: without authentication
+   * (`none`), every call starts a new run.
    *
    * The whole request body is the workflow input, so third-party services
    * that emit fixed body shapes can call the endpoint directly; the flag is

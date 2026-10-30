@@ -56,9 +56,18 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
 - By default the run executes before the response: the `200` response carries
   the outcome `{ runId, status, output, error }` once the run finishes, fails
   or suspends. When no run could be started the endpoint responds `422`.
-- A call can reach a suspended run of the workflow that waits for outside
-  input instead of starting a new run (see `running` below). When that run
-  refuses the body, the endpoint responds `422` with
+- Every call runs as the workflow's creator. An authenticated call (`basic`,
+  `header` or `jwt`) can therefore reach a suspended run of the creator in
+  this workflow, including one the creator started from the admin or the MCP
+  run tool, that waits for outside input, and resume it instead of starting a
+  new run (see `running` below). Only custom actions open such waits in a
+  manual workflow: built-in actions that wait for a chat reply are refused in
+  manual workflows when the definition is saved, and when a run compiles it.
+  A call without authentication (`none`) never reaches a suspended run: it
+  always starts a new one, so a caller without credentials cannot answer the
+  creator's waits or read the output of the creator's runs.
+- When the suspended run an authenticated call reaches refuses the body, the
+  endpoint responds `422` with
   `{ statusCode, code: "payload_rejected", message, issues, runId }`: the run
   still waits on the same input, and nothing was started. When another request
   resumed or cancelled that run first, it responds `409` with
@@ -73,9 +82,9 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
   `504` after 60 s by default), can wait. `output` and `error` are always
   `null`. `status` is the run's status when the response is sent:
   - `idle`: a new run was started. This is the usual case.
-  - `running`: the call resumed a suspended run of the workflow that was
-    waiting for outside input. Only custom actions open such waits in a manual
-    workflow. The run may already have moved on (`suspended`, `finished` or
+  - `running`: an authenticated call resumed a suspended run of the workflow
+    that was waiting for outside input (see above). The run may already have
+    moved on (`suspended`, `finished` or
     `failed`) by the time it is read back for the response.
   - `suspended`: the call reached a suspended run without resuming it, and
     started no new run: the run waits on a workflow it called that has

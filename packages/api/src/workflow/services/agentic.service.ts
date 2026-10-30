@@ -53,6 +53,11 @@ type DispatchOptions = {
    * conversation keep their order.
    */
   callerWaits?: boolean;
+  /**
+   * Let the event resume a suspended run of its initiator (default). With
+   * `false`, it always starts a new run.
+   */
+  resume?: boolean;
 };
 
 /**
@@ -152,14 +157,23 @@ export class AgenticService implements WorkflowCallService {
    * background, for callers that must answer quickly, such as HTTP requests;
    * the run's updates report how it goes on. A parent the event sends a
    * failed result to then goes on alongside the new run, not before it.
+   * @param options.resume - Let the event resume a suspended run of its
+   * initiator (default). With `false`, it always starts a new run, for
+   * callers that only act on the initiator's behalf, such as an anonymous
+   * webhook.
    */
   async triggerEvent(
     event: TriggerEventWrapper,
-    { workflow, wait = true }: { workflow?: WorkflowFull; wait?: boolean } = {},
+    {
+      workflow,
+      wait = true,
+      resume = true,
+    }: { workflow?: WorkflowFull; wait?: boolean; resume?: boolean } = {},
   ): Promise<TriggerEventOutcome> {
     const dispatched = await this.dispatchOrLog(event, {
       workflow,
       callerWaits: wait,
+      resume,
     });
     if (!dispatched) {
       return { status: 'unprocessed' };
@@ -377,15 +391,17 @@ export class AgenticService implements WorkflowCallService {
     // they do not interleave with the pending decision. Other triggers do
     // not converse: they start a new run instead of waiting behind it.
     const suspendedRun =
-      await this.workflowRunService.findSuspendedRunByInitiator(
-        initiator.id,
-        event.getThreadId(),
-        event.getWorkflowId(),
-        {
-          skipBlockedOnOperator:
-            event.triggerType !== WorkflowType.conversational,
-        },
-      );
+      options.resume === false
+        ? null
+        : await this.workflowRunService.findSuspendedRunByInitiator(
+            initiator.id,
+            event.getThreadId(),
+            event.getWorkflowId(),
+            {
+              skipBlockedOnOperator:
+                event.triggerType !== WorkflowType.conversational,
+            },
+          );
     if (suspendedRun) {
       this.logger.log('Resuming suspended workflow run', {
         triggeredById: initiator.id,

@@ -39,8 +39,9 @@ import { WorkflowService } from './workflow.service';
  * `output` and `error` are then `null`, and `status` is the run's status at
  * that time. It is `idle` for a new run, `running` for a suspended run the
  * call resumed, or `suspended` for one that waits on a workflow it called,
- * whose result the call delivers to it instead. A body the suspended run
- * refused is an error, not an outcome (see
+ * whose result the call delivers to it instead. Only an authenticated call
+ * reaches a suspended run; an anonymous one always starts a new run. A body
+ * the suspended run refused is an error, not an outcome (see
  * {@link WebhookTriggerService.dispatchTriggerEvent}).
  */
 export type WorkflowTriggerResult = {
@@ -121,7 +122,9 @@ export class WebhookTriggerService {
    * enforced upstream by {@link WebhookTriggerGuard}; this method resolves the
    * workflow, validates the payload, and dispatches the event. By default the
    * workflow runs until it finishes, fails or suspends before responding, so
-   * the result carries the final run status and output.
+   * the result carries the final run status and output. A call without
+   * authentication (`none`) only starts runs: it never resumes a suspended
+   * one.
    *
    * @param id - The workflow ID to execute.
    * @param input - Optional workflow input payload.
@@ -144,8 +147,15 @@ export class WebhookTriggerService {
     );
     const initiatorId = workflow.createdBy?.id ?? null;
     const event = new ManualEventWrapper(manualInput, initiatorId);
+    // Every call acts as the workflow's creator. Resuming on an anonymous
+    // call would let anyone answer the waits of the creator's runs, and read
+    // their output.
+    const authenticated =
+      (workflow.webhookTrigger?.authType ?? WebhookAuthType.none) !==
+      WebhookAuthType.none;
     const run = await this.dispatchTriggerEvent(workflow, event, initiatorId, {
       wait: !options.async,
+      resume: authenticated,
     });
 
     return {
@@ -164,6 +174,8 @@ export class WebhookTriggerService {
    * @param options.wait - Wait for the run to finish, fail or suspend
    * (default). With `false`, return the run as soon as the event reached it
    * (see `AgenticService.triggerEvent`); its pass goes on in the background.
+   * @param options.resume - Let the event resume a suspended run of the
+   * initiator (default). With `false`, it always starts a new run.
    * @returns The run.
    * @throws {UnprocessableEntityException} `payload_rejected` when the
    * suspended run the event reached refused its input (the run still waits on
@@ -175,7 +187,7 @@ export class WebhookTriggerService {
     workflow: WorkflowFull,
     event: TriggerEventWrapper,
     initiatorId: string | null,
-    { wait = true }: { wait?: boolean } = {},
+    { wait = true, resume = true }: { wait?: boolean; resume?: boolean } = {},
   ): Promise<WorkflowRunFull> {
     const initiator = initiatorId
       ? await this.userService.findOne(initiatorId)
@@ -188,6 +200,7 @@ export class WebhookTriggerService {
     const outcome = await this.agenticService.triggerEvent(event, {
       workflow,
       wait,
+      resume,
     });
     switch (outcome.status) {
       case 'dispatched':
