@@ -45,8 +45,9 @@ Paths below are relative to this folder, `packages/api/src/workflow`.
    settled the run meanwhile, and this pass's outcome was dropped).
 3. **After every pass, look at what it left** (`followUps`). A run back to
    `suspended` is checked for child runs that ended meanwhile; a run that
-   ended has its parent checked. That check is `reconcile`, and it is the
-   only way a child's result reaches its parent.
+   ended is checked, and so is its parent. That check is `reconcile`, and it
+   is the only way a child's result reaches its parent. It also cancels the
+   called runs nothing waits on any more (example 4).
 4. **Callers choose whether to wait.** Every entry point first claims or
    creates the run, then either waits for the work left on it (chat,
    scheduler, MCP, synchronous webhooks), or hands that work to
@@ -85,18 +86,18 @@ flowchart TD
 
 Each layer calls only the layers below it.
 
-| Part                             | File                                                                                                           | What it owns                                                                                                                                                                 |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AgenticService`                 | [`services/agentic.service.ts`](services/agentic.service.ts)                                                   | The entry points. Finds or creates the run, claims it, then waits for the rest or hands it to `WorkflowJobs`.                                                                |
-| `WorkflowJobs`                   | [`services/workflow-jobs.service.ts`](services/workflow-jobs.service.ts)                                       | Work no caller waits for: logs its errors and tracks it, so tests can wait for it (`onIdle`) and a shutdown can let it finish.                                               |
-| `WorkflowCallStackService`       | [`services/workflow-call-stack.service.ts`](services/workflow-call-stack.service.ts)                           | `reconcile`: resumes a suspended run with the result of a child run that ended. `continueResume`: a claimed resume's pass, then `reconcile`.                                 |
-| `WorkflowRunExecutor`            | [`services/workflow-run-executor.service.ts`](services/workflow-run-executor.service.ts)                       | One pass of one run: checks and claims a run for a resume, runs the runner, writes how the pass ended. Knows nothing of parents or children.                                 |
-| `WorkflowRunService`, `RunLease` | [`services/workflow-run.service.ts`](services/workflow-run.service.ts), [`lib/run-lease.ts`](lib/run-lease.ts) | Creates and claims runs and hands out a lease per claim. `lease.update` keeps the claim, `lease.settle` writes the end of a pass and gives it back, `lease.end` gives it up. |
-| `WorkflowRunRepository`          | [`repositories/workflow-run.repository.ts`](repositories/workflow-run.repository.ts)                           | The SQL. Every write of a claimed run is an `UPDATE … WHERE claim_id = :token`.                                                                                              |
-| `WorkflowRunRecoveryService`     | [`services/workflow-run-recovery.service.ts`](services/workflow-run-recovery.service.ts)                       | Renews the leases this process holds, and recovers runs whose lease lapsed (example 5).                                                                                      |
-| `WorkflowRunOperatorService`     | [`services/workflow-run-operator.service.ts`](services/workflow-run-operator.service.ts)                       | The admin endpoints (example 3), and the call stacks around a deleted workflow.                                                                                              |
-| `WorkflowCompiler`               | [`services/workflow-compiler.service.ts`](services/workflow-compiler.service.ts)                               | Compiles the definition a run pinned.                                                                                                                                        |
-| `WorkflowEventRestorer`          | [`services/workflow-event-restorer.service.ts`](services/workflow-event-restorer.service.ts)                   | Rebuilds a run's trigger event when no inbound event carries the resume (an admin decision, a child's result, recovery).                                                     |
+| Part                             | File                                                                                                           | What it owns                                                                                                                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AgenticService`                 | [`services/agentic.service.ts`](services/agentic.service.ts)                                                   | The entry points. Finds or creates the run, claims it, then waits for the rest or hands it to `WorkflowJobs`.                                                                                       |
+| `WorkflowJobs`                   | [`services/workflow-jobs.service.ts`](services/workflow-jobs.service.ts)                                       | Work no caller waits for: logs its errors and tracks it, so tests can wait for it (`onIdle`) and a shutdown can let it finish.                                                                      |
+| `WorkflowCallStackService`       | [`services/workflow-call-stack.service.ts`](services/workflow-call-stack.service.ts)                           | `reconcile`: cancels the called runs nothing waits on any more, and resumes a suspended run with the result of a child run that ended. `continueResume`: a claimed resume's pass, then `reconcile`. |
+| `WorkflowRunExecutor`            | [`services/workflow-run-executor.service.ts`](services/workflow-run-executor.service.ts)                       | One pass of one run: checks and claims a run for a resume, runs the runner, writes how the pass ended. Knows nothing of parents or children.                                                        |
+| `WorkflowRunService`, `RunLease` | [`services/workflow-run.service.ts`](services/workflow-run.service.ts), [`lib/run-lease.ts`](lib/run-lease.ts) | Creates and claims runs and hands out a lease per claim. `lease.update` keeps the claim, `lease.settle` writes the end of a pass and gives it back, `lease.end` gives it up.                        |
+| `WorkflowRunRepository`          | [`repositories/workflow-run.repository.ts`](repositories/workflow-run.repository.ts)                           | The SQL. Every write of a claimed run is an `UPDATE … WHERE claim_id = :token`.                                                                                                                     |
+| `WorkflowRunRecoveryService`     | [`services/workflow-run-recovery.service.ts`](services/workflow-run-recovery.service.ts)                       | Renews the leases this process holds, and recovers runs whose lease lapsed (example 5).                                                                                                             |
+| `WorkflowRunOperatorService`     | [`services/workflow-run-operator.service.ts`](services/workflow-run-operator.service.ts)                       | The admin endpoints (example 3), and the call stacks around a deleted workflow.                                                                                                                     |
+| `WorkflowCompiler`               | [`services/workflow-compiler.service.ts`](services/workflow-compiler.service.ts)                               | Compiles the definition a run pinned.                                                                                                                                                               |
+| `WorkflowEventRestorer`          | [`services/workflow-event-restorer.service.ts`](services/workflow-event-restorer.service.ts)                   | Rebuilds a run's trigger event when no inbound event carries the resume (an admin decision, a child's result, recovery).                                                                            |
 
 The outcome types the services share (`RunPass`, `ClaimedResume`,
 `ResumeRefusal`, `ResumeWaitOutcome`, `CancelRunOutcome`) live in `types.ts`.
@@ -190,7 +191,7 @@ sequenceDiagram
    checkpoint. `WorkflowRunService.persistResult` writes it with
    `lease.settle(suspendedValues(…))`, which ends the lease.
 7. `followUps` says the run itself is to be reconciled, since it is
-   suspended. `reconcile` finds no child run to deliver.
+   suspended. `reconcile` finds no child run to cancel or deliver.
 8. `handleEvent` returns the run, now `suspended`.
 
 ## Example 2: the reply resumes it
@@ -293,8 +294,9 @@ sequenceDiagram
    `reconcile` of whatever it left. `WorkflowJobs` logs errors. Every write
    emits `hook:workflowRun:postUpdate`, which the admin UI follows live.
 
-Cancelling (`cancelRun`) works the same way: the run is failed inside the
-request, and its parent receives the failed result in the background. The
+Cancelling (`cancelRun`) works the same way: the run and its suspended
+descendants are failed inside the request, and its parent receives the
+failed result in the background. The
 endpoints and their errors are listed in
 [`../extensions/actions/workflow/README.md`](../extensions/actions/workflow/README.md).
 
@@ -329,10 +331,10 @@ sequenceDiagram
   Note over Agentic: picks the deepest suspended run, C
   Agentic->>CallStack: continueResume(C)
   CallStack->>Executor: resume(C), C finishes
-  CallStack->>Runs: reconcile([P]), find an ended child of P
+  CallStack->>Runs: reconcile([C, P]), find an ended child of P
   Runs-->>CallStack: C finished, its result
   CallStack->>Executor: claimResume and resume(P) with C's result
-  Executor-->>CallStack: P finishes, followUps(P) = [none]
+  Executor-->>CallStack: P finishes, followUps(P) = [P, none]
   Agentic-->>Chat: C (finished)
   end
 ```
@@ -354,15 +356,17 @@ sequenceDiagram
 1. The reply goes to the deepest suspended run of the conversation, C, not P.
    P's only wait is on a child, and inbound events never answer those.
 2. C is resumed as in example 2 and finishes. `followUps` says: C ended, so
-   look at its parent, P.
-3. `reconcile([P])` loads P. P is suspended, so `findEndedChild` goes through
+   look at C, whose own calls nothing waits on any more, then at its parent,
+   P. C called nothing, so nothing is cancelled.
+3. `reconcile` loads P. P is suspended, so `findEndedChild` goes through
    P's open waits in flow order and finds the wait on C, whose run is
    `finished`. The payload is built from C as stored
    (`toEndedCallWorkflowResult`): `{ status: 'finished', output }`, or
    `{ status: 'failed', error }`.
 4. `deliver` claims P for that wait and resumes it with C's result like any
    other resume: the `call_workflow` step returns C's output and P goes on. P
-   finishes, so `followUps` names P's parent; P has none, and the loop stops.
+   finishes, so `followUps` names P and its parent; P called nothing else,
+   P has no parent, and the loop stops.
 5. `handleEvent` returns C, the run the reply resumed, now `finished`.
 
 The same loop covers every way a child can end: a crash, an admin cancel, a
@@ -378,6 +382,34 @@ pass, and if P goes back to `suspended`, `followUps(P)` names P itself, so
 `reconcile([P])` runs again and finds C's result then. Each side writes its
 own state first and reads the other's after, so at least one of them sees
 both: if C's read finds P still running, P's later read finds C finished.
+
+**When nothing waits on a child any more.** Say P calls C1 and C2 in a
+`wait_any` block, and both ask an admin for approval. The admin approves C1:
+P resumes, the C1 branch wins, and the runner drops the wait on C2. C2 is
+still suspended, and nothing will ever take its result. Left alone, an admin
+could still approve it and run it, and as the deepest suspended run of the
+conversation it would take the next events. So `reconcile` first cancels the
+suspended runs nothing waits on any more
+(`WorkflowRunService.cancelAbandonedRuns`), each with its own suspended
+descendants:
+
+- **from the parent's side**, the suspended children of a run that none of
+  its open waits names: all of them once the run ended. That covers a
+  `wait_any` loser, a branch cancelled by a failing sibling, and the calls of
+  a run that failed or was cancelled;
+- **from the child's side**, a suspended run whose parent ended or no longer
+  waits on it. That covers a child that was in a pass when its parent was
+  cancelled (cancelling leaves running children alone) and that then
+  suspended again.
+
+A run in a pass is left alone, and so are its children: it is reconciled
+once its pass is over. As with results, each side writes first and reads the
+other after, so one of them always sees the other. The children are listed
+before the parent is read, so a child the parent's next pass calls is never
+taken for one it dropped. This reads the runs as stored rather than reacting
+to `hook:step:cancelled`: that hook fires before the pass is written, and a
+pass that loses its claim is put back on a checkpoint that still waits on
+the child.
 
 ## Example 5: the process dies mid-pass
 
@@ -402,8 +434,7 @@ sequenceDiagram
   DB-->>B: R, token T
   alt R has a checkpoint (its resume died)
     B->>DB: putBackExpired, suspended as claimed
-    Note over B: cancel the children the dead pass called
-    B->>CallStack: reconcile([R])
+    B->>CallStack: reconcile([R]), cancels the children the dead pass called
   else no checkpoint (its first pass died)
     B->>DB: failExpired, failed as interrupted
     B->>CallStack: reconcile([its parent])
@@ -422,16 +453,18 @@ sequenceDiagram
    outage, live nodes first get the time to renew their leases.
 4. **Putting back.** R has a checkpoint, so it goes back on the suspension it
    was claimed from: same checkpoint, same `suspended_at`, so an approval is
-   pending again and a reply can be sent again. The suspended children the
-   dead pass called are cancelled, and R is reconciled in case a child ended
+   pending again and a reply can be sent again. R is then reconciled: that
+   cancels the suspended children the dead pass called, which its checkpoint
+   does not wait on, and delivers the result of a child that ended
    meanwhile. The write first checks that the lease really lapsed
    (`recoverExpired`), so a late renewal wins and two nodes never recover the
    same run.
 5. **Failing.** A run with no checkpoint died in its first pass and has no
    wait to go back to: it is failed as interrupted, its suspended descendants
    are cancelled, and its parent is reconciled.
-6. **Giving up.** A run interrupted 3 times in a row, or whose caller has
-   ended, is cancelled instead of being put back.
+6. **Giving up.** A run interrupted 3 times in a row is cancelled instead of
+   being put back. A run whose caller has ended is put back, then cancelled
+   by its reconcile, since nothing waits on it any more.
 
 If node A was only slow, its pass eventually tries to write R with token T,
 which no longer matches `claim_id`: the write changes nothing, and the pass
@@ -448,8 +481,9 @@ resume.
   await `proceed` or hand it to `WorkflowJobs.spawn`. Write a claimed run only
   through its lease, and make sure the lease ends; a pass ends it for you.
 - **Something that must happen when a run ends or suspends**: `followUps`
-  decides which runs are reconciled next, and `reconcile` is the only place
-  child results are delivered.
+  decides which runs are reconciled next (`endedFollowUps` for a run that
+  ended, also outside a pass), and `reconcile` is the only place child
+  results are delivered and called runs nothing waits on are cancelled.
 - **A type**: a type only one service uses stays in that service; a type
   several services share goes in `types.ts`.
 

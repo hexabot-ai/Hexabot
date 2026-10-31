@@ -30,10 +30,22 @@ export const resolveRunId = (
 };
 
 /**
+ * Tell which runs to reconcile once `run` ended (see
+ * `WorkflowCallStackService.reconcile`): the run itself, since nothing
+ * waits on its suspended children any more, and its parent, which may wait
+ * on its result.
+ */
+export const endedFollowUps = (
+  run: Pick<WorkflowRunFull, 'id' | 'parentRun'>,
+): (string | null)[] => [run.id, resolveRunId(run.parentRun)];
+
+/**
  * Tell which runs to reconcile once a pass of `run` is over (see
  * `WorkflowCallStackService.reconcile`): the run itself when it is back to
- * `suspended`, since child runs may have ended while it was not; its parent
- * when it ended. A run whose claim was lost is left to whoever settled it.
+ * `suspended`, since child runs may have ended while it was not, or the
+ * pass may have dropped its waits on some of them; the run and its parent
+ * when it ended (see {@link endedFollowUps}). A run whose claim was lost is
+ * left to whoever settled it.
  */
 export const followUps = (
   run: Pick<WorkflowRunFull, 'id' | 'parentRun'>,
@@ -47,10 +59,10 @@ export const followUps = (
     case 'settled':
       return pass.result.status === 'suspended'
         ? [run.id]
-        : [resolveRunId(run.parentRun)];
+        : endedFollowUps(run);
     case 'crashed':
     default:
-      return [resolveRunId(run.parentRun)];
+      return endedFollowUps(run);
   }
 };
 
@@ -69,6 +81,14 @@ export const getChildRunId = (wait: WaitInfo): string | undefined => {
 
   return typeof childRunId === 'string' ? childRunId : undefined;
 };
+
+/**
+ * Read the child runs a set of open waits is waiting on.
+ */
+export const getWaitedOnChildRunIds = (waits: WaitInfo[]): Set<string> =>
+  new Set(
+    waits.map(getChildRunId).filter((id): id is string => id !== undefined),
+  );
 
 /**
  * Read the workflow a `call_workflow` wait called.

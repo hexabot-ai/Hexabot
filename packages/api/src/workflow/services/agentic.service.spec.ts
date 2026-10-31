@@ -14,6 +14,7 @@ import {
   WaitInfo,
   WorkflowCheckpoint,
   WorkflowCheckpointInvalidError,
+  WorkflowDefinition,
   WorkflowDefinitionDriftError,
   WorkflowResumeRejectedError,
   WorkflowRunner,
@@ -28,6 +29,7 @@ import { z } from 'zod';
 
 import { ActionService } from '@/actions/actions.service';
 import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
+import { CallWorkflowAction } from '@/extensions/actions/workflow/call-workflow.action';
 import { I18nService } from '@/i18n/services/i18n.service';
 import {
   installMessagingWorkflowFixturesTypeOrm,
@@ -40,7 +42,11 @@ import { WorkflowRunOrmEntity } from '@/workflow/entities/workflow-run.entity';
 import { WorkflowVersionOrmEntity } from '@/workflow/entities/workflow-version.entity';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 import { failedValues, suspendedValues } from '@/workflow/lib/run-lease';
-import { ManualEventWrapper } from '@/workflow/lib/trigger-event-wrapper';
+import {
+  ManualEventWrapper,
+  TriggerEventWrapper,
+} from '@/workflow/lib/trigger-event-wrapper';
+import { getOpenWaits } from '@/workflow/lib/workflow-run-waits';
 import { WorkflowRunRepository } from '@/workflow/repositories/workflow-run.repository';
 import { WorkflowVersionRepository } from '@/workflow/repositories/workflow-version.repository';
 import { WorkflowRepository } from '@/workflow/repositories/workflow.repository';
@@ -2972,6 +2978,240 @@ describe('AgenticService (TypeORM)', () => {
           } as any,
         }),
       ).rejects.toThrow('Workflow call stack depth cannot exceed 10');
+    });
+  });
+
+  describe('calls nothing waits on any more', () => {
+    const abandoned = (parentRunId: string) =>
+      expect.objectContaining({
+        status: 'failed',
+        error: `Calling workflow run ${parentRunId} no longer waits on this run`,
+        checkpoint: null,
+        awaitingOperator: false,
+      });
+
+    it('cancels the run a wait_any branch that lost the race called', async () => {
+      const awaitDecision = defineAction({
+        name: 'await_decision',
+        inputSchema: z.object({}),
+        outputSchema: z.object({ decision: z.string() }),
+        execute: async ({ context }) =>
+          await context.workflow.suspend({
+            reason: AWAITING_APPROVAL_REASON,
+            accepts: z.object({ decision: z.string() }),
+          }),
+      });
+      actionServiceMock.getRegistry.mockReturnValue({
+        await_decision: awaitDecision,
+        call_workflow: new CallWorkflowAction({
+          register: jest.fn(),
+        } as unknown as ActionService),
+        ask_reply: defineAction({
+          name: 'ask_reply',
+          inputSchema: z.object({}),
+          outputSchema: z.object({ text: z.string() }),
+          execute: async ({ context }) =>
+            await context.workflow.suspend({
+              reason: 'awaiting_user_response',
+              accepts: z.object({ text: z.string() }),
+            }),
+        }),
+      });
+      // What `call_workflow` reads from the context of its run.
+      class CallingContext extends TestRuntimeContext {
+        constructor(
+          readonly workflowRunId: string,
+          readonly event: TriggerEventWrapper,
+          readonly services: { agentic: AgenticService },
+        ) {
+          super({});
+        }
+      }
+      workflowContextFactoryMock.create.mockImplementation(
+        async (run: WorkflowRunFull, event: TriggerEventWrapper) =>
+          new CallingContext(run.id, event, { agentic: agenticService }),
+      );
+      const commitWorkflow = async (definition: WorkflowDefinition) => {
+        const created = await workflowService.create({
+          name: `wait_any_call_${++workflowCounter}`,
+          description: 'Calls workflows in a wait_any block',
+          type: WorkflowType.conversational,
+          schedule: null,
+          createdBy: initiator.id,
+        });
+        await workflowVersionService.commit({
+          workflow: created.id,
+          definitionYml: AgenticWorkflow.stringifyDefinition(definition),
+          action: WorkflowVersionAction.create,
+          createdBy: initiator.id,
+        });
+
+        return created;
+      };
+      const review = await commitWorkflow({
+        defs: { review: { kind: 'task', action: 'await_decision' } },
+        flow: [{ do: 'review' }],
+        outputs: { decision: '=$output.review.decision' },
+      });
+      const call = {
+        kind: 'task' as const,
+        action: 'call_workflow',
+        inputs: { workflow_id: review.id },
+      };
+      // Two approvals race; the run then asks the user a question.
+      const parentWorkflow = await commitWorkflow({
+        defs: {
+          call_a: call,
+          call_b: call,
+          ask: { kind: 'task', action: 'ask_reply' },
+        },
+        flow: [
+          {
+            parallel: {
+              strategy: 'wait_any',
+              steps: [{ do: 'call_a' }, { do: 'call_b' }],
+            },
+          },
+          { do: 'ask' },
+        ],
+        outputs: {
+          winner: '=$output.call_a.workflow_run_id',
+          reply: '=$output.ask.text',
+        },
+      });
+      const send = async (input: Record<string, unknown>) => {
+        const event = createEvent(input);
+        event.setWorkflowId(parentWorkflow.id);
+
+        return (await agenticService.handleEvent(event))!;
+      };
+      const parentRun = await send({ start: true });
+      const callWaits = (
+        (await workflowRunService.findOne(parentRun.id))!
+          .checkpoint as WorkflowCheckpoint
+      ).waits;
+      const [childA, childB] = await Promise.all(
+        callWaits.map(
+          async ({ data }) =>
+            (await workflowRunService.findOneAndPopulate(
+              (data as { workflow_run_id: string }).workflow_run_id,
+            ))!,
+        ),
+      );
+      expect([childA, childB]).toEqual([
+        expect.objectContaining({
+          status: 'suspended',
+          awaitingOperator: true,
+        }),
+        expect.objectContaining({
+          status: 'suspended',
+          awaitingOperator: true,
+        }),
+      ]);
+
+      const approve = async (childRun: WorkflowRunFull) => {
+        const outcome = await agenticService.resumeWait({
+          run: childRun,
+          event: createEvent(),
+          waitId: (childRun.checkpoint as WorkflowCheckpoint).waits[0].waitId,
+          resumeData: { decision: 'approved' },
+        });
+        await jobs.onIdle();
+
+        return outcome;
+      };
+      expect((await approve(childA)).status).toBe('accepted');
+
+      // Branch A won, and the run went on to its question.
+      const waitingParent = (await workflowRunService.findOne(parentRun.id))!;
+      expect(waitingParent.status).toBe('suspended');
+      expect(getOpenWaits(waitingParent).map(({ reason }) => reason)).toEqual([
+        'awaiting_user_response',
+      ]);
+      expect(await workflowRunService.findOne(childB.id)).toEqual(
+        abandoned(parentRun.id),
+      );
+      expect(
+        await workflowRunService.find(
+          workflowRunService.withAwaitingOperatorScope(),
+        ),
+      ).toEqual([]);
+      // Approving the loser no longer runs it.
+      expect((await approve(childB)).status).toBe('claim_lost');
+      expect((await workflowRunService.findOne(childB.id))?.status).toBe(
+        'failed',
+      );
+
+      // The reply reaches the run, not the loser below it.
+      const runCount = await countRuns();
+      await send({ text: 'hello' });
+
+      expect(await workflowRunService.findOne(parentRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'finished',
+          output: { winner: childA.id, reply: 'hello' },
+        }),
+      );
+      expect(await countRuns()).toBe(runCount);
+    });
+
+    it('cancels a run that suspends again once its caller was cancelled', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({ checkpoint: null });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([
+          buildChildWait('call_child', childWorkflow.id, childRun.id),
+        ]),
+      });
+      // The child's pass goes on until the parent was cancelled, then
+      // suspends on a second approval.
+      let cancelled!: () => void;
+      const parentCancelled = new Promise<void>((resolve) => {
+        cancelled = resolve;
+      });
+      const secondApproval = buildApprovalWait('approve_again');
+      const runner = buildRunnerMock({
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: suspendedSnapshot,
+      });
+      runner.resume.mockImplementation(async () => {
+        await parentCancelled;
+
+        return suspendedResult([secondApproval]);
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const outcome = await agenticService.resumeWait({
+        run: childRun,
+        event: createEvent(),
+        waitId: buildApprovalWait().waitId,
+        resumeData: { decision: 'approved' },
+      });
+      expect(outcome.status).toBe('accepted');
+      const cancel = await agenticService.cancelRun({
+        run: (await workflowRunService.findOneAndPopulate(parentRun.id))!,
+        message: 'Cancelled by admin',
+      });
+      expect(cancel.status).toBe('cancelled');
+      // The child was in a pass, so the cancel left it alone.
+      expect((await workflowRunService.findOne(childRun.id))?.status).toBe(
+        'running',
+      );
+      cancelled();
+      await jobs.onIdle();
+
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      expect(await workflowRunService.findOne(childRun.id)).toEqual(
+        abandoned(parentRun.id),
+      );
     });
   });
 

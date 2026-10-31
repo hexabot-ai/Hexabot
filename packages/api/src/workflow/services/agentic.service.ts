@@ -14,8 +14,8 @@ import { stringifyError } from '@/utils/helpers/misc';
 import type { RunLease } from '../lib/run-lease';
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
 import {
+  endedFollowUps,
   followUps,
-  resolveRunId,
   toCallWorkflowResult,
 } from '../lib/workflow-call-stack';
 import { getOpenWaits, isBlockedOnOperator } from '../lib/workflow-run-waits';
@@ -295,7 +295,7 @@ export class AgenticService implements WorkflowCallService {
           run: await this.reloadClaimedRun(claim.run),
         };
       case 'unresumable':
-        this.failParentInBackground(run, event);
+        this.reconcileEndedInBackground(run, event);
 
         return { status: 'unresumable', error: claim.error };
       default:
@@ -324,7 +324,7 @@ export class AgenticService implements WorkflowCallService {
       run.id,
       `Parent workflow run ${run.id} was cancelled`,
     );
-    this.failParentInBackground(run);
+    this.reconcileEndedInBackground(run);
 
     return {
       status: 'cancelled',
@@ -445,12 +445,9 @@ export class AgenticService implements WorkflowCallService {
           // claimed for the new run yet, so waiting here is safe. Otherwise it
           // goes on alongside the new run, which the caller answers with.
           if (options.callerWaits) {
-            await this.callStack.reconcile(
-              [resolveRunId(suspendedRun.parentRun)],
-              event,
-            );
+            await this.callStack.reconcile(endedFollowUps(suspendedRun), event);
           } else {
-            this.failParentInBackground(suspendedRun, event);
+            this.reconcileEndedInBackground(suspendedRun, event);
           }
           break;
         default: {
@@ -577,18 +574,19 @@ export class AgenticService implements WorkflowCallService {
   }
 
   /**
-   * Send the parent waiting on a run that ended its failed result, in the
-   * background (see {@link WorkflowCallStackService.reconcile}).
+   * Reconcile the call stack around a run that failed outside of a pass, in
+   * the background (see {@link endedFollowUps}): its suspended children are
+   * cancelled, and a parent waiting on it receives its failed result.
    *
    * @param event - Trigger event to resume the parent with; rebuilt when
    * not given.
    */
-  private failParentInBackground(
+  private reconcileEndedInBackground(
     run: WorkflowRunFull,
     event?: TriggerEventWrapper,
   ): void {
     this.jobs.spawn(
-      () => this.callStack.reconcile([resolveRunId(run.parentRun)], event),
+      () => this.callStack.reconcile(endedFollowUps(run), event),
       'Unable to send the parent of a workflow run its failed result',
       { runId: run.id },
     );

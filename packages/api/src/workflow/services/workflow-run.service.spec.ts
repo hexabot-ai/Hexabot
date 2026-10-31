@@ -39,7 +39,11 @@ import {
 } from '../lib/run-lease';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
 import { WorkflowRepository } from '../repositories/workflow.repository';
-import { WorkflowType, WorkflowVersionAction } from '../types';
+import {
+  AWAITING_CHILD_WORKFLOW_REASON,
+  WorkflowType,
+  WorkflowVersionAction,
+} from '../types';
 
 import { WorkflowRunService } from './workflow-run.service';
 import { WorkflowVersionService } from './workflow-version.service';
@@ -1153,6 +1157,200 @@ describe('WorkflowRunService (TypeORM)', () => {
         'hook:workflow:failure',
         expect.anything(),
       );
+    });
+
+    describe('cancelAbandonedRuns', () => {
+      const childWait = (childRunId: string): WaitInfo => ({
+        waitId: `call_${childRunId}@index:1`,
+        step: { id: `call_${childRunId}`, name: 'call', type: StepType.Task },
+        suspendKey: 'index:1',
+        reason: AWAITING_CHILD_WORKFLOW_REASON,
+        data: { workflow_id: workflow.id, workflow_run_id: childRunId },
+      });
+      /** Make a suspended run wait on `waits` only. */
+      const waitOn = async (runId: string, waits: WaitInfo[]) =>
+        await workflowRunService.updateOne(runId, {
+          checkpoint: { ...checkpoint, waits },
+        });
+      const abandoned = (parentRunId: string) =>
+        expect.objectContaining({
+          status: 'failed',
+          error: `Calling workflow run ${parentRunId} no longer waits on this run`,
+          checkpoint: null,
+        });
+      const statusOf = async (runId: string) =>
+        (await workflowRunService.findOne(runId))?.status;
+
+      it('cancels the suspended runs a suspended run no longer waits on', async () => {
+        const calledWorkflow = await createWorkflow();
+        const parentRun = await createSuspendedRun(workflow.id);
+        const waitedOn = await createSuspendedRun(
+          calledWorkflow.id,
+          parentRun.id,
+        );
+        // A `wait_any` branch that lost the race dropped its wait on it.
+        const dropped = await createSuspendedRun(
+          calledWorkflow.id,
+          parentRun.id,
+        );
+        const droppedChild = await createSuspendedRun(
+          calledWorkflow.id,
+          dropped.id,
+        );
+        const running = await workflowRunService.create({
+          workflow: calledWorkflow.id,
+          parentRun: parentRun.id,
+          status: 'running',
+        });
+        await waitOn(parentRun.id, [wait, childWait(waitedOn.id)]);
+
+        await expect(
+          workflowRunService.cancelAbandonedRuns(parentRun.id),
+        ).resolves.toEqual(
+          expect.objectContaining({ id: parentRun.id, status: 'suspended' }),
+        );
+
+        for (const run of [dropped, droppedChild]) {
+          expect(await workflowRunService.findOne(run.id)).toEqual(
+            abandoned(parentRun.id),
+          );
+        }
+        expect(await statusOf(waitedOn.id)).toBe('suspended');
+        expect(await statusOf(running.id)).toBe('running');
+      });
+
+      it.each(['finished', 'failed'] as const)(
+        'cancels every suspended run a %s run called',
+        async (status) => {
+          const calledWorkflow = await createWorkflow();
+          const parentRun = await workflowRunService.create({
+            workflow: workflow.id,
+            status,
+          });
+          const child = await createSuspendedRun(
+            calledWorkflow.id,
+            parentRun.id,
+          );
+
+          await expect(
+            workflowRunService.cancelAbandonedRuns(parentRun.id),
+          ).resolves.toEqual(expect.objectContaining({ id: parentRun.id }));
+          expect(await workflowRunService.findOne(child.id)).toEqual(
+            abandoned(parentRun.id),
+          );
+        },
+      );
+
+      it('leaves the runs a run in a pass called', async () => {
+        const calledWorkflow = await createWorkflow();
+        const parentRun = await workflowRunService.create({
+          workflow: workflow.id,
+          status: 'running',
+        });
+        // Called by the pass, which has not suspended on it yet.
+        const child = await createSuspendedRun(calledWorkflow.id, parentRun.id);
+
+        await workflowRunService.cancelAbandonedRuns(parentRun.id);
+
+        expect(await statusOf(child.id)).toBe('suspended');
+      });
+
+      it.each([
+        ['ended', 'failed', []],
+        ['no longer waits on it', 'suspended', [wait]],
+      ] as const)(
+        'cancels a suspended run whose caller %s',
+        async (_label, parentStatus, parentWaits) => {
+          const calledWorkflow = await createWorkflow();
+          const parentRun = await createSuspendedRun(workflow.id);
+          const run = await createSuspendedRun(calledWorkflow.id, parentRun.id);
+          const child = await createSuspendedRun(calledWorkflow.id, run.id);
+          await waitOn(run.id, [childWait(child.id)]);
+          await workflowRunService.updateOne(parentRun.id, {
+            status: parentStatus,
+            checkpoint:
+              parentWaits.length > 0
+                ? { ...checkpoint, waits: [...parentWaits] }
+                : null,
+          });
+
+          await expect(
+            workflowRunService.cancelAbandonedRuns(run.id),
+          ).resolves.toBeNull();
+          expect(await workflowRunService.findOne(run.id)).toEqual(
+            abandoned(parentRun.id),
+          );
+          expect(await workflowRunService.findOne(child.id)).toEqual(
+            abandoned(parentRun.id),
+          );
+        },
+      );
+
+      it.each([
+        ['is in a pass', 'running', null],
+        ['waits on it', 'suspended', 'child'],
+      ] as const)(
+        'leaves a suspended run whose caller %s',
+        async (_label, parentStatus, waitsOnChild) => {
+          const calledWorkflow = await createWorkflow();
+          const parentRun = await createSuspendedRun(workflow.id);
+          const run = await createSuspendedRun(calledWorkflow.id, parentRun.id);
+          await workflowRunService.updateOne(parentRun.id, {
+            status: parentStatus,
+            checkpoint: waitsOnChild
+              ? { ...checkpoint, waits: [wait, childWait(run.id)] }
+              : null,
+          });
+
+          await expect(
+            workflowRunService.cancelAbandonedRuns(run.id),
+          ).resolves.toEqual(
+            expect.objectContaining({ id: run.id, status: 'suspended' }),
+          );
+          expect(await statusOf(run.id)).toBe('suspended');
+        },
+      );
+
+      it('goes on with the other runs once one cannot be cancelled', async () => {
+        const calledWorkflow = await createWorkflow();
+        const parentRun = await createSuspendedRun(workflow.id);
+        const failing = await createSuspendedRun(
+          calledWorkflow.id,
+          parentRun.id,
+        );
+        const other = await createSuspendedRun(calledWorkflow.id, parentRun.id);
+        const cancelSuspended =
+          workflowRunService.cancelSuspended.bind(workflowRunService);
+        const cancelSpy = jest
+          .spyOn(workflowRunService, 'cancelSuspended')
+          .mockImplementation(async (run, message) => {
+            if (run.id === failing.id) {
+              throw new Error('database unavailable');
+            }
+
+            return await cancelSuspended(run, message);
+          });
+
+        try {
+          // The run is still returned, so the results it waits on are
+          // delivered.
+          await expect(
+            workflowRunService.cancelAbandonedRuns(parentRun.id),
+          ).resolves.toEqual(expect.objectContaining({ id: parentRun.id }));
+        } finally {
+          cancelSpy.mockRestore();
+        }
+        expect(await statusOf(failing.id)).toBe('suspended');
+        expect(await workflowRunService.findOne(other.id)).toEqual(
+          abandoned(parentRun.id),
+        );
+      });
+
+      it('returns null for a run that does not exist', async () => {
+        await expect(
+          workflowRunService.cancelAbandonedRuns(randomUUID()),
+        ).resolves.toBeNull();
+      });
     });
 
     it('cancels the runs called by the runs of a deleted workflow and returns their callers', async () => {

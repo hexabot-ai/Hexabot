@@ -4,7 +4,6 @@
  * Full terms: see LICENSE.md.
  */
 
-import { EWorkflowRunStatus, WaitInfo } from '@hexabot-ai/agentic';
 import { WorkflowRunFull } from '@hexabot-ai/types';
 import {
   Injectable,
@@ -18,9 +17,9 @@ import { config } from '@/config';
 import { LoggerService } from '@/logger/logger.service';
 import { stringifyError } from '@/utils/helpers/misc';
 
-import { getChildRunId, resolveRunId } from '../lib/workflow-call-stack';
+import { resolveRunId } from '../lib/workflow-call-stack';
 import { getOpenWaits } from '../lib/workflow-run-waits';
-import { ACTIVE_WORKFLOW_RUN_STATUSES, ExpiredClaim } from '../types';
+import { ExpiredClaim } from '../types';
 
 import { AgenticService } from './agentic.service';
 import { WorkflowCallStackService } from './workflow-call-stack.service';
@@ -238,16 +237,9 @@ export class WorkflowRunRecoveryService
       return true;
     }
 
-    if (await this.hasEndedParent(run)) {
-      await this.cancel(
-        run,
-        'Workflow run was interrupted and its caller has ended',
-      );
-
-      return true;
-    }
-
-    await this.cancelOrphanChildren(run, waits);
+    // Also cancels the run when its caller ended meanwhile, and the
+    // suspended runs the dead pass called after the checkpoint the run is
+    // back on: none of its open waits names them.
     await this.callStack.reconcile([run.id]);
 
     return true;
@@ -311,63 +303,6 @@ export class WorkflowRunRecoveryService
       reason: message,
       status: outcome.status,
     });
-  }
-
-  /**
-   * Tell whether a run was called by a run that has ended meanwhile, and so
-   * can never take its result.
-   */
-  private async hasEndedParent(run: WorkflowRunFull): Promise<boolean> {
-    const parentRunId = resolveRunId(run.parentRun);
-    if (!parentRunId) {
-      return false;
-    }
-
-    const parentRun = await this.workflowRunService.findOne(parentRunId);
-
-    return (
-      !parentRun || !ACTIVE_WORKFLOW_RUN_STATUSES.includes(parentRun.status)
-    );
-  }
-
-  /**
-   * Cancel the suspended runs a run called that none of its open waits
-   * refers to: the pass that died called them after the checkpoint the run
-   * is back on, so their result can never be delivered, and they would
-   * otherwise receive the next events of the conversation.
-   *
-   * @param run - Run put back on its wait.
-   * @param waits - Open waits of the run.
-   */
-  private async cancelOrphanChildren(
-    run: WorkflowRunFull,
-    waits: WaitInfo[],
-  ): Promise<void> {
-    const waitedOn = new Set(
-      waits
-        .map((wait) => getChildRunId(wait))
-        .filter((id): id is string => !!id),
-    );
-    const children = await this.workflowRunService.findAndPopulate({
-      where: {
-        parentRun: { id: run.id },
-        status: EWorkflowRunStatus.SUSPENDED,
-      },
-    });
-    const message = `Calling workflow run ${run.id} was interrupted`;
-
-    for (const child of children) {
-      if (waitedOn.has(child.id)) {
-        continue;
-      }
-
-      if (await this.workflowRunService.cancelSuspended(child, message)) {
-        await this.workflowRunService.cancelSuspendedDescendants(
-          child.id,
-          message,
-        );
-      }
-    }
   }
 
   private markHealthy(): void {

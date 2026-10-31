@@ -13,6 +13,7 @@ import { stringifyError } from '@/utils/helpers/misc';
 
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
 import {
+  endedFollowUps,
   followUps,
   getCalledWorkflowId,
   getChildRunId,
@@ -37,7 +38,8 @@ type ChildResult = { wait: WaitInfo; payload: CallWorkflowResult };
  * delivered whenever the parent is suspended. A child that ends while its
  * parent is not suspended (still running, or held by another caller) is thus
  * delivered by whoever leaves the parent suspended, since every pass
- * reconciles the runs it leaves (see {@link followUps}).
+ * reconciles the runs it leaves (see {@link followUps}). A called run whose
+ * result nothing waits on any more is cancelled the same way.
  */
 @Injectable()
 export class WorkflowCallStackService {
@@ -68,8 +70,11 @@ export class WorkflowCallStackService {
    * Deliver to each of these runs, while it is suspended, the results of
    * its child runs that ended, one at a time: each resume can suspend the
    * run again, on further results, or end it, whose own result goes to its
-   * parent in turn. A run that cannot be resumed is logged and left as it
-   * is; the others go on, so this never rejects.
+   * parent in turn. Before that, the suspended runs around it that nothing
+   * waits on any more are cancelled (see
+   * {@link WorkflowRunService.cancelAbandonedRuns}). A run that cannot be
+   * resumed is logged and left as it is; the others go on, so this never
+   * rejects.
    *
    * @param runIds - Runs to reconcile; `null` entries are skipped.
    * @param event - Trigger event the runs are resumed with; rebuilt from
@@ -89,7 +94,7 @@ export class WorkflowCallStackService {
       }
 
       try {
-        const run = await this.workflowRunService.findOneAndPopulate(runId);
+        const run = await this.workflowRunService.cancelAbandonedRuns(runId);
         // A run not suspended is reconciled by whoever leaves it suspended.
         const result =
           run?.status === 'suspended'
@@ -187,7 +192,7 @@ export class WorkflowCallStackService {
       case 'rejected':
         return await this.failRefusingRun(run, claim.error);
       case 'unresumable':
-        return [resolveRunId(run.parentRun)];
+        return endedFollowUps(run);
       default:
         // The run was claimed by another caller, which reconciles it.
         return [];
@@ -206,7 +211,7 @@ export class WorkflowCallStackService {
   ): Promise<(string | null)[]> {
     const failed = await this.executor.failUnresumable(run, error);
 
-    return failed.status === 'unresumable' ? [resolveRunId(run.parentRun)] : [];
+    return failed.status === 'unresumable' ? endedFollowUps(run) : [];
   }
 
   /**

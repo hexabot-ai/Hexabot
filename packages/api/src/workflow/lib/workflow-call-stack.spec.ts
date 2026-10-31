@@ -17,6 +17,7 @@ import {
   followUps,
   getCalledWorkflowId,
   getChildRunId,
+  getWaitedOnChildRunIds,
   resolveRunId,
   toCallWorkflowResult,
   toDeletedCallWorkflowResult,
@@ -66,6 +67,21 @@ describe('workflow-call-stack', () => {
       ['a malformed run id', buildWait({ data: { workflow_run_id: 42 } })],
     ])('ignores %s', (_label, wait) => {
       expect(getChildRunId(wait)).toBeUndefined();
+    });
+  });
+
+  describe('getWaitedOnChildRunIds', () => {
+    it('reads the child runs the calls among the waits wait on', () => {
+      expect(
+        getWaitedOnChildRunIds([
+          buildWait(),
+          buildWait({
+            reason: 'awaiting_approval',
+            data: { workflow_run_id: 'run-4' },
+          }),
+          buildWait({ data: { workflow_run_id: 'run-3' } }),
+        ]),
+      ).toEqual(new Set(['run-2', 'run-3']));
     });
   });
 
@@ -149,17 +165,17 @@ describe('workflow-call-stack', () => {
         ['run-1'],
       ],
       [
-        'a finished run to its parent',
+        'a finished run to itself and its parent',
         {
           status: 'settled',
           result: { status: 'finished', output: {}, snapshot },
         },
-        ['run-0'],
+        ['run-1', 'run-0'],
       ],
       [
-        'a crashed run to its parent',
+        'a crashed run to itself and its parent',
         { status: 'crashed', error: new Error('runner-crash') },
-        ['run-0'],
+        ['run-1', 'run-0'],
       ],
     ])('leaves %s', (_label, pass, runIds) => {
       expect(followUps(run, pass)).toEqual(runIds);

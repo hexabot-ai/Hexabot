@@ -110,7 +110,10 @@ describe('WorkflowCallStackService', () => {
     resume: jest.fn(),
     failUnresumable: jest.fn(),
   };
-  const workflowRunService = { findOneAndPopulate: jest.fn() };
+  const workflowRunService = {
+    findOneAndPopulate: jest.fn(),
+    cancelAbandonedRuns: jest.fn(),
+  };
   const workflowService = { findOne: jest.fn() };
   const eventRestorer = { restore: jest.fn() };
   const logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -151,6 +154,11 @@ describe('WorkflowCallStackService', () => {
 
     return pass;
   };
+  /** The runs reconciled, in order. */
+  const reconciled = () =>
+    workflowRunService.cancelAbandonedRuns.mock.calls.map(
+      ([runId]: [string]) => runId,
+    );
   /** The runs resumed, in order, and what each was resumed with. */
   const resumes = () =>
     executor.resume.mock.calls.map(([claim]: [ClaimedResume]) => [
@@ -174,6 +182,10 @@ describe('WorkflowCallStackService', () => {
     storeCallStack();
     passes = new Map();
     workflowRunService.findOneAndPopulate.mockImplementation(
+      async (id: string) => runs.get(id) ?? null,
+    );
+    // Nothing to cancel: each run is read as stored.
+    workflowRunService.cancelAbandonedRuns.mockImplementation(
       async (id: string) => runs.get(id) ?? null,
     );
     // Claim the wait the caller picks, as the executor does.
@@ -223,6 +235,15 @@ describe('WorkflowCallStackService', () => {
         ['run-2', { text: 'reply' }],
         ['run-1', finishedResult('run-2', { done: true })],
         ['run-0', finishedResult('run-1', { done: true })],
+      ]);
+      // Each run that ended is reconciled before its parent, so the runs it
+      // called that nothing waits on any more are cancelled.
+      expect(reconciled()).toEqual([
+        'run-2',
+        'run-1',
+        'run-1',
+        'run-0',
+        'run-0',
       ]);
     });
 
@@ -278,6 +299,7 @@ describe('WorkflowCallStackService', () => {
         'run-1',
         failedResult('run-2', 'runner-crash'),
       ]);
+      expect(reconciled().slice(0, 2)).toEqual(['run-2', 'run-1']);
     });
 
     it('leaves the delivery of a run taken over to whoever settled it', async () => {
@@ -304,6 +326,18 @@ describe('WorkflowCallStackService', () => {
 
       await service.reconcile([runId, null], event);
 
+      expect(executor.claimResume).not.toHaveBeenCalled();
+    });
+
+    it('leaves a run nothing waits on any more', async () => {
+      store('run-2', { parentRun: 'run-1', status: 'finished' });
+      // Its caller no longer waits on it: it was cancelled.
+      workflowRunService.cancelAbandonedRuns.mockResolvedValueOnce(null);
+
+      await service.reconcile(['run-1'], event);
+
+      expect(reconciled()).toEqual(['run-1']);
+      expect(workflowRunService.findOneAndPopulate).not.toHaveBeenCalled();
       expect(executor.claimResume).not.toHaveBeenCalled();
     });
 
@@ -408,6 +442,7 @@ describe('WorkflowCallStackService', () => {
             'Cannot resume workflow run: Unexpected result',
           ),
         ]);
+        expect(reconciled().slice(0, 3)).toEqual(['run-1', 'run-1', 'run-0']);
       });
 
       it('leaves its parent alone when it was taken over', async () => {
@@ -449,6 +484,7 @@ describe('WorkflowCallStackService', () => {
       await service.reconcile(['run-1'], event);
 
       expect(resumes()).toEqual([['run-0', failedResult('run-1', error)]]);
+      expect(reconciled()).toEqual(['run-1', 'run-1', 'run-0', 'run-0']);
     });
 
     it('rebuilds the trigger of the first run it resumes when given none', async () => {

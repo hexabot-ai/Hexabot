@@ -29,16 +29,30 @@ import {
   suspendedValues,
 } from '../lib/run-lease';
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
-import { resolveRunId } from '../lib/workflow-call-stack';
+import {
+  getWaitedOnChildRunIds,
+  resolveRunId,
+} from '../lib/workflow-call-stack';
 import {
   cancelOpenWaits,
   getOpenWaits,
   isBlockedOnOperator,
 } from '../lib/workflow-run-waits';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
-import { ACTIVE_WORKFLOW_RUN_STATUSES, ExpiredClaim, RunClaim } from '../types';
+import {
+  ACTIVE_WORKFLOW_RUN_STATUSES,
+  CLAIMED_WORKFLOW_RUN_STATUSES,
+  ExpiredClaim,
+  RunClaim,
+} from '../types';
 
 const MAX_CALL_STACK_DEPTH = 10;
+/**
+ * Reason stored on a run cancelled because its caller no longer waits on it
+ * (see {@link WorkflowRunService.cancelAbandonedRuns}).
+ */
+const abandonedRunMessage = (parentRunId: string): string =>
+  `Calling workflow run ${parentRunId} no longer waits on this run`;
 
 @Injectable()
 export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
@@ -453,6 +467,130 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   }
 
   /**
+   * Cancel a suspended run (see {@link cancelSuspended}), then its suspended
+   * descendants (see {@link cancelSuspendedDescendants}).
+   *
+   * @returns `false` when another caller claimed the run first; its
+   * descendants are then left alone.
+   */
+  async cancelSuspendedWithDescendants(
+    run: WorkflowRunFull,
+    message: string,
+  ): Promise<boolean> {
+    if (!(await this.cancelSuspended(run, message))) {
+      return false;
+    }
+
+    await this.cancelSuspendedDescendants(run.id, message);
+
+    return true;
+  }
+
+  /**
+   * Cancel the suspended runs around a run that nothing waits on any more,
+   * each along with its suspended descendants: the run itself when its
+   * caller ended or no longer waits on it, otherwise its children that none
+   * of its open waits names, which is all of them once it ended. A
+   * `wait_any` branch that lost the race, for example, drops its wait on
+   * the run it called. Such runs could never deliver their result, yet an
+   * admin could still resolve them and they would receive the next events
+   * of their conversation.
+   *
+   * A run in a pass is left alone, and so are its children: it is
+   * reconciled once its pass is over. A child in a pass is checked once it
+   * suspends. Each side writes its own status before reading the other's,
+   * so at least one of them sees the other.
+   *
+   * @param runId - Identifier of the run.
+   * @returns The run as stored, or `null` when it no longer exists, or when
+   * nothing waits on it any more (it was cancelled, or another caller
+   * claimed it first).
+   */
+  async cancelAbandonedRuns(runId: string): Promise<WorkflowRunFull | null> {
+    // Listed before the run is read: a run its next pass calls is then
+    // never taken for one it no longer waits on.
+    const children = await this.findAndPopulate({
+      where: {
+        parentRun: { id: runId },
+        status: EWorkflowRunStatus.SUSPENDED,
+      },
+    });
+    const run = await this.findOneAndPopulate(runId);
+    if (!run || CLAIMED_WORKFLOW_RUN_STATUSES.includes(run.status)) {
+      return run;
+    }
+
+    let waitedOn = new Set<string>();
+    if (run.status === EWorkflowRunStatus.SUSPENDED) {
+      const parentRunId = resolveRunId(run.parentRun);
+      if (parentRunId && !(await this.isWaitedOnBy(run.id, parentRunId))) {
+        await this.cancelAbandoned(run, parentRunId);
+
+        return null;
+      }
+
+      waitedOn = getWaitedOnChildRunIds(getOpenWaits(run));
+    }
+
+    for (const child of children) {
+      if (!waitedOn.has(child.id)) {
+        await this.cancelAbandoned(child, runId);
+      }
+    }
+
+    return run;
+  }
+
+  /**
+   * Cancel a suspended run its caller no longer waits on, with its suspended
+   * descendants. A failure is only logged, so that the results the caller
+   * does wait on are still delivered; the run is cancelled on a later
+   * reconcile.
+   */
+  private async cancelAbandoned(
+    run: WorkflowRunFull,
+    parentRunId: string,
+  ): Promise<void> {
+    const details = { runId: run.id, parentRunId };
+    this.logger.warn('Cancelling a run its caller no longer waits on', details);
+    try {
+      await this.cancelSuspendedWithDescendants(
+        run,
+        abandonedRunMessage(parentRunId),
+      );
+    } catch (error) {
+      this.logger.error(
+        'Unable to cancel a run its caller no longer waits on',
+        error,
+        details,
+      );
+    }
+  }
+
+  /**
+   * Tell whether a run may still deliver its result to its caller: the
+   * caller is in a pass, or suspended on a wait for it.
+   *
+   * @param runId - Identifier of the called run.
+   * @param parentRunId - Identifier of its caller.
+   */
+  private async isWaitedOnBy(
+    runId: string,
+    parentRunId: string,
+  ): Promise<boolean> {
+    const parentRun = await this.findOne(parentRunId);
+    if (!parentRun) {
+      return false;
+    }
+
+    if (parentRun.status === EWorkflowRunStatus.SUSPENDED) {
+      return getWaitedOnChildRunIds(getOpenWaits(parentRun)).has(runId);
+    }
+
+    return CLAIMED_WORKFLOW_RUN_STATUSES.includes(parentRun.status);
+  }
+
+  /**
    * Settle the call stacks around a workflow about to be deleted, since its
    * runs are deleted with it.
    *
@@ -475,11 +613,8 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
       },
     });
     for (const run of calledRuns) {
-      if (
-        run.status === 'suspended' &&
-        (await this.cancelSuspended(run, message))
-      ) {
-        await this.cancelSuspendedDescendants(run.id, message);
+      if (run.status === 'suspended') {
+        await this.cancelSuspendedWithDescendants(run, message);
       }
     }
 

@@ -404,7 +404,23 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
     expect((await workflowRunService.findOne(other.id))?.status).toBe('failed');
   });
 
+  /**
+   * Make `reconcile` cancel the runs nothing waits on any more, as it does
+   * before it delivers anything.
+   */
+  const cancelAbandonedOnReconcile = () =>
+    callStackMock.reconcile.mockImplementation(
+      async (runIds: (string | null)[]) => {
+        for (const runId of runIds) {
+          if (runId) {
+            await workflowRunService.cancelAbandonedRuns(runId);
+          }
+        }
+      },
+    );
+
   it('cancels the suspended runs the interrupted pass called', async () => {
+    cancelAbandonedOnReconcile();
     const parent = await createSuspendedRun([approvalWait]);
     const waitedOn = await createSuspendedRun([approvalWait], {
       parentRun: parent.id,
@@ -428,12 +444,13 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
     expect(await workflowRunService.findOne(orphan.id)).toEqual(
       expect.objectContaining({
         status: 'failed',
-        error: `Calling workflow run ${parent.id} was interrupted`,
+        error: `Calling workflow run ${parent.id} no longer waits on this run`,
       }),
     );
   });
 
   it('cancels a run put back on its wait once its caller has ended', async () => {
+    cancelAbandonedOnReconcile();
     const { run: parent, claimId: parentClaimId } = await createRun();
     const { suspended } = await createInterruptedResume([approvalWait], {
       parentRun: parent.id,
@@ -444,10 +461,14 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
 
     await recoveryService.recoverExpiredRuns(later());
 
-    expect(agenticServiceMock.cancelRun).toHaveBeenCalledWith({
-      run: expect.objectContaining({ id: suspended.id, status: 'suspended' }),
-      message: 'Workflow run was interrupted and its caller has ended',
-    });
+    expect(callStackMock.reconcile).toHaveBeenCalledWith([suspended.id]);
+    expect(await workflowRunService.findOne(suspended.id)).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error: `Calling workflow run ${parent.id} no longer waits on this run`,
+        awaitingOperator: false,
+      }),
+    );
   });
 
   it('cancels a run interrupted three times in a row', async () => {
