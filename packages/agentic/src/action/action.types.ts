@@ -9,7 +9,6 @@ import { ZodType } from 'zod';
 import type { InferWorkflowBindings } from '../bindings/base-binding';
 import { BaseWorkflowContext } from '../context';
 import { Settings } from '../dsl.types';
-import { Deferred } from '../utils/deferred';
 
 export type RuntimeSettings<S = unknown> = Settings & S;
 
@@ -82,14 +81,3 @@ export type InferActionSettings<S extends Action> =
 
 export type InferActionBindings<S extends Action> =
   InferActionArgs<S>['bindings'];
-
-export interface SuspensionNotice {
-  stepId: string;
-  reason?: string;
-  data?: unknown;
-  resume: Deferred<unknown>;
-}
-
-export type ActionExecutionOutcome<T> =
-  | { type: 'completed'; value: T }
-  | { type: 'suspended'; notice: SuspensionNotice };

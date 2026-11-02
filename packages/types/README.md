@@ -22,6 +22,19 @@ addition to the stable actor/resource identifiers.
 `ChannelMetadata` includes `visibility` (`public` or `system`) so clients can
 separate customer-facing channels from internal tooling channels.
 
+`WorkflowRun` includes a nullable `checkpoint`: the opaque agentic checkpoint a
+suspended run resumes from, cleared once the run finishes or fails. Its
+`waits` list the open waits of the run (step, reason and data of each).
+`awaitingOperator` is `true` while the checkpoint holds a wait only an admin
+resolves.
+
+Operator waits use the reasons `AWAITING_APPROVAL_REASON` (`awaiting_approval`,
+from `await_approval`) and `AWAITING_RESUME_REASON` (`awaiting_resume`, from
+`suspend_workflow`), listed in `WORKFLOW_OPERATOR_WAIT_REASONS`. Their wait
+`data` is described by `workflowApprovalWaitDataSchema` (`message`,
+`details`) and `workflowResumeWaitDataSchema` (`message`, `details`,
+`payload_schema`).
+
 ## Standard Export Pattern
 
 Each migrated entity exposes:
@@ -204,7 +217,7 @@ Unknown keys are stripped by default.
 - Schema parsing preserves nullable/optional normalization used by API entity outputs.
 - Mixed owner/triggeredBy contracts (`Subscriber | User`) are supported in workflow full contracts.
 - Sensitive output parity is preserved for credentials and MCP tokens (`value` and token hashes are not part of output contracts).
-- Workflow run contracts include `parentRun` for call-and-return workflow stacks.
+- Workflow run contracts include `parentRun` for call-and-return workflow stacks, and `callerRunId`, the id of the calling run, which is kept once that run is deleted (`parentRun` is then `null`).
 - Sensitive output parity is preserved for credentials (`value` is not part of output contracts).
 
 ## Breaking-Change Notes

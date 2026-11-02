@@ -6,17 +6,30 @@
 
 import {
   Workflow as AgenticWorkflow,
+  BaseWorkflowContext,
+  defineAction,
   ExecutionState,
   StepExecutionRecord,
   StepType,
+  WaitInfo,
+  WorkflowCheckpoint,
+  WorkflowCheckpointInvalidError,
+  WorkflowDefinition,
+  WorkflowDefinitionDriftError,
+  WorkflowResumeRejectedError,
   WorkflowRunner,
   WorkflowSnapshot,
+  WorkflowWaitNotFoundError,
 } from '@hexabot-ai/agentic';
 import type { User, WorkflowRunFull, WorkflowFull } from '@hexabot-ai/types';
 import { ModuleRef } from '@nestjs/core';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { DataSource } from 'typeorm';
+import { z } from 'zod';
 
 import { ActionService } from '@/actions/actions.service';
 import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
+import { CallWorkflowAction } from '@/extensions/actions/workflow/call-workflow.action';
 import { I18nService } from '@/i18n/services/i18n.service';
 import {
   installMessagingWorkflowFixturesTypeOrm,
@@ -28,13 +41,28 @@ import { WorkflowContextFactory } from '@/workflow/contexts/workflow-context-fac
 import { WorkflowRunOrmEntity } from '@/workflow/entities/workflow-run.entity';
 import { WorkflowVersionOrmEntity } from '@/workflow/entities/workflow-version.entity';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
-import { ManualEventWrapper } from '@/workflow/lib/trigger-event-wrapper';
+import { failedValues, suspendedValues } from '@/workflow/lib/run-lease';
+import {
+  ManualEventWrapper,
+  TriggerEventWrapper,
+} from '@/workflow/lib/trigger-event-wrapper';
+import { getOpenWaits } from '@/workflow/lib/workflow-run-waits';
 import { WorkflowRunRepository } from '@/workflow/repositories/workflow-run.repository';
 import { WorkflowVersionRepository } from '@/workflow/repositories/workflow-version.repository';
 import { WorkflowRepository } from '@/workflow/repositories/workflow.repository';
-import { WorkflowType, WorkflowVersionAction } from '@/workflow/types';
+import {
+  AWAITING_APPROVAL_REASON,
+  AWAITING_CHILD_WORKFLOW_REASON,
+  WorkflowType,
+  WorkflowVersionAction,
+} from '@/workflow/types';
 
-import { AgenticService } from './agentic.service';
+import { AgenticService, WorkflowRunClaimLostError } from './agentic.service';
+import { WorkflowCallStackService } from './workflow-call-stack.service';
+import { WorkflowCompiler } from './workflow-compiler.service';
+import { WorkflowEventRestorer } from './workflow-event-restorer.service';
+import { WorkflowJobs } from './workflow-jobs.service';
+import { WorkflowRunExecutor } from './workflow-run-executor.service';
 import { WorkflowRunService } from './workflow-run.service';
 import { WorkflowVersionService } from './workflow-version.service';
 import { WorkflowService } from './workflow.service';
@@ -55,6 +83,7 @@ const i18nServiceMock = {
   ),
 };
 const moduleRefMock: Partial<ModuleRef> = {};
+const eventRestorerMock = { restore: jest.fn() };
 const websocketGatewayMock = {
   joinSockets: jest.fn(),
   broadcastWorkflowEvent: jest.fn(),
@@ -68,12 +97,8 @@ const buildRunnerMock = ({
   startError,
   resumeError,
 }: {
-  startResult?: Parameters<WorkflowRunner['start']>[0] extends never
-    ? never
-    : Awaited<ReturnType<WorkflowRunner['start']>>;
-  resumeResult?: Parameters<WorkflowRunner['resume']>[0] extends never
-    ? never
-    : Awaited<ReturnType<WorkflowRunner['resume']>>;
+  startResult?: Awaited<ReturnType<WorkflowRunner['start']>>;
+  resumeResult?: Awaited<ReturnType<WorkflowRunner['resume']>>;
   state: ExecutionState;
   snapshot: WorkflowSnapshot;
   stepLog?: Record<string, StepExecutionRecord>;
@@ -99,17 +124,130 @@ const buildRunnerMock = ({
     getSnapshot: jest.fn(() => snapshot),
     getStepLog: jest.fn(() => stepLog ?? {}),
   }) as unknown as jest.Mocked<WorkflowRunner>;
-const buildWorkflowInstance = (runner: jest.Mocked<WorkflowRunner>) =>
+/**
+ * Mirror `Workflow.validateCheckpoint`: a missing checkpoint cannot resume,
+ * and `refusal` refuses the payload checked before the run is claimed.
+ */
+const validateCheckpointMock = (refusal?: Error) =>
+  jest.fn((checkpoint: unknown, options?: { resumeData?: unknown }) => {
+    if (checkpoint === null || checkpoint === undefined) {
+      return {
+        ok: false,
+        error: new WorkflowCheckpointInvalidError(
+          'missing',
+          'No checkpoint was persisted for this run.',
+        ),
+      };
+    }
+
+    if (refusal && options && 'resumeData' in options) {
+      return { ok: false, error: refusal };
+    }
+
+    return { ok: true, checkpoint };
+  });
+const buildWorkflowInstance = (
+  runner: jest.Mocked<WorkflowRunner>,
+  overrides: {
+    validateCheckpoint?: jest.Mock;
+    buildRunnerFromCheckpoint?: jest.Mock;
+  } = {},
+) =>
   ({
     buildAsyncRunner: jest.fn(async () => runner),
-    buildRunnerFromState: jest.fn(async () => runner),
+    buildRunnerFromCheckpoint:
+      overrides.buildRunnerFromCheckpoint ?? jest.fn(() => runner),
+    validateCheckpoint:
+      overrides.validateCheckpoint ?? validateCheckpointMock(),
   }) as unknown as AgenticWorkflow;
+const buildWait = (overrides: Partial<WaitInfo> = {}): WaitInfo => ({
+  waitId: 'wait_input@index:1',
+  step: { id: 'wait_input', name: 'wait_input', type: StepType.Task },
+  suspendKey: 'index:1',
+  reason: 'awaiting_user_response',
+  data: null,
+  ...overrides,
+});
+const buildChildWait = (
+  stepId: string,
+  childWorkflowId: string,
+  childRunId: string,
+): WaitInfo =>
+  buildWait({
+    waitId: `${stepId}@index:1`,
+    step: { id: stepId, name: stepId, type: StepType.Task },
+    reason: AWAITING_CHILD_WORKFLOW_REASON,
+    data: { workflow_id: childWorkflowId, workflow_run_id: childRunId },
+  });
+const buildApprovalWait = (stepId = 'approve'): WaitInfo =>
+  buildWait({
+    waitId: `${stepId}@index:1`,
+    step: { id: stepId, name: stepId, type: StepType.Task },
+    reason: AWAITING_APPROVAL_REASON,
+    data: { message: 'Refund 42 EUR?', details: null },
+  });
+const buildCheckpoint = (
+  waits: WaitInfo[],
+  output: Record<string, unknown> = {},
+): WorkflowCheckpoint => ({
+  version: 1,
+  fingerprint: 'fingerprint',
+  input: {},
+  output,
+  root: {
+    kind: 'sequence',
+    index: 0,
+    child: {
+      kind: 'task',
+      stepId: waits[0].step.id,
+      inputs: {},
+      awaitResults: {},
+      wait: waits[0],
+    },
+  },
+  waits,
+});
+const suspendedSnapshot: WorkflowSnapshot = {
+  status: 'suspended',
+  actions: {},
+};
+const finishedSnapshot: WorkflowSnapshot = {
+  status: 'finished',
+  actions: {},
+};
+const failedSnapshot: WorkflowSnapshot = {
+  status: 'failed',
+  actions: {},
+};
+const suspendedResult = (
+  waits: WaitInfo[],
+  output: Record<string, unknown> = {},
+) => ({
+  status: 'suspended' as const,
+  waits,
+  checkpoint: buildCheckpoint(waits, output),
+  snapshot: suspendedSnapshot,
+});
+const finishedRunner = (output: Record<string, unknown>) =>
+  buildRunnerMock({
+    startResult: { status: 'finished', output, snapshot: finishedSnapshot },
+    resumeResult: { status: 'finished', output, snapshot: finishedSnapshot },
+    state: { input: {}, output, iterationStack: [] },
+    snapshot: finishedSnapshot,
+  });
+class TestRuntimeContext extends BaseWorkflowContext {
+  public eventEmitter = { emit: jest.fn(), on: jest.fn() };
+}
 
 describe('AgenticService (TypeORM)', () => {
   let agenticService: AgenticService;
+  let callStack: WorkflowCallStackService;
+  let jobs: WorkflowJobs;
   let workflowService: WorkflowService;
   let workflowVersionService: WorkflowVersionService;
   let workflowRunService: WorkflowRunService;
+  let eventEmitter: EventEmitter2;
+  let dataSource: DataSource;
   let workflow: WorkflowFull;
   let initiator: User;
   let workflowVersionId: string | null;
@@ -159,12 +297,61 @@ describe('AgenticService (TypeORM)', () => {
 
     return event;
   };
+  const createSuspendedRun = async ({
+    checkpoint,
+    workflowId = workflow.id,
+    workflowVersion = workflowVersionId,
+    parentRun = null,
+    ...rest
+  }: {
+    checkpoint: WorkflowCheckpoint | null;
+    workflowId?: string;
+    workflowVersion?: string | null;
+    parentRun?: string | null;
+    callerRunId?: string | null;
+    context?: Record<string, unknown>;
+    stepLog?: Record<string, StepExecutionRecord>;
+  }) => {
+    const run = await workflowRunService.create({
+      workflow: workflowId,
+      workflowVersion,
+      triggeredBy: initiator.id,
+      parentRun,
+      status: 'suspended',
+      input: { original: true },
+      output: { saved: true },
+      context: { saved: true },
+      snapshot: suspendedSnapshot,
+      checkpoint,
+      suspendedAt: new Date('2026-01-01T10:00:00.000Z'),
+      ...rest,
+    });
+    const populated = await workflowRunService.findOneAndPopulate(run.id);
+    if (!populated) {
+      throw new Error(`Expected workflow run ${run.id} to be available`);
+    }
+
+    return populated;
+  };
+  const countRuns = async () => (await workflowRunService.find({})).length;
+  /** Trigger an event without waiting for its run, and return that run. */
+  const dispatchEvent = async (event: ManualEventWrapper) => {
+    const outcome = await agenticService.triggerEvent(event, { wait: false });
+    if (outcome.status !== 'dispatched') {
+      throw new Error(`Expected a dispatched event, got ${outcome.status}`);
+    }
+
+    return outcome.run;
+  };
 
   beforeAll(async () => {
     const testing = await buildTestingMocks({
       autoInjectFrom: ['providers'],
       providers: [
         AgenticService,
+        WorkflowRunExecutor,
+        WorkflowCallStackService,
+        WorkflowJobs,
         WorkflowService,
         WorkflowRepository,
         WorkflowVersionService,
@@ -183,6 +370,7 @@ describe('AgenticService (TypeORM)', () => {
         { provide: I18nService, useValue: i18nServiceMock },
         { provide: ModuleRef, useValue: moduleRefMock },
         { provide: WEBSOCKET_GATEWAY, useValue: websocketGatewayMock },
+        { provide: WorkflowEventRestorer, useValue: eventRestorerMock },
       ],
       typeorm: {
         entities: [
@@ -194,16 +382,23 @@ describe('AgenticService (TypeORM)', () => {
       },
     });
 
+    dataSource = testing.module.get(DataSource);
     [
       agenticService,
+      callStack,
+      jobs,
       workflowService,
       workflowVersionService,
       workflowRunService,
+      eventEmitter,
     ] = await testing.getMocks([
       AgenticService,
+      WorkflowCallStackService,
+      WorkflowJobs,
       WorkflowService,
       WorkflowVersionService,
       WorkflowRunService,
+      EventEmitter2,
     ]);
   });
 
@@ -219,6 +414,7 @@ describe('AgenticService (TypeORM)', () => {
       state: {},
       event: undefined,
     });
+    eventRestorerMock.restore.mockImplementation(async () => createEvent());
   });
 
   afterEach(() => {
@@ -235,9 +431,7 @@ describe('AgenticService (TypeORM)', () => {
       const runnerState: ExecutionState = {
         input: { merged: true },
         output: { fromState: true },
-        iterationStack: [0],
-        iteration: { item: 'root', index: 0 },
-        accumulator: { total: 3 },
+        iterationStack: [],
       };
       const runnerSnapshot: WorkflowSnapshot = {
         status: 'finished',
@@ -304,17 +498,14 @@ describe('AgenticService (TypeORM)', () => {
       expect(storedRun.context).toEqual(runtimeContext.state);
       expect(storedRun.stepLog).toEqual(stepLog);
       expect(storedRun.workflowVersion?.id ?? null).toBe(workflowVersionId);
+      expect(storedRun.checkpoint).toBeNull();
       expect(storedRun.metadata).toEqual(
         expect.objectContaining({
           trigger: event.triggerType,
           initiated_by: initiator.id,
-          state: {
-            iteration: runnerState.iteration,
-            accumulator: runnerState.accumulator,
-            iterationStack: runnerState.iterationStack,
-          },
         }),
       );
+      expect(storedRun.metadata).not.toHaveProperty('state');
     });
 
     it('targets an explicit workflow id and scopes suspended lookup', async () => {
@@ -327,7 +518,7 @@ describe('AgenticService (TypeORM)', () => {
       const runnerState: ExecutionState = {
         input: { text: 'targeted' },
         output: { targeted: true },
-        iterationStack: [0],
+        iterationStack: [],
       };
       const runnerSnapshot: WorkflowSnapshot = {
         status: 'finished',
@@ -363,6 +554,7 @@ describe('AgenticService (TypeORM)', () => {
         initiator.id,
         undefined,
         workflow.id,
+        { skipBlockedOnOperator: true },
       );
       expect(pickWorkflowSpy).not.toHaveBeenCalled();
       expect(findOneAndPopulateSpy.mock.calls[0]?.[0]).toBe(workflow.id);
@@ -371,16 +563,11 @@ describe('AgenticService (TypeORM)', () => {
 
     it('scopes suspended run lookup by thread id when provided', async () => {
       const event = createEvent({ text: 'threaded resume' });
-      const runWorkflowSpy = jest
-        .spyOn(agenticService as any, 'runWorkflow')
-        .mockResolvedValue({
-          run: { id: 'run-threaded' } as WorkflowRunFull,
-          result: {
-            status: 'finished',
-            output: {},
-            snapshot: { status: 'finished', actions: {} },
-          },
-        });
+      // The run pins no definition, so the event tries to claim it to fail
+      // it; another caller claimed it first.
+      const claimSpy = jest
+        .spyOn(workflowRunService, 'claimSuspended')
+        .mockResolvedValue(null);
       const findSuspendedSpy = jest
         .spyOn(workflowRunService, 'findSuspendedRunByInitiator')
         .mockResolvedValue({
@@ -392,48 +579,25 @@ describe('AgenticService (TypeORM)', () => {
       const threadId = 'thread-42';
 
       event.setThreadId(threadId);
-      await agenticService.handleEvent(event);
+      await expect(agenticService.handleEvent(event)).resolves.toEqual(
+        expect.objectContaining({ id: 'run-threaded' }),
+      );
 
       expect(findSuspendedSpy).toHaveBeenCalledWith(
         initiator.id,
         threadId,
         undefined,
+        { skipBlockedOnOperator: true },
       );
-      expect(runWorkflowSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          mode: 'resume',
-        }),
-      );
-      runWorkflowSpy.mockRestore();
-      findSuspendedSpy.mockRestore();
+      expect(claimSpy).toHaveBeenCalledWith('run-threaded', null);
+      expect(await countRuns()).toBe(0);
     });
 
-    it('resumes a suspended run and records suspension details', async () => {
-      const baseRun = await workflowRunService.create({
-        workflow: workflow.id,
-        workflowVersion: workflowVersionId,
-        triggeredBy: initiator.id,
-        status: 'suspended',
-        input: { original: true },
-        output: { saved: true },
-        context: { saved: true },
-        snapshot: { status: 'suspended', actions: {} },
-        metadata: {
-          state: {
-            iteration: { item: 'loop', index: 0 },
-            accumulator: { total: 2 },
-            iterationStack: [0],
-          },
-        },
-        suspendedStep: 'wait_input',
-        suspensionReason: 'waiting',
-        suspensionData: { previous: true },
-        suspensionStepExecId: 'wait_input#3',
-        suspensionIndex: 2,
-        suspensionKey: 'index:2',
-        suspensionAwaitResults: {
-          'index:1': { message: 'first answer' },
-        },
+    it('resumes a suspended run from its checkpoint and persists the next suspension', async () => {
+      const wait = buildWait();
+      const checkpoint = buildCheckpoint([wait], { saved: true });
+      const baseRun = await createSuspendedRun({
+        checkpoint,
         stepLog: {
           wait_input: {
             id: 'wait_input',
@@ -450,17 +614,14 @@ describe('AgenticService (TypeORM)', () => {
         event,
       } as any;
       workflowContextFactoryMock.create.mockResolvedValue(runtimeContext);
-      const runnerState: ExecutionState = {
-        input: { original: true },
-        output: { next: 'output' },
-        iterationStack: [0],
-        iteration: { item: 'loop', index: 0 },
-        accumulator: { total: 2 },
-      };
-      const runnerSnapshot: WorkflowSnapshot = {
-        status: 'suspended',
-        actions: {},
-      };
+      const nextWait = buildWait({
+        waitId: 'prompt_user@key:await-user-input',
+        step: { id: 'prompt_user', name: 'prompt_user', type: StepType.Task },
+        suspendKey: 'key:await-user-input',
+        reason: 'needs input',
+        data: { prompt: true },
+      });
+      const resumeResult = suspendedResult([nextWait], { next: 'output' });
       const stepLog: Record<string, StepExecutionRecord> = {
         prompt_user: {
           id: 'prompt_user',
@@ -471,21 +632,14 @@ describe('AgenticService (TypeORM)', () => {
           reason: 'needs input',
         },
       };
-      const resumeResult = {
-        status: 'suspended' as const,
-        step: { id: 'prompt_user', name: 'prompt_user', type: StepType.Task },
-        reason: 'needs input',
-        data: { prompt: true },
-        stepExecId: 'prompt_user#1',
-        suspendIndex: 1,
-        suspendKey: 'key:await-user-input',
-        awaitResults: {},
-        snapshot: runnerSnapshot,
-      };
       const runner = buildRunnerMock({
         resumeResult,
-        state: runnerState,
-        snapshot: runnerSnapshot,
+        state: {
+          input: { original: true },
+          output: { next: 'output' },
+          iterationStack: [],
+        },
+        snapshot: suspendedSnapshot,
         stepLog,
       });
       const workflowInstance = buildWorkflowInstance(runner);
@@ -495,77 +649,354 @@ describe('AgenticService (TypeORM)', () => {
 
       await agenticService.handleEvent(event);
 
-      const [updatedRun] = (await workflowRunService.findAndPopulate({
-        order: { createdAt: 'DESC' },
-        take: 1,
-      })) as WorkflowRunFull[];
+      const updatedRun = await workflowRunService.findOneAndPopulate(
+        baseRun.id,
+      );
 
       expect(fromDefinitionSpy).toHaveBeenCalledTimes(1);
-      expect(workflowInstance.buildRunnerFromState).toHaveBeenCalledWith({
-        state: {
-          input: { original: true },
-          output: { saved: true },
-          iterationStack: [0],
-          iteration: { item: 'loop', index: 0 },
-          accumulator: { total: 2 },
-        },
+      expect(workflowInstance.validateCheckpoint).toHaveBeenNthCalledWith(
+        1,
+        checkpoint,
+      );
+      expect(workflowInstance.validateCheckpoint).toHaveBeenNthCalledWith(
+        2,
+        checkpoint,
+        { waitId: wait.waitId, resumeData: event.buildInput() },
+      );
+      expect(workflowInstance.buildRunnerFromCheckpoint).toHaveBeenCalledWith({
+        checkpoint,
         context: runtimeContext,
-        snapshot: baseRun.snapshot ?? { status: baseRun.status, actions: {} },
-        suspension: {
-          stepId: baseRun.suspendedStep,
-          reason: baseRun.suspensionReason,
-          data: baseRun.suspensionData ?? undefined,
-          stepExecId: baseRun.suspensionStepExecId ?? undefined,
-          suspendIndex: baseRun.suspensionIndex ?? undefined,
-          suspendKey: baseRun.suspensionKey ?? undefined,
-          awaitResults: baseRun.suspensionAwaitResults ?? undefined,
-        },
+        snapshot: suspendedSnapshot,
         runId: baseRun.id,
-        lastResumeData: event.buildInput(),
       });
       expect(runner.resume).toHaveBeenCalledWith({
+        waitId: wait.waitId,
         resumeData: event.buildInput(),
       });
-      expect(updatedRun.status).toBe('suspended');
-      expect(updatedRun.suspendedStep).toBe(resumeResult.step.id);
-      expect(updatedRun.suspensionReason).toBe(resumeResult.reason);
-      expect(updatedRun.suspensionStepExecId).toBe(resumeResult.stepExecId);
-      expect(updatedRun.suspensionIndex).toBe(resumeResult.suspendIndex);
-      expect(updatedRun.suspensionKey).toBe(resumeResult.suspendKey);
-      expect(updatedRun.suspensionAwaitResults).toEqual(
-        resumeResult.awaitResults,
+      expect(updatedRun?.status).toBe('suspended');
+      expect(updatedRun?.checkpoint).toEqual(resumeResult.checkpoint);
+      expect(updatedRun?.suspendedAt?.getTime()).not.toBe(
+        baseRun.suspendedAt?.getTime(),
       );
-      expect(updatedRun.lastResumeData).toEqual(event.buildInput());
-      expect(updatedRun.input).toEqual({ original: true });
-      expect(updatedRun.output).toEqual(runnerState.output);
-      expect(updatedRun.context).toEqual(runtimeContext.state);
-      expect(updatedRun.stepLog).toEqual(
+      expect(updatedRun?.input).toEqual({ original: true });
+      expect(updatedRun?.output).toEqual({ next: 'output' });
+      expect(updatedRun?.context).toEqual(runtimeContext.state);
+      expect(updatedRun?.stepLog).toEqual(
         expect.objectContaining({
+          wait_input: expect.objectContaining({ status: 'suspended' }),
+          prompt_user: stepLog.prompt_user,
+        }),
+      );
+      expect(updatedRun?.metadata ?? {}).not.toHaveProperty('state');
+    });
+
+    it('resolves the first open wait that an event can resolve', async () => {
+      const childWait = buildChildWait(
+        'call_child',
+        workflow.id,
+        '33333333-3333-4333-8333-333333333333',
+      );
+      const replyWait = buildWait();
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([childWait, replyWait]),
+      });
+      const event = createEvent({ text: 'reply' });
+      const runner = finishedRunner({ done: true });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await agenticService.handleEvent(event);
+
+      expect(runner.resume).toHaveBeenCalledWith({
+        waitId: replyWait.waitId,
+        resumeData: event.buildInput(),
+      });
+      expect((await workflowRunService.findOne(baseRun.id))?.status).toBe(
+        'finished',
+      );
+    });
+
+    it('leaves a run that only waits on a child run untouched', async () => {
+      const baseRun = await createSuspendedRun({ checkpoint: null });
+      // A child still in flight, outside the initiator's runs, so the event
+      // targets the parent.
+      const childRun = await workflowRunService.create({
+        workflow: workflow.id,
+        workflowVersion: workflowVersionId,
+        triggeredBy: null,
+        parentRun: baseRun.id,
+        status: 'running',
+      });
+      const childWait = buildChildWait('call_child', workflow.id, childRun.id);
+      await workflowRunService.updateOne(baseRun.id, {
+        checkpoint: buildCheckpoint([childWait]),
+      });
+      const runner = finishedRunner({ done: true });
+      const workflowInstance = buildWorkflowInstance(runner);
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(workflowInstance);
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'reply' })),
+      ).resolves.toEqual(
+        expect.objectContaining({ id: baseRun.id, status: 'suspended' }),
+      );
+      expect(workflowInstance.buildRunnerFromCheckpoint).not.toHaveBeenCalled();
+      expect(runner.start).not.toHaveBeenCalled();
+      expect(await countRuns()).toBe(2);
+    });
+
+    it('fails the call of a run waiting on a child run that was deleted', async () => {
+      const deletedRunId = '33333333-3333-4333-8333-333333333333';
+      const childWait = buildChildWait('call_child', workflow.id, deletedRunId);
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([childWait]),
+      });
+      const runner = finishedRunner({ done: true });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'reply' })),
+      ).resolves.toEqual(
+        expect.objectContaining({ id: baseRun.id, status: 'finished' }),
+      );
+      expect(runner.resume).toHaveBeenCalledWith({
+        waitId: childWait.waitId,
+        resumeData: {
+          status: 'failed',
+          workflow_id: workflow.id,
+          workflow_run_id: deletedRunId,
+          error: `Called workflow run ${deletedRunId} was deleted`,
+        },
+      });
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('refuses a payload the wait does not accept before claiming the run', async () => {
+      const wait = buildWait();
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([wait]),
+      });
+      const runner = finishedRunner({ done: true });
+      const refusal = new WorkflowResumeRejectedError('Payload refused', {
+        issues: ['text: Required'],
+      });
+      const workflowInstance = buildWorkflowInstance(runner, {
+        validateCheckpoint: validateCheckpointMock(refusal),
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(workflowInstance);
+      const claimSpy = jest.spyOn(workflowRunService, 'claimSuspended');
+      const emitSpy = jest.spyOn(eventEmitter, 'emit');
+      const event = createEvent({ unexpected: true });
+
+      await expect(agenticService.handleEvent(event)).resolves.toEqual(
+        expect.objectContaining({ id: baseRun.id, status: 'suspended' }),
+      );
+      // Reported as the runner reports the payloads its steps refuse.
+      expect(emitSpy).toHaveBeenCalledWith('hook:workflow:resume_rejected', {
+        runId: baseRun.id,
+        wait,
+        resumeData: event.buildInput(),
+        error: refusal,
+      });
+      expect(claimSpy).not.toHaveBeenCalled();
+      expect(workflowContextFactoryMock.create).not.toHaveBeenCalled();
+      expect(workflowInstance.buildRunnerFromCheckpoint).not.toHaveBeenCalled();
+      expect(runner.start).not.toHaveBeenCalled();
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('puts the run back on its wait when the resumed step refuses the payload', async () => {
+      const wait = buildWait();
+      const checkpoint = buildCheckpoint([wait]);
+      const stepLog: Record<string, StepExecutionRecord> = {
+        wait_input: {
+          id: 'wait_input',
+          name: 'wait_input',
+          status: 'suspended',
+        },
+      };
+      const baseRun = await createSuspendedRun({
+        checkpoint,
+        stepLog,
+      });
+      workflowContextFactoryMock.create.mockResolvedValue({
+        state: { saved: true, touched: true },
+      });
+      const runner = buildRunnerMock({
+        resumeResult: {
+          ...suspendedResult([wait]),
+          checkpoint,
+          rejection: {
+            waitId: wait.waitId,
+            error: new WorkflowResumeRejectedError('Unknown order id'),
+          },
+        },
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: suspendedSnapshot,
+        stepLog: {
           wait_input: {
             id: 'wait_input',
             name: 'wait_input',
-            action: 'wait_input_action',
-            status: 'suspended',
-            reason: 'waiting',
+            status: 'running',
           },
-          prompt_user: {
-            id: 'prompt_user',
-            name: 'prompt_user',
-            action: 'prompt_action',
-            status: 'suspended',
-            startedAt: 1800,
-            reason: 'needs input',
-          },
-        }),
-      );
-      expect(updatedRun.workflowVersion?.id ?? null).toBe(workflowVersionId);
-      expect(updatedRun.metadata).toEqual({
-        state: {
-          iteration: runnerState.iteration,
-          accumulator: runnerState.accumulator,
-          iterationStack: runnerState.iterationStack,
         },
       });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.handleEvent(createEvent({ order: 'unknown' })),
+      ).resolves.toEqual(
+        expect.objectContaining({ id: baseRun.id, status: 'suspended' }),
+      );
+
+      const updatedRun = await workflowRunService.findOne(baseRun.id);
+      expect(runner.resume).toHaveBeenCalled();
+      expect(updatedRun?.status).toBe('suspended');
+      expect(updatedRun?.checkpoint).toEqual(checkpoint);
+      expect(updatedRun?.context).toEqual({ saved: true });
+      expect(updatedRun?.stepLog).toEqual(stepLog);
+      expect(updatedRun?.suspendedAt?.getTime()).toBe(
+        baseRun.suspendedAt?.getTime(),
+      );
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('does not resume a run another caller already claimed', async () => {
+      await createSuspendedRun({ checkpoint: buildCheckpoint([buildWait()]) });
+      const runner = finishedRunner({ done: true });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const [first, second] = await Promise.all([
+        agenticService.handleEvent(createEvent({ text: 'first' })),
+        agenticService.handleEvent(createEvent({ text: 'second' })),
+      ]);
+
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      expect(runner.start).not.toHaveBeenCalled();
+      expect(await countRuns()).toBe(1);
+      expect([first?.status, second?.status]).toEqual(
+        expect.arrayContaining(['finished']),
+      );
+    });
+
+    it.each([
+      ['has no checkpoint', null, undefined],
+      [
+        'was suspended against another definition',
+        buildCheckpoint([buildWait()]),
+        jest.fn(() => ({
+          ok: false,
+          error: new WorkflowDefinitionDriftError('old', 'new'),
+        })),
+      ],
+    ])(
+      'fails a run that %s and starts a new one',
+      async (_label, checkpoint, validateCheckpoint) => {
+        const staleRun = await createSuspendedRun({ checkpoint });
+        const staleInstance = buildWorkflowInstance(finishedRunner({}), {
+          validateCheckpoint,
+        });
+        const freshRunner = finishedRunner({ fresh: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValueOnce(staleInstance)
+          .mockReturnValueOnce(buildWorkflowInstance(freshRunner));
+
+        const result = await agenticService.handleEvent(
+          createEvent({ text: 'hello again' }),
+        );
+        const failedRun = await workflowRunService.findOne(staleRun.id);
+        expect(failedRun?.status).toBe('failed');
+        expect(failedRun?.error).toMatch(/^Cannot resume workflow run: /);
+        expect(failedRun?.checkpoint).toBeNull();
+        expect(staleInstance.buildRunnerFromCheckpoint).not.toHaveBeenCalled();
+        expect(freshRunner.start).toHaveBeenCalledTimes(1);
+        expect(result).toEqual(expect.objectContaining({ status: 'finished' }));
+        expect(result?.id).not.toBe(staleRun.id);
+      },
+    );
+
+    it('fails a run whose workflow version is gone and starts a new one', async () => {
+      const staleRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+        workflowVersion: null,
+      });
+      const freshRunner = finishedRunner({ fresh: true });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(freshRunner));
+
+      await agenticService.handleEvent(createEvent({ text: 'hello again' }));
+
+      const failedRun = await workflowRunService.findOne(staleRun.id);
+      expect(failedRun?.status).toBe('failed');
+      expect(failedRun?.error).toBe(
+        'Cannot resume workflow run: Workflow definition is required to run the workflow',
+      );
+      expect(freshRunner.resume).not.toHaveBeenCalled();
+      expect(freshRunner.start).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a run suspended when its definition no longer compiles', async () => {
+      const checkpoint = buildCheckpoint([buildWait()]);
+      const baseRun = await createSuspendedRun({ checkpoint });
+      jest.spyOn(AgenticWorkflow, 'fromDefinition').mockImplementation(() => {
+        throw new Error(
+          'No action implementations provided for: wait_input_action',
+        );
+      });
+      const claimSpy = jest.spyOn(workflowRunService, 'claimSuspended');
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'reply' })),
+      ).resolves.toBeNull();
+
+      const storedRun = await workflowRunService.findOne(baseRun.id);
+      expect(claimSpy).not.toHaveBeenCalled();
+      expect(storedRun?.status).toBe('suspended');
+      expect(storedRun?.checkpoint).toEqual(checkpoint);
+      expect(storedRun?.suspendedAt?.getTime()).toBe(
+        baseRun.suspendedAt?.getTime(),
+      );
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('fails a claimed run whose runner cannot be restored', async () => {
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const runner = finishedRunner({});
+      jest.spyOn(AgenticWorkflow, 'fromDefinition').mockReturnValue(
+        buildWorkflowInstance(runner, {
+          buildRunnerFromCheckpoint: jest.fn(() => {
+            throw new WorkflowCheckpointInvalidError(
+              'structure',
+              'Frame does not match the flow',
+            );
+          }),
+        }),
+      );
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'reply' })),
+      ).resolves.toBeNull();
+
+      const failedRun = await workflowRunService.findOne(baseRun.id);
+      expect(failedRun?.status).toBe('failed');
+      expect(failedRun?.error).toBe('Frame does not match the flow');
+      expect(failedRun?.checkpoint).toBeNull();
+      expect(runner.resume).not.toHaveBeenCalled();
     });
 
     it('marks a workflow run as failed when the runner throws', async () => {
@@ -620,15 +1051,1257 @@ describe('AgenticService (TypeORM)', () => {
       expect(failedRun.context).toEqual(runtimeContext.state);
       expect(failedRun.stepLog).toEqual(stepLog);
       expect(failedRun.workflowVersion?.id ?? null).toBe(workflowVersionId);
+      expect(failedRun.checkpoint).toBeNull();
       expect(failedRun.metadata).toEqual(
         expect.objectContaining({
           trigger: event.triggerType,
           initiated_by: initiator.id,
-          state: {
-            iteration: runnerState.iteration,
-            accumulator: runnerState.accumulator,
-            iterationStack: runnerState.iterationStack,
+        }),
+      );
+      expect(failedRun.metadata).not.toHaveProperty('state');
+    });
+
+    it('ignores an event without initiator', async () => {
+      const event = new ManualEventWrapper({ text: 'hi' }, initiator.id);
+      const findSuspendedSpy = jest.spyOn(
+        workflowRunService,
+        'findSuspendedRunByInitiator',
+      );
+
+      await expect(agenticService.handleEvent(event)).resolves.toBeNull();
+      await expect(
+        agenticService.triggerEvent(event, { wait: false }),
+      ).resolves.toEqual({ status: 'unprocessed' });
+      expect(findSuspendedSpy).not.toHaveBeenCalled();
+      expect(await countRuns()).toBe(0);
+    });
+
+    it('ignores an event when no workflow is available', async () => {
+      jest.spyOn(workflowService, 'pickWorkflow').mockResolvedValue(null);
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hi' })),
+      ).resolves.toBeNull();
+      expect(await countRuns()).toBe(0);
+    });
+
+    it('ignores an event whose workflow has no definition', async () => {
+      const fromDefinitionSpy = jest.spyOn(AgenticWorkflow, 'fromDefinition');
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hi' }), {
+          workflow: {
+            ...workflow,
+            definition: null,
+          } as unknown as WorkflowFull,
+        }),
+      ).resolves.toBeNull();
+      expect(fromDefinitionSpy).not.toHaveBeenCalled();
+      expect(await countRuns()).toBe(0);
+    });
+
+    it('keeps a run suspended when its wait cannot be checked against the payload', async () => {
+      const checkpoint = buildCheckpoint([buildWait()]);
+      const baseRun = await createSuspendedRun({ checkpoint });
+      const runner = finishedRunner({ done: true });
+      jest.spyOn(AgenticWorkflow, 'fromDefinition').mockReturnValue(
+        buildWorkflowInstance(runner, {
+          validateCheckpoint: jest.fn(
+            (stored: unknown, options?: { waitId: string }) =>
+              options
+                ? {
+                    ok: false,
+                    error: new WorkflowWaitNotFoundError(options.waitId, []),
+                  }
+                : { ok: true, checkpoint: stored },
+          ),
+        }),
+      );
+      const claimSpy = jest.spyOn(workflowRunService, 'claimSuspended');
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'reply' })),
+      ).resolves.toBeNull();
+
+      const storedRun = await workflowRunService.findOne(baseRun.id);
+      expect(claimSpy).not.toHaveBeenCalled();
+      expect(runner.resume).not.toHaveBeenCalled();
+      expect(storedRun?.status).toBe('suspended');
+      expect(storedRun?.checkpoint).toEqual(checkpoint);
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('fails a new run whose pinned definition is missing', async () => {
+      const runner = finishedRunner({});
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+      jest
+        .spyOn(WorkflowCompiler.prototype, 'compile')
+        .mockReturnValueOnce(undefined);
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hi' })),
+      ).resolves.toBeNull();
+
+      const [run] = await workflowRunService.find({});
+      expect(run).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Workflow definition is required to run the workflow',
+        }),
+      );
+      expect(runner.start).not.toHaveBeenCalled();
+    });
+
+    it('drops a new run whose claim was lost before its runner started', async () => {
+      const runner = finishedRunner({});
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+      jest
+        .spyOn(workflowRunService.repository, 'updateClaimed')
+        .mockResolvedValueOnce(false);
+      const persistCrashSpy = jest.spyOn(workflowRunService, 'persistCrash');
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hi' })),
+      ).resolves.toBeNull();
+
+      const [run] = await workflowRunService.find({});
+      // Nothing is written: whoever took the run over settles it.
+      expect(run.status).toBe('idle');
+      expect(runner.start).not.toHaveBeenCalled();
+      expect(persistCrashSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('triggerEvent', () => {
+    it('answers with the run once its pass is over', async () => {
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(finishedRunner({ done: true })));
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'hi' })),
+      ).resolves.toEqual({
+        status: 'dispatched',
+        run: expect.objectContaining({ status: 'finished' }),
+      });
+    });
+
+    it.each([true, false])(
+      'reports a payload the suspended run refused (wait: %s)',
+      async (wait) => {
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildWait()]),
+        });
+        const runner = finishedRunner({ done: true });
+        const refusal = new WorkflowResumeRejectedError('Payload refused', {
+          issues: ['text: Required'],
+        });
+        jest.spyOn(AgenticWorkflow, 'fromDefinition').mockReturnValue(
+          buildWorkflowInstance(runner, {
+            validateCheckpoint: validateCheckpointMock(refusal),
+          }),
+        );
+        const claimSpy = jest.spyOn(workflowRunService, 'claimSuspended');
+
+        await expect(
+          agenticService.triggerEvent(createEvent({ unexpected: true }), {
+            wait,
+          }),
+        ).resolves.toEqual({
+          status: 'rejected',
+          runId: baseRun.id,
+          error: refusal,
+        });
+        expect(claimSpy).not.toHaveBeenCalled();
+        expect(runner.resume).not.toHaveBeenCalled();
+        expect(runner.start).not.toHaveBeenCalled();
+        expect((await workflowRunService.findOne(baseRun.id))?.status).toBe(
+          'suspended',
+        );
+        expect(await countRuns()).toBe(1);
+      },
+    );
+
+    it.each([true, false])(
+      'reports a suspended run another caller claimed first (wait: %s)',
+      async (wait) => {
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildWait()]),
+        });
+        const runner = finishedRunner({ done: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+        jest
+          .spyOn(workflowRunService, 'claimSuspended')
+          .mockResolvedValueOnce(null);
+
+        await expect(
+          agenticService.triggerEvent(createEvent({ text: 'reply' }), {
+            wait,
+          }),
+        ).resolves.toEqual({ status: 'claim_lost', runId: baseRun.id });
+        expect(runner.resume).not.toHaveBeenCalled();
+        expect(runner.start).not.toHaveBeenCalled();
+        expect(await countRuns()).toBe(1);
+      },
+    );
+
+    it('reports a resume whose run was recovered while the pass it waited for ran', async () => {
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const { checkpoint } = (await workflowRunService.findOne(baseRun.id))!;
+      const runner = finishedRunner({ done: true });
+      runner.resume.mockImplementation(async () => {
+        // Another node finds the claim lapsed and puts the run back on the
+        // suspension it was claimed from.
+        const now = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        const [expired] = (
+          await workflowRunService.findExpiredClaims(now)
+        ).filter(({ id }) => id === baseRun.id);
+        expect(await workflowRunService.putBackExpired(expired, now)).toBe(
+          true,
+        );
+
+        return {
+          status: 'finished',
+          output: { done: true },
+          snapshot: finishedSnapshot,
+        };
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'reply' })),
+      ).resolves.toEqual({ status: 'claim_lost', runId: baseRun.id });
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      const storedRun = await workflowRunService.findOne(baseRun.id);
+      expect(storedRun?.status).toBe('suspended');
+      expect(storedRun?.checkpoint).toEqual(checkpoint);
+      expect(storedRun?.output).not.toEqual({ done: true });
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('reports a resume whose run was taken over while the pass it waited for ran', async () => {
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const runner = finishedRunner({ done: true });
+      runner.resume.mockImplementation(async () => {
+        // Closing the thread takes the run over.
+        await workflowRunService.repository.settle(
+          baseRun.id,
+          failedValues({ error: 'Thread was closed' }),
+          null,
+        );
+
+        return {
+          status: 'finished',
+          output: { done: true },
+          snapshot: finishedSnapshot,
+        };
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'reply' })),
+      ).resolves.toEqual({ status: 'claim_lost', runId: baseRun.id });
+      expect(await workflowRunService.findOne(baseRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Thread was closed',
+        }),
+      );
+    });
+
+    it.each([true, false])(
+      'starts a new run instead of resuming one when told to (wait: %s)',
+      async (wait) => {
+        const suspendedRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildWait()]),
+        });
+        const runner = finishedRunner({ fresh: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+
+        const outcome = await agenticService.triggerEvent(
+          createEvent({ text: 'reply' }),
+          { wait, resume: false },
+        );
+        await jobs.onIdle();
+
+        expect(outcome).toEqual({
+          status: 'dispatched',
+          run: expect.objectContaining({ id: expect.any(String) }),
+        });
+        expect(outcome.status === 'dispatched' && outcome.run.id).not.toBe(
+          suspendedRun.id,
+        );
+        expect(runner.start).toHaveBeenCalledTimes(1);
+        expect(runner.resume).not.toHaveBeenCalled();
+        expect(
+          (await workflowRunService.findOne(suspendedRun.id))?.status,
+        ).toBe('suspended');
+        expect(await countRuns()).toBe(2);
+      },
+    );
+
+    it('reports a pass it waited for that threw', async () => {
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(finishedRunner({})));
+      jest
+        .spyOn(WorkflowCompiler.prototype, 'compile')
+        .mockReturnValueOnce(undefined);
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'hi' })),
+      ).resolves.toEqual({ status: 'unprocessed' });
+    });
+  });
+
+  describe('with the agentic runner', () => {
+    const askReply = defineAction({
+      name: 'ask_reply',
+      inputSchema: z.object({}),
+      outputSchema: z.object({ text: z.string() }),
+      execute: async ({ context }) =>
+        await context.workflow.suspend({
+          reason: 'awaiting_user_response',
+          accepts: z.object({ text: z.string() }),
+        }),
+    });
+
+    it('resumes a run from its persisted checkpoint in a fresh context', async () => {
+      actionServiceMock.getRegistry.mockReturnValue({ ask_reply: askReply });
+      // Every resume hydrates a brand-new context, as after a restart.
+      workflowContextFactoryMock.create.mockImplementation(
+        async () => new TestRuntimeContext({}),
+      );
+      const created = await workflowService.create({
+        name: `ask_reply_${++workflowCounter}`,
+        description: 'Suspends until a reply arrives',
+        type: WorkflowType.conversational,
+        schedule: null,
+        createdBy: initiator.id,
+      });
+      await workflowVersionService.commit({
+        workflow: created.id,
+        definitionYml: AgenticWorkflow.stringifyDefinition({
+          defs: { ask: { kind: 'task', action: 'ask_reply' } },
+          flow: [{ do: 'ask' }],
+          outputs: { reply: '=$output.ask.text' },
+        }),
+        action: WorkflowVersionAction.create,
+        createdBy: initiator.id,
+      });
+      const send = async (input: Record<string, unknown>) => {
+        const event = createEvent(input);
+        event.setWorkflowId(created.id);
+
+        return await agenticService.handleEvent(event);
+      };
+      const suspended = await send({ start: true });
+      const persisted = await workflowRunService.findOne(suspended!.id);
+      const checkpoint = persisted?.checkpoint as WorkflowCheckpoint;
+
+      expect(persisted?.status).toBe('suspended');
+      expect(checkpoint.waits).toEqual([
+        expect.objectContaining({
+          reason: 'awaiting_user_response',
+          accepts: expect.objectContaining({ type: 'object' }),
+        }),
+      ]);
+
+      const emitSpy = jest.spyOn(eventEmitter, 'emit');
+      const refused = await send({ text: 42 });
+
+      expect(refused).toEqual(
+        expect.objectContaining({ id: suspended!.id, status: 'suspended' }),
+      );
+      expect(emitSpy).toHaveBeenCalledWith(
+        'hook:workflow:resume_rejected',
+        expect.objectContaining({
+          runId: suspended!.id,
+          wait: checkpoint.waits[0],
+          error: expect.any(WorkflowResumeRejectedError),
+        }),
+      );
+      expect(
+        (await workflowRunService.findOne(suspended!.id))?.checkpoint,
+      ).toEqual(checkpoint);
+
+      const finished = await send({ text: 'hello' });
+
+      expect(finished).toEqual(
+        expect.objectContaining({
+          id: suspended!.id,
+          status: 'finished',
+          output: { reply: 'hello' },
+          checkpoint: null,
+        }),
+      );
+      expect(await countRuns()).toBe(1);
+    });
+
+    describe('when the resumed step refuses the payload', () => {
+      // The wait's JSON Schema drops `pattern`, so a code that does not match
+      // is claimed, and only the step's own schema refuses it.
+      const awaitCode = defineAction({
+        name: 'await_code',
+        inputSchema: z.object({}),
+        outputSchema: z.object({ code: z.string() }),
+        execute: async ({ context }) =>
+          await context.workflow.suspend({
+            reason: 'awaiting_code',
+            accepts: z.object({ code: z.string().regex(/^[A-Z]{3}-\d{4}$/) }),
+          }),
+      });
+      const startCodeRun = async () => {
+        actionServiceMock.getRegistry.mockReturnValue({
+          await_code: awaitCode,
+        });
+        workflowContextFactoryMock.create.mockImplementation(
+          async () => new TestRuntimeContext({}),
+        );
+        const created = await workflowService.create({
+          name: `await_code_${++workflowCounter}`,
+          description: 'Suspends until a code arrives',
+          type: WorkflowType.manual,
+          schedule: null,
+          createdBy: initiator.id,
+        });
+        await workflowVersionService.commit({
+          workflow: created.id,
+          definitionYml: AgenticWorkflow.stringifyDefinition({
+            defs: { ask: { kind: 'task', action: 'await_code' } },
+            flow: [{ do: 'ask' }],
+            outputs: { code: '=$output.ask.code' },
+          }),
+          action: WorkflowVersionAction.create,
+          createdBy: initiator.id,
+        });
+        const trigger = async (input: Record<string, unknown>, wait = true) => {
+          const event = createEvent(input);
+          event.setWorkflowId(created.id);
+
+          return await agenticService.triggerEvent(event, { wait });
+        };
+        const started = await trigger({});
+        if (started.status !== 'dispatched') {
+          throw new Error(`Expected a dispatched event, got ${started.status}`);
+        }
+        const run = await workflowRunService.findOne(started.run.id);
+        expect(run?.status).toBe('suspended');
+
+        return { trigger, runId: started.run.id, checkpoint: run?.checkpoint };
+      };
+
+      it('reports the refusal to a caller that waits for the pass', async () => {
+        const { trigger, runId, checkpoint } = await startCodeRun();
+
+        await expect(trigger({ code: 'hello' })).resolves.toEqual({
+          status: 'rejected',
+          runId,
+          error: expect.objectContaining({
+            name: 'WorkflowResumeRejectedError',
+            // Refused by the step once resumed, not by the wait.
+            message: expect.stringContaining('Resume payload for step'),
+            issues: [expect.stringContaining('must match pattern')],
+          }),
+        });
+        expect(await workflowRunService.findOne(runId)).toEqual(
+          expect.objectContaining({ status: 'suspended', checkpoint }),
+        );
+
+        await expect(trigger({ code: 'ABC-1234' })).resolves.toEqual({
+          status: 'dispatched',
+          run: expect.objectContaining({
+            id: runId,
+            status: 'finished',
+            output: { code: 'ABC-1234' },
+          }),
+        });
+        expect(await countRuns()).toBe(1);
+      });
+
+      it('answers a caller that does not wait once the run is claimed', async () => {
+        const { trigger, runId, checkpoint } = await startCodeRun();
+
+        await expect(trigger({ code: 'hello' }, false)).resolves.toEqual({
+          status: 'dispatched',
+          run: expect.objectContaining({ id: runId }),
+        });
+        await jobs.onIdle();
+        expect(await workflowRunService.findOne(runId)).toEqual(
+          expect.objectContaining({ status: 'suspended', checkpoint }),
+        );
+      });
+    });
+  });
+
+  describe('operator waits', () => {
+    const approval = {
+      decision: 'approved',
+      decided_by: { id: 'admin-1', name: 'Jane Doe' },
+      decided_at: '2026-01-02T10:00:00.000Z',
+    };
+    /** An event of a conversational trigger, as a channel would send. */
+    const createConversationalEvent = (input: Record<string, unknown>) => {
+      const event = createEvent(input);
+      Object.defineProperty(event, 'triggerType', {
+        value: WorkflowType.conversational,
+      });
+
+      return event;
+    };
+
+    it('starts a new run for a manual trigger while a run waits on an admin', async () => {
+      const blockedRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+      });
+      const runner = finishedRunner({ fresh: true });
+      const workflowInstance = buildWorkflowInstance(runner);
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(workflowInstance);
+
+      const result = await agenticService.handleEvent(
+        createEvent({ text: 'again' }),
+      );
+
+      expect(result?.id).not.toBe(blockedRun.id);
+      expect(result).toEqual(expect.objectContaining({ status: 'finished' }));
+      expect(runner.start).toHaveBeenCalledTimes(1);
+      expect(runner.resume).not.toHaveBeenCalled();
+      expect((await workflowRunService.findOne(blockedRun.id))?.status).toBe(
+        'suspended',
+      );
+      expect(await countRuns()).toBe(2);
+    });
+
+    it('holds a conversation message while its run waits on an admin', async () => {
+      const blockedRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+      });
+      const runner = finishedRunner({ fresh: true });
+      const workflowInstance = buildWorkflowInstance(runner);
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(workflowInstance);
+      const claimSpy = jest.spyOn(workflowRunService, 'claimSuspended');
+
+      await expect(
+        agenticService.handleEvent(
+          createConversationalEvent({ text: 'are you there?' }),
+        ),
+      ).resolves.toEqual(
+        expect.objectContaining({ id: blockedRun.id, status: 'suspended' }),
+      );
+      expect(claimSpy).not.toHaveBeenCalled();
+      expect(runner.start).not.toHaveBeenCalled();
+      expect(runner.resume).not.toHaveBeenCalled();
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('lets an event resolve the other waits of a run waiting on an admin', async () => {
+      const replyWait = buildWait();
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait(), replyWait]),
+      });
+      const event = createEvent({ text: 'reply' });
+      const runner = finishedRunner({ done: true });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(agenticService.handleEvent(event)).resolves.toEqual(
+        expect.objectContaining({ id: baseRun.id, status: 'finished' }),
+      );
+      expect(runner.resume).toHaveBeenCalledWith({
+        waitId: replyWait.waitId,
+        resumeData: event.buildInput(),
+      });
+    });
+
+    it.each([
+      ['a conversational', createConversationalEvent],
+      ['a manual', createEvent],
+    ])(
+      'lets %s event resolve the reply wait of a parent whose child waits on an admin',
+      async (_trigger, buildEvent) => {
+        actionServiceMock.getRegistry.mockReturnValue({
+          await_decision: defineAction({
+            name: 'await_decision',
+            inputSchema: z.object({}),
+            outputSchema: z.object({ decision: z.string() }),
+            execute: async ({ context }) =>
+              await context.workflow.suspend({
+                reason: AWAITING_APPROVAL_REASON,
+                accepts: z.object({ decision: z.string() }),
+              }),
+          }),
+          call_workflow: new CallWorkflowAction({
+            register: jest.fn(),
+          } as unknown as ActionService),
+          ask_reply: defineAction({
+            name: 'ask_reply',
+            inputSchema: z.object({}),
+            outputSchema: z.object({ text: z.string() }),
+            execute: async ({ context }) =>
+              await context.workflow.suspend({
+                reason: 'awaiting_user_response',
+                accepts: z.object({ text: z.string() }),
+              }),
+          }),
+        });
+        // What `call_workflow` reads from the context of its run.
+        class CallingContext extends TestRuntimeContext {
+          constructor(
+            readonly workflowRunId: string,
+            readonly event: TriggerEventWrapper,
+            readonly services: { agentic: AgenticService },
+          ) {
+            super({});
+          }
+        }
+        workflowContextFactoryMock.create.mockImplementation(
+          async (run: WorkflowRunFull, event: TriggerEventWrapper) =>
+            new CallingContext(run.id, event, { agentic: agenticService }),
+        );
+        const commitWorkflow = async (definition: WorkflowDefinition) => {
+          const created = await workflowService.create({
+            name: `reply_beside_call_${++workflowCounter}`,
+            description: 'Asks the user beside a call to a workflow',
+            type: WorkflowType.conversational,
+            schedule: null,
+            createdBy: initiator.id,
+          });
+          await workflowVersionService.commit({
+            workflow: created.id,
+            definitionYml: AgenticWorkflow.stringifyDefinition(definition),
+            action: WorkflowVersionAction.create,
+            createdBy: initiator.id,
+          });
+
+          return created;
+        };
+        const review = await commitWorkflow({
+          defs: { review: { kind: 'task', action: 'await_decision' } },
+          flow: [{ do: 'review' }],
+          outputs: { decision: '=$output.review.decision' },
+        });
+        // The run calls a workflow that asks an admin, and meanwhile asks
+        // the user a question.
+        const parentWorkflow = await commitWorkflow({
+          defs: {
+            call_review: {
+              kind: 'task',
+              action: 'call_workflow',
+              inputs: { workflow_id: review.id },
+            },
+            ask: { kind: 'task', action: 'ask_reply' },
           },
+          flow: [
+            {
+              parallel: {
+                strategy: 'wait_all',
+                steps: [{ do: 'call_review' }, { do: 'ask' }],
+              },
+            },
+          ],
+          outputs: {
+            decision: '=$output.call_review.output.decision',
+            reply: '=$output.ask.text',
+          },
+        });
+        const send = async (input: Record<string, unknown>) => {
+          const event = buildEvent(input);
+          event.setWorkflowId(parentWorkflow.id);
+
+          return (await agenticService.handleEvent(event))!;
+        };
+        const parentRun = await send({ start: true });
+        const childRunId = (
+          getOpenWaits(parentRun)[0].data as { workflow_run_id: string }
+        ).workflow_run_id;
+        expect(getOpenWaits(parentRun).map(({ reason }) => reason)).toEqual([
+          AWAITING_CHILD_WORKFLOW_REASON,
+          'awaiting_user_response',
+        ]);
+        expect(await workflowRunService.findOne(childRunId)).toEqual(
+          expect.objectContaining({
+            status: 'suspended',
+            awaitingOperator: true,
+          }),
+        );
+
+        // The reply reaches the parent, not the child below it, which only
+        // an admin can resume; no other run starts.
+        await expect(send({ text: 'hello' })).resolves.toEqual(
+          expect.objectContaining({ id: parentRun.id, status: 'suspended' }),
+        );
+        expect(
+          getOpenWaits((await workflowRunService.findOne(parentRun.id))!).map(
+            ({ reason }) => reason,
+          ),
+        ).toEqual([AWAITING_CHILD_WORKFLOW_REASON]);
+        expect(await countRuns()).toBe(2);
+
+        // The admin's decision ends the child, whose result ends the parent.
+        const childRun =
+          (await workflowRunService.findOneAndPopulate(childRunId))!;
+        const outcome = await agenticService.resumeWait({
+          run: childRun,
+          event: createEvent(),
+          waitId: getOpenWaits(childRun)[0].waitId,
+          resumeData: { decision: 'approved' },
+        });
+        expect(outcome.status).toBe('accepted');
+        await jobs.onIdle();
+
+        expect(await workflowRunService.findOne(parentRun.id)).toEqual(
+          expect.objectContaining({
+            status: 'finished',
+            output: { decision: 'approved', reply: 'hello' },
+          }),
+        );
+      },
+    );
+
+    describe('resumeWait', () => {
+      it('resolves the requested wait with the payload', async () => {
+        const approvalWait = buildApprovalWait();
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([approvalWait, buildWait()]),
+        });
+        const runner = finishedRunner({ approved: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+
+        const outcome = await agenticService.resumeWait({
+          run: baseRun,
+          event: createEvent(),
+          waitId: approvalWait.waitId,
+          resumeData: approval,
+        });
+
+        expect(outcome).toEqual({
+          status: 'accepted',
+          run: expect.objectContaining({ id: baseRun.id }),
+        });
+        await jobs.onIdle();
+        expect((await workflowRunService.findOne(baseRun.id))?.status).toBe(
+          'finished',
+        );
+        expect(runner.resume).toHaveBeenCalledWith({
+          waitId: approvalWait.waitId,
+          resumeData: approval,
+        });
+      });
+
+      it('refuses a payload before claiming the run', async () => {
+        const approvalWait = buildApprovalWait();
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([approvalWait]),
+        });
+        const refusal = new WorkflowResumeRejectedError('Payload refused', {
+          issues: ['decision: Invalid option'],
+        });
+        jest.spyOn(AgenticWorkflow, 'fromDefinition').mockReturnValue(
+          buildWorkflowInstance(finishedRunner({}), {
+            validateCheckpoint: validateCheckpointMock(refusal),
+          }),
+        );
+        const claimSpy = jest.spyOn(workflowRunService, 'claimSuspended');
+        const outcome = await agenticService.resumeWait({
+          run: baseRun,
+          event: createEvent(),
+          waitId: approvalWait.waitId,
+          resumeData: { decision: 'maybe' },
+        });
+
+        expect(outcome).toEqual({ status: 'rejected', error: refusal });
+        expect(claimSpy).not.toHaveBeenCalled();
+      });
+
+      it('lets only one of two concurrent decisions resume the run', async () => {
+        const approvalWait = buildApprovalWait();
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([approvalWait]),
+        });
+        const runner = finishedRunner({ approved: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+        const decide = () =>
+          agenticService.resumeWait({
+            run: baseRun,
+            event: createEvent(),
+            waitId: approvalWait.waitId,
+            resumeData: approval,
+          });
+        const outcomes = await Promise.all([decide(), decide()]);
+
+        expect(outcomes.map(({ status }) => status).sort()).toEqual([
+          'accepted',
+          'claim_lost',
+        ]);
+        await jobs.onIdle();
+        expect(runner.resume).toHaveBeenCalledTimes(1);
+      });
+
+      it('reports a run that failed once its wait was resolved, after answering', async () => {
+        const approvalWait = buildApprovalWait();
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([approvalWait]),
+        });
+        const runner = buildRunnerMock({
+          resumeError: new Error('Rejected by Jane Doe'),
+          state: { input: {}, output: {}, iterationStack: [] },
+          snapshot: failedSnapshot,
+        });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+
+        const outcome = await agenticService.resumeWait({
+          run: baseRun,
+          event: createEvent(),
+          waitId: approvalWait.waitId,
+          resumeData: { ...approval, decision: 'rejected' },
+        });
+
+        expect(outcome.status).toBe('accepted');
+        await jobs.onIdle();
+        expect(await workflowRunService.findOne(baseRun.id)).toEqual(
+          expect.objectContaining({
+            status: 'failed',
+            error: 'Rejected by Jane Doe',
+          }),
+        );
+      });
+
+      it('throws and keeps the run waiting when its definition no longer compiles', async () => {
+        const approvalWait = buildApprovalWait();
+        const checkpoint = buildCheckpoint([approvalWait]);
+        const baseRun = await createSuspendedRun({ checkpoint });
+        jest.spyOn(AgenticWorkflow, 'fromDefinition').mockImplementation(() => {
+          throw new Error('No action implementations provided for: x');
+        });
+
+        await expect(
+          agenticService.resumeWait({
+            run: baseRun,
+            event: createEvent(),
+            waitId: approvalWait.waitId,
+            resumeData: approval,
+          }),
+        ).rejects.toThrow('No action implementations provided for: x');
+
+        const storedRun = await workflowRunService.findOne(baseRun.id);
+        expect(storedRun?.status).toBe('suspended');
+        expect(storedRun?.checkpoint).toEqual(checkpoint);
+      });
+
+      it('fails a run that can no longer resume and passes the failure to its parent', async () => {
+        const childWorkflow = await createWorkflowWithDefinition();
+        const parentRun = await createSuspendedRun({ checkpoint: null });
+        const childRun = await createSuspendedRun({
+          checkpoint: null,
+          workflowId: childWorkflow.id,
+          workflowVersion: childWorkflow.currentVersion?.id ?? null,
+          parentRun: parentRun.id,
+        });
+        const childWait = buildChildWait(
+          'call_child',
+          childWorkflow.id,
+          childRun.id,
+        );
+        await workflowRunService.updateOne(parentRun.id, {
+          checkpoint: buildCheckpoint([childWait]),
+        });
+        const parentRunner = finishedRunner({ parent: 'done' });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(parentRunner));
+
+        const outcome = await agenticService.resumeWait({
+          run: childRun,
+          event: createEvent(),
+          waitId: buildApprovalWait().waitId,
+          resumeData: approval,
+        });
+        const error =
+          'Cannot resume workflow run: No checkpoint was persisted for this run.';
+        expect(outcome).toEqual({ status: 'unresumable', error });
+        expect(await workflowRunService.findOne(childRun.id)).toEqual(
+          expect.objectContaining({ status: 'failed', error }),
+        );
+        // The parent goes on in the background.
+        await jobs.onIdle();
+        expect(parentRunner.resume).toHaveBeenCalledWith({
+          waitId: childWait.waitId,
+          resumeData: {
+            status: 'failed',
+            workflow_id: childWorkflow.id,
+            workflow_run_id: childRun.id,
+            error,
+          },
+        });
+        expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+          'finished',
+        );
+      });
+
+      it('leaves a run that can no longer resume to the caller that claimed it first', async () => {
+        const baseRun = await createSuspendedRun({ checkpoint: null });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(finishedRunner({})));
+        jest
+          .spyOn(workflowRunService, 'claimSuspended')
+          .mockResolvedValueOnce(null);
+
+        const outcome = await agenticService.resumeWait({
+          run: baseRun,
+          event: createEvent(),
+          waitId: buildApprovalWait().waitId,
+          resumeData: approval,
+        });
+
+        expect(outcome).toEqual({ status: 'claim_lost' });
+        expect((await workflowRunService.findOne(baseRun.id))?.status).toBe(
+          'suspended',
+        );
+      });
+
+      it('leaves a run that can no longer resume once it is taken over while being failed', async () => {
+        const baseRun = await createSuspendedRun({ checkpoint: null });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(finishedRunner({})));
+        jest
+          .spyOn(workflowRunService.repository, 'settle')
+          .mockResolvedValueOnce(false);
+
+        const outcome = await agenticService.resumeWait({
+          run: baseRun,
+          event: createEvent(),
+          waitId: buildApprovalWait().waitId,
+          resumeData: approval,
+        });
+
+        expect(outcome).toEqual({ status: 'claim_lost' });
+        expect((await workflowRunService.findOne(baseRun.id))?.status).not.toBe(
+          'failed',
+        );
+      });
+
+      it('answers with the claimed run when it cannot be read back', async () => {
+        const approvalWait = buildApprovalWait();
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([approvalWait]),
+        });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(finishedRunner({ ok: true })));
+        jest
+          .spyOn(workflowRunService, 'findOneAndPopulate')
+          .mockRejectedValueOnce(new Error('database unavailable'));
+
+        const outcome = await agenticService.resumeWait({
+          run: baseRun,
+          event: createEvent(),
+          waitId: approvalWait.waitId,
+          resumeData: approval,
+        });
+
+        expect(outcome).toEqual({
+          status: 'accepted',
+          run: expect.objectContaining({ id: baseRun.id, status: 'running' }),
+        });
+        await jobs.onIdle();
+        expect((await workflowRunService.findOne(baseRun.id))?.status).toBe(
+          'finished',
+        );
+      });
+    });
+
+    describe('cancelRun', () => {
+      it('fails the run and cancels its open waits', async () => {
+        const approvalWait = buildApprovalWait();
+        const replyWait = buildWait();
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([approvalWait, replyWait]),
+          stepLog: {
+            approve: { id: 'approve', name: 'approve', status: 'suspended' },
+          },
+        });
+        await workflowRunService.updateOne(baseRun.id, {
+          awaitingOperator: true,
+        });
+        const emitSpy = jest.spyOn(eventEmitter, 'emit');
+        const outcome = await agenticService.cancelRun({
+          run: baseRun,
+          message: 'Cancelled by Jane Doe: stale',
+        });
+
+        expect(outcome.status).toBe('cancelled');
+        const storedRun = await workflowRunService.findOne(baseRun.id);
+        expect(storedRun).toEqual(
+          expect.objectContaining({
+            status: 'failed',
+            error: 'Cancelled by Jane Doe: stale',
+            checkpoint: null,
+            awaitingOperator: false,
+          }),
+        );
+        expect(storedRun?.snapshot).toEqual({
+          status: 'failed',
+          actions: {
+            approve: expect.objectContaining({
+              status: 'cancelled',
+              reason: 'Cancelled by Jane Doe: stale',
+            }),
+            wait_input: expect.objectContaining({ status: 'cancelled' }),
+          },
+        });
+        expect(storedRun?.stepLog?.approve).toEqual(
+          expect.objectContaining({
+            status: 'cancelled',
+            error: { message: 'Cancelled by Jane Doe: stale' },
+          }),
+        );
+        expect(emitSpy).toHaveBeenCalledWith(
+          'hook:step:cancelled',
+          expect.objectContaining({ runId: baseRun.id, wait: approvalWait }),
+        );
+        expect(emitSpy).toHaveBeenCalledWith('hook:workflow:failure', {
+          runId: baseRun.id,
+          error: expect.any(Error),
+        });
+      });
+
+      it('leaves a run another caller resumed or cancelled first', async () => {
+        const baseRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildApprovalWait()]),
+        });
+        const outcome = await agenticService.cancelRun({
+          run: { ...baseRun, suspendedAt: new Date('2025-01-01T00:00:00Z') },
+          message: 'Cancelled by Jane Doe',
+        });
+
+        expect(outcome.status).toBe('claim_lost');
+        expect((await workflowRunService.findOne(baseRun.id))?.status).toBe(
+          'suspended',
+        );
+      });
+
+      it('cancels the suspended runs called by a cancelled run', async () => {
+        const childWorkflow = await createWorkflowWithDefinition();
+        const parentRun = await createSuspendedRun({ checkpoint: null });
+        const childRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildApprovalWait()]),
+          workflowId: childWorkflow.id,
+          workflowVersion: childWorkflow.currentVersion?.id ?? null,
+          parentRun: parentRun.id,
+        });
+        await workflowRunService.updateOne(parentRun.id, {
+          checkpoint: buildCheckpoint([
+            buildChildWait('call_child', childWorkflow.id, childRun.id),
+          ]),
+        });
+
+        await agenticService.cancelRun({
+          run: (await workflowRunService.findOneAndPopulate(parentRun.id))!,
+          message: 'Cancelled by Jane Doe',
+        });
+
+        expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+          'failed',
+        );
+        expect(await workflowRunService.findOne(childRun.id)).toEqual(
+          expect.objectContaining({
+            status: 'failed',
+            error: `Parent workflow run ${parentRun.id} was cancelled`,
+          }),
+        );
+      });
+
+      it('passes a failed result to the parent of a cancelled run', async () => {
+        const childWorkflow = await createWorkflowWithDefinition();
+        const parentRun = await createSuspendedRun({ checkpoint: null });
+        const childRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildApprovalWait()]),
+          workflowId: childWorkflow.id,
+          workflowVersion: childWorkflow.currentVersion?.id ?? null,
+          parentRun: parentRun.id,
+        });
+        const childWait = buildChildWait(
+          'call_child',
+          childWorkflow.id,
+          childRun.id,
+        );
+        await workflowRunService.updateOne(parentRun.id, {
+          checkpoint: buildCheckpoint([childWait]),
+        });
+        const parentRunner = finishedRunner({ parent: 'done' });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(parentRunner));
+
+        const outcome = await agenticService.cancelRun({
+          run: childRun,
+          message: 'Cancelled by Jane Doe',
+        });
+
+        expect(outcome).toEqual(
+          expect.objectContaining({
+            status: 'cancelled',
+            run: expect.objectContaining({ id: childRun.id, status: 'failed' }),
+          }),
+        );
+        // The parent goes on in the background, with its trigger rebuilt.
+        await jobs.onIdle();
+        expect(eventRestorerMock.restore).toHaveBeenCalledWith(
+          expect.objectContaining({ id: parentRun.id }),
+        );
+        expect(parentRunner.resume).toHaveBeenCalledWith({
+          waitId: childWait.waitId,
+          resumeData: {
+            status: 'failed',
+            workflow_id: childWorkflow.id,
+            workflow_run_id: childRun.id,
+            error: 'Cancelled by Jane Doe',
+          },
+        });
+        expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+          'finished',
+        );
+      });
+
+      it('leaves the parent of a cancelled run waiting when its trigger cannot be rebuilt', async () => {
+        const childWorkflow = await createWorkflowWithDefinition();
+        const parentRun = await createSuspendedRun({ checkpoint: null });
+        const childRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildApprovalWait()]),
+          workflowId: childWorkflow.id,
+          workflowVersion: childWorkflow.currentVersion?.id ?? null,
+          parentRun: parentRun.id,
+        });
+        await workflowRunService.updateOne(parentRun.id, {
+          checkpoint: buildCheckpoint([
+            buildChildWait('call_child', childWorkflow.id, childRun.id),
+          ]),
+        });
+        const fromDefinitionSpy = jest.spyOn(AgenticWorkflow, 'fromDefinition');
+        eventRestorerMock.restore.mockRejectedValueOnce(
+          new Error('Thread is closed'),
+        );
+        const outcome = await agenticService.cancelRun({
+          run: childRun,
+          message: 'Cancelled by Jane Doe',
+        });
+
+        expect(outcome.status).toBe('cancelled');
+        await jobs.onIdle();
+        // The parent catches the result up on its next event.
+        expect(fromDefinitionSpy).not.toHaveBeenCalled();
+        expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+          'suspended',
+        );
+      });
+    });
+
+    it('resumes an approval with the agentic runner', async () => {
+      const awaitDecision = defineAction({
+        name: 'await_decision',
+        inputSchema: z.object({}),
+        outputSchema: z.object({ decision: z.string() }),
+        execute: async ({ context }) =>
+          await context.workflow.suspend({
+            reason: AWAITING_APPROVAL_REASON,
+            accepts: z.object({ decision: z.enum(['approved', 'rejected']) }),
+          }),
+      });
+      actionServiceMock.getRegistry.mockReturnValue({
+        await_decision: awaitDecision,
+      });
+      workflowContextFactoryMock.create.mockImplementation(
+        async () => new TestRuntimeContext({}),
+      );
+      const created = await workflowService.create({
+        name: `await_decision_${++workflowCounter}`,
+        description: 'Suspends until an admin decides',
+        type: WorkflowType.manual,
+        schedule: null,
+        createdBy: initiator.id,
+      });
+      await workflowVersionService.commit({
+        workflow: created.id,
+        definitionYml: AgenticWorkflow.stringifyDefinition({
+          defs: { review: { kind: 'task', action: 'await_decision' } },
+          flow: [{ do: 'review' }],
+          outputs: { decision: '=$output.review.decision' },
+        }),
+        action: WorkflowVersionAction.create,
+        createdBy: initiator.id,
+      });
+      const trigger = async () => {
+        const event = createEvent({});
+        event.setWorkflowId(created.id);
+
+        return (await agenticService.handleEvent(event))!;
+      };
+      const first = await trigger();
+      const flagged = await workflowRunService.findOneAndPopulate(first.id);
+      expect(flagged).toEqual(
+        expect.objectContaining({
+          status: 'suspended',
+          awaitingOperator: true,
+        }),
+      );
+
+      // Waiting on an admin does not absorb the next manual trigger.
+      const second = await trigger();
+      expect(second.id).not.toBe(first.id);
+      expect(second.status).toBe('suspended');
+
+      const [wait] = (flagged!.checkpoint as WorkflowCheckpoint).waits;
+      const refused = await agenticService.resumeWait({
+        run: flagged!,
+        event: createEvent(),
+        waitId: wait.waitId,
+        resumeData: { decision: 'maybe' },
+      });
+      expect(refused.status).toBe('rejected');
+
+      const outcome = await agenticService.resumeWait({
+        run: flagged!,
+        event: createEvent(),
+        waitId: wait.waitId,
+        resumeData: { decision: 'approved' },
+      });
+
+      expect(outcome.status).toBe('accepted');
+      await jobs.onIdle();
+      expect(await workflowRunService.findOne(first.id)).toEqual(
+        expect.objectContaining({
+          status: 'finished',
+          output: { decision: 'approved' },
+          awaitingOperator: false,
         }),
       );
     });
@@ -700,150 +2373,12 @@ describe('AgenticService (TypeORM)', () => {
         output: { child: 'done' },
       });
       expect(childRun.parentRun?.id).toBe(parentRun.id);
+      expect(childRun.callerRunId).toBe(parentRun.id);
       expect(childRun.input).toEqual({ from: 'parent' });
       expect(runner.start).toHaveBeenCalledWith({
         inputData: { from: 'parent' },
         context: runtimeContext,
       });
-    });
-
-    it('reuses the recorded child run instead of spawning a duplicate during parent replay', async () => {
-      const childWorkflow = await createWorkflowWithDefinition();
-      // Parent is mid-resume: markRunning happened, but the persisted
-      // suspension bookkeeping from the original call_workflow is still there.
-      const parentRun = await createParentRun();
-      const childRun = await workflowRunService.create({
-        workflow: childWorkflow.id,
-        workflowVersion: childWorkflow.currentVersion?.id ?? null,
-        triggeredBy: initiator.id,
-        parentRun: parentRun.id,
-        status: 'finished',
-        input: { from: 'parent' },
-        output: { child: 'done' },
-      });
-      await workflowRunService.updateOne(parentRun.id, {
-        suspendedStep: 'call_child',
-        suspensionReason: 'awaiting_child_workflow',
-        suspensionData: {
-          workflow_id: childWorkflow.id,
-          workflow_run_id: childRun.id,
-        },
-      });
-      const event = createEvent({ text: 'reply that resumes the parent' });
-      const runnerSnapshot: WorkflowSnapshot = {
-        status: 'finished',
-        actions: {},
-      };
-      const runner = buildRunnerMock({
-        startResult: {
-          status: 'finished',
-          output: { duplicate: true },
-          snapshot: runnerSnapshot,
-        },
-        state: { input: {}, output: {}, iterationStack: [] },
-        snapshot: runnerSnapshot,
-      });
-      jest
-        .spyOn(AgenticWorkflow, 'fromDefinition')
-        .mockReturnValue(buildWorkflowInstance(runner));
-
-      const result = await agenticService.callWorkflow({
-        workflowId: childWorkflow.id,
-        input: { from: 'parent' },
-        parentContext: {
-          workflowRunId: parentRun.id,
-          event,
-          // The runtime control reports a recorded resume result for the
-          // upcoming suspend() — the signature of a deterministic replay.
-          workflow: { hasRecordedResult: () => true },
-        } as any,
-      });
-      const childRuns = (await workflowRunService.findAndPopulate({
-        where: { workflow: { id: childWorkflow.id } },
-      })) as WorkflowRunFull[];
-
-      expect(childRuns).toHaveLength(1);
-      expect(runner.start).not.toHaveBeenCalled();
-      expect(result).toEqual({
-        status: 'finished',
-        workflow_id: childWorkflow.id,
-        workflow_run_id: childRun.id,
-        output: { child: 'done' },
-      });
-    });
-
-    it('spawns a new child run for a later call even when stale suspension bookkeeping matches', async () => {
-      const childWorkflow = await createWorkflowWithDefinition();
-      const parentRun = await createParentRun();
-      const previousChildRun = await workflowRunService.create({
-        workflow: childWorkflow.id,
-        workflowVersion: childWorkflow.currentVersion?.id ?? null,
-        triggeredBy: initiator.id,
-        parentRun: parentRun.id,
-        status: 'finished',
-        input: { from: 'parent' },
-        output: { child: 'done' },
-      });
-      // Suspension fields are not cleared when the parent resumes, so a
-      // subsequent sequential call to the same workflow sees stale metadata.
-      await workflowRunService.updateOne(parentRun.id, {
-        suspendedStep: 'call_child',
-        suspensionReason: 'awaiting_child_workflow',
-        suspensionData: {
-          workflow_id: childWorkflow.id,
-          workflow_run_id: previousChildRun.id,
-        },
-      });
-      const event = createEvent({ text: 'second sequential call' });
-      const runtimeContext = { state: {}, event } as any;
-      workflowContextFactoryMock.create.mockResolvedValue(runtimeContext);
-      const runnerSnapshot: WorkflowSnapshot = {
-        status: 'finished',
-        actions: {},
-      };
-      const runner = buildRunnerMock({
-        startResult: {
-          status: 'finished',
-          output: { child: 'done-again' },
-          snapshot: runnerSnapshot,
-        },
-        state: {
-          input: { from: 'parent' },
-          output: { child: 'done-again' },
-          iterationStack: [],
-        },
-        snapshot: runnerSnapshot,
-      });
-      jest
-        .spyOn(AgenticWorkflow, 'fromDefinition')
-        .mockReturnValue(buildWorkflowInstance(runner));
-
-      const result = await agenticService.callWorkflow({
-        workflowId: childWorkflow.id,
-        input: { from: 'parent' },
-        parentContext: {
-          workflowRunId: parentRun.id,
-          event,
-          // No recorded result: this is a fresh call, not a replay.
-          workflow: { hasRecordedResult: () => false },
-        } as any,
-      });
-      const childRuns = (await workflowRunService.findAndPopulate({
-        where: { workflow: { id: childWorkflow.id } },
-      })) as WorkflowRunFull[];
-
-      expect(childRuns).toHaveLength(2);
-      expect(runner.start).toHaveBeenCalled();
-      expect(result).toEqual(
-        expect.objectContaining({
-          status: 'finished',
-          workflow_id: childWorkflow.id,
-          output: { child: 'done-again' },
-        }),
-      );
-      expect(result).not.toEqual(
-        expect.objectContaining({ workflow_run_id: previousChildRun.id }),
-      );
     });
 
     it('resumes a suspended child leaf before unwinding the parent run', async () => {
@@ -852,21 +2387,13 @@ describe('AgenticService (TypeORM)', () => {
       const event = createEvent({ text: 'resume child' });
       const runtimeContext = { state: { resumed: true }, event } as any;
       workflowContextFactoryMock.create.mockResolvedValue(runtimeContext);
-      const suspendedSnapshot: WorkflowSnapshot = {
-        status: 'suspended',
-        actions: {},
-      };
-      const finishedSnapshot: WorkflowSnapshot = {
-        status: 'finished',
-        actions: {},
-      };
       const childStartRunner = buildRunnerMock({
-        startResult: {
-          status: 'suspended',
-          step: { id: 'wait_child', name: 'wait_child', type: StepType.Task },
-          reason: 'waiting for child input',
-          snapshot: suspendedSnapshot,
-        },
+        startResult: suspendedResult([
+          buildWait({
+            waitId: 'wait_child@index:1',
+            step: { id: 'wait_child', name: 'wait_child', type: StepType.Task },
+          }),
+        ]),
         state: {
           input: { original: true },
           output: { partial: true },
@@ -874,39 +2401,15 @@ describe('AgenticService (TypeORM)', () => {
         },
         snapshot: suspendedSnapshot,
       });
-      const childResumeRunner = buildRunnerMock({
-        resumeResult: {
-          status: 'finished',
-          output: { child: 'done' },
-          snapshot: finishedSnapshot,
-        },
-        state: {
-          input: { original: true },
-          output: { child: 'done' },
-          iterationStack: [],
-        },
-        snapshot: finishedSnapshot,
-      });
-      const parentResumeRunner = buildRunnerMock({
-        resumeResult: {
-          status: 'finished',
-          output: { parent: 'done' },
-          snapshot: finishedSnapshot,
-        },
-        state: {
-          input: { parent: true },
-          output: { parent: 'done' },
-          iterationStack: [],
-        },
-        snapshot: finishedSnapshot,
-      });
+      const childResumeRunner = finishedRunner({ child: 'done' });
+      const parentResumeRunner = finishedRunner({ parent: 'done' });
       jest
         .spyOn(AgenticWorkflow, 'fromDefinition')
         .mockReturnValueOnce(buildWorkflowInstance(childStartRunner))
         .mockReturnValueOnce(buildWorkflowInstance(childResumeRunner))
         .mockReturnValueOnce(buildWorkflowInstance(parentResumeRunner));
 
-      const suspendedResult = await agenticService.callWorkflow({
+      const suspendedCall = await agenticService.callWorkflow({
         workflowId: childWorkflow.id,
         input: { original: true },
         parentContext: {
@@ -919,16 +2422,23 @@ describe('AgenticService (TypeORM)', () => {
         order: { createdAt: 'DESC' },
         take: 1,
       })) as WorkflowRunFull[];
-      await workflowRunService.markSuspended(parentRun.id, {
-        stepId: 'call_child',
-        reason: 'awaiting_child_workflow',
-        data: {
-          workflow_id: childWorkflow.id,
-          workflow_run_id: childRun.id,
-        },
-        snapshot: suspendedSnapshot,
-        context: { parent: true },
-      });
+      // The parent also waits on a reply in a parallel branch: the child
+      // result must resolve the wait of the step that spawned this child.
+      const replyWait = buildWait();
+      const childWait = buildChildWait(
+        'call_child',
+        childWorkflow.id,
+        childRun.id,
+      );
+      await workflowRunService.repository.settle(
+        parentRun.id,
+        suspendedValues({
+          checkpoint: buildCheckpoint([replyWait, childWait]),
+          snapshot: suspendedSnapshot,
+          context: { parent: true },
+        }),
+        null,
+      );
 
       await expect(agenticService.handleEvent(event)).resolves.toEqual(
         expect.objectContaining({
@@ -943,60 +2453,53 @@ describe('AgenticService (TypeORM)', () => {
       const updatedParent = await workflowRunService.findOneAndPopulate(
         parentRun.id,
       );
-      const childOutput = {
-        status: 'finished',
-        workflow_id: childWorkflow.id,
-        workflow_run_id: childRun.id,
-        output: { child: 'done' },
-      };
 
-      expect(suspendedResult).toEqual({
+      expect(suspendedCall).toEqual({
         status: 'suspended',
         workflow_id: childWorkflow.id,
         workflow_run_id: childRun.id,
       });
+      expect(childResumeRunner.resume).toHaveBeenCalledWith({
+        waitId: 'wait_child@index:1',
+        resumeData: event.buildInput(),
+      });
       expect(updatedChild?.status).toBe('finished');
+      expect(updatedChild?.checkpoint).toBeNull();
       expect(updatedParent?.status).toBe('finished');
       expect(updatedParent?.output).toEqual({ parent: 'done' });
       expect(parentResumeRunner.resume).toHaveBeenCalledWith({
-        resumeData: childOutput,
+        waitId: childWait.waitId,
+        resumeData: {
+          status: 'finished',
+          workflow_id: childWorkflow.id,
+          workflow_run_id: childRun.id,
+          output: { child: 'done' },
+        },
       });
     });
 
     it('resumes the parent with a failed child payload and persists parent failure', async () => {
       const childWorkflow = await createWorkflowWithDefinition();
-      const parentRun = await workflowRunService.create({
-        workflow: workflow.id,
-        workflowVersion: workflowVersionId,
-        triggeredBy: initiator.id,
-        status: 'suspended',
-        input: { parent: true },
-        output: { before: true },
-        context: { parent: true },
-        snapshot: { status: 'suspended', actions: {} },
-        suspendedStep: 'call_child',
-        suspensionReason: 'awaiting_child_workflow',
+      const parentRun = await createSuspendedRun({
+        checkpoint: null,
       });
-      const childRun = await workflowRunService.create({
-        workflow: childWorkflow.id,
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+        workflowId: childWorkflow.id,
         workflowVersion: childWorkflow.currentVersion?.id ?? null,
-        triggeredBy: initiator.id,
         parentRun: parentRun.id,
-        status: 'suspended',
-        input: { child: true },
-        output: { partial: true },
-        context: { child: true },
-        snapshot: { status: 'suspended', actions: {} },
-        suspendedStep: 'wait_child',
-        suspensionReason: 'waiting',
+      });
+      const childWait = buildChildWait(
+        'call_child',
+        childWorkflow.id,
+        childRun.id,
+      );
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([childWait]),
       });
       const event = createEvent({ text: 'fail child' });
       const runtimeContext = { state: { failed: true }, event } as any;
       workflowContextFactoryMock.create.mockResolvedValue(runtimeContext);
-      const failedSnapshot: WorkflowSnapshot = {
-        status: 'failed',
-        actions: {},
-      };
       const childResumeRunner = buildRunnerMock({
         resumeResult: {
           status: 'failed',
@@ -1024,7 +2527,10 @@ describe('AgenticService (TypeORM)', () => {
         .mockReturnValueOnce(buildWorkflowInstance(childResumeRunner))
         .mockReturnValueOnce(buildWorkflowInstance(parentResumeRunner));
 
-      await expect(agenticService.handleEvent(event)).resolves.toBeNull();
+      // The event's run settled; the crash of its parent is its own.
+      await expect(agenticService.handleEvent(event)).resolves.toEqual(
+        expect.objectContaining({ id: childRun.id, status: 'failed' }),
+      );
 
       const updatedChild = await workflowRunService.findOneAndPopulate(
         childRun.id,
@@ -1037,7 +2543,9 @@ describe('AgenticService (TypeORM)', () => {
       expect(updatedChild?.error).toBe('child failed');
       expect(updatedParent?.status).toBe('failed');
       expect(updatedParent?.error).toBe('child failed');
+      expect(updatedParent?.checkpoint).toBeNull();
       expect(parentResumeRunner.resume).toHaveBeenCalledWith({
+        waitId: childWait.waitId,
         resumeData: {
           status: 'failed',
           workflow_id: childWorkflow.id,
@@ -1045,6 +2553,684 @@ describe('AgenticService (TypeORM)', () => {
           error: 'child failed',
         },
       });
+    });
+
+    /** A parent that fails once it receives the failed result of its child. */
+    const failingParentRunner = () =>
+      buildRunnerMock({
+        resumeResult: {
+          status: 'failed',
+          error: new Error('Cannot resume child'),
+          snapshot: failedSnapshot,
+        },
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: failedSnapshot,
+      });
+    /**
+     * Suspend a parent run on a child run that can never resume (it has no
+     * checkpoint). The parent resumes with `parentRunner` and the new run the
+     * event starts runs with `freshRunner`, whichever of them comes first.
+     */
+    const setUpUnresumableChild = async (
+      parentRunner: jest.Mocked<WorkflowRunner>,
+      freshRunner: jest.Mocked<WorkflowRunner>,
+    ) => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({ checkpoint: null });
+      const childRun = await createSuspendedRun({
+        checkpoint: null,
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      const childWait = buildChildWait(
+        'call_child',
+        childWorkflow.id,
+        childRun.id,
+      );
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([childWait]),
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValueOnce(buildWorkflowInstance(finishedRunner({})))
+        .mockReturnValue(
+          buildWorkflowInstance(freshRunner, {
+            buildRunnerFromCheckpoint: jest.fn(() => parentRunner),
+          }),
+        );
+
+      return { childWorkflow, parentRun, childRun, childWait };
+    };
+
+    it('unwinds an unresumable child into its parent and starts one new run', async () => {
+      const parentRunner = failingParentRunner();
+      const freshRunner = finishedRunner({ fresh: true });
+      const { childWorkflow, parentRun, childRun, childWait } =
+        await setUpUnresumableChild(parentRunner, freshRunner);
+
+      await agenticService.handleEvent(createEvent({ text: 'hello again' }));
+
+      expect((await workflowRunService.findOne(childRun.id))?.status).toBe(
+        'failed',
+      );
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'failed',
+      );
+      expect(parentRunner.resume).toHaveBeenCalledWith({
+        waitId: childWait.waitId,
+        resumeData: {
+          status: 'failed',
+          workflow_id: childWorkflow.id,
+          workflow_run_id: childRun.id,
+          error:
+            'Cannot resume workflow run: No checkpoint was persisted for this run.',
+        },
+      });
+      expect(freshRunner.start).toHaveBeenCalledTimes(1);
+      expect(await countRuns()).toBe(3);
+    });
+
+    it('lets the parent of an unresumable run go on before the new run starts when the caller waits', async () => {
+      const steps: string[] = [];
+      const parentRunner = failingParentRunner();
+      const resume = parentRunner.resume.getMockImplementation()!;
+      parentRunner.resume.mockImplementation(async (options) => {
+        steps.push('parent resumed');
+        // Leave the new run time to start, were it not waiting.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        steps.push('parent went on');
+
+        return await resume(options);
+      });
+      const freshRunner = finishedRunner({ fresh: true });
+      const start = freshRunner.start.getMockImplementation()!;
+      freshRunner.start.mockImplementation(async (options) => {
+        steps.push('new run started');
+
+        return await start(options);
+      });
+      await setUpUnresumableChild(parentRunner, freshRunner);
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hello again' })),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          status: 'finished',
+          output: { fresh: true },
+        }),
+      );
+      expect(steps).toEqual([
+        'parent resumed',
+        'parent went on',
+        'new run started',
+      ]);
+    });
+
+    it('answers a dispatched event with the new run while the parent of an unresumable run goes on', async () => {
+      const parentRunner = failingParentRunner();
+      const resume = parentRunner.resume.getMockImplementation()!;
+      let releaseParent!: () => void;
+      const parentResumed = new Promise<void>((markResumed) => {
+        parentRunner.resume.mockImplementation(async (options) => {
+          const released = new Promise<void>((release) => {
+            releaseParent = release;
+          });
+          markResumed();
+          await released;
+
+          return await resume(options);
+        });
+      });
+      const freshRunner = finishedRunner({ fresh: true });
+      const { parentRun, childRun } = await setUpUnresumableChild(
+        parentRunner,
+        freshRunner,
+      );
+      // The parent is only released once the event is answered: an answer
+      // that waited for it would never come.
+      const dispatched = await dispatchEvent(
+        createEvent({ text: 'hello again' }),
+      );
+
+      expect(dispatched).toEqual(expect.objectContaining({ status: 'idle' }));
+      expect([parentRun.id, childRun.id]).not.toContain(dispatched.id);
+      await parentResumed;
+      releaseParent();
+      await jobs.onIdle();
+      expect((await workflowRunService.findOne(dispatched.id))?.status).toBe(
+        'finished',
+      );
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'failed',
+      );
+    });
+
+    it('fails the parent when it refuses the child result', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({ checkpoint: null });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([
+          buildChildWait('call_child', childWorkflow.id, childRun.id),
+        ]),
+      });
+      const parentResumeRunner = finishedRunner({});
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValueOnce(buildWorkflowInstance(finishedRunner({})))
+        .mockReturnValueOnce(
+          buildWorkflowInstance(parentResumeRunner, {
+            validateCheckpoint: validateCheckpointMock(
+              new WorkflowResumeRejectedError('Unexpected child result'),
+            ),
+          }),
+        );
+
+      await agenticService.handleEvent(createEvent({ text: 'reply' }));
+
+      const updatedParent = await workflowRunService.findOne(parentRun.id);
+      expect((await workflowRunService.findOne(childRun.id))?.status).toBe(
+        'finished',
+      );
+      expect(parentResumeRunner.resume).not.toHaveBeenCalled();
+      expect(updatedParent?.status).toBe('failed');
+      expect(updatedParent?.error).toBe(
+        'Cannot resume workflow run: Unexpected child result',
+      );
+    });
+
+    it('delivers a child result to a parent once its definition compiles again', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({ checkpoint: null });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      const childWait = buildChildWait(
+        'call_child',
+        childWorkflow.id,
+        childRun.id,
+      );
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([childWait]),
+      });
+      const parentRunner = finishedRunner({ parent: 'done' });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(parentRunner))
+        .mockReturnValueOnce(
+          buildWorkflowInstance(finishedRunner({ child: 'done' })),
+        )
+        .mockImplementationOnce(() => {
+          throw new Error('No action implementations provided for: call_child');
+        });
+
+      await agenticService.handleEvent(createEvent({ text: 'reply' }));
+
+      expect((await workflowRunService.findOne(childRun.id))?.status).toBe(
+        'finished',
+      );
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'suspended',
+      );
+      expect(parentRunner.resume).not.toHaveBeenCalled();
+
+      await agenticService.handleEvent(createEvent({ text: 'later' }));
+
+      expect(parentRunner.resume).toHaveBeenCalledWith({
+        waitId: childWait.waitId,
+        resumeData: {
+          status: 'finished',
+          workflow_id: childWorkflow.id,
+          workflow_run_id: childRun.id,
+          output: { child: 'done' },
+        },
+      });
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'finished',
+      );
+      expect(await countRuns()).toBe(2);
+    });
+
+    it('delivers a child result the parent missed once it suspends again', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({ checkpoint: null });
+      const childA = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      // Child B finished while the parent was held by another caller, so its
+      // result never reached the parent.
+      const childB = await workflowRunService.create({
+        workflow: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        triggeredBy: initiator.id,
+        parentRun: parentRun.id,
+        status: 'finished',
+        output: { child: 'b' },
+      });
+      const waitA = buildChildWait('call_a', childWorkflow.id, childA.id);
+      const waitB = buildChildWait('call_b', childWorkflow.id, childB.id);
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([waitA, waitB]),
+      });
+      const parentFirstRunner = buildRunnerMock({
+        resumeResult: suspendedResult([waitB]),
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: suspendedSnapshot,
+      });
+      const parentSecondRunner = finishedRunner({ parent: 'done' });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValueOnce(
+          buildWorkflowInstance(finishedRunner({ child: 'a' })),
+        )
+        .mockReturnValueOnce(buildWorkflowInstance(parentFirstRunner))
+        .mockReturnValueOnce(buildWorkflowInstance(parentSecondRunner));
+
+      await agenticService.handleEvent(createEvent({ text: 'reply' }));
+
+      expect(parentFirstRunner.resume).toHaveBeenCalledWith({
+        waitId: waitA.waitId,
+        resumeData: expect.objectContaining({ workflow_run_id: childA.id }),
+      });
+      expect(parentSecondRunner.resume).toHaveBeenCalledWith({
+        waitId: waitB.waitId,
+        resumeData: {
+          status: 'finished',
+          workflow_id: childWorkflow.id,
+          workflow_run_id: childB.id,
+          output: { child: 'b' },
+        },
+      });
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'finished',
+      );
+    });
+
+    it('delivers the result of a child that ended during the first pass of its parent', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const event = createEvent({ text: 'start parent' });
+      event.setWorkflowId(workflow.id);
+      let parentRunId: string | undefined;
+      let childRunId: string | undefined;
+      let childWait: WaitInfo | undefined;
+      const parentStartRunner = buildRunnerMock({
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: suspendedSnapshot,
+      });
+      parentStartRunner.start.mockImplementation(async () => {
+        // The child suspended, then another event resumed it to completion
+        // while this first pass of the parent was still going: the child
+        // could not resume a parent that was not suspended yet.
+        const childRun = await workflowRunService.create({
+          workflow: childWorkflow.id,
+          workflowVersion: childWorkflow.currentVersion?.id ?? null,
+          triggeredBy: initiator.id,
+          parentRun: parentRunId,
+          status: 'finished',
+          output: { child: 'done' },
+        });
+        childRunId = childRun.id;
+        childWait = buildChildWait('call_child', childWorkflow.id, childRun.id);
+
+        return suspendedResult([childWait]);
+      });
+      const parentStartInstance = buildWorkflowInstance(parentStartRunner);
+      (parentStartInstance.buildAsyncRunner as jest.Mock).mockImplementation(
+        async (options?: { runId?: string }) => {
+          parentRunId = options?.runId;
+
+          return parentStartRunner;
+        },
+      );
+      const parentResumeRunner = finishedRunner({ parent: 'done' });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValueOnce(parentStartInstance)
+        .mockReturnValueOnce(buildWorkflowInstance(parentResumeRunner));
+
+      const parentRun = await agenticService.handleEvent(event);
+
+      expect(parentResumeRunner.resume).toHaveBeenCalledWith({
+        waitId: childWait?.waitId,
+        resumeData: {
+          status: 'finished',
+          workflow_id: childWorkflow.id,
+          workflow_run_id: childRunId,
+          output: { child: 'done' },
+        },
+      });
+      expect(parentRun).toEqual(
+        expect.objectContaining({
+          id: parentRunId,
+          status: 'finished',
+          output: { parent: 'done' },
+        }),
+      );
+    });
+
+    it('delivers a child result that ended while a refused resume held the parent', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({ checkpoint: null });
+      // The child ended while the parent was claimed by the resume below, so
+      // its own resume of the parent lost the claim.
+      const childRun = await workflowRunService.create({
+        workflow: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        triggeredBy: initiator.id,
+        parentRun: parentRun.id,
+        status: 'finished',
+        output: { child: 'done' },
+      });
+      const replyWait = buildWait();
+      const childWait = buildChildWait(
+        'call_child',
+        childWorkflow.id,
+        childRun.id,
+      );
+      const checkpoint = buildCheckpoint([replyWait, childWait]);
+      await workflowRunService.updateOne(parentRun.id, { checkpoint });
+      const refusingRunner = buildRunnerMock({
+        resumeResult: {
+          ...suspendedResult([replyWait, childWait]),
+          checkpoint,
+          rejection: {
+            waitId: replyWait.waitId,
+            error: new WorkflowResumeRejectedError('Unknown order id'),
+          },
+        },
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: suspendedSnapshot,
+      });
+      const parentResumeRunner = finishedRunner({ parent: 'done' });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValueOnce(buildWorkflowInstance(refusingRunner))
+        .mockReturnValueOnce(buildWorkflowInstance(parentResumeRunner));
+      const event = createEvent({ order: 'unknown' });
+
+      await agenticService.handleEvent(event);
+
+      expect(refusingRunner.resume).toHaveBeenCalledWith({
+        waitId: replyWait.waitId,
+        resumeData: event.buildInput(),
+      });
+      expect(parentResumeRunner.resume).toHaveBeenCalledWith({
+        waitId: childWait.waitId,
+        resumeData: {
+          status: 'finished',
+          workflow_id: childWorkflow.id,
+          workflow_run_id: childRun.id,
+          output: { child: 'done' },
+        },
+      });
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'finished',
+      );
+    });
+
+    it('fails a parent that can no longer resume once its child ends, and passes the failure on', async () => {
+      const parentWorkflow = await createWorkflowWithDefinition();
+      const childWorkflow = await createWorkflowWithDefinition();
+      const rootRun = await createSuspendedRun({ checkpoint: null });
+      const parentRun = await createSuspendedRun({
+        checkpoint: null,
+        workflowId: parentWorkflow.id,
+        workflowVersion: parentWorkflow.currentVersion?.id ?? null,
+        parentRun: rootRun.id,
+      });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      const rootWait = buildChildWait(
+        'call_parent',
+        parentWorkflow.id,
+        parentRun.id,
+      );
+      await workflowRunService.updateOne(rootRun.id, {
+        checkpoint: buildCheckpoint([rootWait]),
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([
+          buildChildWait('call_child', childWorkflow.id, childRun.id),
+        ]),
+      });
+      const rootRunner = finishedRunner({ root: 'done' });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValueOnce(
+          buildWorkflowInstance(finishedRunner({ child: 'done' })),
+        )
+        .mockReturnValueOnce(
+          buildWorkflowInstance(finishedRunner({}), {
+            validateCheckpoint: jest.fn(() => ({
+              ok: false,
+              error: new WorkflowDefinitionDriftError('old', 'new'),
+            })),
+          }),
+        )
+        .mockReturnValueOnce(buildWorkflowInstance(rootRunner));
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'reply' })),
+      ).resolves.toEqual(
+        expect.objectContaining({ id: childRun.id, status: 'finished' }),
+      );
+
+      const failedParent = await workflowRunService.findOne(parentRun.id);
+      expect(failedParent?.status).toBe('failed');
+      expect(failedParent?.error).toMatch(/^Cannot resume workflow run: /);
+      expect(rootRunner.resume).toHaveBeenCalledWith({
+        waitId: rootWait.waitId,
+        resumeData: {
+          status: 'failed',
+          workflow_id: parentWorkflow.id,
+          workflow_run_id: parentRun.id,
+          error: failedParent?.error,
+        },
+      });
+      expect((await workflowRunService.findOne(rootRun.id))?.status).toBe(
+        'finished',
+      );
+      expect(await countRuns()).toBe(3);
+    });
+
+    describe('when a child ends', () => {
+      const decision = { decision: 'approved' };
+      /** A suspended child of `parentRun` waiting on an admin. */
+      const createChildRun = async (parentRunId: string) => {
+        const childWorkflow = await createWorkflowWithDefinition();
+        const childRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildApprovalWait()]),
+          workflowId: childWorkflow.id,
+          workflowVersion: childWorkflow.currentVersion?.id ?? null,
+          parentRun: parentRunId,
+        });
+
+        return { childWorkflow, childRun };
+      };
+      const approveChild = async (childRun: WorkflowRunFull) => {
+        await agenticService.resumeWait({
+          run: childRun,
+          event: createEvent(),
+          waitId: buildApprovalWait().waitId,
+          resumeData: decision,
+        });
+        await jobs.onIdle();
+
+        return await workflowRunService.findOne(childRun.id);
+      };
+
+      it('ends a child whose parent run is gone', async () => {
+        const parentRun = await createSuspendedRun({ checkpoint: null });
+        const { childRun } = await createChildRun(parentRun.id);
+        const runner = finishedRunner({ child: 'done' });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+        const findOneAndPopulate =
+          workflowRunService.findOneAndPopulate.bind(workflowRunService);
+        jest
+          .spyOn(workflowRunService, 'findOneAndPopulate')
+          .mockImplementation((async (...args: [any, ...any[]]) =>
+            args[0] === parentRun.id
+              ? null
+              : await findOneAndPopulate(...args)) as any);
+
+        expect((await approveChild(childRun))?.status).toBe('finished');
+        expect(runner.resume).toHaveBeenCalledTimes(1);
+        expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+          'suspended',
+        );
+      });
+
+      it('leaves a parent that is still running to catch the result up', async () => {
+        const parentRun = await createParentRun();
+        const { childRun } = await createChildRun(parentRun.id);
+        const runner = finishedRunner({ child: 'done' });
+        const fromDefinitionSpy = jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+
+        expect((await approveChild(childRun))?.status).toBe('finished');
+        expect(fromDefinitionSpy).toHaveBeenCalledTimes(1);
+        expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+          'running',
+        );
+      });
+
+      it('leaves a parent that does not wait on the child', async () => {
+        const parentRun = await createSuspendedRun({
+          checkpoint: buildCheckpoint([buildWait()]),
+        });
+        const { childRun } = await createChildRun(parentRun.id);
+        const runner = finishedRunner({ done: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+
+        expect((await approveChild(childRun))?.status).toBe('finished');
+        expect(runner.resume).toHaveBeenCalledTimes(1);
+        expect(await workflowRunService.findOne(parentRun.id)).toEqual(
+          expect.objectContaining({
+            status: 'suspended',
+            suspendedAt: parentRun.suspendedAt,
+          }),
+        );
+      });
+
+      it('leaves a parent another caller claimed first to catch the result up', async () => {
+        const parentRun = await createSuspendedRun({ checkpoint: null });
+        const { childWorkflow, childRun } = await createChildRun(parentRun.id);
+        await workflowRunService.updateOne(parentRun.id, {
+          checkpoint: buildCheckpoint([
+            buildChildWait('call_child', childWorkflow.id, childRun.id),
+          ]),
+        });
+        const runner = finishedRunner({ done: true });
+        jest
+          .spyOn(AgenticWorkflow, 'fromDefinition')
+          .mockReturnValue(buildWorkflowInstance(runner));
+        const claimSuspended =
+          workflowRunService.claimSuspended.bind(workflowRunService);
+        const claimSpy = jest
+          .spyOn(workflowRunService, 'claimSuspended')
+          .mockImplementation(async (runId, suspendedAt) =>
+            runId === parentRun.id
+              ? null
+              : await claimSuspended(runId, suspendedAt),
+          );
+
+        expect((await approveChild(childRun))?.status).toBe('finished');
+        expect(claimSpy).toHaveBeenCalledWith(
+          parentRun.id,
+          parentRun.suspendedAt,
+        );
+        expect(runner.resume).toHaveBeenCalledTimes(1);
+        expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+          'suspended',
+        );
+      });
+    });
+
+    it.each([
+      [
+        'its caller run is unknown',
+        'parent',
+        'Unable to load parent workflow run',
+      ],
+      ['the workflow is unknown', 'workflow', 'not found'],
+      [
+        'the workflow has no definition',
+        'definition',
+        'is missing a definition',
+      ],
+    ])('rejects a call when %s', async (_label, missing, message) => {
+      const unknownId = '44444444-4444-4444-8444-444444444444';
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createParentRun();
+      if (missing === 'definition') {
+        jest
+          .spyOn(workflowService, 'findOneAndPopulate')
+          .mockResolvedValueOnce({ ...childWorkflow, definition: null } as any);
+      }
+
+      await expect(
+        agenticService.callWorkflow({
+          workflowId: missing === 'workflow' ? unknownId : childWorkflow.id,
+          parentContext: {
+            workflowRunId: missing === 'parent' ? unknownId : parentRun.id,
+            event: createEvent({ text: 'call child' }),
+          } as any,
+        }),
+      ).rejects.toThrow(message);
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('reports the error of a child whose failure cannot be written', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createParentRun();
+      const runner = buildRunnerMock({
+        startError: new Error('runner-crash'),
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: failedSnapshot,
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+      jest
+        .spyOn(workflowRunService, 'persistCrash')
+        .mockRejectedValueOnce(new Error('database unavailable'));
+
+      await expect(
+        agenticService.callWorkflow({
+          workflowId: childWorkflow.id,
+          parentContext: {
+            workflowRunId: parentRun.id,
+            event: createEvent({ text: 'call child' }),
+          } as any,
+        }),
+      ).rejects.toThrow('runner-crash');
+
+      const [childRun] = await workflowRunService.find({
+        where: { workflow: { id: childWorkflow.id } },
+      });
+      // Recovery fails it once its claim lapses.
+      expect(childRun.status).toBe('running');
     });
 
     it('rejects calls to workflows with a different workflow type', async () => {
@@ -1106,6 +3292,774 @@ describe('AgenticService (TypeORM)', () => {
           } as any,
         }),
       ).rejects.toThrow('Workflow call stack depth cannot exceed 10');
+    });
+  });
+
+  describe('calls nothing waits on any more', () => {
+    const abandoned = (parentRunId: string) =>
+      expect.objectContaining({
+        status: 'failed',
+        error: `Calling workflow run ${parentRunId} no longer waits on this run`,
+        checkpoint: null,
+        awaitingOperator: false,
+      });
+
+    it('cancels the run a wait_any branch that lost the race called', async () => {
+      const awaitDecision = defineAction({
+        name: 'await_decision',
+        inputSchema: z.object({}),
+        outputSchema: z.object({ decision: z.string() }),
+        execute: async ({ context }) =>
+          await context.workflow.suspend({
+            reason: AWAITING_APPROVAL_REASON,
+            accepts: z.object({ decision: z.string() }),
+          }),
+      });
+      actionServiceMock.getRegistry.mockReturnValue({
+        await_decision: awaitDecision,
+        call_workflow: new CallWorkflowAction({
+          register: jest.fn(),
+        } as unknown as ActionService),
+        ask_reply: defineAction({
+          name: 'ask_reply',
+          inputSchema: z.object({}),
+          outputSchema: z.object({ text: z.string() }),
+          execute: async ({ context }) =>
+            await context.workflow.suspend({
+              reason: 'awaiting_user_response',
+              accepts: z.object({ text: z.string() }),
+            }),
+        }),
+      });
+      // What `call_workflow` reads from the context of its run.
+      class CallingContext extends TestRuntimeContext {
+        constructor(
+          readonly workflowRunId: string,
+          readonly event: TriggerEventWrapper,
+          readonly services: { agentic: AgenticService },
+        ) {
+          super({});
+        }
+      }
+      workflowContextFactoryMock.create.mockImplementation(
+        async (run: WorkflowRunFull, event: TriggerEventWrapper) =>
+          new CallingContext(run.id, event, { agentic: agenticService }),
+      );
+      const commitWorkflow = async (definition: WorkflowDefinition) => {
+        const created = await workflowService.create({
+          name: `wait_any_call_${++workflowCounter}`,
+          description: 'Calls workflows in a wait_any block',
+          type: WorkflowType.conversational,
+          schedule: null,
+          createdBy: initiator.id,
+        });
+        await workflowVersionService.commit({
+          workflow: created.id,
+          definitionYml: AgenticWorkflow.stringifyDefinition(definition),
+          action: WorkflowVersionAction.create,
+          createdBy: initiator.id,
+        });
+
+        return created;
+      };
+      const review = await commitWorkflow({
+        defs: { review: { kind: 'task', action: 'await_decision' } },
+        flow: [{ do: 'review' }],
+        outputs: { decision: '=$output.review.decision' },
+      });
+      const call = {
+        kind: 'task' as const,
+        action: 'call_workflow',
+        inputs: { workflow_id: review.id },
+      };
+      // Two approvals race; the run then asks the user a question.
+      const parentWorkflow = await commitWorkflow({
+        defs: {
+          call_a: call,
+          call_b: call,
+          ask: { kind: 'task', action: 'ask_reply' },
+        },
+        flow: [
+          {
+            parallel: {
+              strategy: 'wait_any',
+              steps: [{ do: 'call_a' }, { do: 'call_b' }],
+            },
+          },
+          { do: 'ask' },
+        ],
+        outputs: {
+          winner: '=$output.call_a.workflow_run_id',
+          reply: '=$output.ask.text',
+        },
+      });
+      const send = async (input: Record<string, unknown>) => {
+        const event = createEvent(input);
+        event.setWorkflowId(parentWorkflow.id);
+
+        return (await agenticService.handleEvent(event))!;
+      };
+      const parentRun = await send({ start: true });
+      const callWaits = (
+        (await workflowRunService.findOne(parentRun.id))!
+          .checkpoint as WorkflowCheckpoint
+      ).waits;
+      const [childA, childB] = await Promise.all(
+        callWaits.map(
+          async ({ data }) =>
+            (await workflowRunService.findOneAndPopulate(
+              (data as { workflow_run_id: string }).workflow_run_id,
+            ))!,
+        ),
+      );
+      expect([childA, childB]).toEqual([
+        expect.objectContaining({
+          status: 'suspended',
+          awaitingOperator: true,
+        }),
+        expect.objectContaining({
+          status: 'suspended',
+          awaitingOperator: true,
+        }),
+      ]);
+
+      const approve = async (childRun: WorkflowRunFull) => {
+        const outcome = await agenticService.resumeWait({
+          run: childRun,
+          event: createEvent(),
+          waitId: (childRun.checkpoint as WorkflowCheckpoint).waits[0].waitId,
+          resumeData: { decision: 'approved' },
+        });
+        await jobs.onIdle();
+
+        return outcome;
+      };
+      expect((await approve(childA)).status).toBe('accepted');
+
+      // Branch A won, and the run went on to its question.
+      const waitingParent = (await workflowRunService.findOne(parentRun.id))!;
+      expect(waitingParent.status).toBe('suspended');
+      expect(getOpenWaits(waitingParent).map(({ reason }) => reason)).toEqual([
+        'awaiting_user_response',
+      ]);
+      expect(await workflowRunService.findOne(childB.id)).toEqual(
+        abandoned(parentRun.id),
+      );
+      expect(
+        await workflowRunService.find(
+          workflowRunService.withAwaitingOperatorScope(),
+        ),
+      ).toEqual([]);
+      // Approving the loser no longer runs it.
+      expect((await approve(childB)).status).toBe('claim_lost');
+      expect((await workflowRunService.findOne(childB.id))?.status).toBe(
+        'failed',
+      );
+
+      // The reply reaches the run, not the loser below it.
+      const runCount = await countRuns();
+      await send({ text: 'hello' });
+
+      expect(await workflowRunService.findOne(parentRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'finished',
+          output: { winner: childA.id, reply: 'hello' },
+        }),
+      );
+      expect(await countRuns()).toBe(runCount);
+    });
+
+    it('cancels a run that suspends again once its caller was cancelled', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({ checkpoint: null });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([
+          buildChildWait('call_child', childWorkflow.id, childRun.id),
+        ]),
+      });
+      // The child's pass goes on until the parent was cancelled, then
+      // suspends on a second approval.
+      let cancelled!: () => void;
+      const parentCancelled = new Promise<void>((resolve) => {
+        cancelled = resolve;
+      });
+      const secondApproval = buildApprovalWait('approve_again');
+      const runner = buildRunnerMock({
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: suspendedSnapshot,
+      });
+      runner.resume.mockImplementation(async () => {
+        await parentCancelled;
+
+        return suspendedResult([secondApproval]);
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const outcome = await agenticService.resumeWait({
+        run: childRun,
+        event: createEvent(),
+        waitId: buildApprovalWait().waitId,
+        resumeData: { decision: 'approved' },
+      });
+      expect(outcome.status).toBe('accepted');
+      const cancel = await agenticService.cancelRun({
+        run: (await workflowRunService.findOneAndPopulate(parentRun.id))!,
+        message: 'Cancelled by admin',
+      });
+      expect(cancel.status).toBe('cancelled');
+      // The child was in a pass, so the cancel left it alone.
+      expect((await workflowRunService.findOne(childRun.id))?.status).toBe(
+        'running',
+      );
+      cancelled();
+      await jobs.onIdle();
+
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      expect(await workflowRunService.findOne(childRun.id)).toEqual(
+        abandoned(parentRun.id),
+      );
+    });
+  });
+
+  describe('workflow deletion', () => {
+    /** Parent run of `workflow` waiting on a suspended run of a new child workflow. */
+    const createCallStack = async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({ checkpoint: null });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      const childWait = buildChildWait(
+        'call_child',
+        childWorkflow.id,
+        childRun.id,
+      );
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([childWait]),
+      });
+
+      return { childWorkflow, parentRun, childRun, childWait };
+    };
+
+    it('fails the call of the parent once the called workflow is deleted', async () => {
+      const { childWorkflow, parentRun, childRun, childWait } =
+        await createCallStack();
+      const callerRunIds =
+        await workflowRunService.prepareWorkflowDeletion(childWorkflow);
+      await workflowService.deleteOne(childWorkflow.id);
+      expect(await workflowRunService.findOne(childRun.id)).toBeNull();
+      const parentRunner = finishedRunner({ parent: 'done' });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(parentRunner));
+
+      await callStack.reconcile([callerRunIds[0]], createEvent());
+
+      expect(parentRunner.resume).toHaveBeenCalledWith({
+        waitId: childWait.waitId,
+        resumeData: {
+          status: 'failed',
+          workflow_id: childWorkflow.id,
+          workflow_run_id: childRun.id,
+          error: `Called workflow ${childWorkflow.id} was deleted`,
+        },
+      });
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'finished',
+      );
+    });
+
+    it('leaves a parent waiting on a child run that still exists', async () => {
+      const { parentRun } = await createCallStack();
+      const fromDefinition = jest.spyOn(AgenticWorkflow, 'fromDefinition');
+
+      await callStack.reconcile([parentRun.id], createEvent());
+
+      expect(fromDefinition).not.toHaveBeenCalled();
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'suspended',
+      );
+    });
+
+    it('fails a call whose wait does not name the called workflow', async () => {
+      const deletedRunId = '33333333-3333-4333-8333-333333333333';
+      const childWait = buildWait({
+        waitId: 'call_child@index:1',
+        step: { id: 'call_child', name: 'call_child', type: StepType.Task },
+        reason: AWAITING_CHILD_WORKFLOW_REASON,
+        data: { workflow_run_id: deletedRunId },
+      });
+      const parentRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([childWait]),
+      });
+      const parentRunner = finishedRunner({ parent: 'done' });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(parentRunner));
+
+      await callStack.reconcile([parentRun.id], createEvent());
+
+      expect(parentRunner.resume).toHaveBeenCalledWith({
+        waitId: childWait.waitId,
+        resumeData: {
+          status: 'failed',
+          workflow_id: '',
+          workflow_run_id: deletedRunId,
+          error: 'Called workflow undefined was deleted',
+        },
+      });
+    });
+
+    it.each([
+      ['is not suspended', 'running'],
+      ['no longer exists', 'missing'],
+    ])('leaves a caller that %s', async (_label, state) => {
+      const { parentRun } = await createCallStack();
+      if (state === 'running') {
+        await workflowRunService.updateOne(parentRun.id, {
+          status: 'running',
+        });
+      }
+      const fromDefinition = jest.spyOn(AgenticWorkflow, 'fromDefinition');
+
+      await callStack.reconcile(
+        [
+          state === 'missing'
+            ? '44444444-4444-4444-8444-444444444444'
+            : parentRun.id,
+        ],
+        createEvent(),
+      );
+
+      expect(fromDefinition).not.toHaveBeenCalled();
+    });
+
+    it('cancels a called run that suspends once its caller was deleted', async () => {
+      const parentWorkflow = await createWorkflowWithDefinition();
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({
+        checkpoint: null,
+        workflowId: parentWorkflow.id,
+        workflowVersion: parentWorkflow.currentVersion?.id ?? null,
+      });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+        callerRunId: parentRun.id,
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([
+          buildChildWait('call_child', childWorkflow.id, childRun.id),
+        ]),
+      });
+      // The child's pass goes on until its caller's workflow was deleted,
+      // then suspends on a second approval.
+      let deleted!: () => void;
+      const parentDeleted = new Promise<void>((resolve) => {
+        deleted = resolve;
+      });
+      const runner = buildRunnerMock({
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: suspendedSnapshot,
+      });
+      runner.resume.mockImplementation(async () => {
+        await parentDeleted;
+
+        return suspendedResult([buildApprovalWait('approve_again')]);
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const outcome = await agenticService.resumeWait({
+        run: childRun,
+        event: createEvent(),
+        waitId: buildApprovalWait().waitId,
+        resumeData: { decision: 'approved' },
+      });
+      expect(outcome.status).toBe('accepted');
+      await workflowRunService.prepareWorkflowDeletion(parentWorkflow);
+      await workflowService.deleteOne(parentWorkflow.id);
+      // The child was in a pass, so the deletion left it alone, and the
+      // database unlinked it from its deleted caller.
+      expect(await workflowRunService.findOne(childRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'running',
+          parentRun: null,
+          callerRunId: parentRun.id,
+        }),
+      );
+      deleted();
+      await jobs.onIdle();
+
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      expect(await workflowRunService.findOne(childRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: `Calling workflow run ${parentRun.id} no longer waits on this run`,
+          checkpoint: null,
+          awaitingOperator: false,
+        }),
+      );
+    });
+  });
+  describe('claim leases', () => {
+    const approval = {
+      decision: 'approved',
+      decided_by: { id: 'admin-1', name: 'Jane Doe' },
+      decided_at: '2026-01-02T10:00:00.000Z',
+    };
+    /** Read the claim token of a run, which the run schemas strip. */
+    const readClaimId = async (runId: string) =>
+      (
+        await dataSource
+          .getRepository(WorkflowRunOrmEntity)
+          .findOneByOrFail({ id: runId })
+      ).claimId ?? null;
+    /** Tell whether this process holds the claim the run is under. */
+    const isHeld = async (runId: string) => {
+      const claimId = await readClaimId(runId);
+
+      return !!claimId && workflowRunService.holdsClaim(claimId);
+    };
+    /** Read the claim a run is under, and whether this process holds it. */
+    const readHold = async (runId: string) => {
+      const claimId = (await readClaimId(runId))!;
+
+      return { claimId, held: workflowRunService.holdsClaim(claimId) };
+    };
+    const finished = (output: Record<string, unknown> = {}) => ({
+      status: 'finished' as const,
+      output,
+      snapshot: finishedSnapshot,
+    });
+    /** Take a run over, as closing its thread does. */
+    const takeOver = async (runId: string) =>
+      await workflowRunService.repository.settle(
+        runId,
+        failedValues({ error: 'Thread was closed' }),
+        null,
+      );
+
+    it('holds the claim on a new run until its first pass is over', async () => {
+      const holds: { claimId: string; held: boolean }[] = [];
+      const runner = finishedRunner({ done: true });
+      runner.start.mockImplementation(async () => {
+        const [run] = await workflowRunService.find({});
+        holds.push(await readHold(run.id));
+
+        return finished({ done: true });
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+      const run = await agenticService.handleEvent(createEvent({ text: 'hi' }));
+
+      expect(run).toEqual(expect.objectContaining({ status: 'finished' }));
+      expect(holds).toEqual([{ claimId: expect.any(String), held: true }]);
+      expect(workflowRunService.holdsClaim(holds[0].claimId)).toBe(false);
+      expect(await readClaimId(run!.id)).toBeNull();
+    });
+
+    it('releases the claim on a resumed run whose runner throws', async () => {
+      const run = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const holds: { claimId: string; held: boolean }[] = [];
+      const runner = finishedRunner({});
+      runner.resume.mockImplementation(async () => {
+        holds.push(await readHold(run.id));
+        throw new Error('runner-crash');
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'reply' })),
+      ).resolves.toBeNull();
+
+      expect(holds).toEqual([{ claimId: expect.any(String), held: true }]);
+      expect(workflowRunService.holdsClaim(holds[0].claimId)).toBe(false);
+      expect(await workflowRunService.findOne(run.id)).toEqual(
+        expect.objectContaining({ status: 'failed', error: 'runner-crash' }),
+      );
+      expect(await readClaimId(run.id)).toBeNull();
+    });
+
+    it('fails a run that cannot start instead of leaving it idle', async () => {
+      workflowContextFactoryMock.create.mockRejectedValueOnce(
+        new Error('Unsupported triggerType: nope'),
+      );
+      const runner = finishedRunner({});
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+      const createSpy = jest.spyOn(workflowRunService, 'createFromEvent');
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hi' })),
+      ).resolves.toBeNull();
+
+      const { lease } = await createSpy.mock.results[0].value;
+      const [run] = await workflowRunService.find({});
+      expect(run).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Unsupported triggerType: nope',
+        }),
+      );
+      expect(runner.start).not.toHaveBeenCalled();
+      expect(workflowRunService.holdsClaim(lease.claimId)).toBe(false);
+      expect(await readClaimId(run.id)).toBeNull();
+    });
+
+    it('keeps a run failed when its thread is closed during its first pass', async () => {
+      const runner = finishedRunner({ done: true });
+      runner.start.mockImplementation(async () => {
+        const [run] = await workflowRunService.find({});
+        await takeOver(run.id);
+
+        return finished({ done: true });
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.handleEvent(createEvent({ text: 'hi' })),
+      ).resolves.toBeNull();
+
+      const [run] = await workflowRunService.find({});
+      expect(run).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Thread was closed',
+          output: null,
+        }),
+      );
+    });
+
+    it('drops the outcome of a resume whose run was taken over, and leaves its parent alone', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([
+          buildChildWait('call_child', childWorkflow.id, childRun.id),
+        ]),
+      });
+      const runner = finishedRunner({ child: 'done' });
+      runner.resume.mockImplementation(async () => {
+        await takeOver(childRun.id);
+
+        return finished({ child: 'done' });
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const outcome = await agenticService.resumeWait({
+        run: childRun,
+        event: createEvent(),
+        waitId: buildApprovalWait().waitId,
+        resumeData: approval,
+      });
+
+      expect(outcome.status).toBe('accepted');
+      await jobs.onIdle();
+      expect(await workflowRunService.findOne(childRun.id)).toEqual(
+        expect.objectContaining({ status: 'failed', output: { saved: true } }),
+      );
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      expect((await workflowRunService.findOne(parentRun.id))?.status).toBe(
+        'suspended',
+      );
+    });
+
+    it('answers an admin resume once its run is claimed, holding the claim until the pass is over', async () => {
+      const run = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+      });
+      const runner = finishedRunner({ done: true });
+      let endPass!: () => void;
+      runner.resume.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            endPass = () => resolve(finished({ done: true }));
+          }),
+      );
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const outcome = await agenticService.resumeWait({
+        run,
+        event: createEvent(),
+        waitId: buildApprovalWait().waitId,
+        resumeData: approval,
+      });
+
+      expect(outcome).toEqual({
+        status: 'accepted',
+        run: expect.objectContaining({ id: run.id, status: 'running' }),
+      });
+      expect(await isHeld(run.id)).toBe(true);
+
+      endPass();
+      await jobs.onIdle();
+      expect((await workflowRunService.findOne(run.id))?.status).toBe(
+        'finished',
+      );
+      expect(await readClaimId(run.id)).toBeNull();
+    });
+
+    it('answers a dispatched event once its new run is created, holding the claim until the pass is over', async () => {
+      const runner = finishedRunner({ done: true });
+      let endPass!: () => void;
+      const started = new Promise<void>((markStarted) => {
+        runner.start.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              endPass = () => resolve(finished({ done: true }));
+              markStarted();
+            }),
+        );
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const dispatched = await dispatchEvent(createEvent({ text: 'hi' }));
+
+      expect(dispatched).toEqual(expect.objectContaining({ status: 'idle' }));
+      const runId = dispatched.id;
+      expect(await isHeld(runId)).toBe(true);
+
+      await started;
+      expect((await workflowRunService.findOne(runId))?.status).toBe('running');
+      endPass();
+      await jobs.onIdle();
+      expect((await workflowRunService.findOne(runId))?.status).toBe(
+        'finished',
+      );
+      expect(await readClaimId(runId)).toBeNull();
+    });
+
+    it('answers a dispatched event once it claimed the suspended run it resumes', async () => {
+      const run = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const runner = finishedRunner({ done: true });
+      let endPass!: () => void;
+      runner.resume.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            endPass = () => resolve(finished({ done: true }));
+          }),
+      );
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const dispatched = await dispatchEvent(createEvent({ text: 'reply' }));
+
+      expect(dispatched).toEqual(
+        expect.objectContaining({ id: run.id, status: 'running' }),
+      );
+      expect(await isHeld(run.id)).toBe(true);
+
+      endPass();
+      await jobs.onIdle();
+      expect((await workflowRunService.findOne(run.id))?.status).toBe(
+        'finished',
+      );
+      expect(await readClaimId(run.id)).toBeNull();
+    });
+
+    it('leaves a resume whose outcome could not be written to recovery', async () => {
+      const run = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(finishedRunner({ done: true })));
+      jest
+        .spyOn(workflowRunService, 'persistResult')
+        .mockRejectedValueOnce(new Error('database unavailable'));
+
+      const outcome = await agenticService.resumeWait({
+        run,
+        event: createEvent(),
+        waitId: buildApprovalWait().waitId,
+        resumeData: approval,
+      });
+
+      expect(outcome.status).toBe('accepted');
+      await jobs.onIdle();
+      // Recovery puts it back on its wait once its claim lapses.
+      expect((await workflowRunService.findOne(run.id))?.status).toBe(
+        'running',
+      );
+      expect(await isHeld(run.id)).toBe(false);
+    });
+
+    it('rejects a call whose child run was taken over during its first pass', async () => {
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = (await workflowRunService.findOneAndPopulate(
+        (
+          await workflowRunService.create({
+            workflow: workflow.id,
+            workflowVersion: workflowVersionId,
+            triggeredBy: initiator.id,
+            status: 'running',
+            input: { parent: true },
+          })
+        ).id,
+      ))!;
+      const runner = finishedRunner({ child: 'done' });
+      runner.start.mockImplementation(async () => {
+        const [childRun] = await workflowRunService.find({
+          where: { workflow: { id: childWorkflow.id } },
+        });
+        await takeOver(childRun.id);
+
+        return finished({ child: 'done' });
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.callWorkflow({
+          workflowId: childWorkflow.id,
+          input: {},
+          parentContext: {
+            workflowRunId: parentRun.id,
+            event: createEvent({ text: 'call child' }),
+          } as any,
+        }),
+      ).rejects.toThrow(WorkflowRunClaimLostError);
     });
   });
 });

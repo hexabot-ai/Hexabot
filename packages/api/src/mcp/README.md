@@ -179,11 +179,22 @@ version checksum and total byte length so clients can verify reconstruction.
 | `hexabot_workflow_version_update`  | `workflowversion:update` | Update workflow version metadata.                                                               |
 | `hexabot_workflow_rollback`        | `workflowversion:create` | Restore a previous version by creating a new snapshot.                                          |
 | `hexabot_workflow_run_search`      | `workflowrun:read`       | Search workflow runs by workflow and status.                                                    |
+| `hexabot_workflow_run_pending`     | `workflowrun:read`       | List suspended runs waiting on an admin (`await_approval`, `suspend_workflow`) with their waits. |
 | `hexabot_workflow_run_get`         | `workflowrun:read`       | Read one workflow run with populated workflow metadata but no nested YAML body.                 |
 | `hexabot_workflow_run_debug`       | `workflowrun:read`       | Inspect one workflow run with execution state and parent/child run context for troubleshooting. |
 
-Workflow run search/get responses strip nested `definitionYml` fields from
-populated workflow-version relations. `hexabot_workflow_run_debug` returns the
+Workflow run, search, get and pending responses strip nested `definitionYml`
+fields from populated workflow-version relations, and the resume checkpoint.
+`hexabot_workflow_run` and `hexabot_workflow_run_pending` replace the checkpoint
+with `openWaits` (`waitId`, `reason`, `step`, `data`), its only content the run
+output and step log do not hold; the pending tool lists admin waits only.
+`hexabot_workflow_run` can reach a suspended run of the workflow that waits
+for outside input instead of starting a new run. When that run refuses the
+input, or another request resumed it first, the tool returns an error (its
+message lists the refused fields) instead of `accepted: true`; the run still
+waits on the same input.
+Deciding on a wait is only possible through the REST API
+(`PATCH /api/workflowrun/:id/approve|reject|resume|cancel`). `hexabot_workflow_run_debug` returns the
 executed YAML once as top-level `workflowDefinitionYml` only when
 `includeWorkflowDefinition=true`.
 

@@ -7,6 +7,7 @@
 import {
   WORKFLOW_RUN_STATUSES,
   type StepExecutionRecord,
+  type WorkflowCheckpoint,
   type WorkflowRunStatus,
   type WorkflowSnapshot,
 } from '@hexabot-ai/agentic';
@@ -14,9 +15,9 @@ import { workflowRunFullSchema, workflowRunSchema } from '@hexabot-ai/types';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDate,
   IsIn,
-  IsInt,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -75,6 +76,17 @@ export class WorkflowRunCreateDto {
   parentRun?: string | null;
 
   @ApiPropertyOptional({
+    description:
+      'Workflow run that called this run, kept once that run is deleted',
+    type: String,
+  })
+  @IsOptional()
+  @IsUUIDv4({
+    message: 'Calling workflow run must be a valid UUID',
+  })
+  callerRunId?: string | null;
+
+  @ApiPropertyOptional({
     description: 'Lifecycle status of the run',
     enum: WORKFLOW_RUN_STATUSES,
   })
@@ -108,58 +120,20 @@ export class WorkflowRunCreateDto {
   stepLog?: Record<string, StepExecutionRecord> | null;
 
   @ApiPropertyOptional({
-    description: 'Step id where the run is suspended',
-    type: String,
-  })
-  @IsOptional()
-  @IsString()
-  suspendedStep?: string | null;
-
-  @ApiPropertyOptional({ description: 'Suspension reason', type: String })
-  @IsOptional()
-  @IsString()
-  suspensionReason?: string | null;
-
-  @ApiPropertyOptional({ description: 'Suspension payload', type: Object })
-  @IsOptional()
-  suspensionData?: unknown;
-
-  @ApiPropertyOptional({
-    description: 'Step execution attempt id for suspension replay',
-    type: String,
-  })
-  @IsOptional()
-  @IsString()
-  suspensionStepExecId?: string | null;
-
-  @ApiPropertyOptional({
-    description: '1-based suspension index within the step',
-    type: Number,
-  })
-  @IsOptional()
-  @IsInt()
-  suspensionIndex?: number | null;
-
-  @ApiPropertyOptional({
-    description: 'Normalized key of the active suspension point',
-    type: String,
-  })
-  @IsOptional()
-  @IsString()
-  suspensionKey?: string | null;
-
-  @ApiPropertyOptional({
-    description:
-      'Previously resumed suspension values for deterministic replay',
+    description: 'Checkpoint of the suspended run, needed to resume it',
     type: Object,
   })
   @IsOptional()
   @IsObject()
-  suspensionAwaitResults?: Record<string, unknown> | null;
+  checkpoint?: WorkflowCheckpoint | null;
 
-  @ApiPropertyOptional({ description: 'Last resume payload', type: Object })
+  @ApiPropertyOptional({
+    description: 'Whether the run waits on an admin decision',
+    type: Boolean,
+  })
   @IsOptional()
-  lastResumeData?: unknown;
+  @IsBoolean()
+  awaitingOperator?: boolean;
 
   @ApiPropertyOptional({ description: 'Error message if failed', type: String })
   @IsOptional()

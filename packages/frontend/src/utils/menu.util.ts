@@ -9,6 +9,7 @@ import {
   Activity,
   BookOpen,
   BrainCircuit,
+  ClipboardCheck,
   Flag,
   GitBranch,
   Home,
@@ -31,6 +32,7 @@ import {
 } from "lucide-react";
 
 import { TMenu } from "@/app-components/menus/DashboardSidebar/types/sidebar.types";
+import { PendingApprovalsBadge } from "@/components/workflow-approvals/PendingApprovalsBadge";
 import { EntityType } from "@/services/types";
 
 export const getMenuItems = (ssoEnabled: boolean): TMenu[] => [
@@ -63,6 +65,15 @@ export const getMenuItems = (ssoEnabled: boolean): TMenu[] => [
         text: "menu.runs",
         href: "/workflow/runs",
         Icon: Activity,
+        requires: {
+          [EntityType.WORKFLOW_RUN]: [Action.READ],
+        },
+      },
+      {
+        text: "menu.approvals",
+        href: "/workflow/approvals",
+        Icon: ClipboardCheck,
+        Badge: PendingApprovalsBadge,
         requires: {
           [EntityType.WORKFLOW_RUN]: [Action.READ],
         },

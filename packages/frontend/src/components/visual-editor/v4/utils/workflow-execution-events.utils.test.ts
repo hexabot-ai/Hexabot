@@ -62,6 +62,41 @@ const loopStepSuccessEvent: SubscribeWorkflowProps = {
   workflowEvent: "step:success",
   t: 140,
 };
+const wait = {
+  waitId: "wait-1",
+  step: stepInfo,
+  suspendKey: "index:1",
+  reason: "approval",
+};
+const stepResumedEvent: SubscribeWorkflowProps = {
+  ...stepStartEvent,
+  workflowEvent: "step:resumed",
+  t: 150,
+  wait,
+  resumeData: { approved: true },
+};
+const stepResumeRejectedEvent: SubscribeWorkflowProps = {
+  ...stepStartEvent,
+  workflowEvent: "step:resume_rejected",
+  t: 160,
+  wait,
+  error: {
+    name: "WorkflowResumeRejectedError",
+    message: "approved: Required",
+  } as never,
+};
+const workflowResumeRejectedEvent: SubscribeWorkflowProps = {
+  workflowEvent: "workflow:resume_rejected",
+  workflowId: "flow-1",
+  runId: "run-1",
+  t: 170,
+  wait,
+  resumeData: {},
+  error: {
+    name: "WorkflowResumeRejectedError",
+    message: "approved: Required",
+  } as never,
+};
 const workflowFinishEvent: SubscribeWorkflowProps = {
   workflowEvent: "workflow:finish",
   workflowId: "flow-1",
@@ -162,6 +197,48 @@ describe("workflow-execution-events.utils", () => {
         t: 125,
       },
     ]);
+  });
+
+  it("maps a resumed step back to a started state", () => {
+    expect(mapWorkflowEventToExecutionActions(stepResumedEvent)).toEqual([
+      {
+        type: "append",
+        key: EIndicatorType.WORKFLOW_START,
+        state: "finish",
+        delayMs: START_INDICATOR_FINISH_DELAY_MS,
+      },
+      {
+        type: "append",
+        key: "0:send_message",
+        state: "start",
+        t: 150,
+      },
+    ]);
+  });
+
+  it("maps a refused step resume back to a suspended state", () => {
+    expect(mapWorkflowEventToExecutionActions(stepResumeRejectedEvent)).toEqual(
+      [
+        {
+          type: "append",
+          key: EIndicatorType.WORKFLOW_START,
+          state: "finish",
+          delayMs: START_INDICATOR_FINISH_DELAY_MS,
+        },
+        {
+          type: "append",
+          key: "0:send_message",
+          state: "suspended",
+          t: 160,
+        },
+      ],
+    );
+  });
+
+  it("leaves execution states untouched on a refused workflow resume", () => {
+    expect(
+      mapWorkflowEventToExecutionActions(workflowResumeRejectedEvent),
+    ).toEqual([]);
   });
 
   it("normalizes loop iteration step ids before updating execution state", () => {

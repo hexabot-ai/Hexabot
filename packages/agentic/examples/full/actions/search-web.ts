@@ -7,7 +7,6 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
 const inputSchema = z.object({
@@ -18,7 +17,7 @@ const outputSchema = z.object({
   links: z.array(z.string()),
   snippets: z.array(z.string()),
 });
-const settingsSchema = SettingsSchema;
+const settingsSchema = z.strictObject({});
 
 type SearchWebInput = z.infer<typeof inputSchema>;
 type SearchWebOutput = z.infer<typeof outputSchema>;

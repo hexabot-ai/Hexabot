@@ -9,7 +9,9 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
+  ParseBoolPipe,
   Post,
   Query,
   Req,
@@ -43,11 +45,19 @@ export class WebhookController {
    * Public webhook endpoint that triggers a manual workflow run.
    *
    * {@link WebhookTriggerGuard} authenticates the request; this handler only
-   * forwards the workflow ID and payload to the service. The run executes
-   * synchronously and the response carries its final status and output.
+   * forwards the workflow ID and payload to the service. By default the run
+   * executes before the response, which carries its final status and output.
+   * With `?async=true`, the endpoint answers `202` without waiting for the
+   * run, and without its output, for runs longer than the caller (or a proxy
+   * in front of the API) can wait. A body the suspended run it reaches
+   * refuses answers `422` (`payload_rejected`); with `?async=true`, only a
+   * body the wait itself refuses, since its steps run after the answer.
+   * Only an authenticated call reaches a suspended run: without
+   * authentication (`none`), every call starts a new run.
    *
    * The whole request body is the workflow input, so third-party services
-   * that emit fixed body shapes can call the endpoint directly.
+   * that emit fixed body shapes can call the endpoint directly; the flag is
+   * therefore a query parameter.
    *
    * Declared before the `:sourceRef/:workflowId` catch-all so `POST
    * /webhook/:id/trigger` is matched first: NestJS registers routes in method
@@ -55,6 +65,7 @@ export class WebhookController {
    * registration order.
    *
    * @param input - Optional workflow input payload (the request body).
+   * @param isAsync - Answer without waiting for the run (`?async=true`).
    */
   @Roles('public')
   @UseGuards(WebhookTriggerGuard)
@@ -63,8 +74,18 @@ export class WebhookController {
   async trigger(
     @UuidParam('id') id: string,
     @Body() input: unknown = {},
+    @Query('async', new ParseBoolPipe({ optional: true }))
+    isAsync: boolean | undefined,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<WorkflowTriggerResult> {
-    return await this.webhookTriggerService.trigger(id, input);
+    const result = await this.webhookTriggerService.trigger(id, input, {
+      async: isAsync,
+    });
+    if (isAsync) {
+      res.status(HttpStatus.ACCEPTED);
+    }
+
+    return result;
   }
 
   @Roles('public')

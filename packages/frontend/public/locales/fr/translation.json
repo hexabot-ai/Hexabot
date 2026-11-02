@@ -110,6 +110,7 @@
     "workflow_scheduled_run_now_hint": "Les workflows planifiés peuvent être déclenchés immédiatement depuis l'action d'exécution.",
     "workflow_trigger_simulator_availability": "La simulation de déclencheur est disponible pour les workflows manuels et planifiés.",
     "workflow_run_started": "L'exécution du workflow a démarré.",
+    "workflow_resume_rejected": "L'exécution est toujours en attente : les données de reprise ont été refusées. {{0}}",
     "network_error": "Erreur de connexion, veuillez réessayer plus tard",
     "attachment_not_found": "La pièce jointe est introuvable",
     "code_is_required": "Le code est requis",
@@ -185,7 +186,50 @@
       "workflow_run": "Suivez l’historique d’exécution des workflows.",
       "mcp_server": "Configurez les connexions aux serveurs MCP externes.",
       "menu": "Gérez les éléments du menu persistant.",
-      "setting": "Configurez les paramètres de l’application et des services."
+      "setting": "Configurez les paramètres de l’application et des services.",
+      "workflow_approvals": "Exécutions de workflow en pause jusqu'à ce qu'un administrateur approuve, rejette ou fournisse des données. Décidez ici, ou ouvrez une exécution pour voir son contexte."
+    },
+    "operator_request_handled": "Cette demande n'est plus ouverte : elle a été traitée ailleurs ou l'exécution a avancé.",
+    "operator_wait_no_message": "Aucun message n'accompagne cette demande.",
+    "reject_may_fail_hint": "Selon les paramètres de l'étape, un rejet laisse le workflow continuer ou met fin à l'exécution.",
+    "cancel_run_explanation": "L'exécution sera marquée en échec. Les exécutions qu'elle a appelées et qui attendent encore sont aussi annulées, et une exécution qui attend celle-ci reçoit un échec.",
+    "resume_data_any_object": "Aucun schéma n'est déclaré pour cette étape : envoyez n'importe quel objet JSON.",
+    "json_invalid": "Ce JSON n'est pas valide.",
+    "json_must_be_object": "Les données doivent être un objet JSON.",
+    "operator_outcome": {
+      "approved": "Demande approuvée.",
+      "rejected": "Demande rejetée.",
+      "resumed": "Exécution reprise.",
+      "cancelled": "Exécution annulée.",
+      "run_finished": "L'exécution est terminée.",
+      "waiting": "L'exécution attend de nouveau.",
+      "waiting_at": "L'exécution attend maintenant à l'étape « {{0}} ».",
+      "run_failed": "L'exécution a ensuite échoué : {{0}}",
+      "run_continuing": "L'exécution se poursuit en arrière-plan."
+    },
+    "operator_error": {
+      "wait_ambiguous": "Cette exécution a plusieurs demandes ouvertes de ce type. Rechargez-la et choisissez-en une.",
+      "wait_kind_mismatch": "Cette demande attend un autre type de réponse. L'exécution a été rechargée.",
+      "run_not_suspended": "Cette exécution n'attend plus. Elle a été rechargée.",
+      "wait_not_found": "Cette demande a déjà été traitée. L'exécution a été rechargée.",
+      "no_matching_wait": "Cette exécution n'attend plus ce type de réponse. Elle a été rechargée.",
+      "claim_lost": "Quelqu'un d'autre a traité cette exécution en premier. Elle a été rechargée.",
+      "unresumable": "Cette exécution ne peut plus reprendre (son workflow a changé) et a été marquée en échec.",
+      "resume_unavailable": "Cette exécution ne peut pas reprendre pour le moment et attend toujours. Réessayez plus tard.",
+      "payload_rejected": "L'étape a refusé ces données. L'exécution attend toujours.",
+      "run_not_found": "Cette exécution n'existe plus.",
+      "forbidden": "Vous n'êtes pas autorisé à traiter les exécutions de workflow.",
+      "invalid_request": "La requête est invalide.",
+      "unknown_outcome": "Aucune réponse n'a été reçue à temps : la demande a peut-être été appliquée. L'exécution a été rechargée.",
+      "trigger_unavailable": {
+        "initiator_unavailable": "Cette exécution ne peut pas reprendre : l'utilisateur ou l'abonné qui l'a lancée n'existe plus.",
+        "thread_unavailable": "Cette exécution ne peut pas reprendre : sa conversation n'existe plus.",
+        "thread_closed": "Cette exécution ne peut pas reprendre : sa conversation est fermée.",
+        "channel_unavailable": "Cette exécution ne peut pas reprendre : son canal n'est plus disponible.",
+        "source_disabled": "Cette exécution ne peut pas reprendre : sa source est désactivée.",
+        "unsupported_trigger": "Cette exécution ne peut pas reprendre : son déclencheur ne peut pas être reconstruit.",
+        "unknown": "Cette exécution ne peut pas reprendre : son déclencheur n'est plus disponible."
+      }
     }
   },
   "menu": {
@@ -226,7 +270,8 @@
     "settings": "Paramètres",
     "audit_trail": "Journal d'audit",
     "home": "Accueil",
-    "admin": "Administration"
+    "admin": "Administration",
+    "approvals": "Approbations"
   },
   "title": {
     "workflow_export_credentials": "Inclure les identifiants ?",
@@ -294,7 +339,11 @@
     "new_mcp_token": "Nouveau jeton MCP",
     "mcp_token_created": "Jeton MCP créé",
     "revoke_mcp_token": "Révoquer le jeton MCP",
-    "assign_conversation": "Assigner la conversation"
+    "assign_conversation": "Assigner la conversation",
+    "workflow_approvals": "Approbations",
+    "approve_request": "Examiner la demande",
+    "resume_run": "Fournir des données",
+    "cancel_run": "Annuler l'exécution"
   },
   "dashboard": {
     "kpi": {
@@ -319,7 +368,12 @@
       "failed_run_title": "Exécution échouée : {{0}}",
       "no_error_details": "Aucun détail d'erreur disponible",
       "failed_at_unknown": "Heure d'échec indisponible",
-      "view_more": "Voir {{0}} de plus"
+      "view_more": "Voir {{0}} de plus",
+      "waiting_title": "En attente de vous",
+      "waiting_empty": "Rien n'attend un administrateur.",
+      "waiting_loading": "Chargement des exécutions en attente...",
+      "waiting_error": "Impossible de charger les exécutions en attente.",
+      "view_all_approvals": "Tout voir"
     },
     "thread_snapshot": {
       "title": "Aperçu des discussions",
@@ -675,9 +729,13 @@
       "input": "Entrée",
       "context": "Contexte",
       "output": "Sortie",
+      "waits": "Attentes",
       "logs_errors": "Journaux / Erreurs"
     },
     "inspector": "Inspecteur",
+    "open_waits": "Attentes en cours",
+    "wait_payload_required": "Données attendues",
+    "wait_payload_optional": "Données facultatives",
     "unknown": "Inconnu",
     "upgrade_required": "Mise à niveau requise",
     "plan_badge_starter": "STARTER",
@@ -699,10 +757,26 @@
       "finished": "Terminée",
       "idle": "Inactive",
       "running": "En cours d'exécution",
-      "suspended": "Suspendue"
+      "suspended": "Suspendue",
+      "awaiting_operator": "En attente d'un admin"
     },
     "read_only": "Lecture seule",
-    "view": "Voir"
+    "view": "Voir",
+    "request": "Demande",
+    "waiting_since": "En attente depuis",
+    "waiting_since_date": "En attente depuis {{0}}",
+    "comment": "Commentaire (facultatif)",
+    "cancel_reason": "Motif (facultatif)",
+    "resume_data": "Données à envoyer",
+    "details": "Détails",
+    "more_requests": "D'autres demandes sont ouvertes sur cette exécution : ouvrez-la pour les voir",
+    "pending_approvals_count": "{{0}} exécutions en attente d'un administrateur",
+    "wait_reasons": {
+      "awaiting_approval": "Approbation",
+      "awaiting_resume": "Données requises",
+      "awaiting_user_response": "Réponse",
+      "awaiting_child_workflow": "Workflow appelé"
+    }
   },
   "placeholder": {
     "username": "Nom d'utilisateur",
@@ -716,7 +790,8 @@
     "title": "Titre",
     "type_message_here": "Ecrivez quelque chose ici ....",
     "latest_run": "Dernière exécution",
-    "run_at": "Exécution {{0}}"
+    "run_at": "Exécution {{0}}",
+    "operator_comment": "Transmis au workflow, par exemple la raison de votre décision"
   },
   "button": {
     "login": "Se connecter",
@@ -784,7 +859,15 @@
     "next": "Suivant",
     "skip": "Ignorer",
     "done": "Terminé",
-    "see_definition": "Voir définition"
+    "see_definition": "Voir définition",
+    "approve": "Approuver",
+    "reject": "Rejeter",
+    "resume": "Reprendre",
+    "cancel_run": "Annuler l'exécution",
+    "review": "Examiner",
+    "provide_input": "Fournir des données",
+    "keep_waiting": "Continuer d'attendre",
+    "review_approvals": "Examiner les approbations"
   },
   "input": {
     "search": "Recherche",

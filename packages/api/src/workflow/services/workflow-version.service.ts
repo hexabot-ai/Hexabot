@@ -4,16 +4,24 @@
  * Full terms: see LICENSE.md.
  */
 
+import { validateWorkflow } from '@hexabot-ai/agentic';
 import { WorkflowVersion } from '@hexabot-ai/types';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 
+import { ActionService } from '@/actions/actions.service';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
 
 import { WorkflowNewVersionDto } from '../dto/workflow-version.dto';
 import { WorkflowVersionOrmEntity } from '../entities/workflow-version.entity';
+import { WorkflowOrmEntity } from '../entities/workflow.entity';
+import { assertTaskActionsSupported } from '../lib/workflow-definition';
 import { WorkflowVersionRepository } from '../repositories/workflow-version.repository';
-import { WorkflowVersionAction } from '../types';
+import { WorkflowType, WorkflowVersionAction } from '../types';
 
 import { WorkflowService } from './workflow.service';
 
@@ -26,6 +34,7 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
   constructor(
     readonly repository: WorkflowVersionRepository,
     private readonly workflowService: WorkflowService,
+    private readonly actionService: ActionService,
   ) {
     super(repository);
   }
@@ -50,6 +59,10 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
   public async createSnapshot(
     params: WorkflowNewVersionDto,
   ): Promise<WorkflowVersion> {
+    const workflow = params.workflow
+      ? await this.workflowService.findOne(params.workflow)
+      : null;
+    this.assertActionsSupported(params.definitionYml, workflow?.type);
     const latestVersion = await this.findOne({
       where: { workflow: { id: params.workflow } },
       order: { version: 'DESC' },
@@ -74,6 +87,12 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
     manager: EntityManager,
     params: WorkflowNewVersionDto,
   ): Promise<WorkflowVersionOrmEntity> {
+    const workflow = params.workflow
+      ? await manager.findOne(WorkflowOrmEntity, {
+          where: { id: params.workflow },
+        })
+      : null;
+    this.assertActionsSupported(params.definitionYml, workflow?.type);
     const latestVersion = await manager.findOne(WorkflowVersionOrmEntity, {
       where: { workflow: { id: params.workflow } },
       order: { version: 'DESC' },
@@ -136,5 +155,38 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
     });
 
     return restoredVersion;
+  }
+
+  /**
+   * Refuse a definition that uses an action its workflow's type cannot run
+   * (`BaseAction.workflowTypes`), since no run of it could compile.
+   *
+   * @param definitionYml The definition to save.
+   * @param workflowType The type of its workflow; nothing is checked without
+   * it, as the version cannot be saved anyway.
+   * @throws {BadRequestException} Listing the offending tasks.
+   */
+  private assertActionsSupported(
+    definitionYml: string,
+    workflowType: WorkflowType | undefined,
+  ): void {
+    // A definition that does not parse is refused by the YAML validation of
+    // the callers.
+    const parsed = validateWorkflow(definitionYml);
+    if (!workflowType || !parsed.success) {
+      return;
+    }
+
+    try {
+      assertTaskActionsSupported(
+        parsed.data,
+        workflowType,
+        this.actionService.getRegistry(),
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 }

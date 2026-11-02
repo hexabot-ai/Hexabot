@@ -97,6 +97,12 @@ interface IEntityTypes<
   full: TFull;
 }
 
+type WorkflowRunFilterOverrides = {
+  workflow: Pick<Workflow, "id" | "name" | "type">;
+  workflowVersion?: Pick<WorkflowVersion, "id" | "version">;
+  error: string;
+};
+
 export interface IEntityMapTypes {
   [EntityType.WORKFLOW]: IEntityTypes<
     Workflow,
@@ -134,10 +140,6 @@ export interface IEntityMapTypes {
       | "input"
       | "output"
       | "context"
-      | "suspendedStep"
-      | "suspensionReason"
-      | "suspensionData"
-      | "lastResumeData"
       | "error"
       | "suspendedAt"
       | "finishedAt"
@@ -152,11 +154,14 @@ export interface IEntityMapTypes {
         stepLog?: Record<string, StepExecutionRecord> | null;
       }
     >,
-    {
-      workflow: Pick<Workflow, "id" | "name" | "type">;
-      workflowVersion?: Pick<WorkflowVersion, "id" | "version">;
-      error: string;
-    },
+    WorkflowRunFilterOverrides,
+    WorkflowRunFull
+  >;
+  // Read-only: runs waiting on an admin (`GET /workflowrun/pending`)
+  [EntityType.WORKFLOW_RUN_PENDING]: IEntityTypes<
+    WorkflowRun,
+    never,
+    WorkflowRunFilterOverrides,
     WorkflowRunFull
   >;
   [EntityType.MCP_SERVER]: IEntityTypes<

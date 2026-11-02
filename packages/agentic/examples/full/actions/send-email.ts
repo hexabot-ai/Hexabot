@@ -7,7 +7,6 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
 const inputSchema = z.object({
@@ -20,7 +19,9 @@ const outputSchema = z.object({
   status: z.string(),
   acknowledged: z.boolean().optional(),
 });
-const settingsSchema = SettingsSchema;
+const settingsSchema = z.strictObject({
+  track_opens: z.boolean().optional(),
+});
 
 type SendEmailInput = z.infer<typeof inputSchema>;
 type SendEmailOutput = z.infer<typeof outputSchema>;

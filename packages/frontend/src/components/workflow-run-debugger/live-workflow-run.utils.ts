@@ -22,9 +22,12 @@ const WORKFLOW_EVENT_STATUS: Partial<Record<string, EWorkflowRunStatus>> = {
   "workflow:finish": EWorkflowRunStatus.FINISHED,
   "workflow:failure": EWorkflowRunStatus.FAILED,
   "workflow:suspended": EWorkflowRunStatus.SUSPENDED,
+  "workflow:resume_rejected": EWorkflowRunStatus.SUSPENDED,
   "step:start": EWorkflowRunStatus.RUNNING,
+  "step:resumed": EWorkflowRunStatus.RUNNING,
   "step:error": EWorkflowRunStatus.FAILED,
   "step:suspended": EWorkflowRunStatus.SUSPENDED,
+  "step:resume_rejected": EWorkflowRunStatus.SUSPENDED,
 };
 
 type ParsedCollectionParams = {
@@ -47,6 +50,30 @@ const getInitiatorIdFromEvent = (
   event: SubscribeWorkflowProps,
 ): string | undefined =>
   event.initiatorId ?? resolveEntityId(event.workflowRun?.triggeredBy);
+
+/**
+ * Read why a resume payload was refused, from a `workflow:resume_rejected`
+ * event. The error crosses the websocket as a plain `{ name, message }`.
+ *
+ * @param event - Workflow event as broadcast.
+ * @returns The refusal message, an empty string when the event carries none,
+ * or `undefined` for any other event.
+ */
+export const getResumeRejectionMessage = (
+  event: SubscribeWorkflowProps,
+): string | undefined => {
+  if (event.workflowEvent !== "workflow:resume_rejected") {
+    return undefined;
+  }
+
+  const error = "error" in event ? (event.error as unknown) : undefined;
+  const message =
+    typeof error === "object" && error !== null && "message" in error
+      ? error.message
+      : undefined;
+
+  return typeof message === "string" ? message : "";
+};
 
 export const isWorkflowRunLiveEventForDebugger = (
   event: SubscribeWorkflowProps,
@@ -106,10 +133,23 @@ export const mergeWorkflowRunLiveEvent = (
 
   if (event.workflowEvent === "workflow:finish") {
     nextRun.finishedAt = eventDate;
+    nextRun.checkpoint = null;
   }
 
   if (event.workflowEvent === "workflow:failure") {
     nextRun.failedAt = eventDate;
+    nextRun.checkpoint = null;
+  }
+
+  // Events never carry the checkpoint: keep the cached one and refresh the
+  // waits it lists, the only part read here.
+  if (event.workflowEvent === "workflow:suspended" && "waits" in event) {
+    const previousCheckpoint =
+      typeof nextRun.checkpoint === "object" && nextRun.checkpoint !== null
+        ? nextRun.checkpoint
+        : {};
+
+    nextRun.checkpoint = { ...previousCheckpoint, waits: event.waits };
   }
 
   if (

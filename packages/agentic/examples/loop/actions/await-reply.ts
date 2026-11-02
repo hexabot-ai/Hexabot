@@ -33,15 +33,10 @@ export const awaitReply = defineAction<
   inputSchema,
   outputSchema,
   execute: async ({ context }) => {
-    const resumeData = await context.workflow.suspend({
+    return context.workflow.suspend({
       reason: 'awaiting_user_response',
       data: { hint: 'Provide phone number' },
+      accepts: resumeSchema,
     });
-    const parsed = resumeSchema.safeParse(resumeData);
-    if (!parsed.success) {
-      throw new Error('resumeData must include a string `text` field.');
-    }
-
-    return parsed.data;
   },
 });

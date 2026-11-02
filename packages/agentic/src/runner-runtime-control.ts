@@ -4,556 +4,322 @@
  * Full terms: see LICENSE.md.
  */
 
-import type {
-  SuspensionOptions,
-  WorkflowRunStatus,
-  WorkflowRuntimeControl,
-} from './context';
-import type { Deferred } from './utils/deferred';
-import { createDeferred } from './utils/deferred';
-import type { WorkflowRunner } from './workflow-runner';
+import type { ZodType } from 'zod';
+
+import type { SuspensionOptions, WorkflowRuntimeControl } from './context';
+import { NonDeterministicWorkflowError } from './errors';
+import {
+  describeResumePayload,
+  findNonJsonTypes,
+  isPayloadOptional,
+  rejectResumePayload,
+} from './resume-payload';
+import { cloneValue } from './utils/clone';
+import type { StepInfo } from './workflow-event-emitter';
 
 const INDEX_KEY_PREFIX = 'index:';
 const USER_KEY_PREFIX = 'key:';
 
-type ReplayExpectation = {
-  suspendIndex?: number;
-  suspendKey: string;
-  reason?: string;
-  matched: boolean;
-};
-
-type StepExecutionState = {
-  stepId: string;
-  stepExecId: string;
-  suspendCursor: number;
-  awaitResults: Map<string, unknown>;
-  replayExpectation?: ReplayExpectation;
-};
-
-type StoredReplaySeed = {
-  stepExecId: string;
-  awaitResults: Record<string, unknown>;
-  activeSuspension?: {
-    suspendIndex?: number;
-    suspendKey?: string;
-    reason?: string;
-  };
-};
-
+/** A `suspend()` call the step executor has to turn into a wait. */
 export type RuntimeSuspensionRequest = {
-  stepId: string;
-  stepExecId: string;
-  suspendIndex: number;
   suspendKey: string;
   reason?: string;
   data?: unknown;
+  /** Relaxed JSON Schema of the payload the wait accepts. */
+  accepts?: Record<string, unknown>;
+  /** Set when the `accepts` schema also accepts a resume without payload. */
+  payloadOptional?: boolean;
+  /** Suspend results already resolved for this step, keyed by suspend key. */
   awaitResults: Record<string, unknown>;
-  resume: Deferred<unknown>;
 };
 
-export type RuntimeStepReplaySeed = {
-  stepId: string;
-  stepExecId: string;
-  awaitResults?: Record<string, unknown>;
-  activeSuspension?: {
-    suspendIndex?: number;
-    suspendKey?: string;
-    reason?: string;
-  };
+/** Seed for a task body that re-runs after its wait was resolved. */
+export type StepReplaySeed = {
+  awaitResults: Record<string, unknown>;
+  /** Suspension the re-run body is expected to reach again. */
+  expected: { suspendKey: string; reason?: string };
 };
 
-export type RuntimeResolvedSuspension = {
-  stepId: string;
-  resumeData: unknown;
-  stepExecId?: string;
-  suspendIndex?: number;
-  suspendKey?: string;
+type ActiveStep = {
+  step: StepInfo;
+  cursor: number;
+  /** User keys already passed to `suspend()` by the current attempt. */
+  usedKeys: Set<string>;
+  awaitResults: Map<string, unknown>;
+  expected?: { suspendKey: string; reason?: string; matched: boolean };
+  pending: RuntimeSuspensionRequest[];
+  waiter?: (request: RuntimeSuspensionRequest) => void;
 };
 
-export class NonDeterministicWorkflowError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NonDeterministicWorkflowError';
-  }
-}
-
-/** Minimal wrapper that exposes runner controls to actions via the context. */
+/**
+ * Suspension control for one concurrency scope of a run.
+ *
+ * Steps inside a scope run one at a time, so the scope tracks a single active
+ * step. The root flow owns one scope and every parallel branch forks its own,
+ * which is what lets concurrent branches suspend independently.
+ */
 export class RunnerRuntimeControl implements WorkflowRuntimeControl {
-  private readonly runner: WorkflowRunner;
+  private active?: ActiveStep;
 
-  private readonly pendingSuspensions = new Map<
-    string,
-    RuntimeSuspensionRequest[]
-  >();
-
-  private readonly suspensionWaiters = new Map<
-    string,
-    Array<(request: RuntimeSuspensionRequest) => void>
-  >();
-
-  private readonly primedResumeData = new Map<string, unknown[]>();
-
-  private readonly stepAttempts = new Map<string, number>();
-
-  private readonly activeStepExecutions = new Map<string, StepExecutionState>();
-
-  private readonly replaySeeds = new Map<string, StoredReplaySeed>();
-
-  constructor(runner: WorkflowRunner) {
-    this.runner = runner;
+  /**
+   * Create the scope of a concurrent region such as a parallel branch.
+   *
+   * @returns A new, independent scope.
+   */
+  fork(): RunnerRuntimeControl {
+    return new RunnerRuntimeControl();
   }
 
-  get status(): WorkflowRunStatus {
-    return this.runner.getStatus();
+  /**
+   * Mark a task step as running in this scope.
+   *
+   * @param step Instance step that is about to run its action.
+   * @param options.seed Previously resolved suspend results when the body re-runs.
+   */
+  beginStep(step: StepInfo, options: { seed?: StepReplaySeed } = {}): void {
+    this.active = {
+      step,
+      cursor: 0,
+      usedKeys: new Set(),
+      awaitResults: new Map(Object.entries(options.seed?.awaitResults ?? {})),
+      expected: options.seed
+        ? { ...options.seed.expected, matched: false }
+        : undefined,
+      pending: [],
+    };
   }
 
-  get resumeData(): unknown {
-    return this.runner.getLastResumeData();
-  }
+  /**
+   * Release the active step.
+   *
+   * @param options.completed True when the action body returned successfully.
+   * @throws {NonDeterministicWorkflowError} When a re-run body completed
+   * without reaching the suspension it was resumed from.
+   */
+  endStep(options: { completed?: boolean } = {}): void {
+    const active = this.active;
+    this.active = undefined;
 
-  suspend<T = unknown>(options?: SuspensionOptions): Promise<T> {
-    const currentStep = this.runner.getCurrentStep();
-    if (!currentStep) {
-      throw new Error(
-        'workflow.suspend() can only be called while a workflow step is running.',
+    if (options.completed && active?.expected && !active.expected.matched) {
+      throw new NonDeterministicWorkflowError(
+        `Resumed step "${active.step.id}" completed without reaching ` +
+          `suspension "${active.expected.suspendKey}".`,
       );
     }
-
-    const execution = this.ensureStepExecution(currentStep.id);
-
-    execution.suspendCursor += 1;
-    const suspendIndex = execution.suspendCursor;
-    const suspendKey = buildSuspendKey(suspendIndex, options?.key);
-
-    this.assertReplayExpectation(execution, {
-      suspendIndex,
-      suspendKey,
-      reason: options?.reason,
-    });
-
-    if (execution.awaitResults.has(suspendKey)) {
-      return Promise.resolve(execution.awaitResults.get(suspendKey) as T);
-    }
-
-    const primed = this.dequeuePrimedResumeData(currentStep.id);
-    if (primed.found) {
-      return Promise.resolve(primed.value as T);
-    }
-
-    const request: RuntimeSuspensionRequest = {
-      stepId: currentStep.id,
-      stepExecId: execution.stepExecId,
-      suspendIndex,
-      suspendKey,
-      reason: options?.reason,
-      data: options?.data,
-      awaitResults: this.serializeAwaitResults(execution.awaitResults),
-      resume: createDeferred<unknown>(),
-    };
-
-    this.enqueueSuspension(request);
-
-    return request.resume.promise as Promise<T>;
   }
 
-  hasRecordedResult(key?: string): boolean {
-    const currentStep = this.runner.getCurrentStep();
-    if (!currentStep) {
-      return false;
+  /**
+   * Wait for the active step's next `suspend()` call.
+   *
+   * @returns The next suspension request.
+   */
+  waitForSuspension(): Promise<RuntimeSuspensionRequest> {
+    const active = this.active;
+    if (!active) {
+      throw new Error('No workflow step is running in this scope.');
     }
 
-    const execution = this.ensureStepExecution(currentStep.id);
-    const suspendKey = buildSuspendKey(execution.suspendCursor + 1, key);
-    if (execution.awaitResults.has(suspendKey)) {
-      return true;
-    }
-
-    return (this.primedResumeData.get(currentStep.id)?.length ?? 0) > 0;
-  }
-
-  resume(data?: unknown): void {
-    void this.runner.resume({ resumeData: data });
-  }
-
-  waitForStepSuspension(stepId: string): Promise<RuntimeSuspensionRequest> {
-    const queued = this.dequeueStepSuspension(stepId);
+    const queued = active.pending.shift();
     if (queued) {
       return Promise.resolve(queued);
     }
 
     return new Promise((resolve) => {
-      const waiters = this.suspensionWaiters.get(stepId) ?? [];
-
-      waiters.push(resolve);
-      this.suspensionWaiters.set(stepId, waiters);
+      active.waiter = resolve;
     });
   }
 
-  beginStepExecution(stepId: string): string {
-    const existing = this.activeStepExecutions.get(stepId);
-    if (existing) {
-      return existing.stepExecId;
-    }
-
-    const seeded = this.replaySeeds.get(stepId);
-    if (seeded) {
-      const execution: StepExecutionState = {
-        stepId,
-        stepExecId: seeded.stepExecId,
-        suspendCursor: 0,
-        awaitResults: this.normalizeAwaitResults(seeded.awaitResults),
-        replayExpectation: seeded.activeSuspension
-          ? {
-              suspendIndex: seeded.activeSuspension.suspendIndex,
-              suspendKey:
-                normalizeSuspendKey(
-                  seeded.activeSuspension.suspendIndex,
-                  seeded.activeSuspension.suspendKey,
-                ) ?? buildSuspendKey(seeded.activeSuspension.suspendIndex ?? 1),
-              reason: seeded.activeSuspension.reason,
-              matched: false,
-            }
-          : undefined,
-      };
-
-      this.activeStepExecutions.set(stepId, execution);
-      this.replaySeeds.delete(stepId);
-      this.bumpStepAttemptCounter(stepId, execution.stepExecId);
-
-      return execution.stepExecId;
-    }
-
-    const attempt = (this.stepAttempts.get(stepId) ?? 0) + 1;
-    const stepExecId = `${stepId}#${attempt}`;
-    this.stepAttempts.set(stepId, attempt);
-    this.activeStepExecutions.set(stepId, {
-      stepId,
-      stepExecId,
-      suspendCursor: 0,
-      awaitResults: new Map<string, unknown>(),
-    });
-
-    return stepExecId;
-  }
-
-  prepareStepReplay(seed: RuntimeStepReplaySeed): void {
-    const normalizedAwaitResults = this.serializeAwaitResults(
-      this.normalizeAwaitResults(seed.awaitResults ?? {}),
-    );
-
-    this.replaySeeds.set(seed.stepId, {
-      stepExecId: seed.stepExecId,
-      awaitResults: normalizedAwaitResults,
-      activeSuspension: seed.activeSuspension
-        ? {
-            suspendIndex: seed.activeSuspension.suspendIndex,
-            suspendKey: normalizeSuspendKey(
-              seed.activeSuspension.suspendIndex,
-              seed.activeSuspension.suspendKey,
-            ),
-            reason: seed.activeSuspension.reason,
-          }
-        : undefined,
-    });
-    this.bumpStepAttemptCounter(seed.stepId, seed.stepExecId);
-  }
-
-  recordStepSuspendResult(params: RuntimeResolvedSuspension): void {
-    const suspendKey = normalizeSuspendKey(
-      params.suspendIndex,
-      params.suspendKey,
-    );
-
-    if (!suspendKey) {
-      this.primeStepResumeData(params.stepId, params.resumeData);
-
-      return;
-    }
-
-    const activeExecution = this.activeStepExecutions.get(params.stepId);
-    if (
-      activeExecution &&
-      (!params.stepExecId || params.stepExecId === activeExecution.stepExecId)
-    ) {
-      if (!activeExecution.awaitResults.has(suspendKey)) {
-        activeExecution.awaitResults.set(suspendKey, params.resumeData);
-      }
-
-      return;
-    }
-
-    const replaySeed = this.replaySeeds.get(params.stepId);
-    if (replaySeed) {
-      if (params.stepExecId && replaySeed.stepExecId !== params.stepExecId) {
-        return;
-      }
-
-      replaySeed.awaitResults[suspendKey] =
-        replaySeed.awaitResults[suspendKey] ?? params.resumeData;
-      this.replaySeeds.set(params.stepId, replaySeed);
-
-      return;
-    }
-
-    const fallbackExecId = params.stepExecId ?? `${params.stepId}#1`;
-    this.replaySeeds.set(params.stepId, {
-      stepExecId: fallbackExecId,
-      awaitResults: { [suspendKey]: params.resumeData },
-    });
-    this.bumpStepAttemptCounter(params.stepId, fallbackExecId);
-  }
-
-  clearStepSuspensions(stepId: string, error?: unknown): void {
-    const queued = this.pendingSuspensions.get(stepId);
-    if (queued) {
-      for (const request of queued) {
-        request.resume.reject(
-          error ?? new Error(`Suspension for step "${stepId}" was cancelled.`),
-        );
-      }
-    }
-
-    const execution = this.activeStepExecutions.get(stepId);
-
-    this.pendingSuspensions.delete(stepId);
-    this.suspensionWaiters.delete(stepId);
-    this.primedResumeData.delete(stepId);
-    this.activeStepExecutions.delete(stepId);
-
-    if (
-      !error &&
-      execution?.replayExpectation &&
-      !execution.replayExpectation.matched
-    ) {
-      throw new NonDeterministicWorkflowError(
-        `Replay for step "${stepId}" did not reach expected suspension ` +
-          `"${execution.replayExpectation.suspendKey}".`,
+  suspend<T = unknown>(options?: SuspensionOptions<T>): Promise<T> {
+    const active = this.active;
+    if (!active) {
+      throw new Error(
+        'workflow.suspend() can only be called while a workflow step is running.',
       );
     }
-  }
 
-  primeStepResumeData(stepId: string, resumeData: unknown): void {
-    const queued = this.primedResumeData.get(stepId) ?? [];
+    if (options?.accepts) {
+      assertJsonPayloadSchema(active, options.accepts);
+    }
 
-    queued.push(resumeData);
-    this.primedResumeData.set(stepId, queued);
-  }
-
-  getSnapshot() {
-    return this.runner.getSnapshot();
-  }
-
-  private enqueueSuspension(request: RuntimeSuspensionRequest): void {
-    const waiters = this.suspensionWaiters.get(request.stepId);
-    if (waiters && waiters.length > 0) {
-      const resolve = waiters.shift();
-      if (!resolve) {
-        return;
+    if (options?.key) {
+      // A reused key would resolve from the first call's answer on resume,
+      // so the second call could never suspend.
+      if (active.usedKeys.has(options.key)) {
+        throw new Error(
+          `workflow.suspend() key "${options.key}" is used more than once ` +
+            `in step "${active.step.id}"; keys must be unique within an action body.`,
+        );
       }
 
-      if (waiters.length === 0) {
-        this.suspensionWaiters.delete(request.stepId);
-      } else {
-        this.suspensionWaiters.set(request.stepId, waiters);
+      active.usedKeys.add(options.key);
+    }
+
+    active.cursor += 1;
+    const suspendKey = buildSuspendKey(active.cursor, options?.key);
+
+    this.assertReplayExpectation(active, suspendKey, options?.reason);
+
+    if (active.awaitResults.has(suspendKey)) {
+      return resolveRecordedResult(active, suspendKey, options?.accepts);
+    }
+
+    const request: RuntimeSuspensionRequest = {
+      suspendKey,
+      reason: options?.reason,
+      data: options?.data,
+      awaitResults: Object.fromEntries(active.awaitResults),
+    };
+    if (options?.accepts) {
+      request.accepts = describeResumePayload(options.accepts);
+      if (isPayloadOptional(options.accepts)) {
+        request.payloadOptional = true;
       }
-
-      resolve(request);
-
-      return;
     }
-
-    const queued = this.pendingSuspensions.get(request.stepId) ?? [];
-
-    queued.push(request);
-    this.pendingSuspensions.set(request.stepId, queued);
-  }
-
-  private dequeueStepSuspension(
-    stepId: string,
-  ): RuntimeSuspensionRequest | undefined {
-    const queued = this.pendingSuspensions.get(stepId);
-    if (!queued || queued.length === 0) {
-      return undefined;
-    }
-
-    const request = queued.shift();
-    if (queued.length === 0) {
-      this.pendingSuspensions.delete(stepId);
+    const waiter = active.waiter;
+    if (waiter) {
+      active.waiter = undefined;
+      waiter(request);
     } else {
-      this.pendingSuspensions.set(stepId, queued);
+      active.pending.push(request);
     }
 
-    return request;
+    // Never settles: the step executor aborts this body, and resuming re-runs
+    // it so that this call resolves from `awaitResults` instead.
+    return new Promise<T>(() => undefined);
   }
 
-  private dequeuePrimedResumeData(stepId: string): {
-    found: boolean;
-    value?: unknown;
-  } {
-    const queued = this.primedResumeData.get(stepId);
-    if (!queued || queued.length === 0) {
-      return { found: false };
-    }
-
-    const value = queued.shift();
-    if (queued.length === 0) {
-      this.primedResumeData.delete(stepId);
-    } else {
-      this.primedResumeData.set(stepId, queued);
-    }
-
-    return { found: true, value };
+  /**
+   * Report whether the active step, re-run to resolve a wait, has reached
+   * that wait's `suspend()` call. Only from then on has it read the payload,
+   * and can it refuse it.
+   *
+   * @returns True once the resolved suspension was reached.
+   */
+  hasReachedResolvedSuspension(): boolean {
+    return this.active?.expected?.matched ?? false;
   }
 
-  private ensureStepExecution(stepId: string): StepExecutionState {
-    const existing = this.activeStepExecutions.get(stepId);
-    if (existing) {
-      return existing;
+  hasRecordedResult(key?: string): boolean {
+    const active = this.active;
+    if (!active) {
+      return false;
     }
 
-    this.beginStepExecution(stepId);
+    return active.awaitResults.has(buildSuspendKey(active.cursor + 1, key));
+  }
 
-    const created = this.activeStepExecutions.get(stepId);
-    if (!created) {
-      throw new Error(`Unable to create runtime state for step "${stepId}".`);
+  markSuspendCursor(): () => void {
+    const active = this.active;
+    if (!active) {
+      return () => undefined;
     }
 
-    return created;
+    const cursor = active.cursor;
+    const usedKeys = new Set(active.usedKeys);
+
+    return () => {
+      // A rewind taken in a step that has ended must not touch the next one.
+      if (this.active === active) {
+        active.cursor = cursor;
+        active.usedKeys = new Set(usedKeys);
+      }
+    };
   }
 
   private assertReplayExpectation(
-    execution: StepExecutionState,
-    encountered: { suspendIndex: number; suspendKey: string; reason?: string },
+    active: ActiveStep,
+    suspendKey: string,
+    reason?: string,
   ): void {
-    const expectation = execution.replayExpectation;
-    if (!expectation || expectation.matched) {
+    const expected = active.expected;
+    if (!expected || expected.matched) {
       return;
     }
 
-    if (encountered.suspendKey === expectation.suspendKey) {
-      if (
-        expectation.reason !== undefined &&
-        encountered.reason !== expectation.reason
-      ) {
+    if (suspendKey === expected.suspendKey) {
+      if (expected.reason !== undefined && reason !== expected.reason) {
         throw new NonDeterministicWorkflowError(
-          `Replay for step "${execution.stepId}" reached suspend ` +
-            `"${encountered.suspendKey}" with reason "${encountered.reason ?? ''}", ` +
-            `expected reason "${expectation.reason}".`,
+          `Resumed step "${active.step.id}" reached suspend "${suspendKey}" ` +
+            `with reason "${reason ?? ''}", expected reason "${expected.reason}".`,
         );
       }
 
-      expectation.matched = true;
+      expected.matched = true;
 
       return;
     }
 
-    if (execution.awaitResults.has(encountered.suspendKey)) {
+    if (active.awaitResults.has(suspendKey)) {
       return;
     }
 
     throw new NonDeterministicWorkflowError(
-      `Replay for step "${execution.stepId}" reached unexpected suspend ` +
-        `"${encountered.suspendKey}" before expected ` +
-        `"${expectation.suspendKey}".`,
+      `Resumed step "${active.step.id}" reached unexpected suspend ` +
+        `"${suspendKey}" before expected "${expected.suspendKey}".`,
     );
-  }
-
-  private normalizeAwaitResults(
-    awaitResults: Record<string, unknown>,
-  ): Map<string, unknown> {
-    const normalized = new Map<string, unknown>();
-
-    for (const [rawKey, value] of Object.entries(awaitResults)) {
-      const normalizedKey = normalizeStoredSuspendKey(rawKey);
-      normalized.set(normalizedKey, value);
-    }
-
-    return normalized;
-  }
-
-  private serializeAwaitResults(
-    awaitResults: Map<string, unknown>,
-  ): Record<string, unknown> {
-    return Object.fromEntries(awaitResults.entries());
-  }
-
-  private bumpStepAttemptCounter(stepId: string, stepExecId: string): void {
-    const parsedAttempt = parseStepExecAttempt(stepId, stepExecId);
-    if (parsedAttempt === null) {
-      return;
-    }
-
-    const previous = this.stepAttempts.get(stepId) ?? 0;
-    if (parsedAttempt > previous) {
-      this.stepAttempts.set(stepId, parsedAttempt);
-    }
   }
 }
 
+/**
+ * Refuse an `accepts` schema that no JSON payload can match: the wait it
+ * opens could never be resumed, since payloads are read back as JSON.
+ *
+ * @throws {TypeError} Naming the parts of the schema JSON cannot carry.
+ */
+const assertJsonPayloadSchema = (active: ActiveStep, accepts: ZodType) => {
+  const found = findNonJsonTypes(accepts);
+  if (found.length === 0) {
+    return;
+  }
+
+  throw new TypeError(
+    `The accepts schema of workflow.suspend() in step "${active.step.id}" ` +
+      `can never match a JSON payload: ${found.join(', ')}. Resume payloads ` +
+      'are stored as JSON, so accept their JSON form instead, e.g. ' +
+      'z.coerce.date() or z.iso.datetime() for a date.',
+  );
+};
+/**
+ * Resolve a `suspend()` call from its recorded result, parsed through the
+ * call's `accepts` schema when it has one.
+ *
+ * The body gets its own copy: the recorded result is saved again with the
+ * step's next suspension and replayed on every later pass, so a body that
+ * changed it would see its own change applied twice.
+ *
+ * @returns The recorded (or parsed) result. It rejects with a
+ * `WorkflowResumeRejectedError` when the payload this pass resolved fails the
+ * schema, and with a {@link NonDeterministicWorkflowError} when a result
+ * accepted by an earlier pass no longer does.
+ */
+const resolveRecordedResult = async <T>(
+  active: ActiveStep,
+  suspendKey: string,
+  accepts?: ZodType<T>,
+): Promise<T> => {
+  const recorded = cloneValue(active.awaitResults.get(suspendKey));
+  if (!accepts) {
+    return recorded as T;
+  }
+
+  const parsed = await accepts.safeParseAsync(recorded);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  if (suspendKey === active.expected?.suspendKey) {
+    throw rejectResumePayload(`step "${active.step.id}"`, parsed.error.issues);
+  }
+
+  throw new NonDeterministicWorkflowError(
+    `Resumed step "${active.step.id}" recorded a result for suspend ` +
+      `"${suspendKey}" that no longer matches its accepts schema.`,
+  );
+};
 const buildSuspendKey = (suspendIndex: number, key?: string): string => {
   if (key) {
     return `${USER_KEY_PREFIX}${key}`;
   }
 
   return `${INDEX_KEY_PREFIX}${suspendIndex}`;
-};
-const normalizeSuspendKey = (
-  suspendIndex?: number,
-  suspendKey?: string,
-): string | undefined => {
-  if (typeof suspendKey === 'string' && suspendKey.length > 0) {
-    if (
-      suspendKey.startsWith(INDEX_KEY_PREFIX) ||
-      suspendKey.startsWith(USER_KEY_PREFIX)
-    ) {
-      return suspendKey;
-    }
-
-    if (/^\d+$/.test(suspendKey)) {
-      return `${INDEX_KEY_PREFIX}${suspendKey}`;
-    }
-
-    return `${USER_KEY_PREFIX}${suspendKey}`;
-  }
-
-  if (
-    typeof suspendIndex === 'number' &&
-    Number.isInteger(suspendIndex) &&
-    suspendIndex > 0
-  ) {
-    return `${INDEX_KEY_PREFIX}${suspendIndex}`;
-  }
-
-  return undefined;
-};
-const normalizeStoredSuspendKey = (rawKey: string): string => {
-  if (
-    rawKey.startsWith(INDEX_KEY_PREFIX) ||
-    rawKey.startsWith(USER_KEY_PREFIX)
-  ) {
-    return rawKey;
-  }
-
-  if (/^\d+$/.test(rawKey)) {
-    return `${INDEX_KEY_PREFIX}${rawKey}`;
-  }
-
-  return `${USER_KEY_PREFIX}${rawKey}`;
-};
-const parseStepExecAttempt = (
-  stepId: string,
-  stepExecId: string,
-): number | null => {
-  const prefix = `${stepId}#`;
-  if (!stepExecId.startsWith(prefix)) {
-    return null;
-  }
-
-  const numeric = Number.parseInt(stepExecId.slice(prefix.length), 10);
-  if (Number.isNaN(numeric) || numeric < 1) {
-    return null;
-  }
-
-  return numeric;
 };

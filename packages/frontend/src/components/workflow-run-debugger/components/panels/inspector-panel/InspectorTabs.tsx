@@ -15,7 +15,12 @@ import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 import { formatDurationMs } from "@/utils/date";
 
-import { formatRunTimestamp, getInitiatorName } from "../../../utils";
+import {
+  formatRunTimestamp,
+  getInitiatorName,
+  getOpenWaits,
+  getStepWaits,
+} from "../../../utils";
 import { getStepDuration } from "../step-trace-panel/utils";
 
 import type { OverviewLabels } from "./overview.types";
@@ -56,6 +61,7 @@ export const InspectorTabs = ({ run, step }: InspectorTabsProps) => {
       { key: "input", label: t("label.inspector_tabs.input") },
       { key: "context", label: t("label.inspector_tabs.context") },
       { key: "output", label: t("label.inspector_tabs.output") },
+      { key: "waits", label: t("label.inspector_tabs.waits") },
       { key: "logs_errors", label: t("label.inspector_tabs.logs_errors") },
     ],
     [t],
@@ -73,6 +79,11 @@ export const InspectorTabs = ({ run, step }: InspectorTabsProps) => {
   const inspectedError = isStepSelected
     ? (step?.error ?? null)
     : (run?.error ?? null);
+  const inspectedWaits = useMemo(() => {
+    const openWaits = getOpenWaits(run);
+
+    return step ? getStepWaits(openWaits, step.id) : openWaits;
+  }, [run, step]);
   const panelData = useMemo(
     () => ({
       overview: {
@@ -96,12 +107,23 @@ export const InspectorTabs = ({ run, step }: InspectorTabsProps) => {
         title: t("label.inspector_tabs.output"),
         value: inspectedOutput,
       },
+      waits: {
+        title: t("label.inspector_tabs.waits"),
+        value: inspectedWaits.length > 0 ? inspectedWaits : null,
+      },
       logs_errors: {
         title: t("label.inspector_tabs.logs_errors"),
         value: inspectedError,
       },
     }),
-    [inspectedContext, inspectedError, inspectedInput, inspectedOutput, t],
+    [
+      inspectedContext,
+      inspectedError,
+      inspectedInput,
+      inspectedOutput,
+      inspectedWaits,
+      t,
+    ],
   );
   const labels = useMemo<OverviewLabels>(
     () => ({
@@ -116,6 +138,9 @@ export const InspectorTabs = ({ run, step }: InspectorTabsProps) => {
       input: t("label.inspector_tabs.input"),
       context: t("label.inspector_tabs.context"),
       output: t("label.inspector_tabs.output"),
+      openWaits: t("label.open_waits"),
+      waitPayloadRequired: t("label.wait_payload_required"),
+      waitPayloadOptional: t("label.wait_payload_optional"),
     }),
     [t],
   );
@@ -190,6 +215,7 @@ export const InspectorTabs = ({ run, step }: InspectorTabsProps) => {
             <OverviewContent
               run={run}
               step={step ?? null}
+              waits={inspectedWaits}
               labels={labels}
               triggeredAtLabel={triggeredAtLabel}
               triggeredByLabel={triggeredByLabel}

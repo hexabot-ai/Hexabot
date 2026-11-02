@@ -9,9 +9,11 @@ import type { ZodType } from 'zod';
 
 import type { Action } from './action/action.types';
 import type { CompiledTaskBindings } from './bindings/base-binding';
+import type { WaitInfo, WorkflowCheckpoint } from './checkpoint';
 import type { BaseWorkflowContext, WorkflowSnapshot } from './context';
 import type { Settings, TaskDefinition, WorkflowDefinition } from './dsl.types';
-import { StepType, type StepInfo } from './workflow-event-emitter';
+import type { WorkflowResumeRejectedError } from './errors';
+import { StepType } from './workflow-event-emitter';
 
 export type { CompiledTaskBindings } from './bindings/base-binding';
 
@@ -154,76 +156,41 @@ export type ExecutionState = {
   iterationStack: number[];
 };
 
-/** Encapsulates a suspended step and how to continue it. */
-export type Suspension = {
-  step: StepInfo;
-  reason?: string;
-  data?: unknown;
-  stepExecId?: string;
-  suspendIndex?: number;
-  suspendKey?: string;
-  awaitResults?: Record<string, unknown>;
-  continue: (resumeData: unknown) => Promise<Suspension | void>;
+/** Result of a run that paused on one or more open waits. */
+export type SuspendedResult = {
+  status: 'suspended';
+  /** Open waits, in flow order; resume one of them by `waitId`. */
+  waits: WaitInfo[];
+  /** Everything a host must persist to resume the run later. */
+  checkpoint: WorkflowCheckpoint;
+  snapshot: WorkflowSnapshot;
+  /**
+   * Set when this resume was refused: the run and its checkpoint are exactly
+   * as they were, and the wait is still open under the same `waitId`.
+   */
+  rejection?: ResumeRejection;
 };
 
-export type PersistedSuspension = {
-  stepId: string;
-  reason?: string | null;
-  data?: unknown;
-  stepExecId?: string;
-  suspendIndex?: number;
-  suspendKey?: string;
-  awaitResults?: Record<string, unknown>;
+/** A resume payload that was refused. */
+export type ResumeRejection = {
+  waitId: string;
+  error: WorkflowResumeRejectedError;
 };
 
-/** Result of starting a workflow run. */
-export type StartResult =
+/** Where a run stopped: the result of both `start()` and `resume()`. */
+export type WorkflowRunResult =
   | {
       status: 'finished';
       output: Record<string, unknown>;
       snapshot: WorkflowSnapshot;
     }
-  | {
-      status: 'suspended';
-      step: StepInfo;
-      reason?: string;
-      data?: unknown;
-      stepExecId?: string;
-      suspendIndex?: number;
-      suspendKey?: string;
-      awaitResults?: Record<string, unknown>;
-      snapshot: WorkflowSnapshot;
-    }
-  | { status: 'failed'; error: unknown; snapshot: WorkflowSnapshot };
-
-/** Result of resuming a suspended workflow. */
-export type ResumeResult =
-  | {
-      status: 'finished';
-      output: Record<string, unknown>;
-      snapshot: WorkflowSnapshot;
-    }
-  | {
-      status: 'suspended';
-      step: StepInfo;
-      reason?: string;
-      data?: unknown;
-      stepExecId?: string;
-      suspendIndex?: number;
-      suspendKey?: string;
-      awaitResults?: Record<string, unknown>;
-      snapshot: WorkflowSnapshot;
-    }
+  | SuspendedResult
   | { status: 'failed'; error: unknown; snapshot: WorkflowSnapshot };
 
 /** Options that influence how the workflow runner behaves. */
 export type WorkflowRunOptions = {
   runId?: string;
 };
-
-export type WorkflowStartResult = StartResult;
-
-export type WorkflowResumeResult = ResumeResult;
 
 /** Arguments required to start a run. */
 export type RunnerStartArgs = {
@@ -234,4 +201,6 @@ export type RunnerStartArgs = {
 /** Payload passed when resuming a suspended run. */
 export type RunnerResumeArgs = {
   resumeData?: unknown;
+  /** Wait to satisfy; required only when the run has several open waits. */
+  waitId?: string;
 };

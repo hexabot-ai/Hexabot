@@ -10,6 +10,7 @@ import {
   type McpToken,
   type Workflow,
   type WorkflowImportResult,
+  type WorkflowRunFull,
 } from "@hexabot-ai/types";
 import { AxiosInstance, AxiosResponse } from "axios";
 
@@ -56,6 +57,23 @@ export type WorkflowExportFile = {
   filename: string;
 };
 
+/** Body of `PATCH /workflowrun/:id/approve|reject`. */
+export type WorkflowRunDecisionPayload = {
+  waitId: string;
+  comment?: string;
+};
+
+/** Body of `PATCH /workflowrun/:id/resume`. */
+export type WorkflowRunResumePayload = {
+  waitId: string;
+  data?: Record<string, unknown>;
+};
+
+/** Body of `PATCH /workflowrun/:id/cancel`. */
+export type WorkflowRunCancelPayload = {
+  reason?: string;
+};
+
 export const resolveRoute = (route: string, params?: RouteParams) => {
   if (!params) {
     return route;
@@ -93,6 +111,10 @@ export const ROUTES = {
   WORKFLOW_IMPORT: "/workflow/import",
   WORKFLOW_BINDINGS: "/workflow/bindings",
   WORKFLOW_ACTIONS: "/workflow/actions/:type",
+  WORKFLOW_RUN_APPROVE: "/workflowrun/:id/approve",
+  WORKFLOW_RUN_REJECT: "/workflowrun/:id/reject",
+  WORKFLOW_RUN_RESUME: "/workflowrun/:id/resume",
+  WORKFLOW_RUN_CANCEL: "/workflowrun/:id/cancel",
   MCP_SERVER_TEST: "/mcpserver/:id/test",
   MCP_TOOLS: "/mcpserver/:id/tools",
   MCP_TOKEN: "/mcp-token",
@@ -125,6 +147,7 @@ export const ROUTES = {
   [EntityType.WORKFLOW]: "/workflow",
   [EntityType.WORKFLOW_VERSION]: "/workflow/:id/versions",
   [EntityType.WORKFLOW_RUN]: "/workflowrun",
+  [EntityType.WORKFLOW_RUN_PENDING]: "/workflowrun/pending",
   [EntityType.MCP_SERVER]: "/mcpserver",
   [EntityType.MEMORY_DEFINITION]: "/memorydefinition",
   [EntityType.AUDIT_LOG]: "/auditlog",
@@ -426,6 +449,49 @@ export class ApiClient extends TranslatableMethods {
         _csrf,
         publishedVersion: versionId,
       },
+    );
+
+    return data;
+  }
+
+  async approveWorkflowRun(id: string, payload: WorkflowRunDecisionPayload) {
+    return await this.patchWorkflowRun(ROUTES.WORKFLOW_RUN_APPROVE, id, {
+      waitId: payload.waitId,
+      ...(payload.comment ? { comment: payload.comment } : {}),
+    });
+  }
+
+  async rejectWorkflowRun(id: string, payload: WorkflowRunDecisionPayload) {
+    return await this.patchWorkflowRun(ROUTES.WORKFLOW_RUN_REJECT, id, {
+      waitId: payload.waitId,
+      ...(payload.comment ? { comment: payload.comment } : {}),
+    });
+  }
+
+  async resumeWorkflowRun(id: string, payload: WorkflowRunResumePayload) {
+    return await this.patchWorkflowRun(ROUTES.WORKFLOW_RUN_RESUME, id, {
+      waitId: payload.waitId,
+      ...(payload.data ? { data: payload.data } : {}),
+    });
+  }
+
+  async cancelWorkflowRun(id: string, payload: WorkflowRunCancelPayload = {}) {
+    return await this.patchWorkflowRun(
+      ROUTES.WORKFLOW_RUN_CANCEL,
+      id,
+      payload.reason ? { reason: payload.reason } : {},
+    );
+  }
+
+  private async patchWorkflowRun(
+    route: string,
+    id: string,
+    body: Record<string, unknown>,
+  ) {
+    const { _csrf } = await this.getCsrf();
+    const { data } = await this.request.patch<WorkflowRunFull>(
+      resolveRoute(route, { id }),
+      { ...body, _csrf },
     );
 
     return data;

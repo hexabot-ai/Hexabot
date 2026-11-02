@@ -9,6 +9,11 @@ import { z } from 'zod';
 import { defineAction } from '../action/action';
 import { BaseWorkflowContext } from '../context';
 import { Settings, WorkflowDefinition, validateWorkflow } from '../dsl.types';
+import {
+  WorkflowCheckpointInvalidError,
+  WorkflowDefinitionDriftError,
+  WorkflowWaitNotFoundError,
+} from '../errors';
 import { Workflow, WorkflowEventEmitter } from '../workflow';
 import { EventEmitterLike } from '../workflow-event-emitter';
 
@@ -137,10 +142,10 @@ describe('Workflow execution', () => {
     });
     expect(startResult.status).toBe('suspended');
     if (startResult.status === 'suspended') {
-      expect(startResult.reason).toBe('waiting_for_user');
-      expect(runner.getSnapshot().actions[startResult.step.id]?.status).toBe(
-        'suspended',
-      );
+      expect(startResult.waits[0].reason).toBe('waiting_for_user');
+      expect(
+        runner.getSnapshot().actions[startResult.waits[0].step.id]?.status,
+      ).toBe('suspended');
     }
 
     const resumeResult = await runner.resume({
@@ -310,11 +315,97 @@ describe('Workflow execution', () => {
     const context = new TestContext();
 
     await expect(workflow.run({}, context)).rejects.toMatchObject({
-      stepId: '0:pause_step',
-      reason: 'need_input',
+      message: 'Workflow run suspended at 0:pause_step (need_input)',
+      waits: [
+        {
+          waitId: '0:pause_step@index:1',
+          step: { id: '0:pause_step' },
+          reason: 'need_input',
+          data: { prompt: 'ok?' },
+        },
+      ],
     });
     expect(() => context.workflow).toThrow(
       'Workflow runtime is not attached to this context.',
     );
+  });
+
+  it('validates a persisted checkpoint and restores a runner from it', async () => {
+    const askAction = defineAction<
+      unknown,
+      { reply: string },
+      TestContext,
+      Settings
+    >({
+      name: 'ask_action',
+      inputSchema: z.any(),
+      outputSchema: z.object({ reply: z.string() }),
+      execute: async ({ context }) =>
+        context.workflow.suspend<{ reply: string }>({ reason: 'need_input' }),
+    });
+    const definition: WorkflowDefinition = {
+      defs: createTaskDefs({ ask: { action: 'ask_action', inputs: {} } }),
+      flow: [{ do: 'ask' }],
+      outputs: { reply: '=$output.ask.reply' },
+    };
+    const options = { actions: { ask_action: askAction } };
+    const workflow = Workflow.fromDefinition(definition, options);
+    const runner = await workflow.buildAsyncRunner();
+    const started = await runner.start({
+      inputData: {},
+      context: new TestContext(),
+    });
+    if (started.status !== 'suspended') {
+      throw new Error('Expected the run to suspend');
+    }
+    const stored = JSON.parse(
+      JSON.stringify({
+        checkpoint: started.checkpoint,
+        snapshot: started.snapshot,
+      }),
+    );
+    const [wait] = started.waits;
+
+    expect(
+      workflow.validateCheckpoint(stored.checkpoint, { waitId: wait.waitId }),
+    ).toEqual({ ok: true, checkpoint: stored.checkpoint });
+
+    const unknownWait = workflow.validateCheckpoint(stored.checkpoint, {
+      waitId: 'other@index:1',
+    });
+    expect(unknownWait.ok).toBe(false);
+    if (!unknownWait.ok) {
+      expect(unknownWait.error).toBeInstanceOf(WorkflowWaitNotFoundError);
+    }
+
+    const changed = Workflow.fromDefinition(
+      { ...definition, outputs: { reply: '=$output.ask' } },
+      options,
+    ).validateCheckpoint(stored.checkpoint);
+    expect(changed.ok).toBe(false);
+    if (!changed.ok) {
+      expect(changed.error).toBeInstanceOf(WorkflowDefinitionDriftError);
+    }
+
+    expect(() =>
+      workflow.buildRunnerFromCheckpoint({
+        checkpoint: undefined,
+        context: new TestContext(),
+      }),
+    ).toThrow(WorkflowCheckpointInvalidError);
+
+    const restored = workflow.buildRunnerFromCheckpoint({
+      checkpoint: stored.checkpoint,
+      snapshot: stored.snapshot,
+      context: new TestContext(),
+    });
+
+    expect(restored.getStatus()).toBe('suspended');
+    expect(restored.getSnapshot().actions[wait.step.id]).toMatchObject({
+      status: 'suspended',
+    });
+    await expect(
+      restored.resume({ waitId: wait.waitId, resumeData: { reply: 'yes' } }),
+    ).resolves.toMatchObject({ status: 'finished', output: { reply: 'yes' } });
   });
 });

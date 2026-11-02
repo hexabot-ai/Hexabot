@@ -8,11 +8,14 @@ import type { WorkflowRun } from "@hexabot-ai/types";
 import { useCallback } from "react";
 
 import { useTanstackQueryClient } from "@/hooks/crud/useTanstack";
+import { useToast } from "@/hooks/useToast";
+import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType, QueryType } from "@/services/types";
 import type { SubscribeWorkflowProps } from "@/websocket/types/workflow.types";
 import { useWorkflowEventSubscription } from "@/websocket/workflow-event-hooks";
 
 import {
+  getResumeRejectionMessage,
   isWorkflowRunLiveEventForDebugger,
   mergeWorkflowRunLiveEvent,
   shouldWorkflowRunLiveEventTouchQuery,
@@ -28,6 +31,8 @@ export const useWorkflowRunLiveUpdates = ({
   initiatorId,
 }: UseWorkflowRunLiveUpdatesProps) => {
   const queryClient = useTanstackQueryClient();
+  const { toast } = useToast();
+  const { t } = useTranslate();
   const handleWorkflowEvent = useCallback(
     (event: SubscribeWorkflowProps) => {
       if (!isWorkflowRunLiveEventForDebugger(event, workflowId, initiatorId)) {
@@ -38,6 +43,15 @@ export const useWorkflowRunLiveUpdates = ({
 
       if (!runId) {
         return;
+      }
+
+      const rejectionMessage = getResumeRejectionMessage(event);
+
+      // The trigger request was accepted, so the refusal only shows up here.
+      if (rejectionMessage !== undefined) {
+        toast.warning(
+          t("message.workflow_resume_rejected", { "0": rejectionMessage }),
+        );
       }
 
       queryClient.setQueryData(
@@ -65,7 +79,7 @@ export const useWorkflowRunLiveUpdates = ({
         },
       );
     },
-    [initiatorId, queryClient, workflowId],
+    [initiatorId, queryClient, t, toast, workflowId],
   );
 
   useWorkflowEventSubscription(handleWorkflowEvent);

@@ -7,6 +7,11 @@
 import { stringify as stringifyYaml } from 'yaml';
 
 import {
+  validateCheckpoint,
+  type CheckpointValidationResult,
+  type WaitInfo,
+} from './checkpoint';
+import {
   EWorkflowRunStatus,
   type BaseWorkflowContext,
   type WorkflowSnapshot,
@@ -25,12 +30,7 @@ import {
   type WorkflowCompileOptions,
 } from './workflow-compiler';
 import { WorkflowRunner } from './workflow-runner';
-import type {
-  CompiledWorkflow,
-  ExecutionState,
-  PersistedSuspension,
-  WorkflowRunOptions,
-} from './workflow-types';
+import type { CompiledWorkflow, WorkflowRunOptions } from './workflow-types';
 
 export { compileWorkflow } from './workflow-compiler';
 
@@ -38,31 +38,24 @@ export { WorkflowEventEmitter } from './workflow-event-emitter';
 
 export { WorkflowRunner } from './workflow-runner';
 
-export type {
-  WorkflowResumeResult,
-  WorkflowRunOptions,
-  WorkflowStartResult,
-} from './workflow-types';
+export type { WorkflowRunOptions, WorkflowRunResult } from './workflow-types';
 
 export type { WorkflowCompileOptions } from './workflow-compiler';
 
 export type FlowStepPath = Array<string | number>;
 
 class WorkflowRunSuspendedError extends Error {
-  public readonly stepId: string;
+  /** Every open wait of the run, in flow order. */
+  public readonly waits: WaitInfo[];
 
-  public readonly reason?: string;
-
-  public readonly data?: unknown;
-
-  constructor(stepId: string, options?: { reason?: string; data?: unknown }) {
-    super(
-      `Workflow run suspended at step ${stepId}${options?.reason ? `: ${options.reason}` : ''}`,
+  constructor(waits: WaitInfo[]) {
+    const steps = waits.map(({ step, reason }) =>
+      reason ? `${step.id} (${reason})` : step.id,
     );
+
+    super(`Workflow run suspended at ${steps.join(', ')}`);
     this.name = 'WorkflowRunSuspendedError';
-    this.stepId = stepId;
-    this.reason = options?.reason;
-    this.data = options?.data;
+    this.waits = waits;
   }
 }
 
@@ -357,10 +350,7 @@ export class Workflow {
     }
 
     context.attachWorkflowRuntime(undefined);
-    throw new WorkflowRunSuspendedError(result.step.id, {
-      reason: result.reason,
-      data: result.data,
-    });
+    throw new WorkflowRunSuspendedError(result.waits);
   }
 
   /**
@@ -373,16 +363,33 @@ export class Workflow {
   }
 
   /**
-   * Rebuild a runner from persisted state and snapshot, useful after restarts.
+   * Decide whether a persisted checkpoint can resume against this workflow,
+   * without running anything. Call it before claiming a wait.
+   *
+   * @param checkpoint The checkpoint, as persisted.
+   * @param options.waitId Wait the caller is about to resume.
+   * @param options.resumeData Payload the caller is about to resume with,
+   * checked against what the wait accepts when the key is present.
+   * @returns The parsed checkpoint, or the typed reason it cannot resume.
    */
-  async buildRunnerFromState(options: {
-    state: ExecutionState;
+  validateCheckpoint(
+    checkpoint: unknown,
+    options?: { waitId?: string; resumeData?: unknown },
+  ): CheckpointValidationResult {
+    return validateCheckpoint(this.compiled, checkpoint, options);
+  }
+
+  /**
+   * Restore a suspended runner from its persisted checkpoint, useful after restarts.
+   *
+   * @throws {WorkflowResumeError} When the checkpoint cannot resume against this workflow.
+   */
+  buildRunnerFromCheckpoint(options: {
+    checkpoint: unknown;
     context: BaseWorkflowContext;
-    snapshot: WorkflowSnapshot;
-    suspension?: PersistedSuspension;
+    snapshot?: WorkflowSnapshot;
     runId?: string;
-    lastResumeData?: unknown;
-  }): Promise<WorkflowRunner> {
-    return WorkflowRunner.fromPersistedState(this.compiled, options);
+  }): WorkflowRunner {
+    return WorkflowRunner.fromCheckpoint(this.compiled, options);
   }
 }

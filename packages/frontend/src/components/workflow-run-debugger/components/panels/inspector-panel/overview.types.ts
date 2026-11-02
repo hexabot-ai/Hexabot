@@ -16,4 +16,7 @@ export type OverviewLabels = {
   input: string;
   context: string;
   output: string;
+  openWaits: string;
+  waitPayloadRequired: string;
+  waitPayloadOptional: string;
 };

@@ -19,7 +19,8 @@ export type SubscribeWorkflowProps =
     initiatorId?: string;
     stepExecution?: StepExecutionRecord;
     threadId?: string;
-    workflowRun?: WorkflowRun;
+    /** The run as persisted, without its checkpoint (only needed to resume). */
+    workflowRun?: Omit<WorkflowRun, "checkpoint">;
     workflowEvent: WorkflowEvent;
     workflowId?: string;
     t: number;

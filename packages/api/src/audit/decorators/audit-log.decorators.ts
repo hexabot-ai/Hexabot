@@ -33,3 +33,23 @@ export const AuditAuthLogout = () =>
     actor_id_field_map: 'session.passport.user.id',
     actor_type_field_map: 'user.roles',
   });
+
+/**
+ * Audit an admin operation on a suspended workflow run. Comments and resume
+ * data are not mapped: they may hold personal data.
+ */
+export const AuditWorkflowRunOperation = (
+  operation: 'approve' | 'reject' | 'resume' | 'cancel',
+) =>
+  AuditLog({
+    resource: {
+      type: 'WorkflowRun',
+    },
+    operation: {
+      id: `workflowrun.${operation}`,
+      type: 'Update',
+    },
+    resource_id_field_map: 'params.id',
+    actor_id_field_map: 'user.id',
+    actor_type_field_map: 'user.roles',
+  });

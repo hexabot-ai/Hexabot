@@ -46,7 +46,7 @@ export const RunHeader = ({
           alignItems="center"
           size={{ xs: 12, lg: 9 }}
         >
-          <RunActions workflow={workflow} />
+          <RunActions workflow={workflow} selectedRun={selectedRun} />
           <RunStatusSummary
             workflowRuns={workflowRuns}
             isFetching={isFetching}

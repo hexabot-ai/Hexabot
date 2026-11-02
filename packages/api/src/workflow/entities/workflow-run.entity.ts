@@ -8,6 +8,7 @@ import {
   EWorkflowRunStatus,
   WORKFLOW_RUN_STATUSES,
   type StepExecutionRecord,
+  type WorkflowCheckpoint,
   type WorkflowRunStatus,
   type WorkflowSnapshot,
 } from '@hexabot-ai/agentic';
@@ -37,6 +38,8 @@ import { WorkflowOrmEntity } from './workflow.entity';
 
 @Entity({ name: 'workflow_runs' })
 @Index(['parentRun'])
+@Index('IDX_workflow_runs_awaiting_operator', ['awaitingOperator'])
+@Index('IDX_workflow_runs_claim_expires_at', ['claimExpiresAt'])
 export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
   plainCls = workflowRunSchema;
 
@@ -107,6 +110,20 @@ export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
   @RelationId((run: WorkflowRunOrmEntity) => run.parentRun)
   private readonly parentRunId?: string | null;
 
+  /**
+   * Identifier of the run that called this one. Unlike `parentRun`, it has
+   * no foreign key, so it is kept once that run is deleted: a run whose
+   * caller is gone is then cancelled when it suspends instead of being taken
+   * for a run nothing called.
+   */
+  @Column({
+    name: 'caller_run_id',
+    type: 'varchar',
+    length: 36,
+    nullable: true,
+  })
+  callerRunId?: string | null;
+
   /** Lifecycle status of the run (idle, running, suspended, finished, failed). */
   @EnumColumn({
     enum: WORKFLOW_RUN_STATUSES,
@@ -134,57 +151,44 @@ export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
   @JsonColumn({ name: 'step_log', nullable: true })
   stepLog?: Record<string, StepExecutionRecord> | null;
 
-  /** Step identifier where the run was suspended. */
-  @Column({
-    name: 'suspended_step',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  suspendedStep?: string | null;
+  /**
+   * Checkpoint of the suspended run: the only state needed to resume it, in
+   * any process. Cleared once the run finishes or fails.
+   */
+  @JsonColumn({ nullable: true })
+  checkpoint?: WorkflowCheckpoint | null;
 
-  /** Free-text reason explaining why the run was suspended. */
-  @Column({
-    name: 'suspension_reason',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  suspensionReason?: string | null;
+  /**
+   * Whether the stored checkpoint holds an open wait only an admin resolves
+   * (`await_approval`, `suspend_workflow`). Derived from the checkpoint by
+   * `WorkflowRunService` whenever it is written; backs the pending list.
+   */
+  @Column({ name: 'awaiting_operator', default: false })
+  awaitingOperator!: boolean;
 
-  /** Payload captured when the run was suspended. */
-  @JsonColumn({ name: 'suspension_data', nullable: true })
-  suspensionData?: unknown;
+  /**
+   * Token of the claim an `idle` or `running` run is held under, set if and
+   * only if the run is in one of those states. The writes that end a pass
+   * only apply under this token, so a pass whose run was recovered or taken
+   * over meanwhile cannot overwrite it. Internal: not exposed.
+   */
+  @Column({ name: 'claim_id', type: 'varchar', length: 36, nullable: true })
+  claimId?: string | null;
 
-  /** Step execution attempt identifier for deterministic suspension replay. */
-  @Column({
-    name: 'suspension_step_exec_id',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  suspensionStepExecId?: string | null;
+  /**
+   * When the claim lapses unless the process holding it renews it. Any node
+   * recovers a run whose claim lapsed. Internal: not exposed.
+   */
+  @DatetimeColumn({ name: 'claim_expires_at', nullable: true })
+  claimExpiresAt?: Date | null;
 
-  /** 1-based suspension index reached within the step execution. */
-  @Column({ name: 'suspension_index', type: 'int', nullable: true })
-  suspensionIndex?: number | null;
-
-  /** Normalized key identifying the suspension point inside the step. */
-  @Column({
-    name: 'suspension_key',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  suspensionKey?: string | null;
-
-  /** Previously resolved suspension values required for durable replay. */
-  @JsonColumn({ name: 'suspension_await_results', nullable: true })
-  suspensionAwaitResults?: Record<string, unknown> | null;
-
-  /** Payload stored to resume the run after suspension. */
-  @JsonColumn({ name: 'last_resume_data', nullable: true })
-  lastResumeData?: unknown;
+  /**
+   * How many times in a row the run was put back on its wait after the
+   * process resuming it stopped; reset whenever a pass settles the run.
+   * Internal: not exposed.
+   */
+  @Column({ name: 'recovery_count', type: 'integer', default: 0 })
+  recoveryCount!: number;
 
   /** Error message when the run fails. */
   @Column({ name: 'error', type: 'text', nullable: true })

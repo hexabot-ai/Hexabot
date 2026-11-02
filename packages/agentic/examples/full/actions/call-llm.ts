@@ -7,26 +7,26 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
-const inputSchema = z.record(z.any());
-const outputSchema = z
-  .object({
-    intent: z.string().optional(),
-    confidence: z.number().optional(),
-    summary: z.string().optional(),
-    missing_fields: z.array(z.string()).optional(),
-    needs_human: z.boolean().optional(),
-    synthesis: z.string().optional(),
-    questions: z.array(z.string()).optional(),
-    message: z.string().optional(),
-    links: z.array(z.string()).optional(),
-    email: z.string().optional(),
-    cta: z.string().optional(),
-  })
-  .passthrough();
-const settingsSchema = SettingsSchema;
+const inputSchema = z.record(z.string(), z.any());
+const outputSchema = z.looseObject({
+  intent: z.string().optional(),
+  confidence: z.number().optional(),
+  summary: z.string().optional(),
+  missing_fields: z.array(z.string()).optional(),
+  needs_human: z.boolean().optional(),
+  synthesis: z.string().optional(),
+  questions: z.array(z.string()).optional(),
+  message: z.string().optional(),
+  links: z.array(z.string()).optional(),
+  email: z.string().optional(),
+  cta: z.string().optional(),
+});
+const settingsSchema = z.strictObject({
+  model: z.string().optional(),
+  temperature: z.number().optional(),
+});
 
 type CallLlmInput = z.infer<typeof inputSchema>;
 type CallLlmOutput = z.infer<typeof outputSchema>;

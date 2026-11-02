@@ -8,7 +8,11 @@ import { z, ZodType } from 'zod';
 
 import { BaseWorkflowContext } from '../context';
 import { BaseSettingsSchema } from '../dsl.types';
-import { throwIfAborted } from '../errors';
+import {
+  isNonDeterministicWorkflowError,
+  isWorkflowResumeRejectedError,
+  throwIfAborted,
+} from '../errors';
 import { assertSnakeCaseName } from '../utils/naming';
 import { sleep, withTimeout } from '../utils/timeout';
 
@@ -136,11 +140,20 @@ export abstract class AbstractAction<
     const maxDelayMs = retrySettings.max_delay_ms;
     const jitter = retrySettings.jitter;
     const multiplier = retrySettings.multiplier;
+    // Suspend keys are positional within the body, so every attempt has to
+    // start from where this run did: otherwise a retry asks for `index:2`
+    // where the first attempt resolved `index:1`, and the step suspends on a
+    // wait whose payload was already delivered.
+    const rewindSuspendCursor = context
+      ?.getWorkflowRuntime?.()
+      ?.markSuspendCursor?.();
 
     while (attempt < maxAttempts) {
       if (signal) {
         throwIfAborted(signal);
       }
+
+      rewindSuspendCursor?.();
 
       try {
         const result = await withTimeout(
@@ -159,7 +172,13 @@ export abstract class AbstractAction<
       } catch (error) {
         attempt += 1;
 
-        if (attempt >= maxAttempts) {
+        // A retry would read the same refused resume payload again, or replay
+        // the same body into the same mismatch with what it recorded.
+        if (
+          attempt >= maxAttempts ||
+          isWorkflowResumeRejectedError(error) ||
+          isNonDeterministicWorkflowError(error)
+        ) {
           throw error;
         }
 

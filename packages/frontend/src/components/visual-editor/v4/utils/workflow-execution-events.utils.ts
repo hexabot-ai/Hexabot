@@ -145,7 +145,11 @@ export const mapWorkflowEventToExecutionActions = (
     },
   ];
 
-  if (event.workflowEvent === "step:start") {
+  // A resumed step re-runs its action body from the top.
+  if (
+    event.workflowEvent === "step:start" ||
+    event.workflowEvent === "step:resumed"
+  ) {
     stepActions.push({
       type: "append",
       key: stepExecutionKey,
@@ -174,7 +178,11 @@ export const mapWorkflowEventToExecutionActions = (
     });
   }
 
-  if (event.workflowEvent === "step:suspended") {
+  // A refused resume payload puts the step back on the same wait.
+  if (
+    event.workflowEvent === "step:suspended" ||
+    event.workflowEvent === "step:resume_rejected"
+  ) {
     stepActions.push({
       type: "append",
       key: stepExecutionKey,

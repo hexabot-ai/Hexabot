@@ -94,6 +94,7 @@ describe("dashboard permission helpers", () => {
     expect(getVisibleQuickActions(hasPermission).map(({ id }) => id)).toEqual([
       "create",
       "run",
+      "approvals",
       "failed",
     ]);
   });

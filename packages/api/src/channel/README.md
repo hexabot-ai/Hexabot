@@ -53,9 +53,53 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
   that are not exposed as webhooks respond `404` without disclosing existence.
 - The JSON request body is the workflow input and is validated against the
   workflow `inputSchema` (`400` on mismatch).
-- The run executes synchronously; the `200` response carries the outcome:
-  `{ runId, status, output, error }`. When no run could be started the endpoint
-  responds `422`.
+- By default the run executes before the response: the `200` response carries
+  the outcome `{ runId, status, output, error }` once the run finishes, fails
+  or suspends. When no run could be started the endpoint responds `422`.
+- Every call runs as the workflow's creator. An authenticated call (`basic`,
+  `header` or `jwt`) can therefore reach a suspended run of the creator in
+  this workflow, including one the creator started from the admin or the MCP
+  run tool, that waits for outside input, and resume it instead of starting a
+  new run (see `running` below). Only custom actions open such waits in a
+  manual workflow: built-in actions that wait for a chat reply are refused in
+  manual workflows when the definition is saved, and when a run compiles it.
+  A call without authentication (`none`) never reaches a suspended run: it
+  always starts a new one, so a caller without credentials cannot answer the
+  creator's waits or read the output of the creator's runs.
+- When the suspended run an authenticated call reaches refuses the body, the
+  endpoint responds `422` with
+  `{ statusCode, code: "payload_rejected", message, issues, runId }`: the run
+  still waits on the same input, and nothing was started. When another request
+  resumed or cancelled that run first, it responds `409` with
+  `{ statusCode, code: "claim_lost", message, runId }`. Both apply with or
+  without `?async=true`. A step can also refuse the body once resumed, for a
+  check the wait cannot declare (a regex, a refinement, an unknown id): that
+  is a `422` too, with the run back on the same input, when the call waits for
+  the run. With `?async=true` the endpoint has answered by then, so the run
+  only goes back to `suspended`. Likewise, a call that waits for the run gets
+  a `409` `claim_lost` when the run was recovered or taken over while it ran:
+  what that pass did was dropped.
+- With `?async=true` (a query parameter, since the body is the workflow input)
+  the endpoint answers `202` without waiting for the run:
+  `{ runId, status, output: null, error: null }`. Use it for workflows that
+  run longer than the caller, or a proxy in front of the API (nginx answers
+  `504` after 60 s by default), can wait. `output` and `error` are always
+  `null`. `status` is the run's status when the response is sent:
+  - `idle`: a new run was started. This is the usual case.
+  - `running`: an authenticated call resumed a suspended run of the workflow
+    that was waiting for outside input (see above). The run may already have
+    moved on (`suspended`, `finished` or
+    `failed`) by the time it is read back for the response.
+  - `suspended`: the call reached a suspended run without resuming it, and
+    started no new run: the run waits on a workflow it called that has
+    already ended, and the call delivers that result to it in the background.
+- An asynchronous call is fire-and-forget. The webhook credentials only allow
+  starting the workflow, and nothing sends the outcome back to the caller. To
+  follow the run, look it up by `runId`: in the admin, with
+  `GET /api/workflowrun/:runId` (admin session, `workflowrun:read`), or with
+  the MCP tool `hexabot_workflow_run_get` and a personal access token. A
+  workflow can also report its own outcome, e.g. with a last `http_request`
+  step that calls the caller back.
 
 Also available:
 

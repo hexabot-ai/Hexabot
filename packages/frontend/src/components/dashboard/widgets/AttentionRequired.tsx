@@ -11,12 +11,19 @@ import { CheckCircle, XCircle } from "lucide-react";
 
 import { useApiClientQuery } from "@/hooks/useApiClient";
 import { useAppRouter } from "@/hooks/useAppRouter";
+import { useHasPermission } from "@/hooks/useHasPermission";
 import { useTranslate } from "@/hooks/useTranslate";
 import { formatSmartDate } from "@/utils/date";
 
 import { DashboardWidgetState } from "../components/DashboardWidgetState";
 import { IconContainer } from "../components/IconContainer";
 import { TitleWithActions } from "../components/TitleWithActions";
+import {
+  DASHBOARD_WIDGET_REQUIREMENTS,
+  hasDashboardPermissions,
+} from "../utils/permissions.util";
+
+import { PendingApprovals } from "./PendingApprovals";
 
 const FAILED_RUN_LIMIT = 3;
 const resolveEntityId = (
@@ -26,8 +33,7 @@ const resolveEntityId = (
 
   return typeof value === "string" ? value : value.id;
 };
-
-export const AttentionRequired = () => {
+const FailedRuns = () => {
   const theme = useTheme();
   const router = useAppRouter();
   const { i18n, t } = useTranslate();
@@ -179,5 +185,28 @@ export const AttentionRequired = () => {
         )}
       </Stack>
     </Box>
+  );
+};
+
+/**
+ * Runs that need someone: those waiting on an admin, then the latest
+ * failures. Each section is shown to the users allowed to read it.
+ */
+export const AttentionRequired = () => {
+  const hasPermission = useHasPermission();
+  const canReadPendingRuns = hasDashboardPermissions(
+    DASHBOARD_WIDGET_REQUIREMENTS.pendingApprovals,
+    hasPermission,
+  );
+  const canReadFailedRuns = hasDashboardPermissions(
+    DASHBOARD_WIDGET_REQUIREMENTS.attentionRequired,
+    hasPermission,
+  );
+
+  return (
+    <Stack gap={3}>
+      {canReadPendingRuns ? <PendingApprovals /> : null}
+      {canReadFailedRuns ? <FailedRuns /> : null}
+    </Stack>
   );
 };

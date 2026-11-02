@@ -49,6 +49,17 @@ export {
 } from "./workflow-run";
 
 export {
+  AWAITING_APPROVAL_REASON,
+  AWAITING_RESUME_REASON,
+  WORKFLOW_OPERATOR_WAIT_REASONS,
+  workflowApprovalWaitDataSchema,
+  workflowResumeWaitDataSchema,
+  type WorkflowApprovalWaitData,
+  type WorkflowOperatorWaitReason,
+  type WorkflowResumeWaitData,
+} from "./workflow-operator";
+
+export {
   memoryDefinitionFullSchema,
   memoryDefinitionSchema,
   memoryDefinitionStubSchema,

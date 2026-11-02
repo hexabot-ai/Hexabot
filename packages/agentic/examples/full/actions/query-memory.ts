@@ -7,7 +7,6 @@
 import { z } from 'zod';
 
 import { defineAction } from '../../../src';
-import { SettingsSchema } from '../../../src/dsl.types';
 import type { ExampleContext } from '../context';
 
 const inputSchema = z.object({
@@ -17,7 +16,7 @@ const inputSchema = z.object({
 const outputSchema = z.object({
   summary: z.string(),
 });
-const settingsSchema = SettingsSchema;
+const settingsSchema = z.strictObject({});
 
 type QueryMemoryInput = z.infer<typeof inputSchema>;
 type QueryMemoryOutput = z.infer<typeof outputSchema>;

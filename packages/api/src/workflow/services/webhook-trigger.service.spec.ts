@@ -6,9 +6,11 @@
 
 import { randomUUID } from 'crypto';
 
+import { WorkflowResumeRejectedError } from '@hexabot-ai/agentic';
 import { WebhookAuthType, WebhookJwtAlgorithm } from '@hexabot-ai/types';
 import {
   BadRequestException,
+  ConflictException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -39,8 +41,8 @@ describe('WebhookTriggerService (TypeORM)', () => {
   let workflowService: WorkflowService;
   let agenticService: AgenticService;
   const agenticServiceMock = {
-    handleEvent: jest.fn().mockResolvedValue(null),
-  } as jest.Mocked<Pick<AgenticService, 'handleEvent'>>;
+    triggerEvent: jest.fn().mockResolvedValue({ status: 'unprocessed' }),
+  } as jest.Mocked<Pick<AgenticService, 'triggerEvent'>>;
   const workflowRunServiceMock = {
     findOne: jest.fn(),
   } as jest.Mocked<Pick<WorkflowRunService, 'findOne'>>;
@@ -79,11 +81,15 @@ describe('WebhookTriggerService (TypeORM)', () => {
       webhookTrigger: null,
     };
   };
-  const createManualWorkflow = async (inputSchema: JsonSchema) => {
+  const createManualWorkflow = async (
+    inputSchema: JsonSchema,
+    webhookTrigger: Record<string, unknown> | null = null,
+  ) => {
     const created = await workflowService.create({
       ...buildWorkflowPayload(),
       type: WorkflowType.manual,
       inputSchema,
+      webhookTrigger,
       createdBy: userFixtureIds.admin,
     } as any);
     createdWorkflowIds.add(created.id);
@@ -156,8 +162,8 @@ describe('WebhookTriggerService (TypeORM)', () => {
       error: null,
     };
     const spy = jest
-      .spyOn(agenticService, 'handleEvent')
-      .mockResolvedValueOnce(run as any);
+      .spyOn(agenticService, 'triggerEvent')
+      .mockResolvedValueOnce({ status: 'dispatched', run: run as any });
     const result = await webhookTriggerService.trigger(workflow.id, input);
 
     expect(spy).toHaveBeenCalledTimes(1);
@@ -167,6 +173,7 @@ describe('WebhookTriggerService (TypeORM)', () => {
     expect(eventArg.getInitiator()?.id).toEqual(userFixtureIds.admin);
     expect(eventArg.getWorkflowId()).toEqual(workflow.id);
     expect(optionsArg?.workflow?.id).toEqual(workflow.id);
+    expect(optionsArg?.wait).toBe(true);
     expect(result).toEqual({
       runId: run.id,
       status: 'finished',
@@ -175,6 +182,78 @@ describe('WebhookTriggerService (TypeORM)', () => {
     });
   });
 
+  it('answers an asynchronous trigger once the run is started', async () => {
+    const workflow = await createManualWorkflow({
+      type: 'object',
+      properties: {},
+      additionalProperties: true,
+    });
+    const run = {
+      id: randomUUID(),
+      status: 'idle',
+      output: null,
+      error: null,
+    };
+    const spy = jest
+      .spyOn(agenticService, 'triggerEvent')
+      .mockResolvedValueOnce({ status: 'dispatched', run: run as any });
+    const result = await webhookTriggerService.trigger(
+      workflow.id,
+      { foo: 'bar' },
+      { async: true },
+    );
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        workflow: expect.objectContaining({ id: workflow.id }),
+        wait: false,
+      }),
+    );
+    expect(result).toEqual({
+      runId: run.id,
+      status: 'idle',
+      output: null,
+      error: null,
+    });
+  });
+
+  it.each([
+    {
+      label: 'without authentication',
+      webhookTrigger: { enabled: true, authType: WebhookAuthType.none },
+      resume: false,
+    },
+    {
+      label: 'with JWT authentication',
+      webhookTrigger: {
+        enabled: true,
+        authType: WebhookAuthType.jwt,
+        jwtSecretCredentialId: 'cred-jwt-secret',
+        jwtAlgorithm: WebhookJwtAlgorithm.HS256,
+      },
+      resume: true,
+    },
+  ])(
+    'lets a call $label resume a suspended run: $resume',
+    async ({ webhookTrigger, resume }) => {
+      const workflow = await createManualWorkflow(
+        { type: 'object', properties: {}, additionalProperties: true },
+        webhookTrigger,
+      );
+      const spy = jest
+        .spyOn(agenticService, 'triggerEvent')
+        .mockResolvedValueOnce({
+          status: 'dispatched',
+          run: { id: randomUUID(), status: 'idle' } as any,
+        });
+
+      await webhookTriggerService.trigger(workflow.id, {});
+
+      expect(spy.mock.calls[0][1]?.resume).toBe(resume);
+    },
+  );
+
   it('throws when no run could be started for the event', async () => {
     const workflow = await createManualWorkflow({
       type: 'object',
@@ -182,10 +261,63 @@ describe('WebhookTriggerService (TypeORM)', () => {
       additionalProperties: true,
     });
 
-    // Default handleEvent mock resolves null (no run created).
+    // Default triggerEvent mock reports that no run processed the event.
     await expect(
       webhookTriggerService.trigger(workflow.id, {}),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it.each([false, true])(
+    'answers 422 when the suspended run refuses the body (async: %s)',
+    async (async) => {
+      const workflow = await createManualWorkflow({
+        type: 'object',
+        properties: {},
+        additionalProperties: true,
+      });
+      const runId = randomUUID();
+      const error = new WorkflowResumeRejectedError(
+        'Resume payload for wait "ask" was rejected: quantity: Expected number',
+        { issues: ['quantity: Expected number'] },
+      );
+      jest
+        .spyOn(agenticService, 'triggerEvent')
+        .mockResolvedValueOnce({ status: 'rejected', runId, error });
+
+      const thrown = await webhookTriggerService
+        .trigger(workflow.id, { quantity: 'ten' }, { async })
+        .catch((reason: unknown) => reason);
+
+      expect(thrown).toBeInstanceOf(UnprocessableEntityException);
+      expect((thrown as UnprocessableEntityException).getResponse()).toEqual({
+        statusCode: 422,
+        code: 'payload_rejected',
+        message: error.message,
+        issues: ['quantity: Expected number'],
+        runId,
+      });
+    },
+  );
+
+  it('answers 409 when another request resumed the suspended run first', async () => {
+    const workflow = await createManualWorkflow({
+      type: 'object',
+      properties: {},
+      additionalProperties: true,
+    });
+    const runId = randomUUID();
+    jest
+      .spyOn(agenticService, 'triggerEvent')
+      .mockResolvedValueOnce({ status: 'claim_lost', runId });
+
+    const thrown = await webhookTriggerService
+      .trigger(workflow.id, {})
+      .catch((reason: unknown) => reason);
+
+    expect(thrown).toBeInstanceOf(ConflictException);
+    expect((thrown as ConflictException).getResponse()).toEqual(
+      expect.objectContaining({ statusCode: 409, code: 'claim_lost', runId }),
+    );
   });
 
   it('rejects a payload that does not match the workflow schema', async () => {
@@ -199,14 +331,14 @@ describe('WebhookTriggerService (TypeORM)', () => {
     await expect(
       webhookTriggerService.trigger(workflow.id, { customerId: 42 }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(agenticService.handleEvent).not.toHaveBeenCalled();
+    expect(agenticService.triggerEvent).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundException when the workflow no longer exists', async () => {
     await expect(
       webhookTriggerService.trigger(randomUUID(), {}),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(agenticService.handleEvent).not.toHaveBeenCalled();
+    expect(agenticService.triggerEvent).not.toHaveBeenCalled();
   });
 
   describe('generateToken', () => {

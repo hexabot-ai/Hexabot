@@ -4,7 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { StepExecutionRecord } from "@hexabot-ai/agentic";
+import type { StepExecutionRecord, WaitInfo } from "@hexabot-ai/agentic";
+import type { WorkflowRun } from "@hexabot-ai/types";
 import { Divider, Stack, Typography } from "@mui/material";
 
 import { ActionStatusIndicator } from "../step-trace-panel/ActionStatusIndicator";
@@ -14,9 +15,12 @@ import { ErrorSummary } from "./ErrorSummary";
 import type { OverviewLabels } from "./overview.types";
 import { SummaryGrid } from "./SummaryGrid";
 import { SummaryItem } from "./SummaryItem";
+import { WaitsSummary } from "./WaitsSummary";
 
 type StepOverviewProps = {
+  run: WorkflowRun | null;
   step: StepExecutionRecord;
+  waits: WaitInfo[];
   labels: OverviewLabels;
   stepStatusLabel: string;
   stepDurationLabel: string;
@@ -28,7 +32,9 @@ type StepOverviewProps = {
 };
 
 export const StepOverview = ({
+  run,
   step,
+  waits,
   labels,
   stepStatusLabel,
   stepDurationLabel,
@@ -59,6 +65,12 @@ export const StepOverview = ({
       />
       <SummaryItem label={labels.duration} value={stepDurationLabel} />
     </SummaryGrid>
+    {waits.length > 0 ? (
+      <>
+        <Divider />
+        <WaitsSummary run={run} labels={labels} waits={waits} />
+      </>
+    ) : null}
     <Divider />
     <DataSummaryGrid
       inputLabel={labels.input}

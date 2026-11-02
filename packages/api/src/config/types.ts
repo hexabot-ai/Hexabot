@@ -68,6 +68,13 @@ export type Config = {
   uiBaseUrl: string;
   ssoEnabled: boolean;
   mcp: TMcpConfig;
+  workflow: {
+    /**
+     * How long a node holds a workflow run it is running without renewing
+     * the claim, in ms. Once it lapses, any node recovers the run.
+     */
+    runClaimTtl: number;
+  };
   security: {
     httpsEnabled: boolean;
     trustProxy: boolean;

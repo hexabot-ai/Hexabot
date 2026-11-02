@@ -49,7 +49,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot admi
 - BroadcastChannel is used for cross-tab login/logout events (`BroadcastChannelProvider` + `useSubscribeBroadcastChannel`).
 
 ## UI + styling
-- UI stack: React 18, MUI v7 + Emotion, React Router, TanStack Query, React Hook Form.
+- UI stack: React 19, MUI v7 + Emotion, React Router, TanStack Query, React Hook Form.
 - MUI theme customization is centralized in `packages/frontend/src/layout/theme` and injected via `AppTheme`.
 - Global styles live in `packages/frontend/src/styles/globals.css` plus feature-specific CSS imports in `main.tsx`.
 - Shared components live under `packages/frontend/src/app-components/*`; feature/page components live under `packages/frontend/src/components/*`.
@@ -65,6 +65,14 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot admi
 ## i18n
 - i18next is configured in `packages/frontend/src/i18n/config.ts` with backend loading from `/locales/{{lng}}/{{ns}}.json`.
 - Use `useTranslate` or `react-i18next` hooks for translations; settings provider loads remote i18n (`useRemoteI18n`).
+
+## Workflow run operator actions
+- Runs waiting on an admin (`await_approval`, `suspend_workflow`) are approved, rejected, resumed or cancelled through `PATCH /workflowrun/:id/approve|reject|resume|cancel` (`ApiClient.approveWorkflowRun` etc.). Use `useWorkflowRunOperator` (mutation: caches the returned run unless the cache already holds a later state, refreshes pending lists, reports the outcome) and open the dialogs with `useOperatorDialogs` (`components/workflow-run-debugger/hooks/`).
+- Approve, reject and resume answer `202` with the run as soon as it is claimed (`running`); the run goes on in the background and its later states arrive through socket `entity` updates, sometimes before the HTTP response. Never treat the returned run as the final outcome. `POST /workflow/:id/run` likewise answers once the run is started.
+- Map operator errors with `getOperatorErrorDescriptor` (`components/workflow-run-debugger/operator.utils.ts`), never `toast.error(rawError)`: `useToast` turns every 409 into "duplicate entry". Read operator waits with `getOperatorWaits` / `describeOperatorWait`; resume forms use `wait.data.payload_schema`, never `wait.accepts`.
+- `EntityType.WORKFLOW_RUN_PENDING` (`WorkflowRun/pending`, read-only) lists `GET /workflowrun/pending` and counts `/pending/count`; items are cached as `WorkflowRun`. Check permissions against `EntityType.WORKFLOW_RUN` (permissions are keyed by model) and never `useGet` the pending type.
+- `usePendingWorkflowRunsSync` (mounted in `AuthenticatedLayout`) refetches the pending lists and counts on `entity` updates of runs entering or leaving them, and after a socket reconnection. Admins only get `workflow` socket events for runs they started, so other runs refresh per save.
+- Sidebar menu items can carry a live `Badge` component (`TMenuItem.Badge`); a collapsed group shows its first badged item's badge.
 
 ## WebSockets
 - Socket integration is in `packages/frontend/src/websocket/*`; use `SocketProvider`, `useSubscribe`, or `useSocketGetQuery`.

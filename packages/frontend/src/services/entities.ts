@@ -338,6 +338,8 @@ export const ENTITY_MAP = {
   [EntityType.WORKFLOW]: WorkflowEntity,
   [EntityType.WORKFLOW_VERSION]: WorkflowVersionEntity,
   [EntityType.WORKFLOW_RUN]: WorkflowRunEntity,
+  // Runs waiting on an admin are normalized as plain workflow runs
+  [EntityType.WORKFLOW_RUN_PENDING]: WorkflowRunEntity,
   [EntityType.MCP_SERVER]: McpServerEntity,
   [EntityType.MEMORY_DEFINITION]: MemoryDefinitionEntity,
   [EntityType.AUDIT_LOG]: AuditLogEntity,

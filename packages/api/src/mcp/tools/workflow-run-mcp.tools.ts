@@ -7,6 +7,7 @@
 import {
   EWorkflowRunStatus,
   type StepExecutionRecord,
+  type WaitInfo,
   type WorkflowRunStatus,
 } from '@hexabot-ai/agentic';
 import { Action, type WorkflowRunFull } from '@hexabot-ai/types';
@@ -23,7 +24,11 @@ import {
   ManualEventWrapper,
   ScheduledEventWrapper,
 } from '@/workflow/lib/trigger-event-wrapper';
-import { AgenticService } from '@/workflow/services/agentic.service';
+import {
+  getOpenWaits,
+  isOperatorWait,
+} from '@/workflow/lib/workflow-run-waits';
+import { WebhookTriggerService } from '@/workflow/services/webhook-trigger.service';
 import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowType } from '@/workflow/types';
@@ -48,7 +53,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
   constructor(
     private readonly workflowService: WorkflowService,
     private readonly workflowRunService: WorkflowRunService,
-    private readonly agenticService: AgenticService,
+    private readonly webhookTriggerService: WebhookTriggerService,
   ) {
     super();
   }
@@ -70,7 +75,9 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     request?: HexabotMcpRequest,
   ) {
     const actor = this.getActor(request);
-    const workflow = await this.workflowService.findOne(args.workflowId);
+    const workflow = await this.workflowService.findOneAndPopulate(
+      args.workflowId,
+    );
     if (!workflow) {
       throw new NotFoundException(`Workflow ${args.workflowId} not found`);
     }
@@ -97,12 +104,18 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
             ),
             actor.id,
           );
-    event.setInitiator(actor);
-    event.setWorkflowId(workflow.id);
+    // Throws, and the tool reports the error, when a suspended run of the
+    // workflow refuses the input or another request resumed it first.
+    const run = await this.webhookTriggerService.dispatchTriggerEvent(
+      workflow,
+      event,
+      actor.id,
+    );
 
-    const run = await this.agenticService.handleEvent(event);
-
-    return { accepted: true, run };
+    return {
+      accepted: true,
+      run: this.withoutWorkflowDefinition(this.withOpenWaits(run)),
+    };
   }
 
   @McpPermission('workflowrun', Action.READ)
@@ -134,6 +147,38 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
   @McpPermission('workflowrun', Action.READ)
   @ToolGuards([McpPermissionGuard])
   @Tool({
+    name: 'hexabot_workflow_run_pending',
+    description:
+      'List suspended workflow runs waiting on an admin (await_approval or suspend_workflow), with their open admin waits.',
+    parameters: z.object({
+      workflowId: uuidSchema.optional(),
+      ...paginationSchema,
+    }),
+  })
+  async listPendingWorkflowRuns(
+    args: { workflowId?: string } & PaginationArgs,
+  ) {
+    const where = args.workflowId ? { workflow: { id: args.workflowId } } : {};
+    const result = await this.listWithCount(
+      this.workflowRunService,
+      this.workflowRunService.withAwaitingOperatorScope(
+        this.findOptions<WorkflowRunOrmEntity>(args, where),
+      ),
+    );
+
+    return {
+      ...result,
+      items: this.withoutWorkflowDefinition(
+        (result.items as WorkflowRunFull[]).map((run) =>
+          this.withOpenWaits(run, isOperatorWait),
+        ),
+      ),
+    };
+  }
+
+  @McpPermission('workflowrun', Action.READ)
+  @ToolGuards([McpPermissionGuard])
+  @Tool({
     name: 'hexabot_workflow_run_get',
     description: 'Read one workflow run with populated workflow metadata.',
     parameters: z.object({
@@ -146,7 +191,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       throw new NotFoundException(`Workflow run ${args.id} not found`);
     }
 
-    return this.withoutWorkflowDefinition(run);
+    return this.withoutWorkflowDefinition(this.withoutCheckpoint(run));
   }
 
   @McpPermission('workflowrun', Action.READ)
@@ -194,8 +239,12 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     const response: Record<string, unknown> = {
       run: this.withoutWorkflowDefinition(run),
       relatedRuns: {
-        parent: this.withoutWorkflowDefinition(parentRun),
-        children: this.withoutWorkflowDefinition(childRuns),
+        parent: this.withoutWorkflowDefinition(
+          this.withoutCheckpoint(parentRun),
+        ),
+        children: this.withoutWorkflowDefinition(
+          childRuns.map((childRun) => this.withoutCheckpoint(childRun)),
+        ),
         childRunTotal,
         childRunsLimit: includeRelatedRuns ? childRunsLimit : 0,
       },
@@ -264,11 +313,12 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       suspension:
         run.status === EWorkflowRunStatus.SUSPENDED
           ? {
-              step: run.suspendedStep ?? null,
-              reason: run.suspensionReason ?? null,
-              stepExecId: run.suspensionStepExecId ?? null,
-              index: run.suspensionIndex ?? null,
-              key: run.suspensionKey ?? null,
+              waits: getOpenWaits(run).map((wait) => ({
+                waitId: wait.waitId,
+                step: wait.step?.id ?? null,
+                reason: wait.reason ?? null,
+                suspendKey: wait.suspendKey,
+              })),
             }
           : null,
       stepStatusCounts,
@@ -282,8 +332,48 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
   ): T {
     return {
       ...response,
-      items: this.withoutWorkflowDefinition(response.items),
+      items: this.withoutWorkflowDefinition(
+        response.items.map((item) => this.withoutCheckpoint(item)),
+      ),
     };
+  }
+
+  /**
+   * Replace the resume checkpoint of a run with a summary of its open waits,
+   * the only part of it that its output and step log do not already hold.
+   *
+   * @param filter - Keeps only the waits it accepts; all of them by default.
+   */
+  private withOpenWaits(
+    run: WorkflowRunFull,
+    filter: (wait: WaitInfo) => boolean = () => true,
+  ) {
+    return {
+      ...this.withoutCheckpoint(run),
+      openWaits: getOpenWaits(run)
+        .filter(filter)
+        .map(({ waitId, reason, step, data }) => ({
+          waitId,
+          reason: reason ?? null,
+          step,
+          data: data ?? null,
+        })),
+    };
+  }
+
+  /**
+   * Drop the resume checkpoint from a run: it is large, and only the run the
+   * debug tool inspects needs it. Only the run's own key is removed, never
+   * nested user data that happens to use the same name.
+   */
+  private withoutCheckpoint<T>(run: T): T {
+    if (!run || typeof run !== 'object' || !('checkpoint' in run)) {
+      return run;
+    }
+
+    const { checkpoint: _checkpoint, ...rest } = run as Record<string, unknown>;
+
+    return rest as T;
   }
 
   private withoutWorkflowDefinition<T>(value: T): T {

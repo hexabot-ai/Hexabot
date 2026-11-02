@@ -4,7 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
-import { NotFoundException } from '@nestjs/common';
+import {
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 
 import { WorkflowType } from '@/workflow/types';
 
@@ -30,30 +33,34 @@ const defaultWorkflowService = () => ({
 const buildWorkflowRunTools = (overrides: Record<string, unknown> = {}) => {
   const workflowService = overrides.workflowService ?? defaultWorkflowService();
   const workflowRunService = overrides.workflowRunService ?? ({} as any);
-  const agenticService = overrides.agenticService ?? ({} as any);
+  const webhookTriggerService = overrides.webhookTriggerService ?? ({} as any);
 
   return new HexabotWorkflowRunMcpTools(
     workflowService as any,
     workflowRunService as any,
-    agenticService as any,
+    webhookTriggerService as any,
   );
 };
 
 describe('HexabotWorkflowRunMcpTools', () => {
   it('returns the created workflow run summary for manual workflow execution', async () => {
     const run = { id: 'run-id', status: 'finished' };
+    const workflow = {
+      id: 'workflow-id',
+      type: WorkflowType.manual,
+      inputSchema: { type: 'object', properties: {} },
+    };
     const workflowService = {
-      findOne: jest.fn().mockResolvedValue({
-        id: 'workflow-id',
-        type: WorkflowType.manual,
-        inputSchema: { type: 'object', properties: {} },
-      }),
+      findOneAndPopulate: jest.fn().mockResolvedValue(workflow),
       validateManualInput: jest.fn().mockReturnValue({ prompt: 'hello' }),
     };
-    const agenticService = {
-      handleEvent: jest.fn().mockResolvedValue(run),
+    const webhookTriggerService = {
+      dispatchTriggerEvent: jest.fn().mockResolvedValue(run),
     };
-    const tools = buildWorkflowRunTools({ workflowService, agenticService });
+    const tools = buildWorkflowRunTools({
+      workflowService,
+      webhookTriggerService,
+    });
 
     await expect(
       tools.runWorkflow(
@@ -64,21 +71,112 @@ describe('HexabotWorkflowRunMcpTools', () => {
         {},
         request,
       ),
-    ).resolves.toEqual({ accepted: true, run });
+    ).resolves.toEqual({ accepted: true, run: { ...run, openWaits: [] } });
 
-    const [event] = agenticService.handleEvent.mock.calls[0];
-    expect(event.getWorkflowId()).toBe('workflow-id');
-    expect(event.getInitiator()).toEqual(actor);
+    const [workflowArg, event, initiatorId] =
+      webhookTriggerService.dispatchTriggerEvent.mock.calls[0];
+    expect(workflowArg).toBe(workflow);
+    expect(event.buildInput()).toEqual({ prompt: 'hello' });
+    expect(initiatorId).toBe(actor.id);
     expect(workflowService.validateManualInput).toHaveBeenCalledWith(
       { prompt: 'hello' },
       { type: 'object', properties: {} },
     );
   });
 
-  it('searches workflow runs without nested workflow YAML definitions', async () => {
+  it('summarizes the open waits of a run instead of returning its checkpoint and YAML', async () => {
+    const wait = {
+      waitId: 'review@index:1',
+      step: { id: 'review', name: 'review', type: 'task' },
+      suspendKey: 'index:1',
+      reason: 'awaiting_approval',
+      data: { message: 'Refund 42 EUR?' },
+      accepts: { type: 'object' },
+    };
+    const run = {
+      id: 'run-id',
+      status: 'suspended',
+      checkpoint: { version: 1, fingerprint: 'f', root: {}, waits: [wait] },
+      workflowVersion: {
+        id: 'version-id',
+        definitionYml: 'defs: {}\nflow: []\noutputs: {}\n',
+      },
+    };
+    const workflowService = {
+      findOneAndPopulate: jest.fn().mockResolvedValue({
+        id: 'workflow-id',
+        type: WorkflowType.manual,
+        inputSchema: { type: 'object', properties: {} },
+      }),
+      validateManualInput: jest.fn().mockReturnValue({}),
+    };
+    const webhookTriggerService = {
+      dispatchTriggerEvent: jest.fn().mockResolvedValue(run),
+    };
+    const tools = buildWorkflowRunTools({
+      workflowService,
+      webhookTriggerService,
+    });
+
+    await expect(
+      tools.runWorkflow({ workflowId: 'workflow-id', input: {} }, {}, request),
+    ).resolves.toEqual({
+      accepted: true,
+      run: {
+        id: 'run-id',
+        status: 'suspended',
+        workflowVersion: { id: 'version-id' },
+        openWaits: [
+          {
+            waitId: 'review@index:1',
+            reason: 'awaiting_approval',
+            step: wait.step,
+            data: { message: 'Refund 42 EUR?' },
+          },
+        ],
+      },
+    });
+  });
+
+  it('reports an input the suspended run refused instead of accepting it', async () => {
+    const workflowService = {
+      findOneAndPopulate: jest.fn().mockResolvedValue({
+        id: 'workflow-id',
+        type: WorkflowType.manual,
+        inputSchema: { type: 'object', properties: {} },
+      }),
+      validateManualInput: jest.fn().mockReturnValue({ quantity: 'ten' }),
+    };
+    const refusal = new UnprocessableEntityException({
+      statusCode: 422,
+      code: 'payload_rejected',
+      message:
+        'Resume payload for wait "ask" was rejected: quantity: Expected number',
+      issues: ['quantity: Expected number'],
+      runId: 'run-id',
+    });
+    const webhookTriggerService = {
+      dispatchTriggerEvent: jest.fn().mockRejectedValue(refusal),
+    };
+    const tools = buildWorkflowRunTools({
+      workflowService,
+      webhookTriggerService,
+    });
+
+    await expect(
+      tools.runWorkflow(
+        { workflowId: 'workflow-id', input: { quantity: 'ten' } },
+        {},
+        request,
+      ),
+    ).rejects.toBe(refusal);
+  });
+
+  it('searches workflow runs without nested workflow YAML definitions or checkpoints', async () => {
     const run = {
       id: 'run-id',
       status: 'finished',
+      checkpoint: { version: 1, waits: [] },
       workflowVersion: {
         id: 'version-id',
         version: 3,
@@ -117,10 +215,90 @@ describe('HexabotWorkflowRunMcpTools', () => {
     });
   });
 
-  it('reads a workflow run without nested workflow YAML definitions', async () => {
+  it('lists the runs waiting on an admin with their open admin waits', async () => {
+    const approvalWait = {
+      waitId: 'approve@index:1',
+      step: { id: 'approve', name: 'approve', type: 'task' },
+      suspendKey: 'index:1',
+      reason: 'awaiting_approval',
+      data: { message: 'Refund 42 EUR?' },
+      accepts: { type: 'object' },
+    };
+    const run = {
+      id: 'run-id',
+      status: 'suspended',
+      awaitingOperator: true,
+      checkpoint: {
+        version: 1,
+        waits: [
+          approvalWait,
+          {
+            waitId: 'ask@index:1',
+            step: { id: 'ask', name: 'ask', type: 'task' },
+            suspendKey: 'index:1',
+            reason: 'awaiting_user_response',
+          },
+        ],
+      },
+      workflowVersion: {
+        id: 'version-id',
+        definitionYml: 'defs: {}\nflow: []\noutputs: {}\n',
+      },
+    };
+    const workflowRunService = {
+      findAndPopulate: jest.fn().mockResolvedValue([run]),
+      count: jest.fn().mockResolvedValue(1),
+      withAwaitingOperatorScope: jest.fn((options) => ({
+        ...options,
+        where: { ...options.where, scoped: true },
+      })),
+    };
+    const tools = buildWorkflowRunTools({ workflowRunService });
+    const result = await tools.listPendingWorkflowRuns({
+      workflowId: '11111111-1111-4111-8111-111111111111',
+      limit: 20,
+      skip: 0,
+      sortBy: 'suspendedAt',
+      sortDirection: 'DESC',
+    });
+
+    expect(workflowRunService.findAndPopulate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workflow: { id: '11111111-1111-4111-8111-111111111111' },
+          scoped: true,
+        },
+        order: { suspendedAt: 'DESC' },
+      }),
+    );
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'run-id',
+          status: 'suspended',
+          awaitingOperator: true,
+          workflowVersion: { id: 'version-id' },
+          openWaits: [
+            {
+              waitId: 'approve@index:1',
+              reason: 'awaiting_approval',
+              step: approvalWait.step,
+              data: { message: 'Refund 42 EUR?' },
+            },
+          ],
+        },
+      ],
+      total: 1,
+      limit: 20,
+      skip: 0,
+    });
+  });
+
+  it('reads a workflow run without nested workflow YAML definitions or checkpoint', async () => {
     const run = {
       id: 'run-id',
       status: 'finished',
+      checkpoint: { version: 1, waits: [] },
       workflowVersion: {
         id: 'version-id',
         version: 3,
@@ -144,7 +322,7 @@ describe('HexabotWorkflowRunMcpTools', () => {
     });
   });
 
-  it('returns workflow run debugging context with related runs and YAML', async () => {
+  it('returns workflow run debugging context with related runs and YAML, keeping only the inspected checkpoint', async () => {
     const run = {
       id: 'run-id',
       status: 'failed',
@@ -171,12 +349,14 @@ describe('HexabotWorkflowRunMcpTools', () => {
       },
       error: 'Template is missing',
       duration: 125,
+      checkpoint: { version: 1, waits: [] },
       createdAt: '2026-05-08T10:00:00.000Z',
       updatedAt: '2026-05-08T10:00:01.000Z',
     };
     const parentRun = {
       id: 'parent-run-id',
       status: 'suspended',
+      checkpoint: { version: 1, waits: [] },
       workflowVersion: {
         id: 'parent-version-id',
         definitionYml: 'parent-yaml',
@@ -185,6 +365,7 @@ describe('HexabotWorkflowRunMcpTools', () => {
     const childRun = {
       id: 'child-run-id',
       status: 'finished',
+      checkpoint: null,
       workflowVersion: {
         id: 'child-version-id',
         definitionYml: 'child-yaml',
@@ -298,11 +479,23 @@ describe('HexabotWorkflowRunMcpTools', () => {
       },
       parentRun: null,
       stepLog: null,
-      suspendedStep: 'await_reply',
-      suspensionReason: 'Waiting for user',
-      suspensionStepExecId: 'exec-id',
-      suspensionIndex: 1,
-      suspensionKey: 'reply',
+      checkpoint: {
+        version: 1,
+        waits: [
+          {
+            waitId: 'await_reply@key:reply',
+            step: { id: 'await_reply', name: 'await_reply', type: 'task' },
+            suspendKey: 'key:reply',
+            reason: 'Waiting for user',
+          },
+          {
+            waitId: 'call_child@index:1',
+            step: { id: 'call_child', name: 'call_child', type: 'task' },
+            suspendKey: 'index:1',
+            reason: 'awaiting_child_workflow',
+          },
+        ],
+      },
     };
     const workflowRunService = {
       findOneAndPopulate: jest.fn().mockResolvedValue(run),
@@ -341,11 +534,20 @@ describe('HexabotWorkflowRunMcpTools', () => {
         summary: expect.objectContaining({
           status: 'suspended',
           suspension: {
-            step: 'await_reply',
-            reason: 'Waiting for user',
-            stepExecId: 'exec-id',
-            index: 1,
-            key: 'reply',
+            waits: [
+              {
+                waitId: 'await_reply@key:reply',
+                step: 'await_reply',
+                reason: 'Waiting for user',
+                suspendKey: 'key:reply',
+              },
+              {
+                waitId: 'call_child@index:1',
+                step: 'call_child',
+                reason: 'awaiting_child_workflow',
+                suspendKey: 'index:1',
+              },
+            ],
           },
         }),
       }),

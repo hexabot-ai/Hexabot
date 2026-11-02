@@ -66,7 +66,8 @@ const ENTITY_TYPE_BY_WS_KEY = (() => {
   return entityMap;
 })();
 // Resolves an incoming websocket entity name to a known EntityType.
-const resolveEntityType = (entity: unknown): EntityType | null => {
+
+export const resolveEntityType = (entity: unknown): EntityType | null => {
   if (typeof entity !== "string") {
     return null;
   }

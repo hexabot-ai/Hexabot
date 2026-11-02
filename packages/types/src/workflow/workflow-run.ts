@@ -80,18 +80,18 @@ const workflowRunStubObjectSchema = baseStubSchema.extend({
   ),
   snapshot: preprocess(nullishToNull, z.any().nullable()),
   stepLog: preprocess(nullishToNull, z.record(z.string(), z.any()).nullable()),
-  suspendedStep: preprocess(nullishToNull, z.string().nullable()),
-  suspensionReason: preprocess(nullishToNull, z.string().nullable()),
-  suspensionData: preprocess(nullishToNull, z.unknown().nullable()),
-  suspensionStepExecId: preprocess(nullishToNull, z.string().nullable()),
-  suspensionIndex: preprocess(nullishToNull, z.coerce.number().nullable()),
-  suspensionKey: preprocess(nullishToNull, z.string().nullable()),
-  suspensionAwaitResults: preprocess(
+  checkpoint: preprocess(
     nullishToNull,
     z.record(z.string(), z.any()).nullable(),
   ),
-  lastResumeData: preprocess(nullishToNull, z.unknown().nullable()),
   error: preprocess(nullishToNull, z.string().nullable()),
+  /**
+   * Id of the run that called this one. Unlike `parentRun`, it is kept once
+   * that run is deleted.
+   */
+  callerRunId: preprocess(nullishToNull, z.string().nullable()),
+  /** `true` while the run is suspended on a wait that only an admin resolves. */
+  awaitingOperator: z.coerce.boolean(),
   suspendedAt: preprocess(nullishToNull, z.coerce.date().nullable()),
   finishedAt: preprocess(nullishToNull, z.coerce.date().nullable()),
   failedAt: preprocess(nullishToNull, z.coerce.date().nullable()),

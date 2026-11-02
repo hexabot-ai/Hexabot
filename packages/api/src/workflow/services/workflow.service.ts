@@ -255,15 +255,34 @@ export class WorkflowService extends BaseOrmService<WorkflowOrmEntity> {
       return;
     }
 
+    // The checkpoint is only needed to resume the run, and it is large.
+    const { checkpoint: _checkpoint, ...broadcastRun } = workflowRun;
+
     this.gateway.broadcastWorkflowEvent({
       ...payload,
+      ...('error' in payload
+        ? { error: this.toBroadcastError(payload.error) }
+        : {}),
       t,
-      workflowRun,
+      workflowRun: broadcastRun,
       workflowId,
       initiatorId,
       threadId: typeof threadId === 'string' ? threadId : undefined,
       workflowEvent: workflowEvent.replace('hook:', ''),
     });
+  }
+
+  /**
+   * Make an event error survive the websocket's JSON encoding, which keeps
+   * only the own enumerable fields of an `Error` and so drops its message.
+   * The stack is left out on purpose.
+   */
+  private toBroadcastError(error: unknown): unknown {
+    if (!(error instanceof Error)) {
+      return error;
+    }
+
+    return { ...error, name: error.name, message: error.message };
   }
 
   @OnEvent('hook:workflow:start')
@@ -293,6 +312,27 @@ export class WorkflowService extends BaseOrmService<WorkflowOrmEntity> {
     payload: WorkflowEventMap[keyof WorkflowEventMap],
   ) {
     await this.sendWorkflowEvent('hook:step:start', payload);
+  }
+
+  @OnEvent('hook:workflow:resume_rejected')
+  async sendWorkflowResumeRejected(
+    payload: WorkflowEventMap[keyof WorkflowEventMap],
+  ) {
+    await this.sendWorkflowEvent('hook:workflow:resume_rejected', payload);
+  }
+
+  @OnEvent('hook:step:resumed')
+  async sendWorkflowStepResumed(
+    payload: WorkflowEventMap[keyof WorkflowEventMap],
+  ) {
+    await this.sendWorkflowEvent('hook:step:resumed', payload);
+  }
+
+  @OnEvent('hook:step:resume_rejected')
+  async sendWorkflowStepResumeRejected(
+    payload: WorkflowEventMap[keyof WorkflowEventMap],
+  ) {
+    await this.sendWorkflowEvent('hook:step:resume_rejected', payload);
   }
 
   @OnEvent('hook:step:suspended')

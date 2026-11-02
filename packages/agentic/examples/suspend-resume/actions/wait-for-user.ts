@@ -33,19 +33,21 @@ export const waitForUser = defineAction<
   inputSchema,
   outputSchema,
   execute: async ({ input, context }) => {
-    context.log('Suspending workflow until we get a reply', {
-      prompt: input.prompt,
-    });
-
-    const resumeData = await context.workflow.suspend({
-      reason: 'awaiting_user',
-      data: { prompt: input.prompt },
-    });
-    const parsed = resumeSchema.safeParse(resumeData);
-    if (!parsed.success) {
-      throw new Error('resumeData must include a string reply');
+    // A resumed body runs again from the top; skip work that already happened.
+    if (!context.workflow.hasRecordedResult()) {
+      context.log('Suspending workflow until we get a reply', {
+        prompt: input.prompt,
+      });
     }
 
-    return { reply: parsed.data.reply };
+    // A payload that does not match `accepts` is refused and the wait stays
+    // open, instead of failing the run.
+    const { reply } = await context.workflow.suspend({
+      reason: 'awaiting_user',
+      data: { prompt: input.prompt },
+      accepts: resumeSchema,
+    });
+
+    return { reply };
   },
 });
