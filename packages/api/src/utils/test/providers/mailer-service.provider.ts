@@ -8,7 +8,10 @@ import { MailerService } from '@/mailer/mailer.service';
 
 export const mailerMock = {
   sendMail: jest.fn((_options) =>
-    Promise.resolve('Mail sent successfully'),
+    Promise.resolve({
+      envelope: { from: false, to: [] },
+      messageId: '<mock-message-id@hexabot.ai>',
+    }),
   ) satisfies MailerService['sendMail'],
 };
 

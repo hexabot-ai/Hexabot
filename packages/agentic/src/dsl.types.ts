@@ -253,6 +253,9 @@ const ConditionalWhenSchema: z.ZodType<ConditionalBranch> = z.lazy(() =>
 );
 const ConditionalElseSchema: z.ZodType<ConditionalBranch> = z.lazy(() =>
   z.strictObject({
+    // Refusing `condition` here keeps a `when` branch with a bad condition
+    // from also matching as an `else` branch, so its own issue is reported.
+    condition: z.never().optional(),
     else: z.unknown().optional(),
     steps: z.array(FlowStepSchema),
   }),

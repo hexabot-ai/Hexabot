@@ -12,7 +12,7 @@ import { cloneAsJson } from './utils/clone';
 
 type JsonSchema = Record<string, unknown>;
 
-type ZodNode = { _zod: { def: ZodDefLike; optin?: 'optional' } };
+type ZodNode = { _zod: { def: ZodDefLike; optin?: 'optional' | 'defaulted' } };
 
 // The parts of a Zod 4 schema definition these helpers read.
 type ZodDefLike = {
@@ -137,7 +137,16 @@ export function describeResumePayload(schema: ZodType): JsonSchema | undefined {
  * @returns True when the schema accepts `undefined`, e.g. when it is optional.
  */
 export function isPayloadOptional(schema: ZodType): boolean {
-  return (schema as unknown as ZodNode)._zod.optin === 'optional';
+  const { optin, def } = (schema as unknown as ZodNode)._zod;
+
+  // Zod marks `.default()` as "defaulted" and gives `z.undefined()` and
+  // `z.void()` no optin, though both accept a missing payload.
+  return (
+    optin === 'optional' ||
+    optin === 'defaulted' ||
+    def.type === 'undefined' ||
+    def.type === 'void'
+  );
 }
 
 /**

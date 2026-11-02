@@ -122,6 +122,7 @@ describe('isPayloadOptional', () => {
     ['default', z.object({ note: z.string() }).default({ note: '' }), true],
     ['nullish', z.string().nullish(), true],
     ['undefined', z.undefined(), true],
+    ['void', z.void(), true],
     ['object', z.object({ note: z.string() }), false],
     ['nullable', z.string().nullable(), false],
   ])(

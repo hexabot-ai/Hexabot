@@ -91,7 +91,7 @@ const workflowRunStubObjectSchema = baseStubSchema.extend({
    */
   callerRunId: preprocess(nullishToNull, z.string().nullable()),
   /** `true` while the run is suspended on a wait that only an admin resolves. */
-  awaitingOperator: z.coerce.boolean(),
+  awaitingOperator: z.coerce.boolean().default(false),
   suspendedAt: preprocess(nullishToNull, z.coerce.date().nullable()),
   finishedAt: preprocess(nullishToNull, z.coerce.date().nullable()),
   failedAt: preprocess(nullishToNull, z.coerce.date().nullable()),

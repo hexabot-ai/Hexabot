@@ -42,10 +42,10 @@
     "@rjsf/utils": "^6.2.5",
     "@tanstack/react-query": "^5.90.8",
     "@xyflow/react": "^12.10.0",
-    "axios": "^1.18.1",
+    "axios": "^1.21.0",
     "dayjs": "^1.11.13",
-    "dompurify": "^3.4.12",
-    "i18next-http-backend": "^3.0.5",
+    "dompurify": "^3.4.17",
+    "i18next-http-backend": "^4.0.7",
     "jsonschema": "^1.5.0",
     "lucide-react": "^1.22.0",
     "marked": "14.0.0",
@@ -63,7 +63,7 @@
     "react-router": "^8.3.0",
     "socket.io-client": "^4.8.1",
     "yaml": "^2.8.3",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tanstack/react-query-devtools": "^5.90.2",
@@ -84,6 +84,6 @@
     "typescript": "^5.8.3"
   },
   "engines": {
-    "node": "^24.17.0"
+    "node": "^24.22.1"
   }
 }
