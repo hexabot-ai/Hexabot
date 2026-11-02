@@ -23,6 +23,7 @@ import type {
   RuntimeSuspensionRequest,
   StepReplaySeed,
 } from '../runner-runtime-control';
+import { cloneAsJson, cloneValue } from '../utils/clone';
 import type { StepInfo } from '../workflow-event-emitter';
 import type {
   CompiledTask,
@@ -83,14 +84,16 @@ export async function executeTaskStep(
   // Resumed bodies reuse the inputs they first ran with: re-evaluating could
   // differ, e.g. when an expression depends on the event that woke the run.
   const inputs = frame
-    ? frame.inputs
+    ? cloneValue(frame.inputs)
     : await evaluateMapping(task.inputs, buildScope(env, state));
   if (env.signal.aborted) {
     const error = getAbortReason(env.signal);
     recordTaskCancellation(env, stepInfo, error, frame?.wait);
     throw error;
   }
-
+  // Kept apart from the object the body gets, so that a body changing its
+  // inputs cannot change the inputs every later pass replays.
+  const recordedInputs = frame ? frame.inputs : copyInputs(inputs);
   const resumeData = frame ? env.resolutions.get(frame.wait.waitId) : undefined;
   const seed: StepReplaySeed | undefined = frame
     ? {
@@ -168,7 +171,7 @@ export async function executeTaskStep(
         new WorkflowCancellationError(`Step "${stepInfo.id}" suspended.`),
       );
 
-      return suspendTask(env, step, stepInfo, inputs, outcome.request);
+      return suspendTask(env, step, stepInfo, recordedInputs, outcome.request);
     case 'completed':
       try {
         env.runtime.endStep({ completed: true });
@@ -202,6 +205,20 @@ export async function executeTaskStep(
   }
 }
 
+/**
+ * Copy the inputs a body first runs with, the way the checkpoint stores them.
+ * Inputs JSON cannot encode are returned as they are: building the checkpoint
+ * reports them if the step suspends.
+ */
+const copyInputs = (
+  inputs: Record<string, unknown>,
+): Record<string, unknown> => {
+  try {
+    return cloneAsJson(inputs);
+  } catch {
+    return inputs;
+  }
+};
 const buildScope = (
   env: StepExecutorEnv,
   state: ExecutionState,

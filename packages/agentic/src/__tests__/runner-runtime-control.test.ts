@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { z } from 'zod';
+import { z, type ZodType } from 'zod';
 
 import {
   NonDeterministicWorkflowError,
@@ -59,6 +59,35 @@ describe('RunnerRuntimeControl', () => {
     expect(runtime.hasRecordedResult()).toBe(false);
     expect(() => runtime.endStep({ completed: true })).not.toThrow();
   });
+
+  it.each<[string, ZodType | undefined]>([
+    ['without accepts', undefined],
+    ['with z.any()', z.any()],
+    ['with a nested z.unknown()', z.object({ meta: z.unknown() })],
+  ])(
+    'records a result again unchanged by a body that changed it, %s',
+    async (_label, accepts) => {
+      const runtime = new RunnerRuntimeControl();
+
+      runtime.beginStep(step, {
+        seed: {
+          awaitResults: { 'index:1': { meta: { n: 1 } } },
+          expected: { suspendKey: 'index:1' },
+        },
+      });
+
+      const answer = (await runtime.suspend({ accepts })) as {
+        meta: { n: number };
+      };
+      answer.meta.n += 1;
+      void runtime.suspend();
+
+      await expect(runtime.waitForSuspension()).resolves.toMatchObject({
+        suspendKey: 'index:2',
+        awaitResults: { 'index:1': { meta: { n: 1 } } },
+      });
+    },
+  );
 
   it('rejects a user key reused within one attempt, but not across attempts', async () => {
     const runtime = new RunnerRuntimeControl();

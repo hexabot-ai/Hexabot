@@ -120,7 +120,45 @@ const stamp = defineAction<
     return { at: new Date(0) };
   },
 });
-const actions = { record, ask, ask_twice: askTwice, stamp };
+/** Changes its input and two answers in place before suspending again. */
+const amend = defineAction<
+  { tags: string[] },
+  { tags: string[]; first: string; second: string; third: string },
+  TestContext,
+  Settings
+>({
+  name: 'amend',
+  outputSchema: z.object({
+    tags: z.array(z.string()),
+    first: z.string(),
+    second: z.string(),
+    third: z.string(),
+  }),
+  execute: async ({ input, context }) => {
+    countRun('amend');
+    input.tags.push('seen');
+    const first = (await context.workflow.suspend({ reason: 'first' })) as {
+      reply: string;
+    };
+    first.reply += '!';
+    const second = (await context.workflow.suspend({
+      reason: 'second',
+      accepts: z.any(),
+    })) as { reply: string };
+    second.reply += '!';
+    const third = replySchema.parse(
+      await context.workflow.suspend({ reason: 'third' }),
+    );
+
+    return {
+      tags: input.tags,
+      first: first.reply,
+      second: second.reply,
+      third: third.reply,
+    };
+  },
+});
+const actions = { record, ask, ask_twice: askTwice, stamp, amend };
 const compile = (definition: WorkflowDefinition) =>
   compileWorkflow(definition, { actions });
 const noRetries = { retries: { enabled: false } } as Settings;
@@ -339,6 +377,30 @@ const fixtures: Fixture[] = [
     expectedOutput: { first: 'r0', second: 'r1' },
     expectedResumes: 2,
     expectedRuns: { ask_twice: 3, record: 1 },
+  },
+  {
+    name: 'action that changes its input and its answers in place',
+    definition: {
+      defs: createTaskDefs({
+        edit: { action: 'amend', inputs: { tags: ['a'] } },
+      }),
+      flow: [{ do: 'edit' }],
+      outputs: {
+        tags: '=$output.edit.tags',
+        first: '=$output.edit.first',
+        second: '=$output.edit.second',
+        third: '=$output.edit.third',
+      },
+    },
+    // Every pass starts from the recorded values, so each change lands once.
+    expectedOutput: {
+      tags: ['a', 'seen'],
+      first: 'r0!',
+      second: 'r1!',
+      third: 'r2',
+    },
+    expectedResumes: 3,
+    expectedRuns: { amend: 4 },
   },
   ...(['first', 'last'] as const).map(
     (order): Fixture => ({

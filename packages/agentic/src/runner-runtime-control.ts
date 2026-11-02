@@ -14,6 +14,7 @@ import {
   isPayloadOptional,
   rejectResumePayload,
 } from './resume-payload';
+import { cloneValue } from './utils/clone';
 import type { StepInfo } from './workflow-event-emitter';
 
 const INDEX_KEY_PREFIX = 'index:';
@@ -282,6 +283,10 @@ const assertJsonPayloadSchema = (active: ActiveStep, accepts: ZodType) => {
  * Resolve a `suspend()` call from its recorded result, parsed through the
  * call's `accepts` schema when it has one.
  *
+ * The body gets its own copy: the recorded result is saved again with the
+ * step's next suspension and replayed on every later pass, so a body that
+ * changed it would see its own change applied twice.
+ *
  * @returns The recorded (or parsed) result. It rejects with a
  * `WorkflowResumeRejectedError` when the payload this pass resolved fails the
  * schema, and with a {@link NonDeterministicWorkflowError} when a result
@@ -292,7 +297,7 @@ const resolveRecordedResult = async <T>(
   suspendKey: string,
   accepts?: ZodType<T>,
 ): Promise<T> => {
-  const recorded = active.awaitResults.get(suspendKey);
+  const recorded = cloneValue(active.awaitResults.get(suspendKey));
   if (!accepts) {
     return recorded as T;
   }

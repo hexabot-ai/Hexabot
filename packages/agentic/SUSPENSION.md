@@ -140,6 +140,8 @@ Other rules:
 - Keys are positional (`index:<n>`) unless `options.key` is given (`key:<key>`).
 - A user `key` can be used once per action body; reusing it throws. Otherwise the second call
   would resolve with the first call's answer on resume instead of suspending.
+- A body may change the answers `suspend()` resolves and its `input` in place. Each pass gets its
+  own copy of what was recorded, so a change lasts for that pass only and is never replayed.
 - Every attempt of an action run rewinds the cursor to where that run started, so a retried body
   reproduces its keys instead of suspending again. `AbstractAction` takes the mark with
   `context.workflow.markSuspendCursor()` before its first attempt and rewinds before each one.
@@ -352,7 +354,7 @@ records those itself.
   suspension. Both passes must produce the same outputs and the expected per-action body counts.
   Fixtures cover sequences, output values that are not plain JSON, conditionals, `for_each`
   accumulators reading `$iteration.item`, nested `for_each` + `while`, multi-suspend actions,
-  `wait_all` with two waits in both orders, both `wait_any` outcomes, and a loop inside parallel
+  an action changing its input and answers in place, `wait_all` with two waits in both orders, both `wait_any` outcomes, and a loop inside parallel
   inside a loop. The file also covers every validation error (including each frame structure
   check), retry after resume, timeouts, failing siblings, `waitId` selection, recorded inputs,
   nested action runs, reused keys, all three determinism checks, and the suspension and
@@ -369,7 +371,8 @@ records those itself.
   the Zod schema accepts, still refuses what JSON Schema can check, optional payloads, types
   JSON cannot carry, and payload normalization.
 - `src/__tests__/runner-runtime-control.test.ts`: the suspend cursor and its rewinds, keys,
-  recorded results, `accepts` parsing, and determinism checks of one runtime scope.
+  recorded results (handed out as copies), `accepts` parsing, and determinism checks of one
+  runtime scope.
 - `src/__tests__/workflow-fingerprint.test.ts`: which definition changes count as drift.
 - `src/step-executors/*.test.ts`: frame production and consumption per executor.
 - `src/__tests__/workflow-runner.test.ts`: runner-level suspend and resume, restoring from
