@@ -4,6 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
+import { isPackageInstalled } from '@/utils/helpers/package-manager';
+
 export const vercelAiSdkProviders = [
   'alibaba',
   'amazon-bedrock',
@@ -47,3 +49,24 @@ export const vercelAiSdkProviders = [
   'vercel',
   'xai',
 ] as const;
+
+export type VercelAiSdkProvider = (typeof vercelAiSdkProviders)[number];
+
+const providerPackageOverrides: Partial<Record<VercelAiSdkProvider, string>> = {
+  claude: 'anthropic',
+  gemini: 'google',
+  litellm: 'openai-compatible',
+};
+const toProviderOption = (provider: VercelAiSdkProvider) => {
+  const packageName = `@ai-sdk/${providerPackageOverrides[provider] ?? provider}`;
+
+  return {
+    provider,
+    packageName,
+    installed: isPackageInstalled(packageName),
+  };
+};
+
+export const vercelAiSdkProviderOptions = vercelAiSdkProviders
+  .map(toProviderOption)
+  .sort((left, right) => Number(right.installed) - Number(left.installed));
