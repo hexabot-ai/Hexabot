@@ -200,7 +200,7 @@ Run R is suspended on `ask_name`, and the user replies "Ada".
 
 1. `ChatService` calls `handleEvent` again. `dispatch` finds R with
    `findSuspendedRunByInitiator`, which picks the deepest suspended run of
-   this user in this thread.
+   this user in this thread with a wait the event resolves (step 2).
 2. The event resolves the first open wait that the host does not resolve
    itself. Child results and admin decisions are resolved by the host
    (`HOST_RESOLVED_WAIT_REASONS` in `types.ts`), so a chat message never
@@ -333,7 +333,7 @@ sequenceDiagram
   rect rgba(127, 127, 127, 0.12)
   Note over Chat,Runs: Message 2: the reply resumes C, then C's result resumes P
   Chat->>Agentic: message 2, the reply
-  Note over Agentic: picks the deepest suspended run, C
+  Note over Agentic: picks the deepest run waiting on the reply, C
   Agentic->>CallStack: continueResume(C)
   CallStack->>Executor: resume(C), C finishes
   CallStack->>Runs: reconcile([C, P]), find an ended child of P
@@ -358,8 +358,9 @@ sequenceDiagram
 
 **Message 2: the reply resumes C, and C's result resumes P.**
 
-1. The reply goes to the deepest suspended run of the conversation, C, not P.
-   P's only wait is on a child, and inbound events never answer those.
+1. The reply goes to the deepest suspended run of the conversation with a
+   wait it resolves: C, not P. P's only wait is on a child, and inbound
+   events never answer those.
 2. C is resumed as in example 2 and finishes. `followUps` says: C ended, so
    look at C, whose own calls nothing waits on any more, then at its parent,
    P. C called nothing, so nothing is cancelled.
@@ -388,12 +389,23 @@ pass, and if P goes back to `suspended`, `followUps(P)` names P itself, so
 own state first and reads the other's after, so at least one of them sees
 both: if C's read finds P still running, P's later read finds C finished.
 
+**When the parent asks too.** Say P runs its `call_workflow` step in a
+`parallel` block, beside an `await_reply` step, and C asks an admin for
+approval instead of asking the user. P waits on C and on the reply; C only
+waits on the admin. The reply goes to P: `findSuspendedRunByInitiator` looks
+for a wait the event resolves in every suspended run of the conversation,
+not only in its leaves, and P is the deepest run with one. P's reply branch
+goes on, and P suspends again on C alone. The admin's decision ends C later,
+and C's result resumes P as above. The same holds while C is in a pass.
+Only when no run of the conversation waits on the reply does a run waiting
+on an admin hold it.
+
 **When nothing waits on a child any more.** Say P calls C1 and C2 in a
 `wait_any` block, and both ask an admin for approval. The admin approves C1:
 P resumes, the C1 branch wins, and the runner drops the wait on C2. C2 is
 still suspended, and nothing will ever take its result. Left alone, an admin
 could still approve it and run it, and as the deepest suspended run of the
-conversation it would take the next events. So `reconcile` first cancels the
+conversation it could take, or hold, the next events. So `reconcile` first cancels the
 suspended runs nothing waits on any more
 (`WorkflowRunService.cancelAbandonedRuns`), each with its own suspended
 descendants:

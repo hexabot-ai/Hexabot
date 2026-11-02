@@ -112,7 +112,7 @@ Cancelling fails the run with `Cancelled by <admin>[: <reason>]`, marks the step
 
 ## While a run waits on an admin
 
-- **Conversations.** Messages in the run's conversation are stored, but neither resume the run nor start a new one, so they do not interleave with the pending decision. They are not replayed afterwards. A decision is accepted even while the subscriber is handed over to a human agent; the resumed run may then send messages alongside the agent.
+- **Conversations.** Messages in the run's conversation are stored, but neither resume the run nor start a new one, so they do not interleave with the pending decision. They are not replayed afterwards. A run of the conversation that waits on a reply still gets them, e.g. the run that called this one and asks the user in a `parallel` branch beside the call. A decision is accepted even while the subscriber is handed over to a human agent; the resumed run may then send messages alongside the agent.
 - **Manual, webhook and scheduled triggers** start a new, independent run. A scheduled workflow that waits on approvals therefore leaves one pending run per tick.
 - Approving a wait of a child run resumes its waiting ancestors once the child ends.
 - Waits do not expire. Closing the conversation fails the run.

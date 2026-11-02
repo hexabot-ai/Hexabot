@@ -28,6 +28,24 @@ export const getOpenWaits = (
 };
 
 /**
+ * Tell whether an inbound event (a message, a webhook, a manual trigger) can
+ * resolve this wait. The host resolves the others itself: a child run's
+ * result, or an admin's decision (see `HOST_RESOLVED_WAIT_REASONS`).
+ */
+export const isEventWait = (wait: Pick<WaitInfo, 'reason'>): boolean =>
+  !HOST_RESOLVED_WAIT_REASONS.has(wait.reason ?? '');
+
+/**
+ * Find the wait an inbound event resolves: the first one, in flow order,
+ * that the host does not resolve itself (see {@link isEventWait}).
+ *
+ * @param waits - Open waits of a run, in flow order.
+ * @returns The wait, or `undefined` when an event resolves none of them.
+ */
+export const findEventWait = (waits: WaitInfo[]): WaitInfo | undefined =>
+  waits.find(isEventWait);
+
+/**
  * Tell whether an admin (operator) resolves this wait.
  */
 export const isOperatorWait = (wait: Pick<WaitInfo, 'reason'>): boolean =>
@@ -50,10 +68,7 @@ export const isBlockedOnOperator = (
 ): boolean => {
   const waits = getOpenWaits(run);
 
-  return (
-    hasOperatorWait(waits) &&
-    waits.every((wait) => HOST_RESOLVED_WAIT_REASONS.has(wait.reason ?? ''))
-  );
+  return hasOperatorWait(waits) && !waits.some(isEventWait);
 };
 
 /**

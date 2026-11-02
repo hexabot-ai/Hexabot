@@ -21,7 +21,11 @@ import {
   followUps,
   toCallWorkflowResult,
 } from '../lib/workflow-call-stack';
-import { getOpenWaits, isBlockedOnOperator } from '../lib/workflow-run-waits';
+import {
+  findEventWait,
+  getOpenWaits,
+  isBlockedOnOperator,
+} from '../lib/workflow-run-waits';
 import type {
   CallWorkflowOptions,
   CallWorkflowResult,
@@ -35,7 +39,6 @@ import type {
   TriggerEventOutcome,
   WorkflowCallService,
 } from '../types';
-import { HOST_RESOLVED_WAIT_REASONS } from '../types';
 
 import { WorkflowCallStackService } from './workflow-call-stack.service';
 import { WorkflowJobs } from './workflow-jobs.service';
@@ -415,8 +418,10 @@ export class AgenticService implements WorkflowCallService {
     }
 
     // A run waiting on an admin holds the messages of its conversation, so
-    // they do not interleave with the pending decision. Other triggers do
-    // not converse: they start a new run instead of waiting behind it.
+    // they do not interleave with the pending decision, unless another run of
+    // the conversation waits on them, e.g. its caller asking the user beside
+    // the call. Other triggers do not converse: they start a new run instead
+    // of waiting behind it.
     const suspendedRun =
       options.resume === false
         ? null
@@ -438,14 +443,12 @@ export class AgenticService implements WorkflowCallService {
       });
 
       // The event resolves the first open wait, in flow order, that the host
-      // does not resolve itself (see `HOST_RESOLVED_WAIT_REASONS`).
+      // does not resolve itself; the run was picked for having one, unless no
+      // run of the stack has any.
       const claim = await this.executor.claimResume({
         run: suspendedRun,
         event,
-        selectWait: (waits) =>
-          waits.find(
-            (wait) => !HOST_RESOLVED_WAIT_REASONS.has(wait.reason ?? ''),
-          ),
+        selectWait: findEventWait,
         resumeData: event.buildInput(),
       });
       switch (claim.status) {

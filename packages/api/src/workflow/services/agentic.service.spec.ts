@@ -1561,6 +1561,151 @@ describe('AgenticService (TypeORM)', () => {
       });
     });
 
+    it.each([
+      ['a conversational', createConversationalEvent],
+      ['a manual', createEvent],
+    ])(
+      'lets %s event resolve the reply wait of a parent whose child waits on an admin',
+      async (_trigger, buildEvent) => {
+        actionServiceMock.getRegistry.mockReturnValue({
+          await_decision: defineAction({
+            name: 'await_decision',
+            inputSchema: z.object({}),
+            outputSchema: z.object({ decision: z.string() }),
+            execute: async ({ context }) =>
+              await context.workflow.suspend({
+                reason: AWAITING_APPROVAL_REASON,
+                accepts: z.object({ decision: z.string() }),
+              }),
+          }),
+          call_workflow: new CallWorkflowAction({
+            register: jest.fn(),
+          } as unknown as ActionService),
+          ask_reply: defineAction({
+            name: 'ask_reply',
+            inputSchema: z.object({}),
+            outputSchema: z.object({ text: z.string() }),
+            execute: async ({ context }) =>
+              await context.workflow.suspend({
+                reason: 'awaiting_user_response',
+                accepts: z.object({ text: z.string() }),
+              }),
+          }),
+        });
+        // What `call_workflow` reads from the context of its run.
+        class CallingContext extends TestRuntimeContext {
+          constructor(
+            readonly workflowRunId: string,
+            readonly event: TriggerEventWrapper,
+            readonly services: { agentic: AgenticService },
+          ) {
+            super({});
+          }
+        }
+        workflowContextFactoryMock.create.mockImplementation(
+          async (run: WorkflowRunFull, event: TriggerEventWrapper) =>
+            new CallingContext(run.id, event, { agentic: agenticService }),
+        );
+        const commitWorkflow = async (definition: WorkflowDefinition) => {
+          const created = await workflowService.create({
+            name: `reply_beside_call_${++workflowCounter}`,
+            description: 'Asks the user beside a call to a workflow',
+            type: WorkflowType.conversational,
+            schedule: null,
+            createdBy: initiator.id,
+          });
+          await workflowVersionService.commit({
+            workflow: created.id,
+            definitionYml: AgenticWorkflow.stringifyDefinition(definition),
+            action: WorkflowVersionAction.create,
+            createdBy: initiator.id,
+          });
+
+          return created;
+        };
+        const review = await commitWorkflow({
+          defs: { review: { kind: 'task', action: 'await_decision' } },
+          flow: [{ do: 'review' }],
+          outputs: { decision: '=$output.review.decision' },
+        });
+        // The run calls a workflow that asks an admin, and meanwhile asks
+        // the user a question.
+        const parentWorkflow = await commitWorkflow({
+          defs: {
+            call_review: {
+              kind: 'task',
+              action: 'call_workflow',
+              inputs: { workflow_id: review.id },
+            },
+            ask: { kind: 'task', action: 'ask_reply' },
+          },
+          flow: [
+            {
+              parallel: {
+                strategy: 'wait_all',
+                steps: [{ do: 'call_review' }, { do: 'ask' }],
+              },
+            },
+          ],
+          outputs: {
+            decision: '=$output.call_review.output.decision',
+            reply: '=$output.ask.text',
+          },
+        });
+        const send = async (input: Record<string, unknown>) => {
+          const event = buildEvent(input);
+          event.setWorkflowId(parentWorkflow.id);
+
+          return (await agenticService.handleEvent(event))!;
+        };
+        const parentRun = await send({ start: true });
+        const childRunId = (
+          getOpenWaits(parentRun)[0].data as { workflow_run_id: string }
+        ).workflow_run_id;
+        expect(getOpenWaits(parentRun).map(({ reason }) => reason)).toEqual([
+          AWAITING_CHILD_WORKFLOW_REASON,
+          'awaiting_user_response',
+        ]);
+        expect(await workflowRunService.findOne(childRunId)).toEqual(
+          expect.objectContaining({
+            status: 'suspended',
+            awaitingOperator: true,
+          }),
+        );
+
+        // The reply reaches the parent, not the child below it, which only
+        // an admin can resume; no other run starts.
+        await expect(send({ text: 'hello' })).resolves.toEqual(
+          expect.objectContaining({ id: parentRun.id, status: 'suspended' }),
+        );
+        expect(
+          getOpenWaits((await workflowRunService.findOne(parentRun.id))!).map(
+            ({ reason }) => reason,
+          ),
+        ).toEqual([AWAITING_CHILD_WORKFLOW_REASON]);
+        expect(await countRuns()).toBe(2);
+
+        // The admin's decision ends the child, whose result ends the parent.
+        const childRun =
+          (await workflowRunService.findOneAndPopulate(childRunId))!;
+        const outcome = await agenticService.resumeWait({
+          run: childRun,
+          event: createEvent(),
+          waitId: getOpenWaits(childRun)[0].waitId,
+          resumeData: { decision: 'approved' },
+        });
+        expect(outcome.status).toBe('accepted');
+        await jobs.onIdle();
+
+        expect(await workflowRunService.findOne(parentRun.id)).toEqual(
+          expect.objectContaining({
+            status: 'finished',
+            output: { decision: 'approved', reply: 'hello' },
+          }),
+        );
+      },
+    );
+
     describe('resumeWait', () => {
       it('resolves the requested wait with the payload', async () => {
         const approvalWait = buildApprovalWait();

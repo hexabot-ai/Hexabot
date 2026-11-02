@@ -1081,6 +1081,105 @@ describe('WorkflowRunService (TypeORM)', () => {
 
       expect(result).toBeNull();
     });
+
+    describe('with a run waiting on the event above a leaf', () => {
+      const findAmong = async (
+        runs: WorkflowRunFull[],
+        workflowId?: string,
+        options?: { skipBlockedOnOperator?: boolean },
+      ) => {
+        const mockedRepo = {
+          findAndPopulate: jest.fn().mockResolvedValue(runs),
+        } as unknown as WorkflowRunRepository;
+
+        return await new WorkflowRunService(
+          mockedRepo,
+        ).findSuspendedRunByInitiator('sub-1', undefined, workflowId, options);
+      };
+
+      it('routes the event to a parent asking beside its call to a child waiting on an admin', async () => {
+        const parentRun = buildSuspendedRun('parent-run', 'parent-workflow', {
+          waitReasons: ['awaiting_child_workflow', 'awaiting_user_response'],
+        });
+        const childRun = buildSuspendedRun('child-run', 'child-workflow', {
+          parentRun: { id: parentRun.id },
+          suspendedAt: '2026-01-01T00:01:00.000Z',
+          waitReasons: ['awaiting_approval'],
+        });
+
+        expect(await findAmong([parentRun, childRun])).toBe(parentRun);
+        expect(
+          await findAmong([parentRun, childRun], 'parent-workflow', {
+            skipBlockedOnOperator: true,
+          }),
+        ).toBe(parentRun);
+      });
+
+      it('routes the event to a parent asking beside its call to a child still in a pass', async () => {
+        const parentRun = buildSuspendedRun('parent-run', 'parent-workflow', {
+          waitReasons: ['awaiting_child_workflow', 'awaiting_user_response'],
+        });
+        const childRun = buildSuspendedRun('child-run', 'child-workflow', {
+          parentRun: { id: parentRun.id },
+          status: EWorkflowRunStatus.RUNNING,
+        });
+
+        expect(await findAmong([parentRun, childRun])).toBe(parentRun);
+      });
+
+      it('routes the event to the deepest run waiting on it', async () => {
+        const parentRun = buildSuspendedRun('parent-run', 'parent-workflow', {
+          suspendedAt: '2026-01-01T00:02:00.000Z',
+          waitReasons: ['awaiting_child_workflow', 'awaiting_user_response'],
+        });
+        const childRun = buildSuspendedRun('child-run', 'child-workflow', {
+          parentRun: { id: parentRun.id },
+          waitReasons: ['awaiting_user_response'],
+        });
+
+        expect(await findAmong([parentRun, childRun])).toBe(childRun);
+      });
+
+      it('routes the event to the child waiting on it, not a sibling waiting on an admin', async () => {
+        const parentRun = buildSuspendedRun('parent-run', 'parent-workflow', {
+          waitReasons: ['awaiting_child_workflow', 'awaiting_child_workflow'],
+        });
+        const askingChild = buildSuspendedRun('asking-child', 'child-a', {
+          parentRun: { id: parentRun.id },
+          suspendedAt: '2026-01-01T00:01:00.000Z',
+          waitReasons: ['awaiting_user_response'],
+        });
+        const approvalChild = buildSuspendedRun('approval-child', 'child-b', {
+          parentRun: { id: parentRun.id },
+          suspendedAt: '2026-01-01T00:02:00.000Z',
+          waitReasons: ['awaiting_approval'],
+        });
+
+        expect(await findAmong([parentRun, approvalChild, askingChild])).toBe(
+          askingChild,
+        );
+      });
+
+      it('leaves out runs waiting on the event outside the requested workflow stack', async () => {
+        const otherRun = buildSuspendedRun('other-run', 'other-workflow', {
+          suspendedAt: '2026-01-01T00:02:00.000Z',
+          waitReasons: ['awaiting_user_response'],
+        });
+        const blockedRun = buildSuspendedRun('blocked-run', 'workflow-1', {
+          waitReasons: ['awaiting_approval'],
+        });
+
+        // The run waiting on an admin holds the event of its own workflow.
+        expect(await findAmong([otherRun, blockedRun], 'workflow-1')).toBe(
+          blockedRun,
+        );
+        expect(
+          await findAmong([otherRun, blockedRun], 'workflow-1', {
+            skipBlockedOnOperator: true,
+          }),
+        ).toBeNull();
+      });
+    });
   });
 
   describe('call stacks', () => {

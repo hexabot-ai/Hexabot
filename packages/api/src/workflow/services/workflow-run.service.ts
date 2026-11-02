@@ -37,6 +37,7 @@ import {
   cancelOpenWaits,
   getOpenWaits,
   isBlockedOnOperator,
+  isEventWait,
 } from '../lib/workflow-run-waits';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
 import {
@@ -676,19 +677,28 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   /**
    * Find the suspended run that should receive the next event.
    *
-   * For call-and-return stacks, the parent can be suspended while the child is
-   * either running or suspended for the same initiator/thread. The next external
-   * event must resume the deepest suspended leaf first; once that child
-   * completes, WorkflowCallStackService resumes its parent with the child
-   * result.
+   * The event goes to the deepest suspended run with a wait it can resolve
+   * (see {@link isEventWait}), wherever it sits in its call stack. A child
+   * asking the user is thus answered before its parent, and once it
+   * completes, WorkflowCallStackService resumes its parent with its result.
+   * A parent can also wait on the event itself, alongside its call to a child
+   * (`parallel`): it then gets the event while that child waits on an admin,
+   * or is still in a pass.
+   *
+   * When no run can resolve the event, the deepest suspended leaf gets it, so
+   * the caller holds the event there (a run waiting on an admin) or catches up
+   * on child results it missed. A run that is not the parent of another active
+   * run is a leaf; a running or idle leaf is still in flight and blocks its
+   * suspended ancestors.
    *
    * @param triggeredById - Identifier of the subscriber whose suspended run should be fetched.
    * @param threadId - Optional thread id for conversational continuity.
-   * @param workflowId - Optional workflow id; a parent match still resolves to its child leaf.
+   * @param workflowId - Optional workflow id; runs of a stack this workflow
+   * is part of, below or above it, still match.
    * @param options.skipBlockedOnOperator - Leave out leaves that only an
    * admin can resume (see {@link isBlockedOnOperator}), so the event starts a
    * new run instead of being absorbed by them.
-   * @returns The suspended leaf run populated with relations, or `null` when none exists.
+   * @returns The suspended run populated with relations, or `null` when none exists.
    */
   async findSuspendedRunByInitiator(
     triggeredById: string,
@@ -710,22 +720,24 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
     }
 
     const runsById = new Map(runs.map((run) => [run.id, run]));
+    const isCandidate = (run: WorkflowRunFull) =>
+      run.status === EWorkflowRunStatus.SUSPENDED &&
+      (!workflowId || this.isRunInWorkflowStack(run, workflowId, runsById));
+    const awaitingEvent = runs.filter(
+      (run) => isCandidate(run) && getOpenWaits(run).some(isEventWait),
+    );
+    if (awaitingEvent.length > 0) {
+      return this.pickDeepestSuspendedRun(awaitingEvent, runsById);
+    }
+
     const parentRunIds = new Set(
       runs
         .map((run) => resolveRunId(run.parentRun))
         .filter((value): value is string => typeof value === 'string'),
     );
-    // Leaves are active runs that are not the parent of another unfinished
-    // candidate. Only suspended leaves can consume external events; running or
-    // idle leaves are still in flight and block their suspended ancestors.
     const leaves = runs.filter((run) => !parentRunIds.has(run.id));
     const candidates = (leaves.length > 0 ? leaves : runs)
-      .filter((run) => run.status === EWorkflowRunStatus.SUSPENDED)
-      .filter((run) =>
-        workflowId
-          ? this.isRunInWorkflowStack(run, workflowId, runsById)
-          : true,
-      )
+      .filter(isCandidate)
       .filter(
         (run) => !options.skipBlockedOnOperator || !isBlockedOnOperator(run),
       );
