@@ -105,7 +105,7 @@
     "nestjs-cls": "^6.2.0",
     "nestjs-dynamic-providers": "^0.3.7",
     "nestjs-i18n": "^10.5.1",
-    "nodemailer": "^9.0.1",
+    "nodemailer": "^9.1.1",
     "p-limit": "^3.1.0",
     "papaparse": "^5.5.3",
     "passport": "^0.7.0",
