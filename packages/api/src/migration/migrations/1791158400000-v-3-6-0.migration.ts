@@ -58,6 +58,16 @@ const RECOVERY_COUNT_COLUMN: ColumnSpec = {
     default: 0,
   },
 };
+/** Run that called this one; kept, unlike `parent_run_id`, once it is deleted. */
+const CALLER_RUN_ID_COLUMN: ColumnSpec = {
+  sqliteType: 'varchar(36)',
+  column: {
+    name: 'caller_run_id',
+    type: 'varchar',
+    length: '36',
+    isNullable: true,
+  },
+};
 type IndexSpec = { name: string; column: string };
 /** Named as the entity names them, so `synchronize` leaves them alone. */
 const AWAITING_OPERATOR_INDEX: IndexSpec = {
@@ -158,6 +168,13 @@ const LEGACY_SUSPENSION_COLUMNS: ColumnSpec[] = [
  * stopped. Runs left idle or running before this upgrade have no claim, so
  * nothing would ever settle them: they are failed.
  *
+ * It also records on each called run the run that called it
+ * (`caller_run_id`), copied from `parent_run_id` for existing runs. Deleting
+ * a workflow deletes its runs, and `ON DELETE SET NULL` clears the
+ * `parent_run_id` of the runs they called; a called run still in a pass then
+ * looked like a run nothing called once it suspended, and stayed actionable.
+ * With the caller's id kept, it is cancelled instead.
+ *
  * `workflow_runs` only exists through TypeORM `synchronize`; when it is
  * missing, synchronize creates it (with its foreign keys) and there is nothing
  * to migrate.
@@ -221,6 +238,9 @@ export default class Migration1791158400000_V3_6_0
           'stopped process and were marked as failed.',
       );
     }
+
+    await this.addColumn(queryRunner, CALLER_RUN_ID_COLUMN);
+    await this.copyParentRunIds(queryRunner);
   }
 
   public async down(
@@ -243,6 +263,7 @@ export default class Migration1791158400000_V3_6_0
       );
     }
 
+    await this.dropColumn(queryRunner, CALLER_RUN_ID_COLUMN);
     // SQLite refuses to drop an indexed column.
     await this.dropIndex(queryRunner, CLAIM_EXPIRES_AT_INDEX);
     await this.dropColumn(queryRunner, RECOVERY_COUNT_COLUMN);
@@ -314,6 +335,17 @@ export default class Migration1791158400000_V3_6_0
     const result = await queryRunner.query(query, parameters, true);
 
     return result.affected ?? 0;
+  }
+
+  /**
+   * Record the caller of each called run from its `parent_run_id`.
+   */
+  private async copyParentRunIds(queryRunner: QueryRunner): Promise<void> {
+    const table = this.escapedTablePath(queryRunner);
+    await queryRunner.query(
+      `UPDATE ${table} SET "caller_run_id" = CAST("parent_run_id" AS varchar(36)) ` +
+        `WHERE "parent_run_id" IS NOT NULL AND "caller_run_id" IS NULL`,
+    );
   }
 
   /**

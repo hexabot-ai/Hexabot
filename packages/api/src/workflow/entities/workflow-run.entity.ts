@@ -110,6 +110,20 @@ export class WorkflowRunOrmEntity extends BaseOrmEntity<WorkflowRunDto> {
   @RelationId((run: WorkflowRunOrmEntity) => run.parentRun)
   private readonly parentRunId?: string | null;
 
+  /**
+   * Identifier of the run that called this one. Unlike `parentRun`, it has
+   * no foreign key, so it is kept once that run is deleted: a run whose
+   * caller is gone is then cancelled when it suspends instead of being taken
+   * for a run nothing called.
+   */
+  @Column({
+    name: 'caller_run_id',
+    type: 'varchar',
+    length: 36,
+    nullable: true,
+  })
+  callerRunId?: string | null;
+
   /** Lifecycle status of the run (idle, running, suspended, finished, failed). */
   @EnumColumn({
     enum: WORKFLOW_RUN_STATUSES,

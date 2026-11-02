@@ -1410,6 +1410,51 @@ describe('WorkflowRunService (TypeORM)', () => {
         },
       );
 
+      it('cancels a suspended run whose caller was deleted', async () => {
+        const callingWorkflow = await createWorkflow();
+        const calledWorkflow = await createWorkflow();
+        const parentRun = await createSuspendedRun(callingWorkflow.id);
+        // Called as `createFromEvent` does, then suspended after its
+        // caller's workflow was deleted.
+        const run = await workflowRunService.create({
+          workflow: calledWorkflow.id,
+          parentRun: parentRun.id,
+          callerRunId: parentRun.id,
+          status: 'suspended',
+          checkpoint,
+          snapshot,
+          suspendedAt: new Date('2026-01-01T10:00:00.000Z'),
+        });
+        const child = await createSuspendedRun(calledWorkflow.id, run.id);
+        await waitOn(run.id, [childWait(child.id)]);
+        await workflowService.deleteOne(callingWorkflow.id);
+        expect(await workflowRunService.findOne(run.id)).toEqual(
+          expect.objectContaining({
+            parentRun: null,
+            callerRunId: parentRun.id,
+          }),
+        );
+
+        await expect(
+          workflowRunService.cancelAbandonedRuns(run.id),
+        ).resolves.toBeNull();
+        for (const cancelled of [run, child]) {
+          expect(await workflowRunService.findOne(cancelled.id)).toEqual(
+            abandoned(parentRun.id),
+          );
+        }
+      });
+
+      it('leaves a suspended run nothing called', async () => {
+        const run = await createSuspendedRun(workflow.id);
+
+        await expect(
+          workflowRunService.cancelAbandonedRuns(run.id),
+        ).resolves.toEqual(
+          expect.objectContaining({ id: run.id, status: 'suspended' }),
+        );
+      });
+
       it('goes on with the other runs once one cannot be cancelled', async () => {
         const calledWorkflow = await createWorkflow();
         const parentRun = await createSuspendedRun(workflow.id);

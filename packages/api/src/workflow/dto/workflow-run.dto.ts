@@ -76,6 +76,17 @@ export class WorkflowRunCreateDto {
   parentRun?: string | null;
 
   @ApiPropertyOptional({
+    description:
+      'Workflow run that called this run, kept once that run is deleted',
+    type: String,
+  })
+  @IsOptional()
+  @IsUUIDv4({
+    message: 'Calling workflow run must be a valid UUID',
+  })
+  callerRunId?: string | null;
+
+  @ApiPropertyOptional({
     description: 'Lifecycle status of the run',
     enum: WORKFLOW_RUN_STATUSES,
   })

@@ -414,10 +414,13 @@ descendants:
   its open waits names: all of them once the run ended. That covers a
   `wait_any` loser, a branch cancelled by a failing sibling, and the calls of
   a run that failed or was cancelled;
-- **from the child's side**, a suspended run whose parent ended or no longer
-  waits on it. That covers a child that was in a pass when its parent was
-  cancelled (cancelling leaves running children alone) and that then
-  suspended again.
+- **from the child's side**, a suspended run whose parent ended, was deleted
+  or no longer waits on it. That covers a child that was in a pass when its
+  parent was cancelled (cancelling leaves running children alone), or when
+  its parent's workflow was deleted, and that then suspended again. Deleting
+  a run clears the `parentRun` of the runs it called (`ON DELETE SET NULL`),
+  so the parent is read from `callerRunId`, which has no foreign key: a
+  parent that no longer exists does not wait on anything.
 
 A run in a pass is left alone, and so are its children: it is reconciled
 once its pass is over. As with results, each side writes first and reads the

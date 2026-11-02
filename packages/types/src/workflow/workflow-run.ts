@@ -85,6 +85,11 @@ const workflowRunStubObjectSchema = baseStubSchema.extend({
     z.record(z.string(), z.any()).nullable(),
   ),
   error: preprocess(nullishToNull, z.string().nullable()),
+  /**
+   * Id of the run that called this one. Unlike `parentRun`, it is kept once
+   * that run is deleted.
+   */
+  callerRunId: preprocess(nullishToNull, z.string().nullable()),
   /** `true` while the run is suspended on a wait that only an admin resolves. */
   awaitingOperator: z.coerce.boolean(),
   suspendedAt: preprocess(nullishToNull, z.coerce.date().nullable()),

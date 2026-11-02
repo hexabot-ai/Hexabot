@@ -308,6 +308,7 @@ describe('AgenticService (TypeORM)', () => {
     workflowId?: string;
     workflowVersion?: string | null;
     parentRun?: string | null;
+    callerRunId?: string | null;
     context?: Record<string, unknown>;
     stepLog?: Record<string, StepExecutionRecord>;
   }) => {
@@ -2300,6 +2301,7 @@ describe('AgenticService (TypeORM)', () => {
         output: { child: 'done' },
       });
       expect(childRun.parentRun?.id).toBe(parentRun.id);
+      expect(childRun.callerRunId).toBe(parentRun.id);
       expect(childRun.input).toEqual({ from: 'parent' });
       expect(runner.start).toHaveBeenCalledWith({
         inputData: { from: 'parent' },
@@ -3569,6 +3571,77 @@ describe('AgenticService (TypeORM)', () => {
       );
 
       expect(fromDefinition).not.toHaveBeenCalled();
+    });
+
+    it('cancels a called run that suspends once its caller was deleted', async () => {
+      const parentWorkflow = await createWorkflowWithDefinition();
+      const childWorkflow = await createWorkflowWithDefinition();
+      const parentRun = await createSuspendedRun({
+        checkpoint: null,
+        workflowId: parentWorkflow.id,
+        workflowVersion: parentWorkflow.currentVersion?.id ?? null,
+      });
+      const childRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildApprovalWait()]),
+        workflowId: childWorkflow.id,
+        workflowVersion: childWorkflow.currentVersion?.id ?? null,
+        parentRun: parentRun.id,
+        callerRunId: parentRun.id,
+      });
+      await workflowRunService.updateOne(parentRun.id, {
+        checkpoint: buildCheckpoint([
+          buildChildWait('call_child', childWorkflow.id, childRun.id),
+        ]),
+      });
+      // The child's pass goes on until its caller's workflow was deleted,
+      // then suspends on a second approval.
+      let deleted!: () => void;
+      const parentDeleted = new Promise<void>((resolve) => {
+        deleted = resolve;
+      });
+      const runner = buildRunnerMock({
+        state: { input: {}, output: {}, iterationStack: [] },
+        snapshot: suspendedSnapshot,
+      });
+      runner.resume.mockImplementation(async () => {
+        await parentDeleted;
+
+        return suspendedResult([buildApprovalWait('approve_again')]);
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const outcome = await agenticService.resumeWait({
+        run: childRun,
+        event: createEvent(),
+        waitId: buildApprovalWait().waitId,
+        resumeData: { decision: 'approved' },
+      });
+      expect(outcome.status).toBe('accepted');
+      await workflowRunService.prepareWorkflowDeletion(parentWorkflow);
+      await workflowService.deleteOne(parentWorkflow.id);
+      // The child was in a pass, so the deletion left it alone, and the
+      // database unlinked it from its deleted caller.
+      expect(await workflowRunService.findOne(childRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'running',
+          parentRun: null,
+          callerRunId: parentRun.id,
+        }),
+      );
+      deleted();
+      await jobs.onIdle();
+
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      expect(await workflowRunService.findOne(childRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: `Calling workflow run ${parentRun.id} no longer waits on this run`,
+          checkpoint: null,
+          awaitingOperator: false,
+        }),
+      );
     });
   });
   describe('claim leases', () => {

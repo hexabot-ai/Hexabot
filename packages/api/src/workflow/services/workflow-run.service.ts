@@ -80,7 +80,9 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    *
    * Child calls inherit the same event metadata, initiator, and thread as the
    * parent, but store an explicit `parentRun` relation so future events can
-   * resume the deepest suspended child before returning to the parent.
+   * resume the deepest suspended child before returning to the parent. The
+   * parent's id is also stored in `callerRunId`, which deleting the parent
+   * does not clear (see {@link cancelAbandonedRuns}).
    *
    * @param workflow - Workflow to run, with its current version.
    * @param event - Event that triggers the run.
@@ -112,6 +114,7 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
         triggeredBy: initiator.id,
         thread: event.getThreadId() ?? null,
         parentRun: options.parentRun?.id ?? null,
+        callerRunId: options.parentRun?.id ?? null,
         input: options.input ?? event.buildInput(),
         context: Object.keys(initialContext).length > 0 ? initialContext : null,
         metadata: event.getMetadata(),
@@ -490,12 +493,12 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
   /**
    * Cancel the suspended runs around a run that nothing waits on any more,
    * each along with its suspended descendants: the run itself when its
-   * caller ended or no longer waits on it, otherwise its children that none
-   * of its open waits names, which is all of them once it ended. A
-   * `wait_any` branch that lost the race, for example, drops its wait on
-   * the run it called. Such runs could never deliver their result, yet an
-   * admin could still resolve them and they would receive the next events
-   * of their conversation.
+   * caller ended, was deleted or no longer waits on it, otherwise its
+   * children that none of its open waits names, which is all of them once it
+   * ended. A `wait_any` branch that lost the race, for example, drops its
+   * wait on the run it called. Such runs could never deliver their result,
+   * yet an admin could still resolve them and they would receive the next
+   * events of their conversation.
    *
    * A run in a pass is left alone, and so are its children: it is
    * reconciled once its pass is over. A child in a pass is checked once it
@@ -523,7 +526,8 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
 
     let waitedOn = new Set<string>();
     if (run.status === EWorkflowRunStatus.SUSPENDED) {
-      const parentRunId = resolveRunId(run.parentRun);
+      // Deleting the caller clears `parentRun`, not `callerRunId`.
+      const parentRunId = run.callerRunId ?? resolveRunId(run.parentRun);
       if (parentRunId && !(await this.isWaitedOnBy(run.id, parentRunId))) {
         await this.cancelAbandoned(run, parentRunId);
 
@@ -596,9 +600,11 @@ export class WorkflowRunService extends BaseOrmService<WorkflowRunOrmEntity> {
    * runs are deleted with it.
    *
    * The suspended runs its runs called are cancelled, along with their own
-   * suspended descendants: nothing would ever take their result. The runs
-   * that called its runs are left waiting; once the workflow is gone,
-   * `WorkflowCallStackService.reconcile` sends them a failed result.
+   * suspended descendants: nothing would ever take their result. The ones
+   * still in a pass lose their `parentRun` with the deletion but keep their
+   * `callerRunId`, so `cancelAbandonedRuns` cancels them once they suspend.
+   * The runs that called its runs are left waiting; once the workflow is
+   * gone, `WorkflowCallStackService.reconcile` sends them a failed result.
    *
    * @param workflow - Workflow about to be deleted.
    * @returns Ids of the runs that called an active run of the workflow.

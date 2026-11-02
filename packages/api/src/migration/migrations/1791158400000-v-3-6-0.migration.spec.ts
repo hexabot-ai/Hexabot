@@ -328,6 +328,24 @@ describe('Migration v3.6.0', () => {
     expect((await findRun('claimed')).status).toBe('running');
   });
 
+  it('records the caller of each called run', async () => {
+    await inTransaction(() =>
+      new Migration1791158400000_V3_6_0().up(queryRunner),
+    );
+
+    expect((await findRun('child')).caller_run_id).toBe('parent');
+    expect((await findRun('parent')).caller_run_id).toBeNull();
+    // Unlike the parent link, the caller is kept once the caller is deleted.
+    await queryRunner.query(`PRAGMA foreign_keys = ON`);
+    await queryRunner.query(
+      `DELETE FROM "workflow_runs" WHERE "id" = 'parent'`,
+    );
+    expect(await findRun('child')).toMatchObject({
+      parent_run_id: null,
+      caller_run_id: 'parent',
+    });
+  });
+
   it('does nothing when the table does not exist yet', async () => {
     await queryRunner.query(`DROP TABLE "memory_records"`);
     await queryRunner.query(`DROP TABLE "workflow_runs"`);
@@ -350,6 +368,7 @@ describe('Migration v3.6.0', () => {
     expect(columns).not.toContain('checkpoint');
     expect(columns).not.toContain('awaiting_operator');
     expect(columns).toEqual(expect.not.arrayContaining(CLAIM_COLUMNS));
+    expect(columns).not.toContain('caller_run_id');
     expect(await indexNames()).not.toContain(AWAITING_OPERATOR_INDEX);
     expect(await indexNames()).not.toContain(CLAIM_EXPIRES_AT_INDEX);
     expect(columns).toEqual(expect.arrayContaining(LEGACY_COLUMNS));
