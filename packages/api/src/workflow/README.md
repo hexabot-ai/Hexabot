@@ -229,25 +229,30 @@ be refused in two places:
   (`suspend({ accepts })`), and `claimResume` checks it in step 3. The
   outcome is `rejected`, nothing is written, and
   `hook:workflow:resume_rejected` is emitted.
-- **During the pass.** The step itself refuses it. The runner puts the run
-  back as its checkpoint describes it and reports a `rejection`; `runPass`
-  settles the lease with `putBackValues()`, which only sets the status back
-  to `suspended`. The pass ends `rejected`.
+- **During the pass.** The step itself refuses it. The wait's JSON Schema is
+  relaxed, so it lets through what only the step's Zod schema checks (a
+  regex, a format, a refinement), and an action may refuse a payload no
+  schema can judge (an unknown order id). The runner puts the run back as its
+  checkpoint describes it and reports a `rejection`; `runPass` settles the
+  lease with `putBackValues()`, which only sets the status back to
+  `suspended`. The pass ends `rejected`, and `proceedResume` returns the
+  refusal with the run.
 
 Either way the run still waits on the same question.
 
-Who hears about a refusal before the claim depends on the entry point. No
-one answers a chat message, so `handleEvent` returns the run as it is. The
-triggers that answer their caller (webhooks, manual runs from the admin, the
-MCP run tool) go through `triggerEvent` instead, which returns `rejected`
+Who hears about a refusal depends on the entry point. No one answers a chat
+message, so `handleEvent` returns the run as it is. The triggers that answer
+their caller (webhooks, manual runs from the admin, the MCP run tool) go
+through `triggerEvent` instead, which returns `rejected`
 (`TriggerEventOutcome`), or `claim_lost` when another caller claimed the run
 first. `WebhookTriggerService.dispatchTriggerEvent` answers them `422`
 (`payload_rejected`, with `issues` and `runId`) and `409` (`claim_lost`),
-like the operator endpoints. A refusal during the pass is not reported this
-way: a caller that waited for the pass gets the run back to `suspended`, and
-the others answered once the run was claimed. A webhook call without
-authentication never reaches a suspended run at all: it acts as the
-workflow's creator, so it passes `resume: false` and always starts a new run.
+like the operator endpoints. A refusal during the pass reaches only the
+callers that wait for the pass (synchronous webhooks, the MCP run tool); the
+others answered once the run was claimed, and see the run go back to
+`suspended` in its updates. A webhook call without authentication never
+reaches a suspended run at all: it acts as the workflow's creator, so it
+passes `resume: false` and always starts a new run.
 
 ## Example 3: an admin approves
 

@@ -210,8 +210,9 @@ export type TriggerEventOutcome =
    */
   | { status: 'dispatched'; run: WorkflowRunFull }
   /**
-   * The suspended run the event reached refused its payload; it still waits
-   * on the same wait.
+   * The suspended run the event reached refused its payload, before it was
+   * claimed or, when the caller waited for the pass, in the step that read
+   * it; it still waits on the same wait.
    */
   | { status: 'rejected'; runId: string; error: WorkflowResumeRejectedError }
   /** Another caller claimed the suspended run the event reached first. */

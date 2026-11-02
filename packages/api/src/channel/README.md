@@ -72,9 +72,11 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
   still waits on the same input, and nothing was started. When another request
   resumed or cancelled that run first, it responds `409` with
   `{ statusCode, code: "claim_lost", message, runId }`. Both apply with or
-  without `?async=true`. The body is only checked this way against what the
-  wait declares it accepts; a step that refuses it once resumed leaves the run
-  back to `suspended` (`200`), or reports it later (`?async=true`).
+  without `?async=true`. A step can also refuse the body once resumed, for a
+  check the wait cannot declare (a regex, a refinement, an unknown id): that
+  is a `422` too, with the run back on the same input, when the call waits for
+  the run. With `?async=true` the endpoint has answered by then, so the run
+  only goes back to `suspended`.
 - With `?async=true` (a query parameter, since the body is the workflow input)
   the endpoint answers `202` without waiting for the run:
   `{ runId, status, output: null, error: null }`. Use it for workflows that

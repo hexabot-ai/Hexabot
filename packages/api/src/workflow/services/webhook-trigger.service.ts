@@ -179,7 +179,8 @@ export class WebhookTriggerService {
    * @returns The run.
    * @throws {UnprocessableEntityException} `payload_rejected` when the
    * suspended run the event reached refused its input (the run still waits on
-   * the same wait), or when no run could process the event.
+   * the same wait; with `wait: false`, only a refusal before the run was
+   * claimed), or when no run could process the event.
    * @throws {ConflictException} `claim_lost` when another request resumed or
    * cancelled that suspended run first.
    */

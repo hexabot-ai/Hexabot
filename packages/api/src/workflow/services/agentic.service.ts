@@ -4,7 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
-import { EWorkflowRunStatus } from '@hexabot-ai/agentic';
+import {
+  EWorkflowRunStatus,
+  WorkflowResumeRejectedError,
+} from '@hexabot-ai/agentic';
 import { WorkflowFull, WorkflowRunFull, WorkflowType } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
 
@@ -60,6 +63,17 @@ type DispatchOptions = {
   resume?: boolean;
 };
 
+/** A dispatched run once the work left on it is over. */
+type ProceededRun = {
+  run: WorkflowRunFull;
+  /**
+   * Set when a step refused the resume payload while the pass ran, e.g. a
+   * check its `accepts` schema could not declare on the wait: the run is
+   * back on the same wait.
+   */
+  rejection?: WorkflowResumeRejectedError;
+};
+
 /**
  * A run an event was routed to, and the work left on it, which the caller
  * either waits for or leaves to {@link WorkflowJobs}.
@@ -72,10 +86,10 @@ type DispatchedRun = {
    */
   run: WorkflowRunFull;
   /**
-   * Run the work left on the run. Resolves with the run once its pass is
-   * over, or `undefined` when the pass threw (logged).
+   * Run the work left on the run. Resolves once its pass is over, or with
+   * `undefined` when the pass threw (logged).
    */
-  proceed: () => Promise<WorkflowRunFull | undefined>;
+  proceed: () => Promise<ProceededRun | undefined>;
   /**
    * Set when the event left the suspended run it reached as it was: the run
    * refused the payload, or another caller claimed it first. Nothing is left
@@ -126,9 +140,9 @@ export class AgenticService implements WorkflowCallService {
    * `options.workflow` to avoid a redundant lookup.
    *
    * This is for events no one answers, such as chat messages: a suspended
-   * run that refused the payload, or that another caller claimed first, is
-   * returned as it is. Callers that answer the event use
-   * {@link triggerEvent}.
+   * run that refused the payload (before or after it was claimed), or that
+   * another caller claimed first, is returned as it is. Callers that answer
+   * the event use {@link triggerEvent}.
    *
    * @returns The run once its pass is over, or `null` when no run processed
    * the event or its pass threw.
@@ -141,21 +155,24 @@ export class AgenticService implements WorkflowCallService {
       ...options,
       callerWaits: true,
     });
+    const proceeded = dispatched ? await this.proceedOrLog(dispatched) : null;
 
-    return dispatched ? await this.proceedOrLog(dispatched) : null;
+    return proceeded?.run ?? null;
   }
 
   /**
    * Route an event to its run like {@link handleEvent}, for callers that
    * answer whoever sent it: manual runs, webhooks and the MCP run tool. A
    * suspended run the event reached without resuming it is reported instead
-   * of returned (see {@link TriggerEventOutcome}).
+   * of returned (see {@link TriggerEventOutcome}), and so is a payload a
+   * step refused once the run resumed, when the caller waits for the pass.
    *
    * @param options.workflow - The target workflow, when already resolved.
    * @param options.wait - Wait until the run settles (default). With
    * `false`, return once the run is claimed: its pass goes on in the
    * background, for callers that must answer quickly, such as HTTP requests;
-   * the run's updates report how it goes on. A parent the event sends a
+   * the run's updates report how it goes on, including a step refusing the
+   * payload, which puts the run back on its wait. A parent the event sends a
    * failed result to then goes on alongside the new run, not before it.
    * @param options.resume - Let the event resume a suspended run of its
    * initiator (default). With `false`, it always starts a new run, for
@@ -189,9 +206,19 @@ export class AgenticService implements WorkflowCallService {
       return { status: 'dispatched', run: dispatched.run };
     }
 
-    const run = await this.proceedOrLog(dispatched);
+    const proceeded = await this.proceedOrLog(dispatched);
+    if (!proceeded) {
+      return { status: 'unprocessed' };
+    }
+    if (proceeded.rejection) {
+      return {
+        status: 'rejected',
+        runId: proceeded.run.id,
+        error: proceeded.rejection,
+      };
+    }
 
-    return run ? { status: 'dispatched', run } : { status: 'unprocessed' };
+    return { status: 'dispatched', run: proceeded.run };
   }
 
   /**
@@ -357,7 +384,7 @@ export class AgenticService implements WorkflowCallService {
    */
   private async proceedOrLog(
     dispatched: DispatchedRun,
-  ): Promise<WorkflowRunFull | null> {
+  ): Promise<ProceededRun | null> {
     try {
       return (await dispatched.proceed()) ?? null;
     } catch (error) {
@@ -454,7 +481,7 @@ export class AgenticService implements WorkflowCallService {
           // The payload was refused, or another caller claimed the run.
           const run = await this.workflowRunService.reload(suspendedRun);
 
-          return { run, proceed: async () => run, refusal: claim };
+          return { run, proceed: async () => ({ run }), refusal: claim };
         }
       }
     }
@@ -519,7 +546,7 @@ export class AgenticService implements WorkflowCallService {
         const pass = await this.runStartPass(run, lease, event);
         switch (pass.status) {
           case 'settled':
-            return await this.workflowRunService.reload(run);
+            return { run: await this.workflowRunService.reload(run) };
           case 'claim_lost':
             this.logger.warn(
               'Workflow run was taken over or recovered while it ran',
@@ -556,7 +583,9 @@ export class AgenticService implements WorkflowCallService {
 
   /**
    * Run the pass of a claimed resume, then read the run back. A step
-   * refusing the payload while it ran puts the run back on the same wait.
+   * refusing the payload while it ran puts the run back on the same wait,
+   * and the refusal is returned with it, for the caller to refuse its
+   * request (`packages/agentic/SUSPENSION.md` §8).
    *
    * @returns The run once its pass is over, or `undefined` when its runner
    * threw (the pass logged it and failed the run).
@@ -565,12 +594,17 @@ export class AgenticService implements WorkflowCallService {
    */
   private async proceedResume(
     claim: ClaimedResume,
-  ): Promise<WorkflowRunFull | undefined> {
+  ): Promise<ProceededRun | undefined> {
     const pass = await this.callStack.continueResume(claim);
+    if (pass.status === 'crashed') {
+      return undefined;
+    }
 
-    return pass.status === 'crashed'
-      ? undefined
-      : await this.workflowRunService.reload(claim.run);
+    const run = await this.workflowRunService.reload(claim.run);
+
+    return pass.status === 'rejected'
+      ? { run, rejection: pass.error }
+      : { run };
   }
 
   /**
@@ -623,7 +657,7 @@ export class AgenticService implements WorkflowCallService {
       proceed: async () => {
         await this.callStack.reconcile([run.id], event);
 
-        return await this.workflowRunService.reload(run);
+        return { run: await this.workflowRunService.reload(run) };
       },
     };
   }

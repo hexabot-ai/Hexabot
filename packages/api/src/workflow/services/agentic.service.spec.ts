@@ -1380,6 +1380,101 @@ describe('AgenticService (TypeORM)', () => {
       );
       expect(await countRuns()).toBe(1);
     });
+
+    describe('when the resumed step refuses the payload', () => {
+      // The wait's JSON Schema drops `pattern`, so a code that does not match
+      // is claimed, and only the step's own schema refuses it.
+      const awaitCode = defineAction({
+        name: 'await_code',
+        inputSchema: z.object({}),
+        outputSchema: z.object({ code: z.string() }),
+        execute: async ({ context }) =>
+          await context.workflow.suspend({
+            reason: 'awaiting_code',
+            accepts: z.object({ code: z.string().regex(/^[A-Z]{3}-\d{4}$/) }),
+          }),
+      });
+      const startCodeRun = async () => {
+        actionServiceMock.getRegistry.mockReturnValue({
+          await_code: awaitCode,
+        });
+        workflowContextFactoryMock.create.mockImplementation(
+          async () => new TestRuntimeContext({}),
+        );
+        const created = await workflowService.create({
+          name: `await_code_${++workflowCounter}`,
+          description: 'Suspends until a code arrives',
+          type: WorkflowType.manual,
+          schedule: null,
+          createdBy: initiator.id,
+        });
+        await workflowVersionService.commit({
+          workflow: created.id,
+          definitionYml: AgenticWorkflow.stringifyDefinition({
+            defs: { ask: { kind: 'task', action: 'await_code' } },
+            flow: [{ do: 'ask' }],
+            outputs: { code: '=$output.ask.code' },
+          }),
+          action: WorkflowVersionAction.create,
+          createdBy: initiator.id,
+        });
+        const trigger = async (input: Record<string, unknown>, wait = true) => {
+          const event = createEvent(input);
+          event.setWorkflowId(created.id);
+
+          return await agenticService.triggerEvent(event, { wait });
+        };
+        const started = await trigger({});
+        if (started.status !== 'dispatched') {
+          throw new Error(`Expected a dispatched event, got ${started.status}`);
+        }
+        const run = await workflowRunService.findOne(started.run.id);
+        expect(run?.status).toBe('suspended');
+
+        return { trigger, runId: started.run.id, checkpoint: run?.checkpoint };
+      };
+
+      it('reports the refusal to a caller that waits for the pass', async () => {
+        const { trigger, runId, checkpoint } = await startCodeRun();
+
+        await expect(trigger({ code: 'hello' })).resolves.toEqual({
+          status: 'rejected',
+          runId,
+          error: expect.objectContaining({
+            name: 'WorkflowResumeRejectedError',
+            // Refused by the step once resumed, not by the wait.
+            message: expect.stringContaining('Resume payload for step'),
+            issues: [expect.stringContaining('must match pattern')],
+          }),
+        });
+        expect(await workflowRunService.findOne(runId)).toEqual(
+          expect.objectContaining({ status: 'suspended', checkpoint }),
+        );
+
+        await expect(trigger({ code: 'ABC-1234' })).resolves.toEqual({
+          status: 'dispatched',
+          run: expect.objectContaining({
+            id: runId,
+            status: 'finished',
+            output: { code: 'ABC-1234' },
+          }),
+        });
+        expect(await countRuns()).toBe(1);
+      });
+
+      it('answers a caller that does not wait once the run is claimed', async () => {
+        const { trigger, runId, checkpoint } = await startCodeRun();
+
+        await expect(trigger({ code: 'hello' }, false)).resolves.toEqual({
+          status: 'dispatched',
+          run: expect.objectContaining({ id: runId }),
+        });
+        await jobs.onIdle();
+        expect(await workflowRunService.findOne(runId)).toEqual(
+          expect.objectContaining({ status: 'suspended', checkpoint }),
+        );
+      });
+    });
   });
 
   describe('operator waits', () => {
