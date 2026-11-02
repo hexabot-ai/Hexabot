@@ -75,6 +75,12 @@ type ProceededRun = {
    * back on the same wait.
    */
   rejection?: WorkflowResumeRejectedError;
+  /**
+   * Set when the run was taken over or recovered while the pass ran: the
+   * outcome of the pass was dropped, and the run is as whoever settled it
+   * left it.
+   */
+  claimLost?: true;
 };
 
 /**
@@ -167,8 +173,9 @@ export class AgenticService implements WorkflowCallService {
    * Route an event to its run like {@link handleEvent}, for callers that
    * answer whoever sent it: manual runs, webhooks and the MCP run tool. A
    * suspended run the event reached without resuming it is reported instead
-   * of returned (see {@link TriggerEventOutcome}), and so is a payload a
-   * step refused once the run resumed, when the caller waits for the pass.
+   * of returned (see {@link TriggerEventOutcome}), and so, when the caller
+   * waits for the pass, are a payload a step refused once the run resumed
+   * and a resume whose claim was lost while it ran.
    *
    * @param options.workflow - The target workflow, when already resolved.
    * @param options.wait - Wait until the run settles (default). With
@@ -219,6 +226,9 @@ export class AgenticService implements WorkflowCallService {
         runId: proceeded.run.id,
         error: proceeded.rejection,
       };
+    }
+    if (proceeded.claimLost) {
+      return { status: 'claim_lost', runId: proceeded.run.id };
     }
 
     return { status: 'dispatched', run: proceeded.run };
@@ -588,7 +598,8 @@ export class AgenticService implements WorkflowCallService {
    * Run the pass of a claimed resume, then read the run back. A step
    * refusing the payload while it ran puts the run back on the same wait,
    * and the refusal is returned with it, for the caller to refuse its
-   * request (`packages/agentic/SUSPENSION.md` §8).
+   * request (`packages/agentic/SUSPENSION.md` §8). So is a claim lost while
+   * the pass ran, whose outcome was dropped.
    *
    * @returns The run once its pass is over, or `undefined` when its runner
    * threw (the pass logged it and failed the run).
@@ -604,10 +615,14 @@ export class AgenticService implements WorkflowCallService {
     }
 
     const run = await this.workflowRunService.reload(claim.run);
-
-    return pass.status === 'rejected'
-      ? { run, rejection: pass.error }
-      : { run };
+    switch (pass.status) {
+      case 'rejected':
+        return { run, rejection: pass.error };
+      case 'claim_lost':
+        return { run, claimLost: true };
+      default:
+        return { run };
+    }
   }
 
   /**

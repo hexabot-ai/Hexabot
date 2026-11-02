@@ -76,7 +76,9 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
   check the wait cannot declare (a regex, a refinement, an unknown id): that
   is a `422` too, with the run back on the same input, when the call waits for
   the run. With `?async=true` the endpoint has answered by then, so the run
-  only goes back to `suspended`.
+  only goes back to `suspended`. Likewise, a call that waits for the run gets
+  a `409` `claim_lost` when the run was recovered or taken over while it ran:
+  what that pass did was dropped.
 - With `?async=true` (a query parameter, since the body is the workflow input)
   the endpoint answers `202` without waiting for the run:
   `{ runId, status, output: null, error: null }`. Use it for workflows that

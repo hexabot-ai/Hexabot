@@ -215,11 +215,16 @@ export type TriggerEventOutcome =
    * it; it still waits on the same wait.
    */
   | { status: 'rejected'; runId: string; error: WorkflowResumeRejectedError }
-  /** Another caller claimed the suspended run the event reached first. */
+  /**
+   * Another caller claimed the suspended run the event reached first or,
+   * when the caller waited for the pass, took the run over or recovered it
+   * while the pass ran: the outcome of the pass was dropped.
+   */
   | { status: 'claim_lost'; runId: string }
   /**
    * No run processed the event, or the pass the caller waited for did not
-   * end it: the runner threw (logged), or the run was taken over meanwhile.
+   * end it: the runner threw (logged), or the new run was taken over
+   * meanwhile.
    */
   | { status: 'unprocessed' };
 

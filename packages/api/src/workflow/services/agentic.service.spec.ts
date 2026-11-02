@@ -1251,6 +1251,78 @@ describe('AgenticService (TypeORM)', () => {
       },
     );
 
+    it('reports a resume whose run was recovered while the pass it waited for ran', async () => {
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const { checkpoint } = (await workflowRunService.findOne(baseRun.id))!;
+      const runner = finishedRunner({ done: true });
+      runner.resume.mockImplementation(async () => {
+        // Another node finds the claim lapsed and puts the run back on the
+        // suspension it was claimed from.
+        const now = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        const [expired] = (
+          await workflowRunService.findExpiredClaims(now)
+        ).filter(({ id }) => id === baseRun.id);
+        expect(await workflowRunService.putBackExpired(expired, now)).toBe(
+          true,
+        );
+
+        return {
+          status: 'finished',
+          output: { done: true },
+          snapshot: finishedSnapshot,
+        };
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'reply' })),
+      ).resolves.toEqual({ status: 'claim_lost', runId: baseRun.id });
+      expect(runner.resume).toHaveBeenCalledTimes(1);
+      const storedRun = await workflowRunService.findOne(baseRun.id);
+      expect(storedRun?.status).toBe('suspended');
+      expect(storedRun?.checkpoint).toEqual(checkpoint);
+      expect(storedRun?.output).not.toEqual({ done: true });
+      expect(await countRuns()).toBe(1);
+    });
+
+    it('reports a resume whose run was taken over while the pass it waited for ran', async () => {
+      const baseRun = await createSuspendedRun({
+        checkpoint: buildCheckpoint([buildWait()]),
+      });
+      const runner = finishedRunner({ done: true });
+      runner.resume.mockImplementation(async () => {
+        // Closing the thread takes the run over.
+        await workflowRunService.repository.settle(
+          baseRun.id,
+          failedValues({ error: 'Thread was closed' }),
+          null,
+        );
+
+        return {
+          status: 'finished',
+          output: { done: true },
+          snapshot: finishedSnapshot,
+        };
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'reply' })),
+      ).resolves.toEqual({ status: 'claim_lost', runId: baseRun.id });
+      expect(await workflowRunService.findOne(baseRun.id)).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: 'Thread was closed',
+        }),
+      );
+    });
+
     it.each([true, false])(
       'starts a new run instead of resuming one when told to (wait: %s)',
       async (wait) => {

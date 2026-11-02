@@ -182,7 +182,9 @@ export class WebhookTriggerService {
    * the same wait; with `wait: false`, only a refusal before the run was
    * claimed), or when no run could process the event.
    * @throws {ConflictException} `claim_lost` when another request resumed or
-   * cancelled that suspended run first.
+   * cancelled that suspended run first or, when waiting, when the run was
+   * taken over or recovered while its pass ran (the outcome of the pass was
+   * dropped).
    */
   async dispatchTriggerEvent(
     workflow: WorkflowFull,
