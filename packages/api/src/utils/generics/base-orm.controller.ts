@@ -5,6 +5,7 @@
  */
 
 import { BadRequestException, Inject, NotFoundException } from '@nestjs/common';
+import type { HookEventEmitter } from '@nestjs/event-emitter';
 import { FindManyOptions, In } from 'typeorm';
 
 import { BaseOrmEntity } from '@/database/entities/base.entity';
@@ -23,7 +24,7 @@ export abstract class BaseOrmController<
 
   protected constructor(protected readonly service: BaseOrmService<Entity>) {}
 
-  get eventEmitter(): typeof this.service.eventEmitter {
+  get eventEmitter(): HookEventEmitter {
     return this.service.eventEmitter;
   }
 
