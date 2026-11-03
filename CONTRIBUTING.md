@@ -23,7 +23,7 @@ Report vulnerabilities privately to `hello@hexabot.ai` (see `SECURITY.md`) with:
 
 ## Development prerequisites
 
-- Node.js `^24.17.0`
+- Node.js `^24.22.1`
 - PNPM `11.8.0` (via Corepack)
 - Git
 
