@@ -4,6 +4,8 @@
     "paths": {
       "@/*": ["src/*", "src/extra/*"],
       "hexabot/src/*": ["src/*"],
+      "@hexabot-ai/api": ["src"],
+      "@hexabot-ai/api/*": ["src/*"],
       "@hexabot-ai/agentic": ["../agentic/src"],
       "@hexabot-ai/agentic/*": ["../agentic/src/*"],
       "@hexabot-ai/types": ["../types/src"],
