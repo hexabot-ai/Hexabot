@@ -50,9 +50,10 @@ Paths below are relative to this folder, `packages/api/src/workflow`.
    called runs nothing waits on any more (example 4).
 4. **Callers choose whether to wait.** Every entry point first claims or
    creates the run, then either waits for the work left on it (chat,
-   scheduler, MCP, synchronous webhooks), or hands that work to
-   `WorkflowJobs` and answers right away (the admin UI, manual runs, webhooks
-   with `?async=true`).
+   scheduler, synchronous webhooks, and MCP for at most its
+   `waitTimeoutSeconds`), or hands that work to `WorkflowJobs` and answers
+   right away (the admin UI, manual runs, webhooks with `?async=true`, MCP
+   with `wait: false`).
 
 ## The parts
 
@@ -248,8 +249,8 @@ through `triggerEvent` instead, which returns `rejected`
 first. `WebhookTriggerService.dispatchTriggerEvent` answers them `422`
 (`payload_rejected`, with `issues` and `runId`) and `409` (`claim_lost`),
 like the operator endpoints. A refusal during the pass reaches only the
-callers that wait for the pass (synchronous webhooks, the MCP run tool); the
-others answered once the run was claimed, and see the run go back to
+callers that wait for the pass (synchronous webhooks, the MCP run tool until
+its wait times out); the others answered once the run was claimed, and see the run go back to
 `suspended` in its updates. Such a caller gets `claim_lost` too when the run
 was taken over or recovered while the pass ran: `proceedResume` returns the
 run with `claimLost`, since the outcome of the pass was dropped. A webhook call without authentication never

@@ -1190,6 +1190,21 @@ describe('AgenticService (TypeORM)', () => {
       });
     });
 
+    it('answers with the run once its pass is over when it ends before the wait times out', async () => {
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(finishedRunner({ done: true })));
+
+      await expect(
+        agenticService.triggerEvent(createEvent({ text: 'hi' }), {
+          waitTimeoutMs: 10_000,
+        }),
+      ).resolves.toEqual({
+        status: 'dispatched',
+        run: expect.objectContaining({ status: 'finished' }),
+      });
+    });
+
     it.each([true, false])(
       'reports a payload the suspended run refused (wait: %s)',
       async (wait) => {
@@ -3963,6 +3978,43 @@ describe('AgenticService (TypeORM)', () => {
       expect((await workflowRunService.findOne(runId))?.status).toBe(
         'finished',
       );
+      expect(await readClaimId(runId)).toBeNull();
+    });
+
+    it('answers with the run as it is when its wait times out, leaving the pass to go on', async () => {
+      const runner = finishedRunner({ done: true });
+      let endPass!: () => void;
+      const started = new Promise<void>((markStarted) => {
+        runner.start.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              endPass = () => resolve(finished({ done: true }));
+              markStarted();
+            }),
+        );
+      });
+      jest
+        .spyOn(AgenticWorkflow, 'fromDefinition')
+        .mockReturnValue(buildWorkflowInstance(runner));
+
+      const outcome = await agenticService.triggerEvent(
+        createEvent({ text: 'hi' }),
+        { waitTimeoutMs: 100 },
+      );
+
+      expect(outcome).toEqual({
+        status: 'dispatched',
+        run: expect.objectContaining({ status: 'running' }),
+      });
+      const runId = (outcome as { run: WorkflowRunFull }).run.id;
+      expect(await isHeld(runId)).toBe(true);
+
+      await started;
+      endPass();
+      await jobs.onIdle();
+      const storedRun = await workflowRunService.findOne(runId);
+      expect(storedRun?.status).toBe('finished');
+      expect(storedRun?.output).toEqual({ done: true });
       expect(await readClaimId(runId)).toBeNull();
     });
 

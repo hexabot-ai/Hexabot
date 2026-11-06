@@ -161,7 +161,7 @@ which log every tool response.
 | `hexabot_workflow_rollback`       | `workflowversion:create` | Roll back to a previous version by creating a new restore snapshot.                          |
 | `hexabot_workflow_publish`        | `workflow:update`        | Publish the current workflow version.                                                        |
 | `hexabot_workflow_unpublish`      | `workflow:update`        | Clear the published workflow version.                                                        |
-| `hexabot_workflow_run`            | `workflowrun:create`     | Run a manual or scheduled workflow and return the run summary.                               |
+| `hexabot_workflow_run`            | `workflowrun:create`     | Run a manual or scheduled workflow and return the run summary, or its ID while it runs.      |
 
 Workflow YAML is validated with `parseWorkflowDefinition()` before a version is
 created. Coding agents can call `hexabot_workflow_yaml_validate` first to get
@@ -195,6 +195,15 @@ fields from populated workflow-version relations, and the resume checkpoint.
 `hexabot_workflow_run` and `hexabot_workflow_run_pending` replace the checkpoint
 with `openWaits` (`waitId`, `reason`, `step`, `data`), its only content the run
 output and step log do not hold; the pending tool lists admin waits only.
+`hexabot_workflow_run` waits for the run to finish, fail or suspend for at
+most `waitTimeoutSeconds` (default 30, at most 300), under the 60 s request
+timeout of MCP SDK clients. A run still going then, or any run with
+`wait: false`, is returned right away with `inProgress: true` and its status
+(`idle` or `running`), and goes on server-side: poll
+`hexabot_workflow_run_get` with its `id`. Calling the tool again would start
+another run. A step that refuses the input once the run resumed is reported
+as an error only while the tool still waits; afterwards the run is back to
+`suspended` on the same wait.
 `hexabot_workflow_run` can reach a suspended run of the workflow that waits
 for outside input instead of starting a new run. When that run refuses the
 input, or another request resumed it first, the tool returns an error (its

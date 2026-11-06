@@ -80,18 +80,68 @@ describe('HexabotWorkflowRunMcpTools', () => {
         {},
         request,
       ),
-    ).resolves.toEqual({ accepted: true, run: { ...run, openWaits: [] } });
+    ).resolves.toEqual({
+      accepted: true,
+      inProgress: false,
+      run: { ...run, openWaits: [] },
+    });
 
-    const [workflowArg, event, initiatorId] =
+    const [workflowArg, event, initiatorId, options] =
       webhookTriggerService.dispatchTriggerEvent.mock.calls[0];
     expect(workflowArg).toBe(workflow);
     expect(event.buildInput()).toEqual({ prompt: 'hello' });
     expect(initiatorId).toBe(actor.id);
+    expect(options).toEqual({ wait: true, waitTimeoutMs: 30_000 });
     expect(workflowService.validateManualInput).toHaveBeenCalledWith(
       { prompt: 'hello' },
       { type: 'object', properties: {} },
     );
   });
+
+  it.each([
+    [{ wait: false }, { wait: false, waitTimeoutMs: 30_000 }, 'idle'],
+    [
+      { waitTimeoutSeconds: 5 },
+      { wait: true, waitTimeoutMs: 5_000 },
+      'running',
+    ],
+  ])(
+    'returns a run still in progress with its id (%j)',
+    async (waitArgs, dispatchOptions, status) => {
+      const run = { id: 'run-id', status };
+      const webhookTriggerService = {
+        dispatchTriggerEvent: jest.fn().mockResolvedValue(run),
+      };
+      const tools = buildWorkflowRunTools({
+        workflowService: {
+          findOneAndPopulate: jest.fn().mockResolvedValue({
+            id: 'workflow-id',
+            type: WorkflowType.scheduled,
+            schedule: '0 * * * *',
+          }),
+        },
+        webhookTriggerService,
+      });
+
+      await expect(
+        tools.runWorkflow(
+          { workflowId: 'workflow-id', input: {}, ...waitArgs },
+          {},
+          request,
+        ),
+      ).resolves.toEqual({
+        accepted: true,
+        inProgress: true,
+        run: { ...run, openWaits: [] },
+      });
+      expect(webhookTriggerService.dispatchTriggerEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'workflow-id' }),
+        expect.anything(),
+        actor.id,
+        dispatchOptions,
+      );
+    },
+  );
 
   it('summarizes the open waits of a run instead of returning its checkpoint and YAML', async () => {
     const wait = {
@@ -131,6 +181,7 @@ describe('HexabotWorkflowRunMcpTools', () => {
       tools.runWorkflow({ workflowId: 'workflow-id', input: {} }, {}, request),
     ).resolves.toEqual({
       accepted: true,
+      inProgress: false,
       run: {
         id: 'run-id',
         status: 'suspended',

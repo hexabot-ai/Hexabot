@@ -218,6 +218,31 @@ describe('WebhookTriggerService (TypeORM)', () => {
     });
   });
 
+  it('bounds the wait for the run when asked to', async () => {
+    const { id } = await createManualWorkflow({
+      type: 'object',
+      properties: {},
+      additionalProperties: true,
+    });
+    const workflow = (await workflowService.findOneAndPopulate(id))!;
+    const run = { id: randomUUID(), status: 'running' };
+    const spy = jest
+      .spyOn(agenticService, 'triggerEvent')
+      .mockResolvedValueOnce({ status: 'dispatched', run: run as any });
+
+    await expect(
+      webhookTriggerService.dispatchTriggerEvent(
+        workflow,
+        new ManualEventWrapper({}, userFixtureIds.admin),
+        userFixtureIds.admin,
+        { waitTimeoutMs: 5_000 },
+      ),
+    ).resolves.toBe(run);
+    expect(spy.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ wait: true, waitTimeoutMs: 5_000 }),
+    );
+  });
+
   it.each([
     {
       label: 'without authentication',

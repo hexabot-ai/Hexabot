@@ -31,7 +31,7 @@ import {
 import { WebhookTriggerService } from '@/workflow/services/webhook-trigger.service';
 import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
-import { WorkflowType } from '@/workflow/types';
+import { CLAIMED_WORKFLOW_RUN_STATUSES, WorkflowType } from '@/workflow/types';
 
 import { McpPermission } from '../decorators/mcp-permission.decorator';
 import { McpPermissionGuard } from '../guards/mcp-permission.guard';
@@ -51,6 +51,12 @@ import {
 } from './hexabot-mcp.utils';
 
 const WORKFLOW_DEFINITION_RESPONSE_KEYS = ['definitionYml'] as const;
+/**
+ * How long `hexabot_workflow_run` waits for the run by default: under the
+ * 60 s request timeout of MCP SDK clients, and of a proxy in front of the API.
+ */
+const DEFAULT_RUN_WAIT_TIMEOUT_SECONDS = 30;
+const MAX_RUN_WAIT_TIMEOUT_SECONDS = 300;
 
 @Injectable()
 export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
@@ -66,15 +72,26 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
   @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_run',
-    description:
-      'Run a manual or scheduled workflow and return the run summary.',
+    description: `Run a manual or scheduled workflow and return the run summary. Waits until the run finishes, fails or suspends, for at most waitTimeoutSeconds (default ${DEFAULT_RUN_WAIT_TIMEOUT_SECONDS}). A run still going then, or with wait=false, is returned at once with inProgress=true and keeps running server-side: poll hexabot_workflow_run_get with run.id until its status is no longer idle or running. Do not call this tool again to get the result: that starts another run.`,
     parameters: z.object({
       workflowId: uuidSchema,
       input: jsonObjectSchema.default({}),
+      wait: z.boolean().default(true),
+      waitTimeoutSeconds: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_RUN_WAIT_TIMEOUT_SECONDS)
+        .default(DEFAULT_RUN_WAIT_TIMEOUT_SECONDS),
     }),
   })
   async runWorkflow(
-    args: { workflowId: string; input: Record<string, unknown> },
+    args: {
+      workflowId: string;
+      input: Record<string, unknown>;
+      wait?: boolean;
+      waitTimeoutSeconds?: number;
+    },
     _context: unknown,
     request?: HexabotMcpRequest,
   ) {
@@ -114,10 +131,16 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       workflow,
       event,
       actor.id,
+      {
+        wait: args.wait ?? true,
+        waitTimeoutMs:
+          (args.waitTimeoutSeconds ?? DEFAULT_RUN_WAIT_TIMEOUT_SECONDS) * 1000,
+      },
     );
 
     return {
       accepted: true,
+      inProgress: CLAIMED_WORKFLOW_RUN_STATUSES.includes(run.status),
       run: this.withoutWorkflowDefinition(this.withOpenWaits(run)),
     };
   }
