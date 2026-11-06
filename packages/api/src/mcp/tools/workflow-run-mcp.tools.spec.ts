@@ -9,6 +9,8 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 
+import { ManualWorkflowContext } from '@/workflow/contexts/manual-workflow.context';
+import { ManualEventWrapper } from '@/workflow/lib/trigger-event-wrapper';
 import { WorkflowType } from '@/workflow/types';
 
 import type { HexabotMcpRequest } from '../types';
@@ -382,13 +384,31 @@ describe('HexabotWorkflowRunMcpTools', () => {
     });
   });
 
-  it('reduces the user who triggered a run to its id and name in every run tool', async () => {
+  it('reduces the user who triggered a run, and the copy its context keeps, to their id and name in every run tool', async () => {
+    // The context a manual run persists keeps the initiator's whole record.
+    const event = new ManualEventWrapper({}, triggeringUser.id);
+    event.setInitiator(triggeringUser as any);
+    const runtimeContext = new ManualWorkflowContext();
+    runtimeContext.event = event;
+    await runtimeContext.syncInitiatorState();
+    const runContext: Record<string, unknown> = {
+      ...runtimeContext.state,
+      locale: 'en',
+    };
+    expect(runContext.initiator).toEqual(
+      expect.objectContaining({ resetToken: triggeringUser.resetToken }),
+    );
     const run = {
       id: 'run-id',
       status: 'finished',
       workflow: { id: 'workflow-id', createdBy: actor.id },
       triggeredBy: triggeringUser,
-      parentRun: { id: 'parent-run-id' },
+      context: runContext,
+      parentRun: {
+        id: 'parent-run-id',
+        triggeredBy: triggeringUser.id,
+        context: runContext,
+      },
       checkpoint: null,
     };
     const parentRun = { ...run, id: 'parent-run-id', parentRun: null };
@@ -429,6 +449,7 @@ describe('HexabotWorkflowRunMcpTools', () => {
       firstName: 'Ada',
       lastName: 'Lovelace',
     };
+    const context = { ...runContext, initiator: triggeredBy };
     const outputs = [
       await tools.runWorkflow(
         { workflowId: 'workflow-id', input: {} },
@@ -443,20 +464,28 @@ describe('HexabotWorkflowRunMcpTools', () => {
 
     expect(outputs).toEqual([
       expect.objectContaining({
-        run: expect.objectContaining({ triggeredBy }),
+        run: expect.objectContaining({ triggeredBy, context }),
       }),
       expect.objectContaining({
-        items: [expect.objectContaining({ triggeredBy })],
+        items: [expect.objectContaining({ triggeredBy, context })],
       }),
       expect.objectContaining({
-        items: [expect.objectContaining({ triggeredBy })],
+        items: [expect.objectContaining({ triggeredBy, context })],
       }),
-      expect.objectContaining({ triggeredBy }),
       expect.objectContaining({
-        run: expect.objectContaining({ triggeredBy }),
+        triggeredBy,
+        context,
+        parentRun: {
+          id: 'parent-run-id',
+          triggeredBy: triggeringUser.id,
+          context,
+        },
+      }),
+      expect.objectContaining({
+        run: expect.objectContaining({ triggeredBy, context }),
         relatedRuns: expect.objectContaining({
-          parent: expect.objectContaining({ triggeredBy }),
-          children: [expect.objectContaining({ triggeredBy })],
+          parent: expect.objectContaining({ triggeredBy, context }),
+          children: [expect.objectContaining({ triggeredBy, context })],
         }),
       }),
     ]);

@@ -142,8 +142,11 @@ client, but the effective configuration should be equivalent to:
 Tools never return a whole user record. A populated user relation (`createdBy`
 of workflows and versions, `triggeredBy` of runs, user or subscriber, `owner`
 of credentials) is reduced to `{ id, firstName, lastName }`; an unpopulated one
-stays a plain id. The email, roles, provider and password-reset state of users
-are therefore never returned.
+stays a plain id. So is the copy of the initiator a run keeps in its context
+for its workflow to read (`context.initiator`, also in an embedded
+`parentRun`): it stays whole in the database, since workflows may use any of
+its fields. The email, roles, provider and password-reset state of users are
+therefore never returned.
 
 Secrets are write-only: tools accept credential values and secret settings,
 but never return them (see each section below). The MCP server does not log

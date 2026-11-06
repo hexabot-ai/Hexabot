@@ -10,7 +10,7 @@ export type McpUserRef = {
   lastName: string;
 };
 
-type UserRelation =
+export type UserRelation =
   | string
   | { id: string; firstName: string; lastName: string }
   | null
