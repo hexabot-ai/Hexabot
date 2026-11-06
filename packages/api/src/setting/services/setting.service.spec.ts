@@ -346,7 +346,9 @@ describe('SettingService', () => {
         settingService.updateOne(setting.id, {
           value: 'invalid' as unknown as number,
         }),
-      ).rejects.toThrow('Invalid value provided for setting "limits.retries".');
+      ).rejects.toThrow(
+        'Invalid value provided for setting "limits.retries". Invalid input: expected number, received string',
+      );
     });
   });
 });

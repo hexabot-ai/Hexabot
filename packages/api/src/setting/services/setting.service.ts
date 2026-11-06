@@ -141,6 +141,9 @@ export class SettingService extends BaseOrmService<SettingOrmEntity> {
       );
     }
 
+    // Why the value as given was refused, e.g. the helpers a
+    // `default_*_helper` setting accepts.
+    let reason: string | undefined;
     for (const candidate of this.getCoercionCandidates(value)) {
       const result = schema.safeParse(candidate);
       if (result.success) {
@@ -152,10 +155,11 @@ export class SettingService extends BaseOrmService<SettingOrmEntity> {
           `Setting "${group}.${label}" resolved to an unsupported value type.`,
         );
       }
+      reason ??= result.error.issues.map(({ message }) => message).join('; ');
     }
 
     throw new BadRequestException(
-      `Invalid value provided for setting "${group}.${label}".`,
+      `Invalid value provided for setting "${group}.${label}".${reason ? ` ${reason}` : ''}`,
     );
   }
 

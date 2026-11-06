@@ -55,6 +55,30 @@ export const sanitizeCredential = <T extends Record<string, unknown>>(
   } as Omit<T, 'value'>;
 };
 
+/**
+ * List the properties of an object JSON Schema that hold a secret: those the
+ * admin UI renders as a password field (`ui:widget: password`), such as a
+ * license key or an access token kept in settings rather than in a credential.
+ */
+export const getSecretKeys = (
+  schema: { properties?: Record<string, unknown> } | undefined,
+): Set<string> =>
+  new Set(
+    Object.entries(schema?.properties ?? {})
+      .filter(
+        ([, property]) =>
+          (property as Record<string, unknown> | null)?.['ui:widget'] ===
+          'password',
+      )
+      .map(([key]) => key),
+  );
+
+/**
+ * Tell whether a secret holds a value, without returning it.
+ */
+export const hasSecretValue = (value: unknown): boolean =>
+  value !== undefined && value !== null && value !== '';
+
 export const omitKeysDeep = <T>(value: T, keys: readonly string[]): T => {
   if (Array.isArray(value)) {
     return value.map((item) => omitKeysDeep(item, keys)) as T;

@@ -143,8 +143,12 @@ Tools never return a whole user record. A populated user relation (`createdBy`
 of workflows and versions, `triggeredBy` of runs, user or subscriber, `owner`
 of credentials) is reduced to `{ id, firstName, lastName }`; an unpopulated one
 stays a plain id. The email, roles, provider and password-reset state of users
-are therefore neither returned nor printed by the MCP server's debug logs,
-which log every tool response.
+are therefore never returned.
+
+Secrets are write-only: tools accept credential values and secret settings,
+but never return them (see each section below). The MCP server does not log
+request bodies or tool results either: the `debug` level of `@rekog/mcp-nest`,
+which prints both in full, is turned off (`logging` in `mcp-api.module.ts`).
 
 ### Workflows
 
@@ -234,14 +238,47 @@ executed YAML once as top-level `workflowDefinitionYml` only when
 
 ### Credentials
 
-| Tool                        | Permission        | Purpose                                      |
-| --------------------------- | ----------------- | -------------------------------------------- |
-| `hexabot_credential_search` | `credential:read` | Search credential metadata by name or owner. |
-| `hexabot_credential_get`    | `credential:read` | Read credential metadata.                    |
+| Tool                        | Permission          | Purpose                                                 |
+| --------------------------- | ------------------- | ------------------------------------------------------- |
+| `hexabot_credential_search` | `credential:read`   | Search credential metadata by name or owner.            |
+| `hexabot_credential_get`    | `credential:read`   | Read credential metadata.                               |
+| `hexabot_credential_create` | `credential:create` | Store a secret as a credential owned by the token user. |
+| `hexabot_credential_update` | `credential:update` | Rename a credential or replace its secret value.        |
 
-Credential secret values are never returned. The MCP tools remove the `value`
+Credential secret values are write-only. The MCP tools remove the `value`
 field from all credential responses and do not support searching by secret
-value.
+value. A name another credential has is refused (`A credential named ... already
+exists`).
+
+### Settings
+
+| Tool                         | Permission       | Purpose                                                           |
+| ---------------------------- | ---------------- | ----------------------------------------------------------------- |
+| `hexabot_setting_search`     | `setting:read`   | List runtime settings and their values, optionally for one group. |
+| `hexabot_setting_schema_get` | `setting:read`   | Read the JSON Schema of one setting group.                        |
+| `hexabot_setting_update`     | `setting:update` | Set one setting, addressed by `group` and `label`.                |
+
+`hexabot_setting_update` validates the value like `PATCH /api/setting/:id`;
+a refused value is reported with the reason, e.g. the helpers a
+`default_*_helper` setting accepts. A secret setting (one the admin UI renders
+as a password field, `ui:widget: password`, such as `global_settings.license_key`)
+is returned with `secret: true` and `hasValue` instead of its value.
+
+### Channel sources
+
+| Tool                     | Permission      | Purpose                                                                 |
+| ------------------------ | --------------- | ----------------------------------------------------------------------- |
+| `hexabot_channel_search` | `source:read`   | List registered channels with the JSON Schema of their source settings. |
+| `hexabot_source_search`  | `source:read`   | Search channel sources by name, channel, state or default workflow.     |
+| `hexabot_source_get`     | `source:read`   | Read one channel source.                                                |
+| `hexabot_source_create`  | `source:create` | Create a source of a registered channel.                                |
+| `hexabot_source_update`  | `source:update` | Set the name, state, `defaultWorkflow` or some settings of a source.    |
+
+`hexabot_source_update` merges the `settings` it receives into the current
+ones, so settings it leaves out keep their value; `defaultWorkflow: null`
+clears the workflow. Secret source settings (password fields of the channel's
+settings schema) are left out of `settings` and named in `secretSettings`
+when they have a value. A source's channel cannot change through MCP.
 
 ### MCP servers
 

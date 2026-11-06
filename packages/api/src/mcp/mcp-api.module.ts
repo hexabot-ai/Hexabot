@@ -37,6 +37,9 @@ import { HEXABOT_MCP_TOOL_PROVIDERS } from './tools';
       transport: McpTransportType.STREAMABLE_HTTP,
       mcpEndpoint: 'mcp',
       guards: [HexabotMcpTokenGuard],
+      // The debug level logs every request body and tool result in full:
+      // credential values, secret settings and user data.
+      logging: { level: ['log', 'warn', 'error'] },
       streamableHttp: {
         enableJsonResponse: false,
         sessionIdGenerator: () => randomUUID(),

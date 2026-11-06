@@ -11,6 +11,8 @@ import {
   HexabotCredentialMcpTools,
   HexabotMcpServerTools,
   HexabotMemoryDefinitionMcpTools,
+  HexabotSettingMcpTools,
+  HexabotSourceMcpTools,
   HexabotWorkflowMcpHelper,
   HexabotWorkflowMcpTools,
   HexabotWorkflowRunMcpTools,
@@ -28,6 +30,8 @@ describe('HEXABOT_MCP_TOOL_PROVIDERS', () => {
       HexabotCatalogMcpTools,
       HexabotCredentialMcpTools,
       HexabotMcpServerTools,
+      HexabotSettingMcpTools,
+      HexabotSourceMcpTools,
       HexabotCmsMcpTools,
     ]);
   });
