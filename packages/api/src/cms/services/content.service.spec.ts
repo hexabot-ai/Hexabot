@@ -142,6 +142,78 @@ describe('ContentService (TypeORM)', () => {
         'SQL failed',
       );
     });
+
+    describe('properties', () => {
+      const toHit = ({ id, title }: { id: string; title: string }) => ({
+        contentId: id,
+        title,
+        text: 'a chunk without properties',
+        source: 'test-helper',
+      });
+
+      it('attaches the requested properties without passing them to the helper', async () => {
+        const [jean] = await contentService.find({ where: { title: 'Jean' } });
+        const [adapter] = await contentService.find({
+          where: { title: 'Adaptateur' },
+        });
+        const hits = [toHit(jean), toHit(adapter)];
+        const retrieve = jest.fn().mockResolvedValue(hits);
+        jest
+          .spyOn(helperService, 'getDefaultHelper')
+          .mockResolvedValue({ retrieve } as never);
+
+        const result = await contentService.retrieve('query', {
+          limit: 2,
+          properties: ['subtitle', 'image', 'missing'],
+        });
+
+        expect(retrieve).toHaveBeenCalledWith('query', { limit: 2 });
+        expect(result).toEqual([
+          {
+            ...hits[0],
+            properties: {
+              subtitle: jean.properties?.subtitle,
+              image: jean.properties?.image,
+            },
+          },
+          {
+            ...hits[1],
+            properties: {
+              subtitle: adapter.properties?.subtitle,
+              image: adapter.properties?.image,
+            },
+          },
+        ]);
+      });
+
+      it('attaches no properties to a hit whose content no longer exists', async () => {
+        const hit = toHit({
+          id: '00000000-0000-4000-8000-000000000000',
+          title: 'Deleted',
+        });
+        jest.spyOn(helperService, 'getDefaultHelper').mockResolvedValue({
+          retrieve: jest.fn().mockResolvedValue([hit]),
+        } as never);
+
+        await expect(
+          contentService.retrieve('query', { properties: ['subtitle'] }),
+        ).resolves.toEqual([{ ...hit, properties: {} }]);
+      });
+
+      it('does not read the contents when no property is requested', async () => {
+        const hits = [toHit({ id: 'content-1', title: 'Content' })];
+        jest.spyOn(helperService, 'getDefaultHelper').mockResolvedValue({
+          retrieve: jest.fn().mockResolvedValue(hits),
+        } as never);
+        const find = jest.spyOn(contentService, 'find');
+
+        await expect(
+          contentService.retrieve('query', { properties: [] }),
+        ).resolves.toBe(hits);
+        expect(find).not.toHaveBeenCalled();
+        find.mockRestore();
+      });
+    });
   });
 
   describe('getContent', () => {

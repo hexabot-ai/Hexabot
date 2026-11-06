@@ -152,7 +152,9 @@
   },
   "retrieve_rag_content": {
     "Content Type": "Content Type",
+    "Content property keys (e.g. url) to attach to each hit and prepend to its text.": "Content property keys (e.g. url) to attach to each hit and prepend to its text.",
     "Include inactive": "Include inactive",
+    "Include properties": "Include properties",
     "Limit": "Limit",
     "Maximum number of content hits to return.": "Maximum number of content hits to return.",
     "Mode": "Mode",

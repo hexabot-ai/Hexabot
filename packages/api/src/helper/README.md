@@ -19,6 +19,13 @@ that helper; there is no feature enable/disable switch.
 A custom RAG helper must extend `BaseRagHelper` and implement `retrieve`.
 `index`, `remove`, and `reindex` are optional.
 
+A helper returns hits without `properties`. When a caller asks for content
+properties (the `include_properties` setting of `retrieve_rag_content`, or
+`properties` on the `hexabot_rag_content_search` MCP tool),
+`ContentService.retrieve` reads them from the contents of the hits and attaches
+them, so a helper never selects them. Its `text` may be one chunk of the
+content, which does not hold every property line of `searchText`.
+
 A helper that builds its index from an external embedding provider should
 extend `BaseRagEmbeddingHelper` instead. It carries the chunking
 (`chunkSearchText`), provider resolution, query/chunk embedding, vector
