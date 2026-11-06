@@ -70,8 +70,12 @@ export class StatsService extends BaseOrmService<StatsOrmEntity> {
     super(repository);
   }
 
-  @OnEvent('hook:subscriber:preCreate')
-  async handleSubscriberPreCreate(
+  /**
+   * Counts a new user once the subscriber is saved: before that, it has no
+   * `id` or timestamps and cannot be serialized.
+   */
+  @OnEvent('hook:subscriber:postCreate')
+  async handleSubscriberPostCreate(
     event: InsertEntityEvent<SubscriberOrmEntity>,
   ) {
     const subscriber = event.entity.toPlainCls();
