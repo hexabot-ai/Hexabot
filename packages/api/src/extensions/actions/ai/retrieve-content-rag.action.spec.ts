@@ -108,6 +108,71 @@ describe('RetrieveRagContentAction', () => {
     expect(result).toEqual({ hits, text: 'Product details' });
   });
 
+  it('attaches the selected properties to the hits and their text', async () => {
+    const hits = [
+      {
+        contentId: 'content-1',
+        title: 'Flybox postpayée',
+        text: 'Later chunk about the Flybox offer',
+        score: 0.8,
+        contentTypeId: 'ct-1',
+        source: 'pgvector',
+        properties: {
+          url: 'https://www.orange.tn/flybox-postpayee',
+          price: { amount: 49, currency: 'TND' },
+        },
+      },
+      {
+        contentId: 'content-2',
+        title: 'Flybox prépayée',
+        text: 'title: Flybox prépayée\nurl: https://www.orange.tn/flybox-prepayee\nbody: …',
+        source: 'fulltext-search',
+        properties: { url: 'https://www.orange.tn/flybox-prepayee' },
+      },
+    ];
+    contentService.retrieve.mockResolvedValue(hits);
+
+    const settings = action.parseSettings({
+      include_properties: [' url ', 'price'],
+    });
+    const result = await action.execute({
+      input: { query: 'flybox' },
+      context,
+      settings,
+      bindings: {} as any,
+    });
+
+    expect(contentService.retrieve).toHaveBeenCalledWith('flybox', {
+      includeInactive: false,
+      properties: ['url', 'price'],
+    });
+    expect(result.hits).toEqual(hits);
+    expect(result.text).toBe(
+      [
+        'url: https://www.orange.tn/flybox-postpayee\n' +
+          'price: {"amount":49,"currency":"TND"}\n' +
+          'Later chunk about the Flybox offer',
+        hits[1].text,
+      ].join('\n\n'),
+    );
+    expect(action.parseOutput(result)).toEqual(result);
+  });
+
+  it('does not request properties when include_properties is empty', async () => {
+    contentService.retrieve.mockResolvedValue([]);
+
+    await action.execute({
+      input: { query: 'product' },
+      context,
+      settings: action.parseSettings({ include_properties: [] }),
+      bindings: {} as any,
+    });
+
+    expect(contentService.retrieve).toHaveBeenCalledWith('product', {
+      includeInactive: false,
+    });
+  });
+
   it('searches all content types when content_type_id is omitted or blank', async () => {
     contentService.retrieve.mockResolvedValue([]);
 

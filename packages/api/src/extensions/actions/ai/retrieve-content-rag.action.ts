@@ -10,7 +10,8 @@ import { createAction } from '@/actions/create-action';
 import {
   RagHelperConfigurationError,
   RagHelperUnavailableError,
-  RagQueryOptions,
+  RagHit,
+  RagRetrieveOptions,
 } from '@/cms';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 import { workflowResourceRef } from '@/workflow/resource-refs';
@@ -52,6 +53,11 @@ const retrieveRagContentSettingsSchema = z.strictObject({
     description:
       'When enabled, retrieval can include inactive content in results.',
   }),
+  include_properties: z.array(z.string().trim().min(1)).optional().meta({
+    title: 'Include properties',
+    description:
+      'Content property keys (e.g. url) to attach to each hit and prepend to its text.',
+  }),
 });
 const contentRagHitSchema = z.strictObject({
   contentId: z.string(),
@@ -60,6 +66,7 @@ const contentRagHitSchema = z.strictObject({
   score: z.number().optional(),
   contentTypeId: z.string().optional(),
   source: z.string(),
+  properties: z.record(z.string(), z.unknown()).optional(),
 });
 const retrieveRagContentOutputSchema = z.strictObject({
   hits: z.array(contentRagHitSchema),
@@ -75,6 +82,22 @@ type RetrieveRagContentSettings = z.infer<
   typeof retrieveRagContentSettingsSchema
 >;
 type RetrieveRagContentOutput = z.infer<typeof retrieveRagContentOutputSchema>;
+
+/**
+ * Formats a hit for the joined `text` output: its attached properties as
+ * `key: value` lines, then its text. Lines the text already holds are skipped,
+ * since helpers that return the whole content text already list them.
+ */
+const formatHitText = ({ text, properties }: RagHit): string => {
+  const lines = Object.entries(properties ?? {})
+    .map(
+      ([key, value]) =>
+        `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`,
+    )
+    .filter((line) => !text.includes(line));
+
+  return [...lines, text].join('\n');
+};
 
 export const RetrieveRagContentAction = createAction<
   RetrieveRagContentInput,
@@ -108,15 +131,17 @@ export const RetrieveRagContentAction = createAction<
       }
     }
 
-    const options: RagQueryOptions = {
+    const properties = settings.include_properties ?? [];
+    const options: RagRetrieveOptions = {
       ...(settings.limit ? { limit: settings.limit } : {}),
       ...(contentTypeId ? { contentTypeId } : {}),
       includeInactive: settings.include_inactive ?? false,
+      ...(properties.length ? { properties } : {}),
     };
     try {
       const hits = await content.retrieve(input.query, options);
 
-      return { hits, text: hits.map(({ text }) => text).join('\n\n') };
+      return { hits, text: hits.map(formatHitText).join('\n\n') };
     } catch (error) {
       if (
         error instanceof RagHelperConfigurationError ||

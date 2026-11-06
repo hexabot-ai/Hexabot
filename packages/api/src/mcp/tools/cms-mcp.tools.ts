@@ -211,12 +211,14 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_rag_content_search',
-    description: 'Search indexed CMS content through Hexabot RAG retrieval.',
+    description:
+      'Search indexed CMS content through Hexabot RAG retrieval. Set `properties` (e.g. ["url"]) to attach those content properties to each hit.',
     parameters: z.object({
       query: z.string().min(1),
       limit: z.number().int().min(1).max(50).default(10),
       contentTypeId: uuidSchema.optional(),
       includeInactive: z.boolean().optional(),
+      properties: z.array(z.string().min(1)).optional(),
     }),
   })
   async searchRagContent(args: {
@@ -224,12 +226,14 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
     limit: number;
     contentTypeId?: string;
     includeInactive?: boolean;
+    properties?: string[];
   }) {
     return {
       items: await this.contentService.retrieve(args.query, {
         limit: args.limit,
         contentTypeId: args.contentTypeId,
         includeInactive: args.includeInactive,
+        properties: args.properties,
       }),
     };
   }

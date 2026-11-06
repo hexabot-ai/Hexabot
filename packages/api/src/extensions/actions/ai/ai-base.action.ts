@@ -558,7 +558,9 @@ export abstract class AiBaseAction<
       } else {
         const nestedBindings = toolDefinition.bindings;
         tools[normalizedToolName] = {
-          description: action.description,
+          // The def description tells the model what this particular tool
+          // instance covers; the action description is the generic fallback.
+          description: toolDefinition.description?.trim() || action.description,
           inputSchema: action.inputSchema,
           outputSchema: action.outputSchema,
           execute: async (input, options) => {
