@@ -59,6 +59,7 @@ Environment variables are loaded from `packages/api/.env` (see `packages/api/.en
 - Default port is `3000` and the global API prefix is `/api`.
 - SQLite is the default database (`./hexabot.sqlite`) and uses the `better-sqlite3` TypeORM driver; configure `DB_TYPE` and `DB_*` for Postgres.
 - Set `REDIS_ENABLED=true` to use Redis-backed cache and the Socket.IO adapter.
+- `SESSION_SECRET`, `SIGNED_URL_SECRET`, `PASSWORD_RESET_SECRET` and `CONFIRM_ACCOUNT_SECRET` must be set to unique random values in production: the API refuses to start in production while one is unset or left to a value that ships with Hexabot (config fallbacks, `.env.example` values), and logs a warning outside production.
 
 ## Development Commands
 

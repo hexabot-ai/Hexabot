@@ -35,6 +35,11 @@ export class ChannelAttachmentService {
     encoding: 'utf-8',
   };
 
+  protected readonly jwtVerifyOptions: JwtVerifyOptions = {
+    secret: config.parameters.signedUrl.secret,
+    algorithms: ['HS256'],
+  };
+
   constructor(
     private readonly attachmentService: AttachmentService,
     private readonly jwtService: JwtService,
@@ -73,7 +78,12 @@ export class ChannelAttachmentService {
         return fallbackUrl;
       }
 
-      const token = this.jwtService.sign({ ...resource }, this.jwtSignOptions);
+      // The token only names the attachment: `download` reads everything else
+      // (location, access, ...) from the database.
+      const token = this.jwtService.sign(
+        { id: resource.id },
+        this.jwtSignOptions,
+      );
 
       return buildURL(
         config.apiBaseUrl,
@@ -103,6 +113,10 @@ export class ChannelAttachmentService {
   /**
    * Downloads an attachment using a signed token.
    *
+   * Only the attachment ID is taken from the token. The attachment itself
+   * (storage location, access, ...) is read from the database, so a token
+   * cannot point the download at another file or grant itself access.
+   *
    * @param token The signed token used to verify and locate the attachment.
    * @param req - The HTTP express request object.
    * @param hasDownloadAccess - Callback used to verify the attachment access.
@@ -114,15 +128,20 @@ export class ChannelAttachmentService {
     hasDownloadAccess: HasDownloadAccess,
   ): Promise<StreamableFile> {
     try {
-      const {
-        exp: _exp,
-        iat: _iat,
-        ...result
-      } = this.jwtService.verify(
+      const { id } = this.jwtService.verify<{ id?: unknown }>(
         token,
-        this.jwtSignOptions as JwtVerifyOptions,
+        this.jwtVerifyOptions,
       );
-      const attachment: Attachment = result;
+      if (typeof id !== 'string' || !id) {
+        throw new NotFoundException('The token does not name an attachment');
+      }
+
+      const attachment: Attachment | null =
+        await this.attachmentService.findOne(id);
+      if (!attachment) {
+        throw new NotFoundException('Attachment not found');
+      }
+
       const canDownload = await hasDownloadAccess(attachment, req);
 
       if (!canDownload) {

@@ -373,3 +373,4 @@ export const acmeEventSchema = z.strictObject({
 - Use `ChannelCapabilities` to prevent unsupported outgoing message types from being sent.
 - Prefer `@ExtensionInject()` when helper services need per-channel binding.
 - If you override attachment URL/download behavior, keep `/webhook/:sourceRef/download/:name?t=<jwt>` compatibility in mind.
+- The download token `t` is signed with `SIGNED_URL_SECRET` and carries only the attachment ID: the download reads the attachment (location, access) from the database, then asks the channel's `hasDownloadAccess`. Never trust attachment fields taken from the token or the request.

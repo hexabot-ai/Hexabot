@@ -59,7 +59,7 @@ describe('ChannelAttachmentService', () => {
 
     expect(attachmentService.findOne).toHaveBeenCalledWith(resource.id);
     expect(jwtService.sign).toHaveBeenCalledWith(
-      { ...resource },
+      { id: resource.id },
       expect.objectContaining({
         secret: config.parameters.signedUrl.secret,
         expiresIn: config.parameters.signedUrl.expiresIn,
@@ -114,42 +114,108 @@ describe('ChannelAttachmentService', () => {
     );
   });
 
-  it('downloads an attachment when token is valid and access policy allows it', async () => {
+  it('downloads the stored attachment named by a valid token when access policy allows it', async () => {
     const req = {} as Request;
     const attachment = {
       id: 'attachment-id',
       name: 'filename.extension',
+      location: '/filename-uuid.extension',
       access: AttachmentAccess.Public,
     };
     const file = new StreamableFile(Readable.from('content'));
     jwtService.verify.mockReturnValue({
-      ...attachment,
+      id: attachment.id,
       exp: 123,
       iat: 122,
     } as any);
+    attachmentService.findOne.mockResolvedValue(attachment as any);
     attachmentService.download.mockResolvedValue(file);
     const hasDownloadAccess = jest.fn().mockResolvedValue(true);
     const result = await service.download('token', req, hasDownloadAccess);
 
+    expect(jwtService.verify).toHaveBeenCalledWith(
+      'token',
+      expect.objectContaining({
+        secret: config.parameters.signedUrl.secret,
+        algorithms: ['HS256'],
+      }),
+    );
+    expect(attachmentService.findOne).toHaveBeenCalledWith(attachment.id);
     expect(hasDownloadAccess).toHaveBeenCalledWith(attachment, req);
     expect(attachmentService.download).toHaveBeenCalledWith(attachment);
     expect(result).toBe(file);
+  });
+
+  it('ignores the attachment fields carried by the token', async () => {
+    const req = {} as Request;
+    const stored = {
+      id: 'attachment-id',
+      name: 'filename.extension',
+      location: '/filename-uuid.extension',
+      access: AttachmentAccess.Private,
+    };
+    jwtService.verify.mockReturnValue({
+      id: stored.id,
+      name: 'passwd',
+      location: '../../../../etc/passwd',
+      access: AttachmentAccess.Public,
+      exp: 123,
+      iat: 122,
+    } as any);
+    attachmentService.findOne.mockResolvedValue(stored as any);
+    const hasDownloadAccess = jest.fn().mockResolvedValue(true);
+
+    await service.download('token', req, hasDownloadAccess);
+
+    expect(hasDownloadAccess).toHaveBeenCalledWith(stored, req);
+    expect(attachmentService.download).toHaveBeenCalledWith(stored);
   });
 
   it('masks access denials as not found', async () => {
     const req = {} as Request;
     jwtService.verify.mockReturnValue({
       id: 'attachment-id',
-      name: 'filename.extension',
-      access: AttachmentAccess.Private,
       exp: 123,
       iat: 122,
+    } as any);
+    attachmentService.findOne.mockResolvedValue({
+      id: 'attachment-id',
+      name: 'filename.extension',
+      access: AttachmentAccess.Private,
     } as any);
     const hasDownloadAccess = jest.fn().mockResolvedValue(false);
 
     await expect(
       service.download('token', req, hasDownloadAccess),
     ).rejects.toBeInstanceOf(NotFoundException);
+    expect(attachmentService.download).not.toHaveBeenCalled();
+  });
+
+  it('answers not found when the attachment no longer exists', async () => {
+    const req = {} as Request;
+    jwtService.verify.mockReturnValue({ id: 'missing-attachment' } as any);
+    attachmentService.findOne.mockResolvedValue(null);
+    const hasDownloadAccess = jest.fn().mockResolvedValue(true);
+
+    await expect(
+      service.download('token', req, hasDownloadAccess),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(hasDownloadAccess).not.toHaveBeenCalled();
+    expect(attachmentService.download).not.toHaveBeenCalled();
+  });
+
+  it('answers not found when the token does not name an attachment', async () => {
+    const req = {} as Request;
+    jwtService.verify.mockReturnValue({
+      location: '../../../../etc/passwd',
+      access: AttachmentAccess.Public,
+    } as any);
+    const hasDownloadAccess = jest.fn().mockResolvedValue(true);
+
+    await expect(
+      service.download('token', req, hasDownloadAccess),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(attachmentService.findOne).not.toHaveBeenCalled();
     expect(attachmentService.download).not.toHaveBeenCalled();
   });
 
