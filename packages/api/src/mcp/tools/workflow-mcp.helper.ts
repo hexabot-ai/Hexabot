@@ -21,7 +21,7 @@ import { WorkflowVersionService } from '@/workflow/services/workflow-version.ser
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowVersionAction } from '@/workflow/types';
 
-import { resolveRelationId } from './hexabot-mcp.utils';
+import { McpUserRef, resolveRelationId, toUserRef } from './hexabot-mcp.utils';
 
 type WorkflowVersionLike = WorkflowVersion | WorkflowVersionFull;
 
@@ -39,14 +39,19 @@ type WorkflowVersionSummary = Pick<
     | WorkflowVersion['parentVersion']
     | WorkflowVersionFull['parentVersion'];
   workflow: WorkflowVersion['workflow'] | WorkflowVersionFull['workflow'];
-  createdBy: WorkflowVersion['createdBy'] | WorkflowVersionFull['createdBy'];
+  createdBy: McpUserRef | string | null;
   definitionYmlByteLength?: number;
 };
 
 type WorkflowSummary = Omit<
   WorkflowFull,
-  'currentVersion' | 'publishedVersion' | 'definitionYml' | 'definition'
+  | 'currentVersion'
+  | 'publishedVersion'
+  | 'createdBy'
+  | 'definitionYml'
+  | 'definition'
 > & {
+  createdBy: McpUserRef | string | null;
   currentVersion: WorkflowVersionSummary | null;
   publishedVersion: WorkflowVersionSummary | null;
   currentVersionId: string | null;
@@ -147,6 +152,7 @@ export class HexabotWorkflowMcpHelper {
     const {
       currentVersion,
       publishedVersion,
+      createdBy,
       definitionYml: _definitionYml,
       definition: _definition,
       ...metadata
@@ -157,6 +163,7 @@ export class HexabotWorkflowMcpHelper {
 
     return {
       ...metadata,
+      createdBy: toUserRef(createdBy) ?? null,
       currentVersion: currentVersionSummary,
       publishedVersion: publishedVersionSummary,
       currentVersionId: currentVersionSummary?.id ?? null,
@@ -191,7 +198,7 @@ export class HexabotWorkflowMcpHelper {
       action,
       parentVersion,
       workflow,
-      createdBy,
+      createdBy: toUserRef(createdBy),
       createdAt,
       updatedAt,
       ...(options?.includeDefinitionYmlByteLength

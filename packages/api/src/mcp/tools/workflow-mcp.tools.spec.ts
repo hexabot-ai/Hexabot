@@ -6,6 +6,8 @@
 
 import { WorkflowType, WorkflowVersionAction } from '@/workflow/types';
 
+import type { HexabotMcpRequest } from '../types';
+
 import { HexabotWorkflowMcpHelper } from './workflow-mcp.helper';
 import { HexabotWorkflowMcpTools } from './workflow-mcp.tools';
 
@@ -15,6 +17,18 @@ const actor = {
   username: 'agent',
   roles: ['role-id'],
   state: true,
+};
+const request = {
+  hexabotUser: actor,
+} as HexabotMcpRequest;
+const creator = {
+  ...actor,
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  sendEmail: false,
+  resetCount: 1,
+  resetToken: '$2a$10$pendingPasswordResetTokenHash',
+  provider: { strategy: 'local' },
 };
 const defaultWorkflowVersionService = () => ({
   commit: jest.fn(),
@@ -184,6 +198,55 @@ describe('HexabotWorkflowMcpTools', () => {
     });
     expect(result.currentVersion).not.toHaveProperty('definitionYml');
     expect(result.publishedVersion).not.toHaveProperty('definitionYml');
+  });
+
+  it('reduces the workflow creator to its id and name in every workflow summary', async () => {
+    const workflow = {
+      id: 'workflow-id',
+      name: 'Support triage',
+      type: WorkflowType.manual,
+      currentVersion: { id: 'current-version-id', createdBy: actor.id },
+      publishedVersion: null,
+      createdBy: creator,
+    };
+    const workflowService = {
+      create: jest.fn().mockResolvedValue({ id: 'workflow-id' }),
+      updateOne: jest.fn().mockResolvedValue({ id: 'workflow-id' }),
+      findOne: jest.fn().mockResolvedValue({
+        id: 'workflow-id',
+        currentVersion: 'current-version-id',
+      }),
+      findOneAndPopulate: jest.fn().mockResolvedValue(workflow),
+      findAndPopulate: jest.fn().mockResolvedValue([workflow]),
+      count: jest.fn().mockResolvedValue(1),
+    };
+    const tools = buildWorkflowTools({ workflowService });
+    const createdBy = { id: 'user-id', firstName: 'Ada', lastName: 'Lovelace' };
+    const summaries = [
+      await tools.createWorkflow({ name: 'Support triage' }, {}, request),
+      await tools.updateWorkflow(
+        { id: 'workflow-id', description: 'Triage' },
+        {},
+        request,
+      ),
+      await tools.publishWorkflow({ id: 'workflow-id' }),
+      await tools.getWorkflow({ id: 'workflow-id' }),
+      (
+        await tools.searchWorkflows({
+          limit: 20,
+          skip: 0,
+          sortBy: 'createdAt',
+          sortDirection: 'DESC',
+        })
+      ).items[0],
+    ];
+
+    for (const summary of summaries) {
+      expect(summary.createdBy).toEqual(createdBy);
+      expect(summary.currentVersion?.createdBy).toBe(actor.id);
+      expect(JSON.stringify(summary)).not.toContain(creator.resetToken);
+      expect(JSON.stringify(summary)).not.toContain(creator.email);
+    }
   });
 
   it('publishes the current workflow version', async () => {

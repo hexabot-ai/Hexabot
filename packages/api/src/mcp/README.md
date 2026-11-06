@@ -139,6 +139,13 @@ client, but the effective configuration should be equivalent to:
 
 ## Tool surface
 
+Tools never return a whole user record. A populated user relation (`createdBy`
+of workflows and versions, `triggeredBy` of runs, user or subscriber, `owner`
+of credentials) is reduced to `{ id, firstName, lastName }`; an unpopulated one
+stays a plain id. The email, roles, provider and password-reset state of users
+are therefore neither returned nor printed by the MCP server's debug logs,
+which log every tool response.
+
 ### Workflows
 
 | Tool                              | Permission               | Purpose                                                                                      |
@@ -263,6 +270,8 @@ Each tool should:
 3. Use `@McpPermission(model, action)` with existing Hexabot permission models.
 4. Return plain JSON-serializable data.
 5. Avoid exposing secrets, tokens, connection strings, or raw credential values.
+6. Reduce populated user relations with `toUserRef` (`tools/hexabot-mcp.utils.ts`)
+   instead of returning the user record.
 
 If a tool changes API behavior or a public contract, update this README and the
 relevant tests in `packages/api/src/mcp`.

@@ -25,6 +25,15 @@ const actor = {
 const request = {
   hexabotUser: actor,
 } as HexabotMcpRequest;
+const triggeringUser = {
+  ...actor,
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  sendEmail: false,
+  resetCount: 1,
+  resetToken: '$2a$10$pendingPasswordResetTokenHash',
+  provider: { strategy: 'local' },
+};
 const defaultWorkflowService = () => ({
   findOneAndPopulate: jest.fn().mockResolvedValue({ id: 'workflow-id' }),
   findOne: jest.fn(),
@@ -320,6 +329,90 @@ describe('HexabotWorkflowRunMcpTools', () => {
         checksum: 'checksum',
       },
     });
+  });
+
+  it('reduces the user who triggered a run to its id and name in every run tool', async () => {
+    const run = {
+      id: 'run-id',
+      status: 'finished',
+      workflow: { id: 'workflow-id', createdBy: actor.id },
+      triggeredBy: triggeringUser,
+      parentRun: { id: 'parent-run-id' },
+      checkpoint: null,
+    };
+    const parentRun = { ...run, id: 'parent-run-id', parentRun: null };
+    const workflowService = {
+      findOneAndPopulate: jest.fn().mockResolvedValue({
+        id: 'workflow-id',
+        type: WorkflowType.manual,
+        inputSchema: {},
+      }),
+      validateManualInput: jest.fn().mockReturnValue({}),
+    };
+    const workflowRunService = {
+      findOneAndPopulate: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(id === 'parent-run-id' ? parentRun : run),
+        ),
+      findAndPopulate: jest.fn().mockResolvedValue([run]),
+      count: jest.fn().mockResolvedValue(1),
+      withAwaitingOperatorScope: jest.fn((options) => options),
+    };
+    const webhookTriggerService = {
+      dispatchTriggerEvent: jest.fn().mockResolvedValue(run),
+    };
+    const tools = buildWorkflowRunTools({
+      workflowService,
+      workflowRunService,
+      webhookTriggerService,
+    });
+    const pagination = {
+      limit: 20,
+      skip: 0,
+      sortBy: 'createdAt',
+      sortDirection: 'DESC' as const,
+    };
+    const triggeredBy = {
+      id: 'user-id',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+    };
+    const outputs = [
+      await tools.runWorkflow(
+        { workflowId: 'workflow-id', input: {} },
+        {},
+        request,
+      ),
+      await tools.searchWorkflowRuns(pagination),
+      await tools.listPendingWorkflowRuns(pagination),
+      await tools.getWorkflowRun({ id: 'run-id' }),
+      await tools.debugWorkflowRun({ id: 'run-id' }),
+    ];
+
+    expect(outputs).toEqual([
+      expect.objectContaining({
+        run: expect.objectContaining({ triggeredBy }),
+      }),
+      expect.objectContaining({
+        items: [expect.objectContaining({ triggeredBy })],
+      }),
+      expect.objectContaining({
+        items: [expect.objectContaining({ triggeredBy })],
+      }),
+      expect.objectContaining({ triggeredBy }),
+      expect.objectContaining({
+        run: expect.objectContaining({ triggeredBy }),
+        relatedRuns: expect.objectContaining({
+          parent: expect.objectContaining({ triggeredBy }),
+          children: [expect.objectContaining({ triggeredBy })],
+        }),
+      }),
+    ]);
+    for (const output of outputs) {
+      expect(JSON.stringify(output)).not.toContain(triggeringUser.resetToken);
+      expect(JSON.stringify(output)).not.toContain(triggeringUser.email);
+    }
   });
 
   it('returns workflow run debugging context with related runs and YAML, keeping only the inspected checkpoint', async () => {

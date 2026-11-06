@@ -44,7 +44,11 @@ import {
   paginationSchema,
   uuidSchema,
 } from './hexabot-mcp.schemas';
-import { omitKeysDeep, resolveRelationId } from './hexabot-mcp.utils';
+import {
+  omitKeysDeep,
+  resolveRelationId,
+  toUserRef,
+} from './hexabot-mcp.utils';
 
 const WORKFLOW_DEFINITION_RESPONSE_KEYS = ['definitionYml'] as const;
 
@@ -191,7 +195,9 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       throw new NotFoundException(`Workflow run ${args.id} not found`);
     }
 
-    return this.withoutWorkflowDefinition(this.withoutCheckpoint(run));
+    return this.withoutWorkflowDefinition(
+      this.withTriggeredByRef(this.withoutCheckpoint(run)),
+    );
   }
 
   @McpPermission('workflowrun', Action.READ)
@@ -237,13 +243,15 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       : ([null, [], 0] as const);
     const includeWorkflowDefinition = args.includeWorkflowDefinition ?? true;
     const response: Record<string, unknown> = {
-      run: this.withoutWorkflowDefinition(run),
+      run: this.withoutWorkflowDefinition(this.withTriggeredByRef(run)),
       relatedRuns: {
         parent: this.withoutWorkflowDefinition(
-          this.withoutCheckpoint(parentRun),
+          this.withTriggeredByRef(this.withoutCheckpoint(parentRun)),
         ),
         children: this.withoutWorkflowDefinition(
-          childRuns.map((childRun) => this.withoutCheckpoint(childRun)),
+          childRuns.map((childRun) =>
+            this.withTriggeredByRef(this.withoutCheckpoint(childRun)),
+          ),
         ),
         childRunTotal,
         childRunsLimit: includeRelatedRuns ? childRunsLimit : 0,
@@ -333,7 +341,9 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     return {
       ...response,
       items: this.withoutWorkflowDefinition(
-        response.items.map((item) => this.withoutCheckpoint(item)),
+        response.items.map((item) =>
+          this.withTriggeredByRef(this.withoutCheckpoint(item)),
+        ),
       ),
     };
   }
@@ -349,7 +359,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     filter: (wait: WaitInfo) => boolean = () => true,
   ) {
     return {
-      ...this.withoutCheckpoint(run),
+      ...this.withTriggeredByRef(this.withoutCheckpoint(run)),
       openWaits: getOpenWaits(run)
         .filter(filter)
         .map(({ waitId, reason, step, data }) => ({
@@ -374,6 +384,21 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     const { checkpoint: _checkpoint, ...rest } = run as Record<string, unknown>;
 
     return rest as T;
+  }
+
+  /**
+   * Reduce the user or subscriber that triggered a run to its id and name
+   * (`toUserRef`): the populated relation is their whole record.
+   */
+  private withTriggeredByRef<T>(run: T): T {
+    if (!run || typeof run !== 'object' || !('triggeredBy' in run)) {
+      return run;
+    }
+
+    return {
+      ...run,
+      triggeredBy: toUserRef(run.triggeredBy as WorkflowRunFull['triggeredBy']),
+    } as T;
   }
 
   private withoutWorkflowDefinition<T>(value: T): T {
