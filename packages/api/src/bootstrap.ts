@@ -15,6 +15,7 @@ import passport from 'passport';
 import { AppInstance } from './app.instance';
 import { config } from './config';
 import { csrf } from './config/csrf';
+import { describePublicSecrets } from './config/secrets';
 import { seedDatabase } from './seeder';
 import { SettingService } from './setting/services/setting.service';
 import { swagger } from './swagger';
@@ -127,8 +128,17 @@ export async function bootstrapHexabotApp(
   moduleRef: Type<unknown>,
   options: HexabotBootstrapOptions = {},
 ): Promise<NestExpressApplication> {
-  const app = await createHexabotApplication(moduleRef);
   const production = isProductionEnv(options.production);
+  const publicSecrets = describePublicSecrets();
+
+  if (publicSecrets && production) {
+    throw new Error(`Refusing to start in production: ${publicSecrets}`);
+  }
+  if (publicSecrets) {
+    Logger.warn(publicSecrets, 'Hexabot');
+  }
+
+  const app = await createHexabotApplication(moduleRef);
 
   if (!production && !options.skipSeed) {
     await seedDatabase(app);

@@ -27,6 +27,8 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot API.
 - `WORKFLOW_RUN_CLAIM_TTL` (`config.workflow.runClaimTtl`, ms, default 60000) sets how long a workflow run stays claimed by a node that stopped renewing its claim; see "Workflow runs and suspension".
 - Cache and Socket.IO Redis support are toggled by `REDIS_ENABLED`; TTL defaults to `CACHE_TTL`.
 - Upload settings and signed URLs are controlled by `UPLOAD_DIR`, `UPLOAD_MAX_SIZE_IN_BYTES`, and `SIGNED_URL_*`.
+- Signing secrets (`SESSION_SECRET`, `SIGNED_URL_SECRET`, `PASSWORD_RESET_SECRET`, `CONFIRM_ACCOUNT_SECRET`) are checked at boot by `describePublicSecrets` (`src/config/secrets.ts`): `bootstrapHexabotApp` refuses to start in production while one is unset or set to a value that ships with Hexabot, and warns otherwise. Add a new signing secret to `getSigningSecrets`, and its fallback and example values to `PUBLIC_SECRET_VALUES`.
+- Storage helpers resolve attachment files from `attachment.location` and must keep the result inside their root directory (`LocalStorageHelper.resolveFilePath`).
 
 ## Tooling and commands
 - Install deps: `pnpm install` (from repo root).

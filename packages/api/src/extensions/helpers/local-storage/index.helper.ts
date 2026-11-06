@@ -6,7 +6,7 @@
 
 import fs from 'fs';
 import os from 'os';
-import { isAbsolute, join, relative, resolve } from 'path';
+import { isAbsolute, join, relative, resolve, sep } from 'path';
 import { Readable, Stream } from 'stream';
 
 import type { Attachment } from '@hexabot-ai/types';
@@ -53,6 +53,33 @@ export default class LocalStorageHelper
       ref === AttachmentResourceRef.UserAvatar
       ? config.parameters.avatarDir
       : config.parameters.uploadDir;
+  }
+
+  /**
+   * Resolves the absolute path of a stored attachment file.
+   *
+   * The location must stay inside the root directory of the attachment
+   * resource: a location such as `../../etc/passwd` is refused.
+   *
+   * @param attachment - The attachment to locate.
+   * @returns The absolute file path.
+   */
+  private resolveFilePath(attachment: Attachment): string {
+    const rootDir = resolve(
+      this.getRootDirByResourceRef(attachment.resourceRef),
+    );
+    const path = resolve(join(rootDir, attachment.location));
+    const relativePath = relative(rootDir, path);
+
+    if (
+      !relativePath ||
+      relativePath.split(sep)[0] === '..' ||
+      isAbsolute(relativePath)
+    ) {
+      throw new NotFoundException('No file was found');
+    }
+
+    return path;
   }
 
   /**
@@ -120,8 +147,7 @@ export default class LocalStorageHelper
    * @returns A promise that resolves to a StreamableFile representing the downloaded attachment.
    */
   async download(attachment: Attachment): Promise<StreamableFile> {
-    const rootDir = this.getRootDirByResourceRef(attachment.resourceRef);
-    const path = resolve(join(rootDir, attachment.location));
+    const path = this.resolveFilePath(attachment);
 
     if (!fileExists(path)) {
       throw new NotFoundException('No file was found');
@@ -147,12 +173,7 @@ export default class LocalStorageHelper
    * @returns A promise that resolves to a Buffer representing the attachment file.
    */
   async readAsBuffer(attachment: Attachment): Promise<Buffer | undefined> {
-    const path = resolve(
-      join(
-        this.getRootDirByResourceRef(attachment.resourceRef),
-        attachment.location,
-      ),
-    );
+    const path = this.resolveFilePath(attachment);
 
     if (!fileExists(path)) {
       throw new NotFoundException('No file was found');
@@ -168,12 +189,7 @@ export default class LocalStorageHelper
    * @returns A promise that resolves to a Stream representing the attachment file.
    */
   async readAsStream(attachment: Attachment): Promise<Stream | undefined> {
-    const path = resolve(
-      join(
-        this.getRootDirByResourceRef(attachment.resourceRef),
-        attachment.location,
-      ),
-    );
+    const path = this.resolveFilePath(attachment);
 
     if (!fileExists(path)) {
       throw new NotFoundException('No file was found');
