@@ -299,6 +299,7 @@ describe('compileWorkflow', () => {
       tools: {
         calculate: {
           action: 'calculate_score',
+          description: 'Compute a score',
           settings: {
             multiplier: 2,
             bias: 1,

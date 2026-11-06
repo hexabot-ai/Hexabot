@@ -930,6 +930,48 @@ describe('AiBaseAction', () => {
       );
     });
 
+    it('describes tools with the def description, falling back to the action description', async () => {
+      const actionsService = {
+        get: jest.fn(() => ({
+          description: 'Retrieves relevant knowledge base content.',
+          inputSchema: {},
+          outputSchema: {},
+          run: jest.fn(),
+        })),
+      };
+      const context = {
+        services: {
+          actions: actionsService,
+        },
+      } as unknown as WorkflowRuntimeContext;
+      const tools = await action.buildToolsPublic(context, {
+        offers_kb: {
+          action: 'retrieve_rag_content',
+          description: '  Mobile offers, devices and services, in French.\n',
+          settings: {},
+        },
+        faq_kb: {
+          action: 'retrieve_rag_content',
+          settings: {},
+        },
+        blank_kb: {
+          action: 'retrieve_rag_content',
+          description: '   ',
+          settings: {},
+        },
+      } as RuntimeBindings['tools']);
+
+      expect(tools?.offers_kb.description).toBe(
+        'Mobile offers, devices and services, in French.',
+      );
+      expect(tools?.faq_kb.description).toBe(
+        'Retrieves relevant knowledge base content.',
+      );
+      expect(tools?.blank_kb.description).toBe(
+        'Retrieves relevant knowledge base content.',
+      );
+    });
+
     it('forwards nested tool bindings to tool actions', async () => {
       const actionToolRun = jest.fn().mockResolvedValue({ ok: true });
       const actionsService = {
