@@ -56,18 +56,21 @@ export const sanitizeCredential = <T extends Record<string, unknown>>(
 };
 
 /**
- * List the properties of an object JSON Schema that hold a secret: those the
- * admin UI renders as a password field (`ui:widget: password`), such as a
- * license key or an access token kept in settings rather than in a credential.
+ * List the properties of an object JSON Schema whose value MCP tools may
+ * return: those it declares, except the secrets the admin UI renders as a
+ * password field (`ui:widget: password`), such as a license key or an access
+ * token kept in settings rather than in a credential. Any other stored key is
+ * withheld, so a value is only returned when its schema says it is not a
+ * secret: without a schema (its extension was removed) nothing is returned.
  */
-export const getSecretKeys = (
+export const getReadableKeys = (
   schema: { properties?: Record<string, unknown> } | undefined,
 ): Set<string> =>
   new Set(
     Object.entries(schema?.properties ?? {})
       .filter(
         ([, property]) =>
-          (property as Record<string, unknown> | null)?.['ui:widget'] ===
+          (property as Record<string, unknown> | null)?.['ui:widget'] !==
           'password',
       )
       .map(([key]) => key),

@@ -14,7 +14,7 @@ import type { HexabotMcpRequest } from '../types';
 
 import { HexabotCredentialMcpTools } from './credential-mcp.tools';
 import {
-  getSecretKeys,
+  getReadableKeys,
   omitKeysDeep,
   sanitizeCredential,
   toUserRef,
@@ -99,17 +99,21 @@ describe('toUserRef', () => {
   });
 });
 
-describe('getSecretKeys', () => {
-  it('lists the properties rendered as password fields', () => {
+describe('getReadableKeys', () => {
+  it('lists the declared properties not rendered as password fields', () => {
     expect(
-      getSecretKeys({
+      getReadableKeys({
         properties: {
           license_key: { type: 'string', 'ui:widget': 'password' },
           default_rag_helper: { type: 'string' },
         },
       }),
-    ).toEqual(new Set(['license_key']));
-    expect(getSecretKeys(undefined)).toEqual(new Set());
+    ).toEqual(new Set(['default_rag_helper']));
+  });
+
+  it('lists nothing without a schema or declared properties', () => {
+    expect(getReadableKeys(undefined)).toEqual(new Set());
+    expect(getReadableKeys({})).toEqual(new Set());
   });
 });
 

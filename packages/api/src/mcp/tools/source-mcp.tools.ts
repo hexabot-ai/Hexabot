@@ -31,7 +31,7 @@ import {
   paginationSchema,
   uuidSchema,
 } from './hexabot-mcp.schemas';
-import { getSecretKeys, hasSecretValue } from './hexabot-mcp.utils';
+import { getReadableKeys, hasSecretValue } from './hexabot-mcp.utils';
 
 type SourceLike = { channel: string; settings: Record<string, unknown> };
 
@@ -68,7 +68,7 @@ export class HexabotSourceMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_source_search',
     description:
-      'Search channel sources: the instances of a channel that receive messages, each with its settings and the workflow that handles them (defaultWorkflow). Secret settings are listed in secretSettings instead of returned.',
+      'Search channel sources: the instances of a channel that receive messages, each with its settings and the workflow that handles them (defaultWorkflow). Secret settings (password fields, and every setting of a source whose channel is no longer registered) are named in secretSettings instead of returned.',
     parameters: z.object({
       query: z.string().optional(),
       channel: z.string().optional(),
@@ -111,7 +111,7 @@ export class HexabotSourceMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_source_get',
     description:
-      'Read one channel source. Secret settings are listed in secretSettings instead of returned.',
+      'Read one channel source. Secret settings (password fields, and every setting of a source whose channel is no longer registered) are named in secretSettings instead of returned.',
     parameters: z.object({
       id: uuidSchema,
     }),
@@ -213,23 +213,29 @@ export class HexabotSourceMcpTools extends HexabotMcpToolBase {
   }
 
   /**
-   * Drop the secret settings of a source (password fields of its channel's
-   * settings schema), and name those that have a value in `secretSettings`.
+   * Keep only the settings of a source its channel's settings schema declares
+   * as readable (`getReadableKeys`), and name the others that have a value in
+   * `secretSettings`. A source whose channel is no longer registered (its
+   * extension was removed; the source is only disabled) keeps its settings,
+   * secrets included, but has no schema: all of them are withheld.
    */
   private withoutSecretSettings<T extends SourceLike>(source: T) {
-    const secretKeys = getSecretKeys(
-      this.getSettingsSchema(source.channel) as
-        | { properties?: Record<string, unknown> }
-        | undefined,
+    let schema: ReturnType<typeof this.getSettingsSchema>;
+    try {
+      schema = this.getSettingsSchema(source.channel);
+    } catch {
+      schema = undefined;
+    }
+    const readableKeys = getReadableKeys(
+      schema as { properties?: Record<string, unknown> } | undefined,
     );
+    const entries = Object.entries(source.settings ?? {});
     const settings = Object.fromEntries(
-      Object.entries(source.settings ?? {}).filter(
-        ([key]) => !secretKeys.has(key),
-      ),
+      entries.filter(([key]) => readableKeys.has(key)),
     );
-    const secretSettings = [...secretKeys].filter((key) =>
-      hasSecretValue(source.settings?.[key]),
-    );
+    const secretSettings = entries
+      .filter(([key, value]) => !readableKeys.has(key) && hasSecretValue(value))
+      .map(([key]) => key);
 
     return { ...source, settings, secretSettings };
   }

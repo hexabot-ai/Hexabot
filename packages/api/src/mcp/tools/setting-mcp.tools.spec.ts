@@ -73,6 +73,47 @@ describe('HexabotSettingMcpTools', () => {
     });
   });
 
+  it('withholds the values of settings no registered schema declares', async () => {
+    // A removed action extension leaves its settings behind; a group's schema
+    // may also stop declaring a setting it used to have.
+    const orphanToken = {
+      id: 'orphan-token-id',
+      group: 'removed_action',
+      label: 'api_token',
+      value: 'orphan-secret',
+    };
+    const legacyKey = {
+      id: 'legacy-key-id',
+      group: 'global_settings',
+      label: 'legacy_key',
+      value: 'legacy-secret',
+    };
+    const tools = buildTools({
+      find: jest.fn().mockResolvedValue([ragHelper, orphanToken, legacyKey]),
+    });
+    const result = await tools.searchSettings({});
+
+    expect(result.items).toEqual([
+      ragHelper,
+      {
+        id: 'orphan-token-id',
+        group: 'removed_action',
+        label: 'api_token',
+        secret: true,
+        hasValue: true,
+      },
+      {
+        id: 'legacy-key-id',
+        group: 'global_settings',
+        label: 'legacy_key',
+        secret: true,
+        hasValue: true,
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toContain('orphan-secret');
+    expect(JSON.stringify(result)).not.toContain('legacy-secret');
+  });
+
   it('reads the schema of a setting group', async () => {
     const tools = buildTools({});
 

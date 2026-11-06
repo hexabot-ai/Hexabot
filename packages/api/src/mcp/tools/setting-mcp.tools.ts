@@ -15,7 +15,7 @@ import { McpPermission } from '../decorators/mcp-permission.decorator';
 import { McpPermissionGuard } from '../guards/mcp-permission.guard';
 
 import { HexabotMcpToolBase } from './hexabot-mcp-tool.base';
-import { getSecretKeys, hasSecretValue } from './hexabot-mcp.utils';
+import { getReadableKeys, hasSecretValue } from './hexabot-mcp.utils';
 
 @Injectable()
 export class HexabotSettingMcpTools extends HexabotMcpToolBase {
@@ -28,7 +28,7 @@ export class HexabotSettingMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_setting_search',
     description:
-      'List runtime settings with their current values, optionally for one group (global_settings, or the group of an action or helper, named after it). Secret settings (password fields) are listed with secret=true and hasValue instead of their value.',
+      'List runtime settings with their current values, optionally for one group (global_settings, or the group of an action or helper, named after it). Secret settings (password fields, and settings no registered schema declares, e.g. those of a removed extension) are listed with secret=true and hasValue instead of their value.',
     parameters: z.object({
       group: z.string().min(1).optional(),
     }),
@@ -42,7 +42,7 @@ export class HexabotSettingMcpTools extends HexabotMcpToolBase {
     const items = settings.map((setting) =>
       this.withoutSecretValue(
         setting,
-        getSecretKeys(schemas[setting.group]?.schema),
+        getReadableKeys(schemas[setting.group]?.schema),
       ),
     );
 
@@ -104,15 +104,16 @@ export class HexabotSettingMcpTools extends HexabotMcpToolBase {
 
     return this.withoutSecretValue(
       updated,
-      getSecretKeys(schemas[updated.group]?.schema),
+      getReadableKeys(schemas[updated.group]?.schema),
     );
   }
 
   /**
-   * Replace the value of a secret setting with whether it has one.
+   * Replace the value of a setting its group's schema does not declare as
+   * readable (`getReadableKeys`) with whether it has one.
    */
-  private withoutSecretValue(setting: Setting, secretLabels: Set<string>) {
-    if (!secretLabels.has(setting.label)) {
+  private withoutSecretValue(setting: Setting, readableLabels: Set<string>) {
+    if (readableLabels.has(setting.label)) {
       return setting;
     }
 

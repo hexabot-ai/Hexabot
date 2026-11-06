@@ -78,6 +78,64 @@ describe('HexabotSourceMcpTools', () => {
     expect(JSON.stringify(result)).not.toContain('secret-bot-token');
   });
 
+  it('withholds every setting of a source whose channel is no longer registered', async () => {
+    // Removing a channel extension only disables its sources: their settings,
+    // secrets included, stay stored, but no schema says which are secrets.
+    const orphan = {
+      ...source,
+      id: 'orphan-id',
+      channel: 'messenger',
+      state: false,
+      settings: { page_token: 'secret-page-token', greeting: 'Hi!', empty: '' },
+    };
+    const tools = buildTools({
+      findOneAndPopulate: jest.fn().mockResolvedValue(orphan),
+    });
+    const result = await tools.getSource({ id: 'orphan-id' });
+
+    expect(result).toEqual({
+      ...orphan,
+      settings: {},
+      secretSettings: ['page_token', 'greeting'],
+    });
+    expect(JSON.stringify(result)).not.toContain('secret-page-token');
+  });
+
+  it('withholds the settings its channel schema does not declare', async () => {
+    const tools = buildTools({
+      findOneAndPopulate: jest.fn().mockResolvedValue({
+        ...source,
+        settings: { ...source.settings, legacy_secret: 'old-secret' },
+      }),
+    });
+    const result = await tools.getSource({ id: 'source-id' });
+
+    expect(result.settings).toEqual({ greeting: 'Hi!' });
+    expect(result.secretSettings).toEqual(['bot_token', 'legacy_secret']);
+    expect(JSON.stringify(result)).not.toContain('old-secret');
+  });
+
+  it('withholds every setting when its channel schema cannot be built', async () => {
+    const tools = new HexabotSourceMcpTools(
+      {
+        findOneAndPopulate: jest.fn().mockResolvedValue(source),
+      } as any,
+      {
+        findChannel: () => ({
+          ...handler,
+          getSourceSettingsSchema: () => {
+            throw new Error('Unrepresentable schema');
+          },
+        }),
+      } as any,
+      { getJsonSchemaLocalizationOptions: () => ({}) } as any,
+    );
+    const result = await tools.getSource({ id: 'source-id' });
+
+    expect(result.settings).toEqual({});
+    expect(result.secretSettings).toEqual(['bot_token', 'greeting']);
+  });
+
   it('searches sources without the values of their secret settings', async () => {
     const sourceService = {
       findAndPopulate: jest.fn().mockResolvedValue([source]),

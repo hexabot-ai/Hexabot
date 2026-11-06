@@ -263,9 +263,12 @@ exists`).
 
 `hexabot_setting_update` validates the value like `PATCH /api/setting/:id`;
 a refused value is reported with the reason, e.g. the helpers a
-`default_*_helper` setting accepts. A secret setting (one the admin UI renders
-as a password field, `ui:widget: password`, such as `global_settings.license_key`)
-is returned with `secret: true` and `hasValue` instead of its value.
+`default_*_helper` setting accepts. A setting's value is returned only when
+its group's registered schema declares it and does not mark it as a secret
+(a password field in the admin UI, `ui:widget: password`, such as
+`global_settings.license_key`). Any other setting, including those a removed
+extension left behind, is returned with `secret: true` and `hasValue` instead
+of its value.
 
 ### Channel sources
 
@@ -279,9 +282,12 @@ is returned with `secret: true` and `hasValue` instead of its value.
 
 `hexabot_source_update` merges the `settings` it receives into the current
 ones, so settings it leaves out keep their value; `defaultWorkflow: null`
-clears the workflow. Secret source settings (password fields of the channel's
-settings schema) are left out of `settings` and named in `secretSettings`
-when they have a value. A source's channel cannot change through MCP.
+clears the workflow. A source setting is returned only when its channel's
+settings schema declares it and does not mark it as a password field; the
+others are left out of `settings` and named in `secretSettings` when they have
+a value. Removing a channel extension only disables its sources, which keep
+their settings: with no schema left, all of them are withheld. A source's
+channel cannot change through MCP.
 
 ### MCP servers
 
