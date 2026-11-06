@@ -6,12 +6,17 @@
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
+import { SourceOrmEntity } from '@/channel/entities/source.entity';
+import { SubscriberRepository } from '@/chat/repositories/subscriber.repository';
 import { MessageService } from '@/chat/services/message.service';
 import {
   installStatsFixturesTypeOrm,
   statsFixtures,
 } from '@/utils/test/fixtures/stats';
+import { installSubscriberFixturesTypeOrm } from '@/utils/test/fixtures/subscriber';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
@@ -144,25 +149,77 @@ describe('StatsService', () => {
     });
   });
 
-  describe('handleSubscriberPreCreate', () => {
-    it('should emit new users stat entry', async () => {
-      const emitSpy = jest.spyOn(eventEmitter, 'emitAsync');
-      const subscriber = { id: 'subscriber-id', first_name: 'John' };
-      const event = {
-        entity: {
-          toPlainCls: () => subscriber,
+  describe('new users', () => {
+    let subscriberModule: TestingModule;
+    let subscriberStatsService: StatsService;
+    let subscriberRepository: SubscriberRepository;
+    let subscriberEventEmitter: EventEmitter2;
+    let sourceId: string;
+
+    beforeAll(async () => {
+      const testing = await buildTestingMocks({
+        autoInjectFrom: ['providers'],
+        providers: [
+          StatsService,
+          SubscriberRepository,
+          { provide: WorkflowService, useValue: workflowService },
+          { provide: WorkflowRunService, useValue: workflowRunService },
+          { provide: MessageService, useValue: messageService },
+        ],
+        typeorm: {
+          fixtures: installSubscriberFixturesTypeOrm,
         },
-      } as any;
+      });
+      subscriberModule = testing.module;
+      // Registers the @OnEvent listeners
+      await subscriberModule.init();
+      [subscriberStatsService, subscriberRepository, subscriberEventEmitter] =
+        await testing.getMocks([
+          StatsService,
+          SubscriberRepository,
+          EventEmitter2,
+        ]);
+      const [source] = await subscriberModule
+        .get<Repository<SourceOrmEntity>>(getRepositoryToken(SourceOrmEntity))
+        .find({ take: 1 });
+      sourceId = source.id;
+    });
 
-      await statsService.handleSubscriberPreCreate(event);
+    afterAll(async () => {
+      await subscriberModule.close();
+    });
 
-      expect(emitSpy).toHaveBeenCalledTimes(1);
+    it('should count a new user once the subscriber is created', async () => {
+      const emitSpy = jest.spyOn(subscriberEventEmitter, 'emitAsync');
+      const subscriber = await subscriberRepository.create({
+        foreignId: 'new-visitor',
+        firstName: 'New',
+        lastName: 'Visitor',
+        locale: null,
+        timezone: 0,
+        gender: null,
+        country: null,
+        labels: [],
+        assignedTo: null,
+        assignedAt: null,
+        lastvisit: null,
+        retainedFrom: null,
+        avatar: null,
+        channel: { name: 'web-channel' },
+        source: sourceId,
+      });
+
       expect(emitSpy).toHaveBeenCalledWith(
         'hook:stats:entry',
         StatsType.new_users,
         'New users',
         subscriber,
       );
+      await expect(
+        subscriberStatsService.findOne({
+          where: { type: StatsType.new_users, name: 'New users' },
+        }),
+      ).resolves.toMatchObject({ value: 1 });
     });
   });
 
