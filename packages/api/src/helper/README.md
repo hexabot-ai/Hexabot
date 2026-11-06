@@ -34,6 +34,16 @@ that produced them. All of it is shared for one reason: two helpers that
 disagreed on any of it would produce indexes that cannot be compared or
 migrated between.
 
+`embedChunks` sends at most 4 provider requests at once and retries a
+rate-limited (429) or failed (5xx) request twice, with exponential backoff; each
+request has its own 60 s timeout. Providers without batch embedding (e.g. Amazon
+Bedrock Titan) send one request per chunk, so without the cap a document fans
+out into as many parallel requests as it has chunks. A helper can expose the
+optional `embedding_max_parallel_calls` and `embedding_max_retries` settings to
+override these defaults. When retries are exhausted, `isRateLimitError` tells a
+rate limit apart from other failures, so a durable queue can pause instead of
+failing its next jobs too.
+
 The CMS lifecycle hooks forwarded to `index` and `remove` are best-effort
 latency signals. They are not durable change capture: a process failure after
 the CMS transaction commits, direct SQL, or another writer can cause an
