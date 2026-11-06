@@ -25,6 +25,15 @@ const actor = {
 const request = {
   hexabotUser: actor,
 } as HexabotMcpRequest;
+const author = {
+  ...actor,
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  sendEmail: false,
+  resetCount: 1,
+  resetToken: '$2a$10$pendingPasswordResetTokenHash',
+  provider: { strategy: 'local' },
+};
 const defaultWorkflowService = () => ({
   findOneAndPopulate: jest.fn().mockResolvedValue({ id: 'workflow-id' }),
 });
@@ -252,6 +261,45 @@ describe('HexabotWorkflowVersionMcpTools', () => {
       skip: 0,
     });
     expect(result.items[0]).not.toHaveProperty('definitionYml');
+  });
+
+  it('reduces the version author to its id and name', async () => {
+    const version = {
+      id: 'version-id',
+      version: 3,
+      definitionYml: 'defs: {}\nflow: []\noutputs: {}\n',
+      checksum: 'checksum',
+      workflow: { id: 'workflow-id', createdBy: actor.id },
+      createdBy: author,
+    };
+    const workflowVersionService = {
+      findOneAndPopulate: jest.fn().mockResolvedValue(version),
+      findAndPopulate: jest.fn().mockResolvedValue([version]),
+      count: jest.fn().mockResolvedValue(1),
+    };
+    const tools = buildWorkflowVersionTools({ workflowVersionService });
+    const summaries = [
+      await tools.getWorkflowVersion({ id: 'version-id' }),
+      (
+        await tools.searchWorkflowVersions({
+          workflowId: 'workflow-id',
+          limit: 20,
+          skip: 0,
+          sortBy: 'version',
+          sortDirection: 'DESC',
+        })
+      ).items[0],
+    ];
+
+    for (const summary of summaries) {
+      expect(summary?.createdBy).toEqual({
+        id: 'user-id',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+      });
+      expect(JSON.stringify(summary)).not.toContain(author.resetToken);
+      expect(JSON.stringify(summary)).not.toContain(author.email);
+    }
   });
 
   it('returns exact workflow YAML chunks with checksum metadata', async () => {

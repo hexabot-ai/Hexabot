@@ -139,6 +139,20 @@ client, but the effective configuration should be equivalent to:
 
 ## Tool surface
 
+Tools never return a whole user record. A populated user relation (`createdBy`
+of workflows and versions, `triggeredBy` of runs, user or subscriber, `owner`
+of credentials) is reduced to `{ id, firstName, lastName }`; an unpopulated one
+stays a plain id. So is the copy of the initiator a run keeps in its context
+for its workflow to read (`context.initiator`, also in an embedded
+`parentRun`): it stays whole in the database, since workflows may use any of
+its fields. The email, roles, provider and password-reset state of users are
+therefore never returned.
+
+Secrets are write-only: tools accept credential values and secret settings,
+but never return them (see each section below). The MCP server does not log
+request bodies or tool results either: the `debug` level of `@rekog/mcp-nest`,
+which prints both in full, is turned off (`logging` in `mcp-api.module.ts`).
+
 ### Workflows
 
 | Tool                              | Permission               | Purpose                                                                                      |
@@ -154,7 +168,7 @@ client, but the effective configuration should be equivalent to:
 | `hexabot_workflow_rollback`       | `workflowversion:create` | Roll back to a previous version by creating a new restore snapshot.                          |
 | `hexabot_workflow_publish`        | `workflow:update`        | Publish the current workflow version.                                                        |
 | `hexabot_workflow_unpublish`      | `workflow:update`        | Clear the published workflow version.                                                        |
-| `hexabot_workflow_run`            | `workflowrun:create`     | Run a manual or scheduled workflow and return the run summary.                               |
+| `hexabot_workflow_run`            | `workflowrun:create`     | Run a manual or scheduled workflow and return the run summary, or its ID while it runs.      |
 
 Workflow YAML is validated with `parseWorkflowDefinition()` before a version is
 created. Coding agents can call `hexabot_workflow_yaml_validate` first to get
@@ -188,6 +202,15 @@ fields from populated workflow-version relations, and the resume checkpoint.
 `hexabot_workflow_run` and `hexabot_workflow_run_pending` replace the checkpoint
 with `openWaits` (`waitId`, `reason`, `step`, `data`), its only content the run
 output and step log do not hold; the pending tool lists admin waits only.
+`hexabot_workflow_run` waits for the run to finish, fail or suspend for at
+most `waitTimeoutSeconds` (default 30, at most 300), under the 60 s request
+timeout of MCP SDK clients. A run still going then, or any run with
+`wait: false`, is returned right away with `inProgress: true` and its status
+(`idle` or `running`), and goes on server-side: poll
+`hexabot_workflow_run_get` with its `id`. Calling the tool again would start
+another run. A step that refuses the input once the run resumed is reported
+as an error only while the tool still waits; afterwards the run is back to
+`suspended` on the same wait.
 `hexabot_workflow_run` can reach a suspended run of the workflow that waits
 for outside input instead of starting a new run. When that run refuses the
 input, or another request resumed it first, the tool returns an error (its
@@ -218,14 +241,53 @@ executed YAML once as top-level `workflowDefinitionYml` only when
 
 ### Credentials
 
-| Tool                        | Permission        | Purpose                                      |
-| --------------------------- | ----------------- | -------------------------------------------- |
-| `hexabot_credential_search` | `credential:read` | Search credential metadata by name or owner. |
-| `hexabot_credential_get`    | `credential:read` | Read credential metadata.                    |
+| Tool                        | Permission          | Purpose                                                 |
+| --------------------------- | ------------------- | ------------------------------------------------------- |
+| `hexabot_credential_search` | `credential:read`   | Search credential metadata by name or owner.            |
+| `hexabot_credential_get`    | `credential:read`   | Read credential metadata.                               |
+| `hexabot_credential_create` | `credential:create` | Store a secret as a credential owned by the token user. |
+| `hexabot_credential_update` | `credential:update` | Rename a credential or replace its secret value.        |
 
-Credential secret values are never returned. The MCP tools remove the `value`
+Credential secret values are write-only. The MCP tools remove the `value`
 field from all credential responses and do not support searching by secret
-value.
+value. A name another credential has is refused (`A credential named ... already
+exists`).
+
+### Settings
+
+| Tool                         | Permission       | Purpose                                                           |
+| ---------------------------- | ---------------- | ----------------------------------------------------------------- |
+| `hexabot_setting_search`     | `setting:read`   | List runtime settings and their values, optionally for one group. |
+| `hexabot_setting_schema_get` | `setting:read`   | Read the JSON Schema of one setting group.                        |
+| `hexabot_setting_update`     | `setting:update` | Set one setting, addressed by `group` and `label`.                |
+
+`hexabot_setting_update` validates the value like `PATCH /api/setting/:id`;
+a refused value is reported with the reason, e.g. the helpers a
+`default_*_helper` setting accepts. A setting's value is returned only when
+its group's registered schema declares it and does not mark it as a secret
+(a password field in the admin UI, `ui:widget: password`, such as
+`global_settings.license_key`). Any other setting, including those a removed
+extension left behind, is returned with `secret: true` and `hasValue` instead
+of its value.
+
+### Channel sources
+
+| Tool                     | Permission      | Purpose                                                                 |
+| ------------------------ | --------------- | ----------------------------------------------------------------------- |
+| `hexabot_channel_search` | `source:read`   | List registered channels with the JSON Schema of their source settings. |
+| `hexabot_source_search`  | `source:read`   | Search channel sources by name, channel, state or default workflow.     |
+| `hexabot_source_get`     | `source:read`   | Read one channel source.                                                |
+| `hexabot_source_create`  | `source:create` | Create a source of a registered channel.                                |
+| `hexabot_source_update`  | `source:update` | Set the name, state, `defaultWorkflow` or some settings of a source.    |
+
+`hexabot_source_update` merges the `settings` it receives into the current
+ones, so settings it leaves out keep their value; `defaultWorkflow: null`
+clears the workflow. A source setting is returned only when its channel's
+settings schema declares it and does not mark it as a password field; the
+others are left out of `settings` and named in `secretSettings` when they have
+a value. Removing a channel extension only disables its sources, which keep
+their settings: with no schema left, all of them are withheld. A source's
+channel cannot change through MCP.
 
 ### MCP servers
 
@@ -263,6 +325,8 @@ Each tool should:
 3. Use `@McpPermission(model, action)` with existing Hexabot permission models.
 4. Return plain JSON-serializable data.
 5. Avoid exposing secrets, tokens, connection strings, or raw credential values.
+6. Reduce populated user relations with `toUserRef` (`tools/hexabot-mcp.utils.ts`)
+   instead of returning the user record.
 
 If a tool changes API behavior or a public contract, update this README and the
 relevant tests in `packages/api/src/mcp`.

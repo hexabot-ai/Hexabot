@@ -4,13 +4,83 @@
  * Full terms: see LICENSE.md.
  */
 
+export type McpUserRef = {
+  id: string;
+  firstName: string;
+  lastName: string;
+};
+
+export type UserRelation =
+  | string
+  | { id: string; firstName: string; lastName: string }
+  | null
+  | undefined;
+
+/**
+ * Reduce a populated user (or subscriber) relation to its id and name. The
+ * populated relation is the whole record (email, roles, provider, password
+ * reset state), which MCP clients never need and must not receive. An id, or
+ * a missing relation, is returned as is.
+ */
+export const toUserRef = (
+  relation: UserRelation,
+): McpUserRef | string | null | undefined => {
+  if (relation == null || typeof relation === 'string') {
+    return relation;
+  }
+
+  return {
+    id: relation.id,
+    firstName: relation.firstName,
+    lastName: relation.lastName,
+  };
+};
+
+/**
+ * Make a credential safe for MCP output: drop its secret value and reduce its
+ * populated owner to a user reference.
+ */
 export const sanitizeCredential = <T extends Record<string, unknown>>(
   credential: T,
 ): Omit<T, 'value'> => {
   const { value: _value, ...safeCredential } = credential;
 
-  return safeCredential;
+  if (!('owner' in safeCredential)) {
+    return safeCredential;
+  }
+
+  return {
+    ...safeCredential,
+    owner: toUserRef(safeCredential.owner as UserRelation),
+  } as Omit<T, 'value'>;
 };
+
+/**
+ * List the properties of an object JSON Schema whose value MCP tools may
+ * return: those it declares, except the secrets the admin UI renders as a
+ * password field (`ui:widget: password`), such as a license key or an access
+ * token kept in settings rather than in a credential. Any other stored key is
+ * withheld, so a value is only returned when its schema says it is not a
+ * secret: without a schema (its extension was removed) nothing is returned.
+ */
+export const getReadableKeys = (
+  schema: { properties?: Record<string, unknown> } | undefined,
+): Set<string> =>
+  new Set(
+    Object.entries(schema?.properties ?? {})
+      .filter(
+        ([, property]) =>
+          (property as Record<string, unknown> | null)?.['ui:widget'] !==
+          'password',
+      )
+      .map(([key]) => key),
+  );
+
+/**
+ * Tell whether a secret holds a value, without returning it.
+ */
+export const hasSecretValue = (value: unknown): boolean =>
+  value !== undefined && value !== null && value !== '';
 
 export const omitKeysDeep = <T>(value: T, keys: readonly string[]): T => {
   if (Array.isArray(value)) {

@@ -55,10 +55,10 @@ export const config: Config = {
     serverVersion: process.env.MCP_SERVER_VERSION || '1.0.0',
     serverDescription:
       process.env.MCP_SERVER_DESCRIPTION ||
-      'Manage Hexabot workflows, runs, memory, credentials, actions, and CMS content.',
+      'Manage Hexabot workflows, runs, memory, credentials, settings, channel sources, actions, and CMS content.',
     serverInstructions:
       process.env.MCP_SERVER_INSTRUCTIONS ||
-      'Use these tools to inspect and manage Hexabot API resources. Credential values are never exposed.',
+      'Use these tools to inspect and manage Hexabot API resources. Credential values and secret settings are write-only: they are never returned.',
   },
   workflow: {
     runClaimTtl: Math.max(

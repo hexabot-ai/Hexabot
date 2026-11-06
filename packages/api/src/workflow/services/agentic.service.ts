@@ -48,6 +48,8 @@ import { WorkflowService } from './workflow.service';
 
 const EVENT_FAILURE_MESSAGE =
   'Unable to process incoming event through agentic workflow';
+/** What a wait with a timeout resolves with once it elapsed. */
+const WAIT_TIMED_OUT = Symbol('wait timed out');
 
 /** How an event is routed to its run. */
 type DispatchOptions = {
@@ -184,6 +186,10 @@ export class AgenticService implements WorkflowCallService {
    * the run's updates report how it goes on, including a step refusing the
    * payload, which puts the run back on its wait. A parent the event sends a
    * failed result to then goes on alongside the new run, not before it.
+   * @param options.waitTimeoutMs - Wait for the pass at most this long, for
+   * callers whose own request times out, such as MCP clients. A pass still
+   * going then goes on in the background, as with `wait: false`, and the run
+   * is returned as it is then (`idle` or `running`). Unbounded by default.
    * @param options.resume - Let the event resume a suspended run of its
    * initiator (default). With `false`, it always starts a new run, for
    * callers that only act on the initiator's behalf, such as an anonymous
@@ -194,8 +200,14 @@ export class AgenticService implements WorkflowCallService {
     {
       workflow,
       wait = true,
+      waitTimeoutMs,
       resume = true,
-    }: { workflow?: WorkflowFull; wait?: boolean; resume?: boolean } = {},
+    }: {
+      workflow?: WorkflowFull;
+      wait?: boolean;
+      waitTimeoutMs?: number;
+      resume?: boolean;
+    } = {},
   ): Promise<TriggerEventOutcome> {
     const dispatched = await this.dispatchOrLog(event, {
       workflow,
@@ -216,7 +228,19 @@ export class AgenticService implements WorkflowCallService {
       return { status: 'dispatched', run: dispatched.run };
     }
 
-    const proceeded = await this.proceedOrLog(dispatched);
+    const proceeding = this.proceedOrLog(dispatched);
+    const proceeded = await this.within(proceeding, waitTimeoutMs);
+    if (proceeded === WAIT_TIMED_OUT) {
+      // `proceedOrLog` never rejects: the job only tracks the pass.
+      this.jobs.spawn(() => proceeding, EVENT_FAILURE_MESSAGE, {
+        runId: dispatched.run.id,
+      });
+      const run = await this.workflowRunService.findOneAndPopulate(
+        dispatched.run.id,
+      );
+
+      return { status: 'dispatched', run: run ?? dispatched.run };
+    }
     if (!proceeded) {
       return { status: 'unprocessed' };
     }
@@ -386,6 +410,33 @@ export class AgenticService implements WorkflowCallService {
       this.logger.error(EVENT_FAILURE_MESSAGE, err);
 
       return null;
+    }
+  }
+
+  /**
+   * Wait for work, for at most `timeoutMs` when set.
+   *
+   * @returns What the work resolved with, or {@link WAIT_TIMED_OUT} once
+   * `timeoutMs` elapsed; the work then goes on.
+   */
+  private async within<T>(
+    work: Promise<T>,
+    timeoutMs?: number,
+  ): Promise<T | typeof WAIT_TIMED_OUT> {
+    if (timeoutMs === undefined) {
+      return await work;
+    }
+
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        work,
+        new Promise<typeof WAIT_TIMED_OUT>((resolve) => {
+          timer = setTimeout(() => resolve(WAIT_TIMED_OUT), timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

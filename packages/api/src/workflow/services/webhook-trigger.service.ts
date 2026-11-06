@@ -174,6 +174,9 @@ export class WebhookTriggerService {
    * @param options.wait - Wait for the run to finish, fail or suspend
    * (default). With `false`, return the run as soon as the event reached it
    * (see `AgenticService.triggerEvent`); its pass goes on in the background.
+   * @param options.waitTimeoutMs - Wait at most this long; a pass still going
+   * then goes on in the background, and the run is returned as it is then.
+   * Unbounded by default.
    * @param options.resume - Let the event resume a suspended run of the
    * initiator (default). With `false`, it always starts a new run.
    * @returns The run.
@@ -190,7 +193,11 @@ export class WebhookTriggerService {
     workflow: WorkflowFull,
     event: TriggerEventWrapper,
     initiatorId: string | null,
-    { wait = true, resume = true }: { wait?: boolean; resume?: boolean } = {},
+    {
+      wait = true,
+      waitTimeoutMs,
+      resume = true,
+    }: { wait?: boolean; waitTimeoutMs?: number; resume?: boolean } = {},
   ): Promise<WorkflowRunFull> {
     const initiator = initiatorId
       ? await this.userService.findOne(initiatorId)
@@ -203,6 +210,7 @@ export class WebhookTriggerService {
     const outcome = await this.agenticService.triggerEvent(event, {
       workflow,
       wait,
+      waitTimeoutMs,
       resume,
     });
     switch (outcome.status) {

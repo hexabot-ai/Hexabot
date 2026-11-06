@@ -206,7 +206,8 @@ export type TriggerEventOutcome =
   /**
    * The event reached its run: created (`idle`), resumed (`running`), or
    * held by a run that waits on a workflow it called. When the caller
-   * waited, the run as it is once its pass is over.
+   * waited, the run as it is once its pass is over or, when its wait timed
+   * out first, as it is then (`idle` or `running`), its pass going on.
    */
   | { status: 'dispatched'; run: WorkflowRunFull }
   /**

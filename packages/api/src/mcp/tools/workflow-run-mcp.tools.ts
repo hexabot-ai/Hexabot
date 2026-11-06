@@ -31,7 +31,7 @@ import {
 import { WebhookTriggerService } from '@/workflow/services/webhook-trigger.service';
 import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
-import { WorkflowType } from '@/workflow/types';
+import { CLAIMED_WORKFLOW_RUN_STATUSES, WorkflowType } from '@/workflow/types';
 
 import { McpPermission } from '../decorators/mcp-permission.decorator';
 import { McpPermissionGuard } from '../guards/mcp-permission.guard';
@@ -44,9 +44,20 @@ import {
   paginationSchema,
   uuidSchema,
 } from './hexabot-mcp.schemas';
-import { omitKeysDeep, resolveRelationId } from './hexabot-mcp.utils';
+import {
+  omitKeysDeep,
+  resolveRelationId,
+  toUserRef,
+  type UserRelation,
+} from './hexabot-mcp.utils';
 
 const WORKFLOW_DEFINITION_RESPONSE_KEYS = ['definitionYml'] as const;
+/**
+ * How long `hexabot_workflow_run` waits for the run by default: under the
+ * 60 s request timeout of MCP SDK clients, and of a proxy in front of the API.
+ */
+const DEFAULT_RUN_WAIT_TIMEOUT_SECONDS = 30;
+const MAX_RUN_WAIT_TIMEOUT_SECONDS = 300;
 
 @Injectable()
 export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
@@ -62,15 +73,26 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
   @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_run',
-    description:
-      'Run a manual or scheduled workflow and return the run summary.',
+    description: `Run a manual or scheduled workflow and return the run summary. Waits until the run finishes, fails or suspends, for at most waitTimeoutSeconds (default ${DEFAULT_RUN_WAIT_TIMEOUT_SECONDS}). A run still going then, or with wait=false, is returned at once with inProgress=true and keeps running server-side: poll hexabot_workflow_run_get with run.id until its status is no longer idle or running. Do not call this tool again to get the result: that starts another run.`,
     parameters: z.object({
       workflowId: uuidSchema,
       input: jsonObjectSchema.default({}),
+      wait: z.boolean().default(true),
+      waitTimeoutSeconds: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_RUN_WAIT_TIMEOUT_SECONDS)
+        .default(DEFAULT_RUN_WAIT_TIMEOUT_SECONDS),
     }),
   })
   async runWorkflow(
-    args: { workflowId: string; input: Record<string, unknown> },
+    args: {
+      workflowId: string;
+      input: Record<string, unknown>;
+      wait?: boolean;
+      waitTimeoutSeconds?: number;
+    },
     _context: unknown,
     request?: HexabotMcpRequest,
   ) {
@@ -110,10 +132,16 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       workflow,
       event,
       actor.id,
+      {
+        wait: args.wait ?? true,
+        waitTimeoutMs:
+          (args.waitTimeoutSeconds ?? DEFAULT_RUN_WAIT_TIMEOUT_SECONDS) * 1000,
+      },
     );
 
     return {
       accepted: true,
+      inProgress: CLAIMED_WORKFLOW_RUN_STATUSES.includes(run.status),
       run: this.withoutWorkflowDefinition(this.withOpenWaits(run)),
     };
   }
@@ -191,7 +219,9 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       throw new NotFoundException(`Workflow run ${args.id} not found`);
     }
 
-    return this.withoutWorkflowDefinition(this.withoutCheckpoint(run));
+    return this.withoutWorkflowDefinition(
+      this.withUserRefs(this.withoutCheckpoint(run)),
+    );
   }
 
   @McpPermission('workflowrun', Action.READ)
@@ -237,13 +267,15 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       : ([null, [], 0] as const);
     const includeWorkflowDefinition = args.includeWorkflowDefinition ?? true;
     const response: Record<string, unknown> = {
-      run: this.withoutWorkflowDefinition(run),
+      run: this.withoutWorkflowDefinition(this.withUserRefs(run)),
       relatedRuns: {
         parent: this.withoutWorkflowDefinition(
-          this.withoutCheckpoint(parentRun),
+          this.withUserRefs(this.withoutCheckpoint(parentRun)),
         ),
         children: this.withoutWorkflowDefinition(
-          childRuns.map((childRun) => this.withoutCheckpoint(childRun)),
+          childRuns.map((childRun) =>
+            this.withUserRefs(this.withoutCheckpoint(childRun)),
+          ),
         ),
         childRunTotal,
         childRunsLimit: includeRelatedRuns ? childRunsLimit : 0,
@@ -333,7 +365,9 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     return {
       ...response,
       items: this.withoutWorkflowDefinition(
-        response.items.map((item) => this.withoutCheckpoint(item)),
+        response.items.map((item) =>
+          this.withUserRefs(this.withoutCheckpoint(item)),
+        ),
       ),
     };
   }
@@ -349,7 +383,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     filter: (wait: WaitInfo) => boolean = () => true,
   ) {
     return {
-      ...this.withoutCheckpoint(run),
+      ...this.withUserRefs(this.withoutCheckpoint(run)),
       openWaits: getOpenWaits(run)
         .filter(filter)
         .map(({ waitId, reason, step, data }) => ({
@@ -374,6 +408,50 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
     const { checkpoint: _checkpoint, ...rest } = run as Record<string, unknown>;
 
     return rest as T;
+  }
+
+  /**
+   * Reduce the users a run holds to their id and name (`toUserRef`): the user
+   * or subscriber that triggered it (`triggeredBy`), and the copy of their
+   * whole record its context keeps for its workflow (`context.initiator`).
+   * The parent run it embeds keeps such a copy too. Only the run's own keys
+   * are reduced, never user data elsewhere in its context.
+   */
+  private withUserRefs<T>(run: T): T {
+    if (!run || typeof run !== 'object') {
+      return run;
+    }
+
+    const { context, parentRun } = run as {
+      context?: unknown;
+      parentRun?: unknown;
+    };
+    const initiator =
+      context && typeof context === 'object' && 'initiator' in context
+        ? context.initiator
+        : undefined;
+
+    return {
+      ...run,
+      ...('triggeredBy' in run
+        ? {
+            triggeredBy: toUserRef(
+              run.triggeredBy as WorkflowRunFull['triggeredBy'],
+            ),
+          }
+        : {}),
+      ...(initiator !== undefined
+        ? {
+            context: {
+              ...(context as Record<string, unknown>),
+              initiator: toUserRef(initiator as UserRelation),
+            },
+          }
+        : {}),
+      ...(parentRun && typeof parentRun === 'object'
+        ? { parentRun: this.withUserRefs(parentRun) }
+        : {}),
+    } as T;
   }
 
   private withoutWorkflowDefinition<T>(value: T): T {
