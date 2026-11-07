@@ -209,17 +209,6 @@ export const aiCommonSettingsSchema = z.strictObject({
         hideUntilAdded: true,
       },
     }),
-  stop_step_count: z
-    .int()
-    .positive()
-    .optional()
-    .meta({
-      title: 'Stop step count',
-      description: 'Maximum number of agent steps before stopping.',
-      'ui:options': {
-        hideUntilAdded: true,
-      },
-    }),
   stop_tool_call: z
     .string()
     .trim()

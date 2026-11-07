@@ -164,6 +164,7 @@ describe('AiGenerateTextAction', () => {
       context,
       bindings,
     });
+    const callArgs = generateTextMock.mock.calls[0][0] as any;
 
     expect(loadProviderSpy).toHaveBeenCalledWith('openai', {
       apiKey: 'test-key',
@@ -181,6 +182,8 @@ describe('AiGenerateTextAction', () => {
     );
     expect(buildCallSettingsSpy).toHaveBeenCalledWith(settings);
     expect(createModelSpy).toHaveBeenCalledWith(provider, 'gpt-4o-mini');
+    expect(callArgs.stopWhen).toBeUndefined();
+    expect(stepCountIsMock).not.toHaveBeenCalled();
     expect(generateTextMock).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: 'Hello there',
@@ -319,7 +322,7 @@ describe('AiGenerateTextAction', () => {
     expect(callArgs.system).toContain('- Name: Ada');
   });
 
-  it('defaults stopWhen to bound tools count plus one output step and forwards tool settings', async () => {
+  it('defaults tool-enabled runs to 10 steps and forwards tool settings', async () => {
     const provider = Object.assign(
       jest.fn().mockReturnValue('model-instance'),
       {
@@ -366,10 +369,10 @@ describe('AiGenerateTextAction', () => {
     const callArgs = generateTextMock.mock.calls[0][0] as any;
     const stopWhen = callArgs.stopWhen;
 
-    expect(stepCountIsMock).toHaveBeenCalledWith(3);
+    expect(stepCountIsMock).toHaveBeenCalledWith(10);
     expect(typeof stopWhen).toBe('function');
-    expect(stopWhen({ steps: [{}, {}, {}] })).toBe(true);
-    expect(stopWhen({ steps: [{}, {}] })).toBe(false);
+    expect(stopWhen({ steps: new Array(10).fill({}) })).toBe(true);
+    expect(stopWhen({ steps: new Array(9).fill({}) })).toBe(false);
     await callArgs.tools.search.execute({ query: 'hello' });
     expect(toolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
       locale: 'en',
@@ -518,7 +521,7 @@ describe('AiGenerateTextAction', () => {
       },
     });
     expect(Object.keys(callArgs.tools)).toEqual(['search', 'planner__lookup']);
-    expect(stepCountIsMock).toHaveBeenCalledWith(3);
+    expect(stepCountIsMock).toHaveBeenCalledWith(10);
     await callArgs.tools.search.execute({ query: 'hello' });
     expect(actionToolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
       locale: 'en',
