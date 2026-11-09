@@ -1,0 +1,8 @@
+@use "sass:meta";
+
+// normalize.css, scoped to the widget: loaded as is, it also reset the host
+// page (html, body, headings, buttons, inputs, ...). `:where()` adds no
+// specificity, so inside the widget every rule weighs what it did unscoped.
+:where(.hb-theme-root) {
+  @include meta.load-css("normalize.css/normalize");
+}

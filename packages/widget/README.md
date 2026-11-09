@@ -374,9 +374,11 @@ You can customize the look and feel of the chat widget by modifying the widgetâ€
 
 The launcher (`.hb-launcher`) and the chat window (`.hb-chat-window`) are fixed
 to the bottom-right corner, and the window fills the screen at widths of 450px
-and below. The stock stylesheet declares nothing `!important`, so plain CSS
-overrides it. Prefix selectors with `.hb-theme-root` to win regardless of
-stylesheet order, and keep window offsets out of the phone layout:
+and below. The stock stylesheet styles nothing outside the widget (its
+normalize.css reset is scoped to `.hb-theme-root`) and declares nothing
+`!important`, so plain CSS overrides it. Prefix selectors with
+`.hb-theme-root` to win regardless of stylesheet order, and keep window
+offsets out of the phone layout:
 
 ```css
 /* Clear a 64px sticky footer */
