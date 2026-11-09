@@ -7,20 +7,11 @@
 import {
   DynamicModule,
   Global,
-  Inject,
   InternalServerErrorException,
   Module,
 } from '@nestjs/common';
-import { HttpAdapterHost } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import {
-  I18N_OPTIONS,
-  I18N_TRANSLATIONS,
-  I18nOptions,
-  I18nTranslation,
-  I18nModule as NativeI18nModule,
-} from 'nestjs-i18n';
-import { Observable } from 'rxjs';
+import { I18nOptions, I18nModule as NativeI18nModule } from 'nestjs-i18n';
 
 import { WorkflowModule } from '@/workflow/workflow.module';
 
@@ -36,19 +27,13 @@ import { I18nService } from './services/i18n.service';
 import { LanguageService } from './services/language.service';
 import { TranslationService } from './services/translation.service';
 
+// No constructor: Nest then injects what the installed nestjs-i18n declares.
+// Restating its parameters broke on 10.8, which added `loaders` and
+// `middleware`, so a request rejected before routing (an invalid CSRF token)
+// crashed the library's error middleware into a 500.
 @Global()
 @Module({})
 export class I18nModule extends NativeI18nModule {
-  constructor(
-    i18n: I18nService,
-    @Inject(I18N_TRANSLATIONS)
-    translations: Observable<I18nTranslation>,
-    @Inject(I18N_OPTIONS) i18nOptions: I18nOptions,
-    adapter: HttpAdapterHost,
-  ) {
-    super(i18n, translations, i18nOptions, adapter);
-  }
-
   static forRoot(options: I18nOptions): DynamicModule {
     const { imports, providers, controllers, exports } = super.forRoot(options);
     if (!providers || !exports) {
