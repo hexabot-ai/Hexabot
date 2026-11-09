@@ -36,7 +36,7 @@ import {
   OutgoingMessageState,
 } from "../types/state.types";
 import { SocketIoClientError } from "../utils/SocketIoClientError";
-import { buildWebhookUrl } from "../utils/webhook-url";
+import { buildWebhookUrl, rebaseDownloadUrls } from "../utils/webhook-url";
 
 import { useBroadcastChannel } from "./BroadcastChannelProvider";
 import { useConfig } from "./ConfigProvider";
@@ -78,7 +78,8 @@ const normalizeMessageIdentity = (message: Web.Message) => {
 };
 const toUiMessage = (
   message: Web.Message,
-  profile?: SubscriberFull,
+  profile: SubscriberFull | undefined,
+  apiUrl: string,
 ): UiMessage => {
   const normalized = normalizeMessageIdentity(message);
   const isSentByProfile =
@@ -91,7 +92,7 @@ const toUiMessage = (
   };
 
   return {
-    ...message,
+    ...rebaseDownloadUrls(message, apiUrl),
     ...normalized,
     direction,
     read: direction === Direction.sent || status.read === true,
@@ -117,10 +118,11 @@ export const getQuickReplies = (message?: UiMessage): Suggestion[] =>
 export const preprocessMessages = (
   messages: Web.Message[],
   participants: Participant[],
-  profile?: SubscriberFull,
+  profile: SubscriberFull | undefined,
+  apiUrl: string,
 ) => {
   const arrangedMessages = messages.map((message) =>
-    toUiMessage(message, profile),
+    toUiMessage(message, profile, apiUrl),
   );
   const quickReplies = getQuickReplies(
     arrangedMessages[arrangedMessages.length - 1],
@@ -358,7 +360,7 @@ const ChatProvider: React.FC<{
       return;
     }
 
-    const normalizedMessage = toUiMessage(newMessage, profile);
+    const normalizedMessage = toUiMessage(newMessage, profile, config.apiUrl);
 
     setNewIOMessage(normalizedMessage);
     setShowTypingIndicator(false);
@@ -436,7 +438,12 @@ const ChatProvider: React.FC<{
           getWebhookUrl(queryParams),
         );
         const { quickReplies, arrangedMessages, participantsList } =
-          preprocessMessages(body.messages, participants, body.profile);
+          preprocessMessages(
+            body.messages,
+            participants,
+            body.profile,
+            config.apiUrl,
+          );
 
         setProfile(body.profile);
         setSuggestions(quickReplies);
@@ -556,7 +563,7 @@ const ChatProvider: React.FC<{
     }
 
     const { quickReplies, arrangedMessages, participantsList } =
-      preprocessMessages(messages, participants, profile);
+      preprocessMessages(messages, participants, profile, config.apiUrl);
 
     setSuggestions(quickReplies);
     setMessages(arrangedMessages);

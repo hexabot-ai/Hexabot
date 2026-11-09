@@ -357,6 +357,13 @@ Replace `apiUrl`, `sourceId`, and the other example values with the deployment's
 widget configuration. `transport` is optional and accepts `ws` (default) or
 `polling`.
 
+The widget connects to the origin of `apiUrl`, which may be a same-origin
+proxy in front of the API (for example to keep its session cookie first-party
+in mobile webviews). Attachment download links, which the API builds on
+`API_ORIGIN`, are loaded from that origin too, since the download checks the
+same session. The proxy must then forward `/socket.io` and the API routes
+(such as `/api`).
+
 For stable releases, pin the major version:
 `https://cdn.jsdelivr.net/npm/@hexabot-ai/widget@3/dist/`
 

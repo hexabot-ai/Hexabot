@@ -6,7 +6,11 @@
 
 import { Readable } from 'stream';
 
-import { NotFoundException, StreamableFile } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  StreamableFile,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 
@@ -171,7 +175,7 @@ describe('ChannelAttachmentService', () => {
     expect(attachmentService.download).toHaveBeenCalledWith(stored);
   });
 
-  it('masks access denials as not found', async () => {
+  it('answers forbidden when the channel refuses access', async () => {
     const req = {} as Request;
     jwtService.verify.mockReturnValue({
       id: 'attachment-id',
@@ -187,7 +191,7 @@ describe('ChannelAttachmentService', () => {
 
     await expect(
       service.download('token', req, hasDownloadAccess),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(attachmentService.download).not.toHaveBeenCalled();
   });
 

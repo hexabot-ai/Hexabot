@@ -227,6 +227,30 @@ describe("useChat", () => {
     expect(api.menu).toEqual(menu);
   });
 
+  it("plays attachments from the widget's origin, not API_ORIGIN", async () => {
+    const path = "/api/webhook/web-source/download/voice.webm?t=abc";
+
+    await render(
+      <UiChatWidget config={config} defaultIsOpen>
+        {probe}
+      </UiChatWidget>,
+    );
+    await act(async () =>
+      fake.emit("message", {
+        mid: "m-voice",
+        author: "chatbot",
+        createdAt: "2026-11-09T10:00:00.000Z",
+        type: "file",
+        data: { type: "audio", url: `https://api.example.com${path}` },
+      }),
+    );
+
+    const rebased = `http://localhost:4000${path}`;
+
+    expect(find("audio source")?.getAttribute("src")).toBe(rebased);
+    expect(api.messages[0].data).toMatchObject({ url: rebased });
+  });
+
   it("subscribes the visitor with the names it is given", async () => {
     fake.mock.get.mockResolvedValue({
       statusCode: 200,
