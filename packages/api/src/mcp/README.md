@@ -312,6 +312,10 @@ channel cannot change through MCP.
 | `hexabot_content_update`      | `content:update`     | Update a content record.                          |
 | `hexabot_rag_content_search`  | `content:read`       | Search indexed CMS content through RAG retrieval. |
 
+`hexabot_rag_content_search` takes an optional `properties` list of content
+property keys (e.g. `["url"]`); each hit then carries those keys in
+`properties`, so a client can cite the source page.
+
 ## Extending the MCP module
 
 Add new tools in the focused provider file under `tools/` that matches the

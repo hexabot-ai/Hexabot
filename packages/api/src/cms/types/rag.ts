@@ -18,6 +18,15 @@ export interface RagQueryOptions {
   includeInactive?: boolean;
 }
 
+/**
+ * Options accepted by `ContentService.retrieve`. Only the `RagQueryOptions`
+ * part reaches the RAG helper; the rest is applied to the hits it returns.
+ */
+export interface RagRetrieveOptions extends RagQueryOptions {
+  /** Content property keys to attach to each hit (e.g. `url`). */
+  properties?: string[];
+}
+
 export interface RagHit {
   contentId: string;
   title: string;
@@ -26,4 +35,9 @@ export interface RagHit {
   contentTypeId?: string;
   /** Name of the RAG helper that produced this hit. */
   source: string;
+  /**
+   * Selected content properties, attached by `ContentService.retrieve` when
+   * requested. Helpers do not set it.
+   */
+  properties?: Record<string, unknown>;
 }

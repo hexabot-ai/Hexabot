@@ -8,7 +8,14 @@ import { createHash } from 'node:crypto';
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { EmbeddingModel, embed, embedMany } from 'ai';
+import {
+  APICallError,
+  EmbeddingModel,
+  RetryError,
+  embed,
+  embedMany,
+  wrapEmbeddingModel,
+} from 'ai';
 
 import { RagHelperConfigurationError } from '@/cms/errors/rag.errors';
 
@@ -17,6 +24,8 @@ import { HelperName } from '../types';
 import BaseRagHelper from './base-rag-helper';
 
 const EMBEDDING_TIMEOUT_MS = 60000;
+const DEFAULT_EMBEDDING_MAX_PARALLEL_CALLS = 4;
+const DEFAULT_EMBEDDING_MAX_RETRIES = 2;
 
 /**
  * The embedding configuration every vector RAG helper exposes. Helpers declare
@@ -37,6 +46,17 @@ export interface RagEmbeddingSettings {
   embedding_dimensions: number;
   chunk_size: number;
   chunk_overlap: number;
+  /**
+   * Embedding requests `embedChunks` sends at once. Providers without batch
+   * embedding (e.g. Amazon Bedrock Titan) send one request per chunk.
+   * Defaults to 4.
+   */
+  embedding_max_parallel_calls?: number;
+  /**
+   * Retries of a rate-limited (429) or failed (5xx) chunk embedding request,
+   * with exponential backoff. Defaults to 2.
+   */
+  embedding_max_retries?: number;
 }
 
 type EmbeddingProviderInitOptions = {
@@ -202,10 +222,13 @@ export abstract class BaseRagEmbeddingHelper<
   ): Promise<number[][]> {
     const providerOptions = this.getEmbeddingProviderOptions(settings);
     const result = await embedMany({
-      model: await this.getEmbeddingModel(settings),
+      model: this.withRequestTimeout(await this.getEmbeddingModel(settings)),
       values,
-      maxRetries: 0,
-      abortSignal: AbortSignal.timeout(EMBEDDING_TIMEOUT_MS),
+      maxParallelCalls:
+        settings.embedding_max_parallel_calls ??
+        DEFAULT_EMBEDDING_MAX_PARALLEL_CALLS,
+      maxRetries:
+        settings.embedding_max_retries ?? DEFAULT_EMBEDDING_MAX_RETRIES,
       ...(providerOptions ? { providerOptions } : {}),
     });
     if (result.embeddings.length !== values.length) {
@@ -233,6 +256,49 @@ export abstract class BaseRagEmbeddingHelper<
     }
 
     return embeddings;
+  }
+
+  /**
+   * Applies the embedding timeout to each provider request instead of the
+   * whole `embedMany` call: with bounded parallelism and retries, a long
+   * document takes several rounds of requests, which must not share one budget.
+   * The SDK transforms the parameters on every attempt, so each retry gets a
+   * fresh timeout.
+   *
+   * `wrapEmbeddingModel` only accepts V3 models, which every AI SDK v6
+   * provider returns; other models are passed through unchanged.
+   */
+  protected withRequestTimeout(model: EmbeddingModel): EmbeddingModel {
+    if (typeof model === 'string' || model.specificationVersion !== 'v3') {
+      return model;
+    }
+
+    return wrapEmbeddingModel({
+      model,
+      middleware: {
+        specificationVersion: 'v3',
+        transformParams: async ({ params }) => {
+          const timeout = AbortSignal.timeout(EMBEDDING_TIMEOUT_MS);
+
+          return {
+            ...params,
+            abortSignal: params.abortSignal
+              ? AbortSignal.any([params.abortSignal, timeout])
+              : timeout,
+          };
+        },
+      },
+    });
+  }
+
+  /**
+   * Whether an embedding call failed because the provider is rate limiting
+   * requests (HTTP 429), including after the SDK exhausted its retries.
+   */
+  protected isRateLimitError(error: unknown): boolean {
+    const cause = RetryError.isInstance(error) ? error.lastError : error;
+
+    return APICallError.isInstance(cause) && cause.statusCode === 429;
   }
 
   protected getEmbeddingProviderOptions(

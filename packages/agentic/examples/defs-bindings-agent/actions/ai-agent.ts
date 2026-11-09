@@ -56,7 +56,9 @@ const resolveTools = (
     }
 
     tools[toolName] = tool({
-      description: `Workflow tool "${toolName}" delegates to action "${action.name}".`,
+      description:
+        toolDefinition.description ??
+        `Workflow tool "${toolName}" delegates to action "${action.name}".`,
       inputSchema: action.inputSchema,
       execute: async (payload) =>
         action.run(payload, context, toolDefinition.settings as any),

@@ -12,7 +12,7 @@ import {
 } from '@hexabot-ai/types';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import Papa from 'papaparse';
-import { FindManyOptions, FindOptionsWhere } from 'typeorm';
+import { FindManyOptions, FindOptionsWhere, In } from 'typeorm';
 
 import { HelperService } from '@/helper/helper.service';
 import { HelperType } from '@/helper/types';
@@ -22,7 +22,7 @@ import { ContentCreateDto } from '../dto/content.dto';
 import { ContentOrmEntity } from '../entities/content.entity';
 import { RagHelperConfigurationError } from '../errors/rag.errors';
 import { ContentRepository } from '../repositories/content.repository';
-import { RagHit, RagQueryOptions } from '../types/rag';
+import { RagHit, RagRetrieveOptions } from '../types/rag';
 
 @Injectable()
 export class ContentService extends BaseOrmService<ContentOrmEntity> {
@@ -38,14 +38,16 @@ export class ContentService extends BaseOrmService<ContentOrmEntity> {
    * helper (lexical full-text search by default).
    *
    * @param query - User query text.
-   * @param options - Optional retrieval options.
+   * @param options - Optional retrieval options. `properties` is not passed to
+   * the helper: the requested content properties are attached to its hits.
    *
    * @returns Matching RAG hits.
    */
   async retrieve(
     query: string,
-    options: RagQueryOptions = {},
+    options: RagRetrieveOptions = {},
   ): Promise<RagHit[]> {
+    const { properties, ...queryOptions } = options;
     let helper;
     try {
       helper = await this.helperService.getDefaultHelper(HelperType.RAG);
@@ -56,7 +58,52 @@ export class ContentService extends BaseOrmService<ContentOrmEntity> {
       );
     }
 
-    return await helper.retrieve(query, options);
+    const hits = await helper.retrieve(query, queryOptions);
+
+    return properties?.length
+      ? await this.attachProperties(hits, properties)
+      : hits;
+  }
+
+  /**
+   * Attaches the requested content properties to each hit. Helpers return the
+   * text that matched (often a single chunk), which may not hold properties
+   * such as the source page URL, so they are read from the contents.
+   *
+   * @param hits - Hits returned by the RAG helper.
+   * @param keys - Content property keys to attach.
+   *
+   * @returns The hits, each with the requested keys its content sets.
+   */
+  private async attachProperties(
+    hits: RagHit[],
+    keys: string[],
+  ): Promise<RagHit[]> {
+    if (hits.length === 0) {
+      return hits;
+    }
+
+    const contentIds = [...new Set(hits.map(({ contentId }) => contentId))];
+    const contents = await this.find({ where: { id: In(contentIds) } });
+    const propertiesById = new Map(
+      contents.map(({ id, properties }) => [id, properties ?? {}]),
+    );
+
+    return hits.map((hit) => {
+      const properties = propertiesById.get(hit.contentId) ?? {};
+
+      return {
+        ...hit,
+        properties: Object.fromEntries(
+          keys
+            .filter(
+              (key) =>
+                Object.hasOwn(properties, key) && properties[key] != null,
+            )
+            .map((key) => [key, properties[key]]),
+        ),
+      };
+    });
   }
 
   /**

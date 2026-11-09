@@ -37,6 +37,7 @@ export type MountedBindingPayload<
 > = {
   settings: z.infer<TBindingKind['schema']>;
   action?: string;
+  description?: string;
   bindings?: InferWorkflowBindings<TBindingKinds>;
 };
 
@@ -491,6 +492,9 @@ export const validateAndResolveBindings = (
     const payload: MountedBindingPayload = {
       settings: parsedSettings,
       ...(definition.action ? { action: definition.action } : {}),
+      ...(definition.description
+        ? { description: definition.description }
+        : {}),
       ...(Object.keys(nestedBindings).length > 0
         ? { bindings: nestedBindings }
         : {}),

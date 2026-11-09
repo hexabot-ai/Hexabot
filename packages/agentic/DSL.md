@@ -53,7 +53,7 @@ Example: `defs.understand_request` calls an LLM with a system prompt, user query
 - Runtime mounting:
   - `multiple: true` kinds mount as `{ [kind]: { [defName]: parsedPayload } }`;
   - `multiple: false` kinds mount as `{ [kind]: parsedPayload }`;
-  - mounted payload excludes shared def metadata (`kind`, `description`) and contains only kind-schema fields.
+  - mounted payload contains the parsed kind-schema `settings`, plus the def's `action`, `description` and nested `bindings` when declared; `kind` is not included. Consumers may surface `description` (for example, the AI actions use a `tools` def's `description` as the description the model sees for that tool, falling back to the action's own description).
 
 ## Flow primitives
 
