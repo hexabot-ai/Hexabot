@@ -24,6 +24,7 @@ type UiChatWidgetProps = PropsWithChildren<{
   CustomLauncher?: (props: { widget: WidgetContextType }) => ReactElement;
   CustomHeader?: () => ReactElement | null;
   CustomAvatar?: () => ReactElement;
+  /** Shown before the visitor subscribes. Defaults to the name form. */
   PreChat?: React.FC;
   PostChat?: React.FC;
   defaultIsOpen?: boolean;
@@ -31,13 +32,17 @@ type UiChatWidgetProps = PropsWithChildren<{
   socketErrorHandlers?: SocketErrorHandlers;
 }>;
 
+/** `children` render inside the widget providers, after the launcher. */
 function UiChatWidget({
   CustomHeader,
   CustomAvatar,
   CustomLauncher,
+  PreChat = UserSubscription,
+  PostChat,
   config,
   defaultIsOpen,
   socketErrorHandlers,
+  children,
 }: UiChatWidgetProps) {
   return (
     <ConfigProvider {...config}>
@@ -57,8 +62,10 @@ function UiChatWidget({
                       CustomLauncher={CustomLauncher}
                       CustomHeader={CustomHeader}
                       CustomAvatar={CustomAvatar}
-                      PreChat={UserSubscription}
+                      PreChat={PreChat}
+                      PostChat={PostChat}
                     />
+                    {children}
                   </ChatProvider>
                 </WidgetProvider>
               </BroadcastChannelProvider>

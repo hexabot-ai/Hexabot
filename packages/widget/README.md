@@ -92,9 +92,30 @@ export function SupportChat() {
 ```
 
 The default export is the same component. `UiChatWidget` is also available as a
-named export for applications that need custom launchers, headers, or avatars.
+named export for applications that need custom launchers, headers, avatars, or
+pre-chat screens (`PreChat`). It renders its `children` inside the widget's
+providers, after the launcher.
 Component integration renders directly in the application's DOM, so
 `shadowDom` and `css` are exclusive to the imperative API.
+
+### Known Visitors
+
+When the host application already knows the visitor, pass their name as
+`profile`. The widget then subscribes them without showing the name form:
+
+```tsx
+<ChatWidget
+  apiUrl="http://localhost:3000"
+  channel="web"
+  sourceId="replace-with-source-id"
+  profile={{ firstName: "Ada", lastName: "Lovelace" }}
+/>
+```
+
+`profile` is ignored once the browser session has a subscriber. Unlike the
+name form's "Get started" button, it sends no `GET_STARTED` postback, so the
+conversation workflow does not run until the visitor writes. The imperative
+`config()` API accepts `profile` too.
 
 ## Embed Chat Widget
 

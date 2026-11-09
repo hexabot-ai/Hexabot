@@ -8,6 +8,12 @@ import { ThemeMode, ThemeOverrides } from "../theme/theme.types";
 
 export type ConfigTransport = "ws" | "polling";
 
+/** A visitor the host page already knows. */
+export type ConfigProfile = {
+  firstName: string;
+  lastName: string;
+};
+
 export type Config = {
   apiUrl: string;
   channel: string;
@@ -20,4 +26,9 @@ export type Config = {
   mode?: ThemeMode;
   theme?: ThemeOverrides;
   primaryColor?: string;
+  /**
+   * Subscribes the visitor under this name without showing the pre-chat
+   * form. Ignored once the session already has a subscriber.
+   */
+  profile?: ConfigProfile;
 };

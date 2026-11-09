@@ -17,6 +17,7 @@ import React, {
 import { useSubscribeBroadcastChannel } from "../hooks/useSubscribeBroadcastChannel";
 import { useTranslation } from "../hooks/useTranslation";
 import { StdEventType } from "../types/chat-io-messages.types";
+import { Config } from "../types/config.types";
 import {
   Direction,
   PostMessageEvent,
@@ -96,6 +97,13 @@ const toUiMessage = (
     delivery: direction === Direction.sent || status.delivery === true,
   };
 };
+
+/**
+ * Whether a visitor without a session is subscribed without the pre-chat
+ * form: always on the admin console, and when the host passes a profile.
+ */
+export const subscribesSilently = ({ channel, profile }: Config) =>
+  channel === "console" || !!profile;
 
 export const getQuickReplies = (message?: UiMessage): Suggestion[] =>
   message && "data" in message && "quick_replies" in message.data
@@ -411,10 +419,11 @@ const ChatProvider: React.FC<{
     async (firstName?: string, lastName?: string) => {
       try {
         setConnectionState(ConnectionState.tryingToConnect);
-        const queryParams: Record<string, string> =
-          firstName && lastName
-            ? { first_name: firstName, last_name: lastName }
-            : {};
+        // The API defaults each missing name on its own.
+        const queryParams: Record<string, string> = {
+          ...(firstName ? { first_name: firstName } : {}),
+          ...(lastName ? { last_name: lastName } : {}),
+        };
         const { body } = await socket.get<SubscribeResponse>(
           getWebhookUrl(queryParams),
         );
@@ -512,8 +521,8 @@ const ChatProvider: React.FC<{
   useSubscribe("settings", ({ profile, messages = [] }: ChannelSettings) => {
     setProfile(profile);
 
-    if (config.channel === "console" && !profile) {
-      handleSubscription();
+    if (!profile && subscribesSilently(config)) {
+      handleSubscription(config.profile?.firstName, config.profile?.lastName);
     }
 
     const { quickReplies, arrangedMessages, participantsList } =
