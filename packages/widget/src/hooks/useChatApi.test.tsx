@@ -208,6 +208,25 @@ describe("useChat", () => {
     expect(find(".hb-chat-window")).not.toBeNull();
   });
 
+  it("keeps the menu readable when persistent_menu hides its button", async () => {
+    const menu = [{ type: "postback", title: "Help", payload: "HELP" }];
+
+    await render(
+      <UiChatWidget config={config} defaultIsOpen>
+        {probe}
+      </UiChatWidget>,
+    );
+    await act(async () =>
+      fake.emit(
+        "settings",
+        createChannelSettings({ menu, persistent_menu: false }),
+      ),
+    );
+
+    expect(find(".hb-user-input--menu")).toBeNull();
+    expect(api.menu).toEqual(menu);
+  });
+
   it("subscribes the visitor with the names it is given", async () => {
     fake.mock.get.mockResolvedValue({
       statusCode: 200,

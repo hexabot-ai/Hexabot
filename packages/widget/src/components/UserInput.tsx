@@ -44,6 +44,7 @@ const UserInput: React.FC = () => {
     showEmoji,
     showLocation,
     showFile,
+    showMenu,
     placeholder,
   } = useSettings();
   const userInputRef = useRef<HTMLDivElement>(null);
@@ -152,7 +153,7 @@ const UserInput: React.FC = () => {
       )}
 
       <form className={`hb-user-input ${inputActive ? "active" : ""}`}>
-        {menu.length > 0 && <MenuButton />}
+        {showMenu && menu.length > 0 && <MenuButton />}
         <div
           role="textbox"
           tabIndex={0}

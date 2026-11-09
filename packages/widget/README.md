@@ -177,6 +177,10 @@ export function SupportChat() {
 - `sendText(text)`, `sendFile(file)`, `sendPostback(payload, title)`, and
   `sendQuickReply(suggestion)`.
 
+`menu` holds the source's persistent menu even when the source's "Persistent
+menu" setting is off. That setting only hides the widget's menu button, so a
+host can render the menu its own way and send items with `sendPostback`.
+
 Sends resolve once the server acknowledges the message. A failed send does not
 reject: it moves `connectionState` to `ConnectionState.error`. `sendFile`
 rejects, without sending, a file that the source's allowed upload types or

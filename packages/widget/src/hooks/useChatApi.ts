@@ -37,7 +37,10 @@ export type ChatApi = {
   profile?: SubscriberFull;
   /** Quick replies offered by the last message. */
   suggestions: Suggestion[];
-  /** The source's persistent menu. */
+  /**
+   * The source's persistent menu, also when its `persistent_menu` setting
+   * hides the widget's menu button.
+   */
   menu: IMenuNode[];
   /** Whether the chat window is open. */
   isOpen: boolean;

@@ -140,6 +140,46 @@ describe("UiChatWidget", () => {
     expect(fake.mock.post).not.toHaveBeenCalled();
   });
 
+  describe("menu button", () => {
+    const menu = [{ type: "postback", title: "Help", payload: "HELP" }];
+
+    it("shows for a source with a persistent menu", async () => {
+      await render(<UiChatWidget config={config} defaultIsOpen />);
+      await act(async () =>
+        fake.emit("settings", createChannelSettings({ menu })),
+      );
+
+      expect(find(".hb-user-input--menu")).not.toBeNull();
+    });
+
+    it("hides when the source turns persistent_menu off", async () => {
+      await render(<UiChatWidget config={config} defaultIsOpen />);
+      await act(async () =>
+        fake.emit(
+          "settings",
+          createChannelSettings({ menu, persistent_menu: false }),
+        ),
+      );
+
+      expect(find(".hb-user-input")).not.toBeNull();
+      expect(find(".hb-user-input--menu")).toBeNull();
+    });
+
+    it("shows from settings an older widget saved in the session", async () => {
+      const scope = encodeURIComponent(`${config.apiUrl}::${config.sourceId}`);
+
+      // As 3.6.0 cached them, without `showMenu`.
+      sessionStorage.setItem(
+        `hexabot:widget:settings:${scope}`,
+        JSON.stringify({ menu, showEmoji: false, allowedUploadTypes: [] }),
+      );
+
+      await render(<UiChatWidget config={config} defaultIsOpen />);
+
+      expect(find(".hb-user-input--menu")).not.toBeNull();
+    });
+  });
+
   it("runs one silent subscription when a reconnect resends the settings", async () => {
     let answer: (response: unknown) => void = () => {};
 
