@@ -19,7 +19,6 @@ import WidgetProvider, { WidgetContextType } from "./providers/WidgetProvider";
 import { Config } from "./types/config.types";
 import { SocketErrorHandlers } from "./types/message.types";
 import { ChatScreen, ConnectionState } from "./types/state.types";
-import "./UiChatWidget.css";
 
 type UiChatWidgetProps = PropsWithChildren<{
   CustomLauncher?: (props: { widget: WidgetContextType }) => ReactElement;

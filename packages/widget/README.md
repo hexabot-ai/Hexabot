@@ -259,6 +259,25 @@ You can customize the look and feel of the chat widget by modifying the widgetâ€
 - Change colors and fonts to match your website's branding.
 - Configure user settings like language and chatbot response preferences.
 
+The launcher (`.hb-launcher`) and the chat window (`.hb-chat-window`) are fixed
+to the bottom-right corner, and the window fills the screen at widths of 450px
+and below. The stock stylesheet declares nothing `!important`, so plain CSS
+overrides it. Prefix selectors with `.hb-theme-root` to win regardless of
+stylesheet order, and keep window offsets out of the phone layout:
+
+```css
+/* Clear a 64px sticky footer */
+.hb-theme-root .hb-launcher {
+  bottom: 84px;
+}
+
+@media (min-width: 451px) {
+  .hb-theme-root .hb-chat-window {
+    bottom: 164px;
+  }
+}
+```
+
 ## Contributing
 
 We welcome contributions from the community! Whether you want to report a bug, suggest new features, or submit a pull request, your input is valuable to us.

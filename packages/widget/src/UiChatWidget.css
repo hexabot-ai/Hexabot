@@ -1,7 +1,0 @@
-.hb-launcher,
-.hb-chat-window {
-  right: 25px !important;
-  bottom: 25px !important;
-  z-index: 999 !important;
-  box-shadow: var(--hb-shadow-elevated) !important;
-}
