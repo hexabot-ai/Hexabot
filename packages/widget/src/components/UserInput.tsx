@@ -13,6 +13,7 @@ import { useConfig } from "../providers/ConfigProvider";
 import { useSettings } from "../providers/SettingsProvider";
 import { Web } from "../types/message.types";
 import { OutgoingMessageState } from "../types/state.types";
+import { getFileError } from "../utils/attachment";
 
 import EmojiButton from "./buttons/EmojiButton";
 import FileButton from "./buttons/FileButton";
@@ -43,6 +44,7 @@ const UserInput: React.FC = () => {
     showEmoji,
     showLocation,
     showFile,
+    showMenu,
     placeholder,
   } = useSettings();
   const userInputRef = useRef<HTMLDivElement>(null);
@@ -95,12 +97,10 @@ const UserInput: React.FC = () => {
     }
     if (file) {
       setFileError(null);
-      const typeCheck = allowedUploadTypes.includes(file.type) || false;
+      const error = getFileError(file, allowedUploadTypes, maxUploadSize);
 
-      if (!typeCheck) {
-        setFileError(t("messages.file_message.unsupported_file_type"));
-      } else if (file.size > maxUploadSize) {
-        setFileError(t("messages.file_message.unsupported_file_size"));
+      if (error) {
+        setFileError(t(error));
       } else {
         send({
           event,
@@ -153,7 +153,7 @@ const UserInput: React.FC = () => {
       )}
 
       <form className={`hb-user-input ${inputActive ? "active" : ""}`}>
-        {menu.length > 0 && <MenuButton />}
+        {showMenu && menu.length > 0 && <MenuButton />}
         <div
           role="textbox"
           tabIndex={0}
@@ -204,7 +204,7 @@ const UserInput: React.FC = () => {
           )}
           <div className="hb-user-input--button">
             <SendButton
-              disabled={!message}
+              disabled={!message && !file}
               onClick={(event) => sendMessage(event)}
             />
           </div>

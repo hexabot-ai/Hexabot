@@ -153,6 +153,11 @@ export class ChannelAttachmentService {
       return await this.attachmentService.download(attachment);
     } catch (err) {
       this.logger.error('Failed to download attachment', err);
+      // A refusal follows a valid token naming an existing attachment, so a
+      // 403 tells the link holder nothing new. Anything else stays a 404.
+      if (err instanceof ForbiddenException) {
+        throw err;
+      }
       throw new NotFoundException('Unable to locate attachment');
     }
   }

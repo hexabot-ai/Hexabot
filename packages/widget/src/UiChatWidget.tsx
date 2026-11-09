@@ -19,12 +19,17 @@ import WidgetProvider, { WidgetContextType } from "./providers/WidgetProvider";
 import { Config } from "./types/config.types";
 import { SocketErrorHandlers } from "./types/message.types";
 import { ChatScreen, ConnectionState } from "./types/state.types";
-import "./UiChatWidget.css";
 
 type UiChatWidgetProps = PropsWithChildren<{
   CustomLauncher?: (props: { widget: WidgetContextType }) => ReactElement;
   CustomHeader?: () => ReactElement | null;
   CustomAvatar?: () => ReactElement;
+  /**
+   * Replaces the input area under the messages, quick replies included.
+   * Build it with `useChat()`; return `null` to drop the input area.
+   */
+  CustomComposer?: React.FC;
+  /** Shown before the visitor subscribes. Defaults to the name form. */
   PreChat?: React.FC;
   PostChat?: React.FC;
   defaultIsOpen?: boolean;
@@ -32,13 +37,18 @@ type UiChatWidgetProps = PropsWithChildren<{
   socketErrorHandlers?: SocketErrorHandlers;
 }>;
 
+/** `children` render inside the widget providers, after the launcher. */
 function UiChatWidget({
   CustomHeader,
   CustomAvatar,
   CustomLauncher,
+  CustomComposer,
+  PreChat = UserSubscription,
+  PostChat,
   config,
   defaultIsOpen,
   socketErrorHandlers,
+  children,
 }: UiChatWidgetProps) {
   return (
     <ConfigProvider {...config}>
@@ -58,8 +68,11 @@ function UiChatWidget({
                       CustomLauncher={CustomLauncher}
                       CustomHeader={CustomHeader}
                       CustomAvatar={CustomAvatar}
-                      PreChat={UserSubscription}
+                      CustomComposer={CustomComposer}
+                      PreChat={PreChat}
+                      PostChat={PostChat}
                     />
+                    {children}
                   </ChatProvider>
                 </WidgetProvider>
               </BroadcastChannelProvider>

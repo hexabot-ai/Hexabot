@@ -15,7 +15,7 @@ Typical agent work in this package includes:
 
 Key paths in `packages/widget`:
 
-- `src/index.tsx`: Vite library entry and public package surface (`config`, `ChatWidget`). Renders with the host page's own React/ReactDOM (loaded as globals), not a bundled copy.
+- `src/index.tsx`: Vite library entry and public package surface (`config`, `ChatWidget`, `UiChatWidget`, `useChat`, `ConnectionState`). Renders with the host page's own React/ReactDOM (loaded as globals), not a bundled copy.
 - `src/ChatWidget.tsx`: Main widget component, composed by `src/index.tsx`.
 - `src/UiChatWidget.tsx`: Alternate/customizable widget composition entry.
 - `src/main.tsx`: Local dev/demo app entry for Vite.
@@ -217,6 +217,9 @@ Release (v3 alpha train, `main` branch):
 - Keep the public widget entry contract stable unless explicitly requested:
   - `config(options)` exported from `src/index.tsx` — this is what embedders call. `options` merges the mount target (`id`, `css`, `shadowDom`) with the widget config into one object. It returns exactly `show()`, `hide()`, and `destroy()`; the UI is built lazily on the first `show()` call.
   - Vite library build target in `vite.config.ts` (`name: "HexabotWidget"`).
+  - `useChat()` (`src/hooks/useChatApi.ts`) returns the curated `ChatApi`, not the
+    `ChatProvider` context. Grow `ChatApi` additively; the context stays internal
+    so providers can change without breaking hosts.
 - React and React DOM are **externalized**, not bundled: `rolldownOptions.external`
   excludes `react`, `react-dom`, and `react-dom/client`. Both are required
   `peerDependencies` for consumers and remain `devDependencies` for local

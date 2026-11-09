@@ -92,9 +92,126 @@ export function SupportChat() {
 ```
 
 The default export is the same component. `UiChatWidget` is also available as a
-named export for applications that need custom launchers, headers, or avatars.
+named export for applications that need custom launchers, headers, avatars, or
+pre-chat screens (`PreChat`). It renders its `children` inside the widget's
+providers, after the launcher.
 Component integration renders directly in the application's DOM, so
 `shadowDom` and `css` are exclusive to the imperative API.
+
+### Known Visitors
+
+When the host application already knows the visitor, pass their name as
+`profile`. The widget then subscribes them without showing the name form:
+
+```tsx
+<ChatWidget
+  apiUrl="http://localhost:3000"
+  channel="web"
+  sourceId="replace-with-source-id"
+  profile={{ firstName: "Ada", lastName: "Lovelace" }}
+/>
+```
+
+`profile` is ignored once the browser session has a subscriber. Unlike the
+name form's "Get started" button, it sends no `GET_STARTED` postback, so the
+conversation workflow does not run until the visitor writes. The imperative
+`config()` API accepts `profile` too.
+
+### Custom Composer and Chat API
+
+`useChat()` gives components rendered inside `UiChatWidget` the conversation
+and the actions that drive it. Use it in a `CustomComposer`, which replaces the
+input area under the messages (quick replies included), or in `PreChat`,
+`CustomHeader`, `CustomLauncher`, and `children`:
+
+```tsx
+import { UiChatWidget, useChat } from "@hexabot-ai/widget";
+import { useState } from "react";
+
+function Composer() {
+  const { sendText, suggestions, sendQuickReply } = useChat();
+  const [text, setText] = useState("");
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        sendText(text);
+        setText("");
+      }}
+    >
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion.payload}
+          type="button"
+          onClick={() => sendQuickReply(suggestion)}
+        >
+          {suggestion.text}
+        </button>
+      ))}
+      <input value={text} onChange={(event) => setText(event.target.value)} />
+    </form>
+  );
+}
+
+export function SupportChat() {
+  return (
+    <UiChatWidget
+      config={{
+        apiUrl: "http://localhost:3000",
+        channel: "web",
+        sourceId: "replace-with-source-id",
+      }}
+      CustomComposer={Composer}
+    />
+  );
+}
+```
+
+`useChat()` returns:
+
+- `messages`, `connectionState`, `profile`, `suggestions`, `menu`, and
+  `isOpen`, with `open()` and `close()` for the window.
+- `subscribe(profile?)`, which subscribes like the name form but sends no
+  `GET_STARTED` postback.
+- `sendText(text)`, `sendFile(file)`, `sendPostback(payload, title)`, and
+  `sendQuickReply(suggestion)`.
+
+`menu` holds the source's persistent menu even when the source's "Persistent
+menu" setting is off. That setting only hides the widget's menu button, so a
+host can render the menu its own way and send items with `sendPostback`.
+
+Sends resolve once the server acknowledges the message. A failed send does not
+reject: it moves `connectionState` to `ConnectionState.error`. `sendFile`
+rejects, without sending, a file that the source's allowed upload types or
+`maxUploadSize` refuse. A `CustomComposer` that returns `null` removes the
+input area, for example to render the composer as a `children` element outside
+the chat window.
+
+### Callbacks
+
+`onMessage` and `onConnectionChange` work with every integration, the
+imperative `config()` API included:
+
+```js
+const embed = HexabotWidget.config({
+  id: "hexabot-chat-widget",
+  apiUrl: "http://localhost:3000",
+  channel: "web",
+  sourceId: "replace-with-source-id",
+  onMessage: (message) => console.log(message.direction, message),
+  onConnectionChange: (state) => {
+    if (state === HexabotWidget.ConnectionState.error) {
+      console.warn("Chat unavailable");
+    }
+  },
+});
+```
+
+`onMessage` receives each message the socket delivers, sent or received. It
+does not replay the history loaded on connect, which `useChat().messages`
+holds. `onConnectionChange` receives a `ConnectionState` on mount and on every
+change.
 
 ## Embed Chat Widget
 
@@ -240,6 +357,13 @@ Replace `apiUrl`, `sourceId`, and the other example values with the deployment's
 widget configuration. `transport` is optional and accepts `ws` (default) or
 `polling`.
 
+The widget connects to the origin of `apiUrl`, which may be a same-origin
+proxy in front of the API (for example to keep its session cookie first-party
+in mobile webviews). Attachment download links, which the API builds on
+`API_ORIGIN`, are loaded from that origin too, since the download checks the
+same session. The proxy must then forward `/socket.io` and the API routes
+(such as `/api`).
+
 For stable releases, pin the major version:
 `https://cdn.jsdelivr.net/npm/@hexabot-ai/widget@3/dist/`
 
@@ -258,6 +382,27 @@ You can customize the look and feel of the chat widget by modifying the widgetâ€
 
 - Change colors and fonts to match your website's branding.
 - Configure user settings like language and chatbot response preferences.
+
+The launcher (`.hb-launcher`) and the chat window (`.hb-chat-window`) are fixed
+to the bottom-right corner, and the window fills the screen at widths of 450px
+and below. The stock stylesheet styles nothing outside the widget (its
+normalize.css reset is scoped to `.hb-theme-root`) and declares nothing
+`!important`, so plain CSS overrides it. Prefix selectors with
+`.hb-theme-root` to win regardless of stylesheet order, and keep window
+offsets out of the phone layout:
+
+```css
+/* Clear a 64px sticky footer */
+.hb-theme-root .hb-launcher {
+  bottom: 84px;
+}
+
+@media (min-width: 451px) {
+  .hb-theme-root .hb-chat-window {
+    bottom: 164px;
+  }
+}
+```
 
 ## Contributing
 

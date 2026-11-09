@@ -8,6 +8,7 @@ import React, { useCallback, useState } from "react";
 
 import { useTranslation } from "../hooks/useTranslation";
 import { preprocessMessages, useChat } from "../providers/ChatProvider";
+import { useConfig } from "../providers/ConfigProvider";
 import { useSettings } from "../providers/SettingsProvider";
 import { useSocket } from "../providers/SocketProvider";
 import { ConnectionState } from "../types/state.types";
@@ -19,6 +20,7 @@ const UserSubscription: React.FC = () => {
   const { socketErrorHandlers } = useSocket();
   const { socket } = useSocket();
   const settings = useSettings();
+  const { apiUrl } = useConfig();
   const {
     setMessages,
     connectionState,
@@ -49,7 +51,7 @@ const UserSubscription: React.FC = () => {
           last_name || lastName,
         );
         const { quickReplies, arrangedMessages, participantsList } =
-          preprocessMessages(messages, participants, profile);
+          preprocessMessages(messages, participants, profile, apiUrl);
 
         setSuggestions(quickReplies);
         setMessages(arrangedMessages);

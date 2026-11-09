@@ -11,7 +11,8 @@ import React, {
   useMemo,
 } from "react";
 
-import { useChat } from "../providers/ChatProvider";
+import { subscribesSilently, useChat } from "../providers/ChatProvider";
+import { useConfig } from "../providers/ConfigProvider";
 import { useWidget } from "../providers/WidgetProvider";
 import { ChatScreen, ConnectionState } from "../types/state.types";
 
@@ -28,6 +29,7 @@ import "./ChatWindow.scss";
 type ChatWindowProps = PropsWithChildren<{
   CustomHeader?: () => ReactElement | null;
   CustomAvatar?: () => ReactElement;
+  CustomComposer?: React.FC;
   PreChat?: React.FC;
   PostChat?: React.FC;
 }>;
@@ -35,19 +37,21 @@ type ChatWindowProps = PropsWithChildren<{
 const ChatWindow: React.FC<ChatWindowProps> = ({
   CustomHeader,
   CustomAvatar,
+  CustomComposer,
   PreChat,
   PostChat,
 }) => {
   const { connectionState, messages, profile } = useChat();
   const { screen, isOpen, setScreen } = useWidget();
+  const silentSubscription = subscribesSilently(useConfig());
   const ChatView = useMemo(
     () => (
       <>
         <Messages Avatar={CustomAvatar} />
-        <UserInput />
+        {CustomComposer ? <CustomComposer /> : <UserInput />}
       </>
     ),
-    [CustomAvatar],
+    [CustomAvatar, CustomComposer],
   );
 
   useEffect(() => {
@@ -56,7 +60,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       messages.length === 0 &&
       connectionState === ConnectionState.notConnectedYet
     ) {
-      setScreen(ChatScreen.PRE_CHAT);
+      // Until the server settings trigger the silent subscription.
+      setScreen(silentSubscription ? ChatScreen.LOADING : ChatScreen.PRE_CHAT);
     } else if (connectionState === ConnectionState.tryingToConnect) {
       setScreen(ChatScreen.LOADING);
     } else if (connectionState === ConnectionState.disconnected) {
@@ -66,7 +71,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     } else {
       setScreen(ChatScreen.CHAT);
     }
-  }, [messages.length, connectionState, setScreen, profile]);
+  }, [
+    messages.length,
+    connectionState,
+    setScreen,
+    profile,
+    silentSubscription,
+  ]);
 
   const getCurrentScreen = () => {
     switch (screen) {

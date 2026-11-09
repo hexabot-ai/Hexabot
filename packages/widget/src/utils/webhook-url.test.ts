@@ -6,7 +6,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildWebhookUrl } from "./webhook-url";
+import {
+  buildWebhookUrl,
+  rebaseDownloadUrl,
+  rebaseDownloadUrls,
+} from "./webhook-url";
 
 describe("buildWebhookUrl", () => {
   it("returns the base webhook URL when workflow id is not provided", () => {
@@ -60,5 +64,70 @@ describe("buildWebhookUrl", () => {
     ).toBe(
       "/webhook/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/?workflow_id=wf+id%2F1",
     );
+  });
+});
+
+describe("rebaseDownloadUrl", () => {
+  const download =
+    "https://api.example.com/api/webhook/web-source/download/voice.webm?t=a%2Bb";
+
+  it("moves a download link to the origin of the widget's apiUrl", () => {
+    expect(rebaseDownloadUrl(download, "https://chat.example.com/api")).toBe(
+      "https://chat.example.com/api/webhook/web-source/download/voice.webm?t=a%2Bb",
+    );
+  });
+
+  it("keeps the link's path when apiUrl has none", () => {
+    expect(rebaseDownloadUrl(download, "https://chat.example.com")).toBe(
+      "https://chat.example.com/api/webhook/web-source/download/voice.webm?t=a%2Bb",
+    );
+  });
+
+  it("leaves a link already on the widget's origin untouched", () => {
+    expect(rebaseDownloadUrl(download, "https://api.example.com/api")).toBe(
+      download,
+    );
+  });
+
+  it("leaves other URLs untouched", () => {
+    for (const url of [
+      "https://cdn.example.com/images/photo.png",
+      "https://api.example.com/api/webhook/web-source/not-found",
+      "not a url",
+    ]) {
+      expect(rebaseDownloadUrl(url, "https://chat.example.com")).toBe(url);
+    }
+  });
+});
+
+describe("rebaseDownloadUrls", () => {
+  const apiUrl = "https://chat.example.com";
+  const download = "https://api.example.com/webhook/s/download/a.png?t=1";
+
+  it("rebases a file message's URL", () => {
+    expect(
+      rebaseDownloadUrls(
+        { type: "file", data: { type: "image", url: download } },
+        apiUrl,
+      ).data,
+    ).toEqual({
+      type: "image",
+      url: "https://chat.example.com/webhook/s/download/a.png?t=1",
+    });
+  });
+
+  it("rebases carousel and list element images", () => {
+    const message = {
+      type: "carousel",
+      data: { elements: [{ title: "A", image_url: download }, { title: "B" }] },
+    };
+
+    expect(rebaseDownloadUrls(message, apiUrl).data.elements).toEqual([
+      {
+        title: "A",
+        image_url: "https://chat.example.com/webhook/s/download/a.png?t=1",
+      },
+      { title: "B" },
+    ]);
   });
 });

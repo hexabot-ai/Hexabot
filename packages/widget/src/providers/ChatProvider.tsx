@@ -11,12 +11,14 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
 import { useSubscribeBroadcastChannel } from "../hooks/useSubscribeBroadcastChannel";
 import { useTranslation } from "../hooks/useTranslation";
 import { StdEventType } from "../types/chat-io-messages.types";
+import { Config } from "../types/config.types";
 import {
   Direction,
   PostMessageEvent,
@@ -34,7 +36,7 @@ import {
   OutgoingMessageState,
 } from "../types/state.types";
 import { SocketIoClientError } from "../utils/SocketIoClientError";
-import { buildWebhookUrl } from "../utils/webhook-url";
+import { buildWebhookUrl, rebaseDownloadUrls } from "../utils/webhook-url";
 
 import { useBroadcastChannel } from "./BroadcastChannelProvider";
 import { useConfig } from "./ConfigProvider";
@@ -76,7 +78,8 @@ const normalizeMessageIdentity = (message: Web.Message) => {
 };
 const toUiMessage = (
   message: Web.Message,
-  profile?: SubscriberFull,
+  profile: SubscriberFull | undefined,
+  apiUrl: string,
 ): UiMessage => {
   const normalized = normalizeMessageIdentity(message);
   const isSentByProfile =
@@ -89,13 +92,20 @@ const toUiMessage = (
   };
 
   return {
-    ...message,
+    ...rebaseDownloadUrls(message, apiUrl),
     ...normalized,
     direction,
     read: direction === Direction.sent || status.read === true,
     delivery: direction === Direction.sent || status.delivery === true,
   };
 };
+
+/**
+ * Whether a visitor without a session is subscribed without the pre-chat
+ * form: always on the admin console, and when the host passes a profile.
+ */
+export const subscribesSilently = ({ channel, profile }: Config) =>
+  channel === "console" || !!profile;
 
 export const getQuickReplies = (message?: UiMessage): Suggestion[] =>
   message && "data" in message && "quick_replies" in message.data
@@ -108,10 +118,11 @@ export const getQuickReplies = (message?: UiMessage): Suggestion[] =>
 export const preprocessMessages = (
   messages: Web.Message[],
   participants: Participant[],
-  profile?: SubscriberFull,
+  profile: SubscriberFull | undefined,
+  apiUrl: string,
 ) => {
   const arrangedMessages = messages.map((message) =>
-    toUiMessage(message, profile),
+    toUiMessage(message, profile, apiUrl),
   );
   const quickReplies = getQuickReplies(
     arrangedMessages[arrangedMessages.length - 1],
@@ -229,7 +240,7 @@ interface ChatContextType {
     event?: SyntheticEvent;
     source?: string;
     data: PostMessageEvent;
-  }) => void;
+  }) => Promise<void>;
 
   /**
    * Function called to trigger a get request to subscribe :
@@ -238,7 +249,7 @@ interface ChatContextType {
    * @param firstName
    * @param lastName
    */
-  handleSubscription: (firstName?: string, lastName?: string) => void;
+  handleSubscription: (firstName?: string, lastName?: string) => Promise<void>;
   profile?: SubscriberFull;
   subscribe: (
     first_name?: string,
@@ -277,8 +288,8 @@ const defaultCtx: ChatContextType = {
   setMessage: () => {},
   file: null,
   setFile: () => {},
-  send: () => {},
-  handleSubscription: () => {},
+  send: async () => {},
+  handleSubscription: async () => {},
   profile: undefined,
   subscribe: async () => {
     throw new Error("ChatProvider.subscribe is not available outside provider");
@@ -349,12 +360,14 @@ const ChatProvider: React.FC<{
       return;
     }
 
-    const normalizedMessage = toUiMessage(newMessage, profile);
+    const normalizedMessage = toUiMessage(newMessage, profile, config.apiUrl);
 
     setNewIOMessage(normalizedMessage);
     setShowTypingIndicator(false);
 
-    if (!messages.find((msg) => normalizedMessage.mid === msg.mid)) {
+    const isNew = !messages.some((msg) => normalizedMessage.mid === msg.mid);
+
+    if (isNew) {
       if (!isOpen && normalizedMessage.direction === Direction.received) {
         updateNewMessagesCount((prevMessagesCount) => prevMessagesCount + 1);
       }
@@ -372,6 +385,11 @@ const ChatProvider: React.FC<{
 
     settings.alwaysScrollToBottom && setScroll(101); // @hack
     setOutgoingMessageState(OutgoingMessageState.sent);
+
+    // Last, so a throwing host callback cannot leave the state half-updated.
+    if (isNew) {
+      config.onMessage?.(normalizedMessage);
+    }
   };
   const handleSend = async ({
     data,
@@ -407,19 +425,25 @@ const ChatProvider: React.FC<{
       }
     }
   };
-  const handleSubscription = useCallback(
+  const requestSubscription = useCallback(
     async (firstName?: string, lastName?: string) => {
       try {
         setConnectionState(ConnectionState.tryingToConnect);
-        const queryParams: Record<string, string> =
-          firstName && lastName
-            ? { first_name: firstName, last_name: lastName }
-            : {};
+        // The API defaults each missing name on its own.
+        const queryParams: Record<string, string> = {
+          ...(firstName ? { first_name: firstName } : {}),
+          ...(lastName ? { last_name: lastName } : {}),
+        };
         const { body } = await socket.get<SubscribeResponse>(
           getWebhookUrl(queryParams),
         );
         const { quickReplies, arrangedMessages, participantsList } =
-          preprocessMessages(body.messages, participants, body.profile);
+          preprocessMessages(
+            body.messages,
+            participants,
+            body.profile,
+            config.apiUrl,
+          );
 
         setProfile(body.profile);
         setSuggestions(quickReplies);
@@ -449,6 +473,19 @@ const ChatProvider: React.FC<{
       socket,
     ],
   );
+  const pendingSubscription = useRef<Promise<void>>(undefined);
+  // The server sends `settings` again on every reconnect, which would start
+  // a second silent subscription while the first waits for the socket.
+  const handleSubscription = (firstName?: string, lastName?: string) => {
+    pendingSubscription.current ??= requestSubscription(
+      firstName,
+      lastName,
+    ).finally(() => {
+      pendingSubscription.current = undefined;
+    });
+
+    return pendingSubscription.current;
+  };
   const subscribe = async (first_name: string = "", last_name: string = "") => {
     const { body } = await socket.get<SubscribeResponse>(
       getWebhookUrl({ first_name, last_name }),
@@ -488,6 +525,15 @@ const ChatProvider: React.FC<{
       setScreen(ChatScreen.CHAT);
     }
   };
+  // A ref, not the effect alone: StrictMode runs mount effects twice.
+  const reportedConnectionState = useRef<ConnectionState>(undefined);
+
+  useEffect(() => {
+    if (reportedConnectionState.current === connectionState) return;
+    reportedConnectionState.current = connectionState;
+    config.onConnectionChange?.(connectionState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionState]);
 
   useEffect(() => {
     if (syncState && isOpen) {
@@ -512,12 +558,12 @@ const ChatProvider: React.FC<{
   useSubscribe("settings", ({ profile, messages = [] }: ChannelSettings) => {
     setProfile(profile);
 
-    if (config.channel === "console" && !profile) {
-      handleSubscription();
+    if (!profile && subscribesSilently(config)) {
+      handleSubscription(config.profile?.firstName, config.profile?.lastName);
     }
 
     const { quickReplies, arrangedMessages, participantsList } =
-      preprocessMessages(messages, participants, profile);
+      preprocessMessages(messages, participants, profile, config.apiUrl);
 
     setSuggestions(quickReplies);
     setMessages(arrangedMessages);

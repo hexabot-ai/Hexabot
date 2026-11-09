@@ -62,6 +62,8 @@ export type ChatSettings = {
   showEmoji: boolean;
   showFile: boolean;
   showLocation: boolean;
+  /** The source's `persistent_menu`: shows the menu button. */
+  showMenu: boolean;
   showTypingIndicator: boolean;
   alwaysScrollToBottom: boolean;
   focusOnOpen: boolean;
@@ -81,6 +83,7 @@ const defaultSettings: ChatSettings = {
   showEmoji: true,
   showFile: true,
   showLocation: true,
+  showMenu: true,
   showTypingIndicator: true,
   alwaysScrollToBottom: true,
   focusOnOpen: true,
@@ -121,9 +124,11 @@ export const SettingsProvider: React.FC<ChatSettingsProviderProps> = ({
     return SessionStorage.getItem<ChatSettings>(LEGACY_SETTINGS_STORAGE_KEY);
   }, []);
   const defaultOrSavedSettings = scopedSettings ?? legacySettings;
-  const [settings, setSettingsState] = useState(
-    defaultOrSavedSettings || defaultSettings,
-  );
+  // Over the defaults: a session saved by an older widget lacks newer fields.
+  const [settings, setSettingsState] = useState<ChatSettings>({
+    ...defaultSettings,
+    ...defaultOrSavedSettings,
+  });
   const setSettings = useCallback(
     (settings: ChatSettings) => {
       SessionStorage.setItem(settingsStorageKey, settings);
@@ -146,6 +151,7 @@ export const SettingsProvider: React.FC<ChatSettingsProviderProps> = ({
       showEmoji: settings.show_emoji,
       showFile: settings.show_file,
       showLocation: settings.show_location,
+      showMenu: settings.persistent_menu ?? defaultSettings.showMenu,
       title: settings.window_title,
       titleImageUrl: avatarUrl,
       menu: settings.menu,

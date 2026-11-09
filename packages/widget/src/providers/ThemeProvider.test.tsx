@@ -28,6 +28,7 @@ const createMockSettings = (): ChatSettings => ({
   showEmoji: true,
   showFile: true,
   showLocation: true,
+  showMenu: true,
   showTypingIndicator: true,
   alwaysScrollToBottom: true,
   focusOnOpen: true,

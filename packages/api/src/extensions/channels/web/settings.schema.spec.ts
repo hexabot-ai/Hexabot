@@ -4,6 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
+import mime from 'mime';
+
 import { toDraft07JsonSchema } from '@/utils/helpers/zod';
 
 import { WEB_CHANNEL_SOURCE_SETTINGS_SCHEMA } from './settings.schema';
@@ -54,5 +56,32 @@ describe('WEB_CHANNEL_SOURCE_SETTINGS_SCHEMA', () => {
       format: 'uri',
     });
     expect(jsonSchema.required ?? []).not.toContain('avatar_url');
+  });
+
+  describe('allowed_upload_types default', () => {
+    const defaults = WEB_CHANNEL_SOURCE_SETTINGS_SCHEMA.parse(
+      {},
+    ).allowed_upload_types.split(',');
+    // Registered types that the `mime` 1.x database predates.
+    const missingFromMime = [
+      'audio/vnd.rn-realaudio',
+      'audio/x-wav',
+      'image/vnd.microsoft.icon',
+      'text/xml',
+    ];
+
+    it('lists only registered MIME types', () => {
+      expect(
+        defaults.filter(
+          (type) => !mime.extension(type) && !missingFromMime.includes(type),
+        ),
+      ).toEqual([]);
+    });
+
+    it('accepts what browser voice recorders produce', () => {
+      expect(defaults).toEqual(
+        expect.arrayContaining(['audio/webm', 'audio/mp4', 'audio/ogg']),
+      );
+    });
   });
 });

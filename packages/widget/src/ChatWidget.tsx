@@ -4,8 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import "normalize.css";
-import "./ChatWidget.css";
+import "./theme/normalize.scss";
 import Launcher from "./components/Launcher";
 import UserSubscription from "./components/UserSubscription";
 import BroadcastChannelProvider from "./providers/BroadcastChannelProvider";

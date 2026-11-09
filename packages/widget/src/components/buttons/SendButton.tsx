@@ -14,7 +14,10 @@ const SendButton: React.FC<SendButtonProps> = (props) => {
   const { onClick, ...rest } = props;
 
   return (
+    // `type="button"`: the composer is a `<form>`, and a default submit
+    // button would make the browser submit it and reload the host page.
     <button
+      type="button"
       onClick={onClick}
       {...rest}
       className="hb-user-input--button-icon-wrapper"
