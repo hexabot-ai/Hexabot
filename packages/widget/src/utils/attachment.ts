@@ -41,3 +41,21 @@ export const MIME_TYPES = {
     "text/csv",
   ],
 };
+
+/**
+ * Why a file can't be uploaded, as a translation key, or `null` if it can.
+ */
+export const getFileError = (
+  file: File,
+  allowedUploadTypes: string[],
+  maxUploadSize: number,
+) => {
+  if (!allowedUploadTypes.includes(file.type)) {
+    return "messages.file_message.unsupported_file_type";
+  }
+  if (file.size > maxUploadSize) {
+    return "messages.file_message.unsupported_file_size";
+  }
+
+  return null;
+};

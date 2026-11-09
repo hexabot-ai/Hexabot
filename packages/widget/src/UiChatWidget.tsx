@@ -24,6 +24,11 @@ type UiChatWidgetProps = PropsWithChildren<{
   CustomLauncher?: (props: { widget: WidgetContextType }) => ReactElement;
   CustomHeader?: () => ReactElement | null;
   CustomAvatar?: () => ReactElement;
+  /**
+   * Replaces the input area under the messages, quick replies included.
+   * Build it with `useChat()`; return `null` to drop the input area.
+   */
+  CustomComposer?: React.FC;
   /** Shown before the visitor subscribes. Defaults to the name form. */
   PreChat?: React.FC;
   PostChat?: React.FC;
@@ -37,6 +42,7 @@ function UiChatWidget({
   CustomHeader,
   CustomAvatar,
   CustomLauncher,
+  CustomComposer,
   PreChat = UserSubscription,
   PostChat,
   config,
@@ -62,6 +68,7 @@ function UiChatWidget({
                       CustomLauncher={CustomLauncher}
                       CustomHeader={CustomHeader}
                       CustomAvatar={CustomAvatar}
+                      CustomComposer={CustomComposer}
                       PreChat={PreChat}
                       PostChat={PostChat}
                     />

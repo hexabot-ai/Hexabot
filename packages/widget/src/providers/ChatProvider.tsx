@@ -11,6 +11,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -237,7 +238,7 @@ interface ChatContextType {
     event?: SyntheticEvent;
     source?: string;
     data: PostMessageEvent;
-  }) => void;
+  }) => Promise<void>;
 
   /**
    * Function called to trigger a get request to subscribe :
@@ -246,7 +247,7 @@ interface ChatContextType {
    * @param firstName
    * @param lastName
    */
-  handleSubscription: (firstName?: string, lastName?: string) => void;
+  handleSubscription: (firstName?: string, lastName?: string) => Promise<void>;
   profile?: SubscriberFull;
   subscribe: (
     first_name?: string,
@@ -285,8 +286,8 @@ const defaultCtx: ChatContextType = {
   setMessage: () => {},
   file: null,
   setFile: () => {},
-  send: () => {},
-  handleSubscription: () => {},
+  send: async () => {},
+  handleSubscription: async () => {},
   profile: undefined,
   subscribe: async () => {
     throw new Error("ChatProvider.subscribe is not available outside provider");
@@ -362,7 +363,9 @@ const ChatProvider: React.FC<{
     setNewIOMessage(normalizedMessage);
     setShowTypingIndicator(false);
 
-    if (!messages.find((msg) => normalizedMessage.mid === msg.mid)) {
+    const isNew = !messages.some((msg) => normalizedMessage.mid === msg.mid);
+
+    if (isNew) {
       if (!isOpen && normalizedMessage.direction === Direction.received) {
         updateNewMessagesCount((prevMessagesCount) => prevMessagesCount + 1);
       }
@@ -380,6 +383,11 @@ const ChatProvider: React.FC<{
 
     settings.alwaysScrollToBottom && setScroll(101); // @hack
     setOutgoingMessageState(OutgoingMessageState.sent);
+
+    // Last, so a throwing host callback cannot leave the state half-updated.
+    if (isNew) {
+      config.onMessage?.(normalizedMessage);
+    }
   };
   const handleSend = async ({
     data,
@@ -497,6 +505,15 @@ const ChatProvider: React.FC<{
       setScreen(ChatScreen.CHAT);
     }
   };
+  // A ref, not the effect alone: StrictMode runs mount effects twice.
+  const reportedConnectionState = useRef<ConnectionState>(undefined);
+
+  useEffect(() => {
+    if (reportedConnectionState.current === connectionState) return;
+    reportedConnectionState.current = connectionState;
+    config.onConnectionChange?.(connectionState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionState]);
 
   useEffect(() => {
     if (syncState && isOpen) {

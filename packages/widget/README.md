@@ -117,6 +117,98 @@ name form's "Get started" button, it sends no `GET_STARTED` postback, so the
 conversation workflow does not run until the visitor writes. The imperative
 `config()` API accepts `profile` too.
 
+### Custom Composer and Chat API
+
+`useChat()` gives components rendered inside `UiChatWidget` the conversation
+and the actions that drive it. Use it in a `CustomComposer`, which replaces the
+input area under the messages (quick replies included), or in `PreChat`,
+`CustomHeader`, `CustomLauncher`, and `children`:
+
+```tsx
+import { UiChatWidget, useChat } from "@hexabot-ai/widget";
+import { useState } from "react";
+
+function Composer() {
+  const { sendText, suggestions, sendQuickReply } = useChat();
+  const [text, setText] = useState("");
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        sendText(text);
+        setText("");
+      }}
+    >
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion.payload}
+          type="button"
+          onClick={() => sendQuickReply(suggestion)}
+        >
+          {suggestion.text}
+        </button>
+      ))}
+      <input value={text} onChange={(event) => setText(event.target.value)} />
+    </form>
+  );
+}
+
+export function SupportChat() {
+  return (
+    <UiChatWidget
+      config={{
+        apiUrl: "http://localhost:3000",
+        channel: "web",
+        sourceId: "replace-with-source-id",
+      }}
+      CustomComposer={Composer}
+    />
+  );
+}
+```
+
+`useChat()` returns:
+
+- `messages`, `connectionState`, `profile`, `suggestions`, `menu`, and
+  `isOpen`, with `open()` and `close()` for the window.
+- `subscribe(profile?)`, which subscribes like the name form but sends no
+  `GET_STARTED` postback.
+- `sendText(text)`, `sendFile(file)`, `sendPostback(payload, title)`, and
+  `sendQuickReply(suggestion)`.
+
+Sends resolve once the server acknowledges the message. A failed send does not
+reject: it moves `connectionState` to `ConnectionState.error`. `sendFile`
+rejects, without sending, a file that the source's allowed upload types or
+`maxUploadSize` refuse. A `CustomComposer` that returns `null` removes the
+input area, for example to render the composer as a `children` element outside
+the chat window.
+
+### Callbacks
+
+`onMessage` and `onConnectionChange` work with every integration, the
+imperative `config()` API included:
+
+```js
+const embed = HexabotWidget.config({
+  id: "hexabot-chat-widget",
+  apiUrl: "http://localhost:3000",
+  channel: "web",
+  sourceId: "replace-with-source-id",
+  onMessage: (message) => console.log(message.direction, message),
+  onConnectionChange: (state) => {
+    if (state === HexabotWidget.ConnectionState.error) {
+      console.warn("Chat unavailable");
+    }
+  },
+});
+```
+
+`onMessage` receives each message the socket delivers, sent or received. It
+does not replay the history loaded on connect, which `useChat().messages`
+holds. `onConnectionChange` receives a `ConnectionState` on mount and on every
+change.
+
 ## Embed Chat Widget
 
 React and ReactDOM are peer dependencies and are not bundled with the widget.

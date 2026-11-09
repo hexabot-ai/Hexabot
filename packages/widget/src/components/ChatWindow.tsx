@@ -29,6 +29,7 @@ import "./ChatWindow.scss";
 type ChatWindowProps = PropsWithChildren<{
   CustomHeader?: () => ReactElement | null;
   CustomAvatar?: () => ReactElement;
+  CustomComposer?: React.FC;
   PreChat?: React.FC;
   PostChat?: React.FC;
 }>;
@@ -36,6 +37,7 @@ type ChatWindowProps = PropsWithChildren<{
 const ChatWindow: React.FC<ChatWindowProps> = ({
   CustomHeader,
   CustomAvatar,
+  CustomComposer,
   PreChat,
   PostChat,
 }) => {
@@ -46,10 +48,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     () => (
       <>
         <Messages Avatar={CustomAvatar} />
-        <UserInput />
+        {CustomComposer ? <CustomComposer /> : <UserInput />}
       </>
     ),
-    [CustomAvatar],
+    [CustomAvatar, CustomComposer],
   );
 
   useEffect(() => {

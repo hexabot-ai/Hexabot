@@ -19,6 +19,7 @@ type LauncherProps = PropsWithChildren<{
   CustomLauncher?: (props: { widget: WidgetContextType }) => ReactElement;
   CustomHeader?: () => ReactElement | null;
   CustomAvatar?: () => ReactElement;
+  CustomComposer?: React.FC;
   PreChat?: React.FC;
   PostChat?: React.FC;
 }>;
@@ -27,6 +28,7 @@ const Launcher: React.FC<LauncherProps> = ({
   CustomLauncher,
   CustomHeader,
   CustomAvatar,
+  CustomComposer,
   PreChat,
   PostChat,
 }) => {
@@ -78,6 +80,7 @@ const Launcher: React.FC<LauncherProps> = ({
         <ChatWindow
           CustomHeader={CustomHeader}
           CustomAvatar={CustomAvatar}
+          CustomComposer={CustomComposer}
           PreChat={PreChat}
           PostChat={PostChat}
         />

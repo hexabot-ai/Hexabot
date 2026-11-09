@@ -8,7 +8,10 @@ import type { Root } from "react-dom/client";
 import * as ReactDOMClient from "react-dom/client";
 
 import ChatWidget from "./ChatWidget";
+import { type ChatApi, useChatApi as useChat } from "./hooks/useChatApi";
 import { Config, ConfigProfile } from "./types/config.types";
+import { UiMessage } from "./types/message.types";
+import { ConnectionState } from "./types/state.types";
 import UiChatWidget from "./UiChatWidget";
 
 /**
@@ -120,12 +123,14 @@ function config({ id, css, shadowDom, ...props }: ConfigOptions): WidgetHandle {
 // Named exports are the package's ESM surface. They also shape the UMD global,
 // which is the module namespace: embedders call `HexabotWidget.config(...)`, or
 // render `HexabotWidget.ChatWidget` with the host page's React directly.
-export { ChatWidget, config, UiChatWidget };
+export { ChatWidget, config, ConnectionState, UiChatWidget, useChat };
 // The default stays callable as a React component while carrying the complete
 // namespace for legacy `HexabotWidget` and modern named-export compatibility.
 export default Object.assign(ChatWidget, {
   ChatWidget,
   config,
+  ConnectionState,
   UiChatWidget,
+  useChat,
 });
-export type { Config, ConfigProfile };
+export type { ChatApi, Config, ConfigProfile, UiMessage };

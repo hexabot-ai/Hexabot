@@ -6,6 +6,9 @@
 
 import { ThemeMode, ThemeOverrides } from "../theme/theme.types";
 
+import { UiMessage } from "./message.types";
+import { ConnectionState } from "./state.types";
+
 export type ConfigTransport = "ws" | "polling";
 
 /** A visitor the host page already knows. */
@@ -31,4 +34,11 @@ export type Config = {
    * form. Ignored once the session already has a subscriber.
    */
   profile?: ConfigProfile;
+  /**
+   * Called for each message the socket delivers, sent or received. History
+   * loaded on connect is not replayed.
+   */
+  onMessage?: (message: UiMessage) => void;
+  /** Called with the connection state on mount and on every change. */
+  onConnectionChange?: (state: ConnectionState) => void;
 };

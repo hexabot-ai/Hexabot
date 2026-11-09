@@ -13,6 +13,7 @@ import { useConfig } from "../providers/ConfigProvider";
 import { useSettings } from "../providers/SettingsProvider";
 import { Web } from "../types/message.types";
 import { OutgoingMessageState } from "../types/state.types";
+import { getFileError } from "../utils/attachment";
 
 import EmojiButton from "./buttons/EmojiButton";
 import FileButton from "./buttons/FileButton";
@@ -95,12 +96,10 @@ const UserInput: React.FC = () => {
     }
     if (file) {
       setFileError(null);
-      const typeCheck = allowedUploadTypes.includes(file.type) || false;
+      const error = getFileError(file, allowedUploadTypes, maxUploadSize);
 
-      if (!typeCheck) {
-        setFileError(t("messages.file_message.unsupported_file_type"));
-      } else if (file.size > maxUploadSize) {
-        setFileError(t("messages.file_message.unsupported_file_size"));
+      if (error) {
+        setFileError(t(error));
       } else {
         send({
           event,
