@@ -204,7 +204,7 @@ const UserInput: React.FC = () => {
           )}
           <div className="hb-user-input--button">
             <SendButton
-              disabled={!message}
+              disabled={!message && !file}
               onClick={(event) => sendMessage(event)}
             />
           </div>
