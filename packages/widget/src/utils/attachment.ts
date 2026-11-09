@@ -21,6 +21,8 @@ export const MIME_TYPES = {
     "audio/wav",
     "audio/aac", // common in apple devices
     "audio/x-wav",
+    "audio/webm", // voice recorders in Chrome and Android
+    "audio/mp4", // voice recorders in Safari and iOS
   ],
   documents: [
     "application/pdf",
@@ -42,6 +44,10 @@ export const MIME_TYPES = {
   ],
 };
 
+// The type without its parameters: voice recorders type their files like
+// `audio/webm;codecs=opus`. Also forgives spaces in the source's list.
+const mimeEssence = (type: string) => type.split(";")[0].trim().toLowerCase();
+
 /**
  * Why a file can't be uploaded, as a translation key, or `null` if it can.
  */
@@ -50,7 +56,9 @@ export const getFileError = (
   allowedUploadTypes: string[],
   maxUploadSize: number,
 ) => {
-  if (!allowedUploadTypes.includes(file.type)) {
+  const type = mimeEssence(file.type);
+
+  if (!allowedUploadTypes.some((allowed) => mimeEssence(allowed) === type)) {
     return "messages.file_message.unsupported_file_type";
   }
   if (file.size > maxUploadSize) {

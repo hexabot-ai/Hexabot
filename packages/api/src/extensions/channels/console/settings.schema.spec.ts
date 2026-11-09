@@ -6,6 +6,8 @@
 
 import { toDraft07JsonSchema } from '@/utils/helpers/zod';
 
+import { WEB_ALLOWED_UPLOAD_TYPES } from '../web/settings.schema';
+
 import { CONSOLE_CHANNEL_SOURCE_SETTINGS_SCHEMA } from './settings.schema';
 
 describe('CONSOLE_CHANNEL_SOURCE_SETTINGS_SCHEMA', () => {
@@ -14,6 +16,12 @@ describe('CONSOLE_CHANNEL_SOURCE_SETTINGS_SCHEMA', () => {
 
     expect(settings).not.toHaveProperty('greeting_message');
     expect(settings).not.toHaveProperty('start_button');
+  });
+
+  it('defaults to the web channel upload types', () => {
+    expect(
+      CONSOLE_CHANNEL_SOURCE_SETTINGS_SCHEMA.parse({}).allowed_upload_types,
+    ).toBe(WEB_ALLOWED_UPLOAD_TYPES);
   });
 
   it('does not expose pre-chat subscription settings in generated JSON schema', () => {

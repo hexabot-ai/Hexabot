@@ -8,10 +8,9 @@ import z from 'zod';
 
 import { config } from '@/config';
 
-export const CONSOLE_CHANNEL_NAME = 'console' as const;
+import { WEB_ALLOWED_UPLOAD_TYPES } from '../web/settings.schema';
 
-const CONSOLE_ALLOWED_UPLOAD_TYPES =
-  'audio/mpeg,audio/x-ms-wma,audio/vnd.rn-realaudio,audio/x-wav,image/gif,image/jpeg,image/png,image/tiff,image/vnd.microsoft.icon,image/vnd.djvu,image/svg+xml,text/css,text/csv,text/html,text/plain,text/xml,video/mpeg,video/mp4,video/quicktime,video/x-ms-wmv,video/x-msvideo,video/x-flv,video/web,application/msword,application/vnd.ms-powerpoint,application/pdf,application/vnd.ms-excel,application/vnd.oasis.opendocument.presentation,application/vnd.oasis.opendocument.tex,application/vnd.oasis.opendocument.spreadsheet,application/vnd.oasis.opendocument.graphics,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+export const CONSOLE_CHANNEL_NAME = 'console' as const;
 
 export const CONSOLE_CHANNEL_SOURCE_SETTINGS_SCHEMA = z
   .strictObject({
@@ -42,14 +41,11 @@ export const CONSOLE_CHANNEL_SOURCE_SETTINGS_SCHEMA = z
       title: 'Show location',
       description: 'Enable location sharing action in the chat interface.',
     }),
-    allowed_upload_types: z
-      .string()
-      .default(CONSOLE_ALLOWED_UPLOAD_TYPES)
-      .meta({
-        title: 'Allowed upload types',
-        description: 'Comma-separated MIME types accepted by the upload input.',
-        'ui:widget': 'textarea',
-      }),
+    allowed_upload_types: z.string().default(WEB_ALLOWED_UPLOAD_TYPES).meta({
+      title: 'Allowed upload types',
+      description: 'Comma-separated MIME types accepted by the upload input.',
+      'ui:widget': 'textarea',
+    }),
     thread_inactivity_hours: z.int().nonnegative().default(24).meta({
       title: 'Thread inactivity (hours)',
       description:
