@@ -423,7 +423,7 @@ const ChatProvider: React.FC<{
       }
     }
   };
-  const handleSubscription = useCallback(
+  const requestSubscription = useCallback(
     async (firstName?: string, lastName?: string) => {
       try {
         setConnectionState(ConnectionState.tryingToConnect);
@@ -466,6 +466,19 @@ const ChatProvider: React.FC<{
       socket,
     ],
   );
+  const pendingSubscription = useRef<Promise<void>>(undefined);
+  // The server sends `settings` again on every reconnect, which would start
+  // a second silent subscription while the first waits for the socket.
+  const handleSubscription = (firstName?: string, lastName?: string) => {
+    pendingSubscription.current ??= requestSubscription(
+      firstName,
+      lastName,
+    ).finally(() => {
+      pendingSubscription.current = undefined;
+    });
+
+    return pendingSubscription.current;
+  };
   const subscribe = async (first_name: string = "", last_name: string = "") => {
     const { body } = await socket.get<SubscribeResponse>(
       getWebhookUrl({ first_name, last_name }),

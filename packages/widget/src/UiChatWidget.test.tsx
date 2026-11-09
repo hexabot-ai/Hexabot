@@ -140,6 +140,36 @@ describe("UiChatWidget", () => {
     expect(fake.mock.post).not.toHaveBeenCalled();
   });
 
+  it("runs one silent subscription when a reconnect resends the settings", async () => {
+    let answer: (response: unknown) => void = () => {};
+
+    fake.mock.get.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    await render(
+      <UiChatWidget
+        config={{
+          ...config,
+          profile: { firstName: "Ada", lastName: "Lovelace" },
+        }}
+        defaultIsOpen
+      />,
+    );
+    await act(async () => fake.emit("settings", createChannelSettings()));
+    await act(async () => fake.emit("settings", createChannelSettings()));
+
+    expect(fake.mock.get).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      answer({ statusCode: 200, body: { profile: subscriber, messages: [] } }),
+    );
+
+    expect(find(".hb-user-input")).not.toBeNull();
+  });
+
   it("leaves a blank profile name to the API default", async () => {
     fake.mock.get.mockResolvedValue({
       statusCode: 200,

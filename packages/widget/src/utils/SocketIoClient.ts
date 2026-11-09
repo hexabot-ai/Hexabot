@@ -255,7 +255,18 @@ export class SocketIoClient {
   }
 
   /**
+   * How many times a GET is sent before a disconnect failure is final.
+   * @static
+   */
+  static getAttempts = 3;
+
+  /**
    * Sends a GET request to the server.
+   *
+   * socket.io rejects a request still in flight when the socket disconnects,
+   * as a network drop or a React StrictMode remount does mid-subscribe. A
+   * GET is safe to send again, and socket.io holds what is emitted while
+   * disconnected until the next connection, so the request is retried.
    * @param url The URL to send the request to
    * @param options Optional request options
    * @returns The response from the server
@@ -264,11 +275,23 @@ export class SocketIoClient {
     url: string,
     options?: Partial<Omit<IOOutgoingMessage, "url" | "method" | "body">>,
   ): Promise<IOIncomingMessage<T>> {
-    return await this.request({
-      method: "get",
-      url,
-      ...options,
-    });
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.request<T>({
+          method: "get",
+          url,
+          ...options,
+        });
+      } catch (error) {
+        // A server answer is final, and so is a timeout on a live socket.
+        const cutOff =
+          !(error instanceof SocketIoClientError) && !this.socket.connected;
+
+        if (!cutOff || attempt >= SocketIoClient.getAttempts) {
+          throw error;
+        }
+      }
+    }
   }
 
   public async post<T>(
