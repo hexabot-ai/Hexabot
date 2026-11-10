@@ -7,11 +7,15 @@
 import {
   AttachmentResourceRef,
   CONTENT_TYPE_READ_ONLY_PROPERTY_KEYS,
+  type Content,
   type ContentFieldType,
 } from "@hexabot-ai/types";
 import { RJSFSchema } from "@rjsf/utils";
 
-import { getSchemaProperties } from "@/app-components/inputs/JsonSchemaForm/schema-defaults.utils";
+import {
+  getSchemaDefaults,
+  getSchemaProperties,
+} from "@/app-components/inputs/JsonSchemaForm/schema-defaults.utils";
 import { getContentFieldType } from "@/utils/content-field.utils";
 
 import { type ContentFormData } from "./ContentForm";
@@ -57,11 +61,13 @@ const CONTENT_FIELD_SCHEMA_FACTORIES: Partial<
 > = {
   boolean: (title) => ({ type: "boolean", title, default: false }),
   textarea: buildStringFieldSchema,
-  uri: (title) => ({ type: "string", format: "uri", title, default: "" }),
+  // No "" default: "format" refuses an empty URL, and the URL input clears
+  // the value to undefined.
+  uri: (title) => ({ type: "string", format: "uri", title }),
   html: buildStringFieldSchema,
   string: buildStringFieldSchema,
 };
-const REQUIRED_NON_EMPTY_FIELD_TYPES = new Set<ContentField["type"]>([
+const TEXT_FIELD_TYPES = new Set<ContentField["type"]>([
   "string",
   "textarea",
   "html",
@@ -100,15 +106,10 @@ const buildContentFieldSchema = (
     fieldType === "file"
       ? buildFileFieldSchema(fieldTitle, requiredFields.has(propertyKey))
       : schemaFactory(fieldTitle);
-  const fieldSchema = REQUIRED_NON_EMPTY_FIELD_TYPES.has(fieldType)
-    ? {
-        ...baseFieldSchema,
-        minLength:
-          typeof baseFieldSchema.minLength === "number"
-            ? Math.max(1, baseFieldSchema.minLength)
-            : 1,
-      }
-    : baseFieldSchema;
+  const fieldSchema =
+    TEXT_FIELD_TYPES.has(fieldType) && requiredFields.has(propertyKey)
+      ? { ...baseFieldSchema, minLength: 1 }
+      : baseFieldSchema;
   const fieldUiSchema = CONTENT_FIELD_UI_SCHEMAS[fieldType];
 
   return fieldUiSchema ? { ...fieldSchema, ...fieldUiSchema } : fieldSchema;
@@ -140,6 +141,27 @@ export const buildContentSchema = (rjsfSchema: RJSFSchema) => {
     required: [...requiredFields],
   } as RJSFSchema;
 };
+
+/**
+ * Form data of a content: the defaults of the form, then the content and its
+ * properties. Empty texts are left to the defaults, since an empty URL is
+ * not a valid URL.
+ */
+export const buildContentFormData = (
+  schema: RJSFSchema,
+  contentTypeId: string,
+  content?: Content | null,
+) =>
+  ({
+    contentType: contentTypeId,
+    ...getSchemaDefaults(schema),
+    ...content,
+    ...Object.fromEntries(
+      Object.entries(content?.properties ?? {}).filter(
+        ([, value]) => value !== "",
+      ),
+    ),
+  }) as ContentFormData;
 
 const isEmptyValue = (value: unknown) =>
   value === undefined ||

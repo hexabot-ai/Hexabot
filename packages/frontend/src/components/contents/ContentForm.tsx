@@ -8,10 +8,7 @@ import { type Content, type ContentType } from "@hexabot-ai/types";
 import { isMatch } from "lodash";
 import { FC, Fragment, useMemo, useState } from "react";
 
-import {
-  getSchemaDefaults,
-  JsonSchemaForm,
-} from "@/app-components/inputs/JsonSchemaForm";
+import { JsonSchemaForm } from "@/app-components/inputs/JsonSchemaForm";
 import { useCreate } from "@/hooks/crud/useCreate";
 import { useUpdate } from "@/hooks/crud/useUpdate";
 import { useToast } from "@/hooks/useToast";
@@ -20,7 +17,11 @@ import { EntityType } from "@/services/types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
 import validator from "@/utils/rjsf-zod-validator";
 
-import { buildContentParams, buildContentSchema } from "./content.schema.utils";
+import {
+  buildContentFormData,
+  buildContentParams,
+  buildContentSchema,
+} from "./content.schema.utils";
 
 export type ContentFormData = Record<string, unknown> & {
   contentType: string;
@@ -39,13 +40,7 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
   const contentTypeId = content?.contentType ?? contentType?.id ?? "";
   const schema = buildContentSchema(contentType?.schema);
   const defaultFormData = useMemo(
-    () =>
-      ({
-        contentType: contentTypeId,
-        ...getSchemaDefaults(schema),
-        ...content,
-        ...content?.properties,
-      }) as ContentFormData,
+    () => buildContentFormData(schema, contentTypeId, content),
     [content, contentTypeId],
   );
   const [formData, setFormData] = useState<ContentFormData>(defaultFormData);

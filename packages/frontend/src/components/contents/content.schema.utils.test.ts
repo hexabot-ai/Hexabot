@@ -8,8 +8,13 @@ import { type RJSFSchema } from "@rjsf/utils";
 import { describe, expect, it } from "vitest";
 
 import { getSchemaDefaults } from "@/app-components/inputs/JsonSchemaForm/schema-defaults.utils";
+import validator from "@/utils/rjsf-zod-validator";
 
-import { buildContentParams, buildContentSchema } from "./content.schema.utils";
+import {
+  buildContentFormData,
+  buildContentParams,
+  buildContentSchema,
+} from "./content.schema.utils";
 
 // Content type fields are not JSON Schema types ("file").
 const contentTypeSchema = {
@@ -57,5 +62,69 @@ describe("buildContentParams", () => {
         contentTypeSchema,
       ),
     ).toEqual({ title: "Title", status: false, properties: { body: "" } });
+  });
+});
+
+describe("content form validation", () => {
+  const schema = buildContentSchema({
+    type: "object",
+    properties: {
+      title: { type: "string", title: "Title" },
+      status: { type: "boolean", title: "Status" },
+      name: { type: "string", title: "Name" },
+      body: { type: "textarea", title: "Body" },
+      link: { type: "uri", title: "Link" },
+      summary: { type: "string", title: "Summary" },
+      notes: { type: "textarea", title: "Notes" },
+      website: { type: "uri", title: "Website" },
+    },
+    required: ["name", "body", "link"],
+  } as unknown as RJSFSchema);
+  const content = {
+    id: "content-id",
+    contentType: "content-type-id",
+    title: "Title",
+    status: true,
+    searchText: "",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    properties: { name: "Name", body: "Body", link: "https://hexabot.ai" },
+  };
+  const isValid = (
+    properties: Record<string, unknown>,
+    values: Record<string, unknown> = {},
+  ) =>
+    validator.isValid(
+      schema,
+      {
+        ...buildContentFormData(schema, "content-type-id", {
+          ...content,
+          properties: { ...content.properties, ...properties },
+        }),
+        ...values,
+      },
+      schema,
+    );
+
+  it("lets optional text fields be left empty", () => {
+    expect(isValid({})).toBe(true);
+    // Saved empty, then cleared in the form
+    expect(isValid({ summary: "", notes: "", website: "" })).toBe(true);
+    expect(isValid({}, { summary: "", notes: "", website: undefined })).toBe(
+      true,
+    );
+  });
+
+  it("requires a value in required text fields", () => {
+    expect(isValid({}, { name: "" })).toBe(false);
+    expect(isValid({}, { body: "" })).toBe(false);
+    expect(isValid({ link: "" })).toBe(false);
+    expect(isValid({}, { link: undefined })).toBe(false);
+  });
+
+  it("checks the URL of URL fields that have a value", () => {
+    expect(isValid({ website: "https://hexabot.ai/docs" })).toBe(true);
+    expect(isValid({ website: "hexabot.ai" })).toBe(false);
+    expect(isValid({ link: "hexabot.ai" })).toBe(false);
   });
 });
