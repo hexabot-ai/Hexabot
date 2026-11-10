@@ -22,7 +22,6 @@ import ErrorScreen from "./ErrorScreen";
 import { LoadingComponent } from "./LoadingComponent";
 import Messages from "./Messages";
 import UserInput from "./UserInput";
-import Webview from "./Webview";
 
 import "./ChatWindow.scss";
 
@@ -87,8 +86,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         return ChatView;
       case ChatScreen.POST_CHAT:
         return PostChat && <PostChat />;
-      case ChatScreen.WEBVIEW:
-        return <Webview />;
       case ChatScreen.LOADING:
         return <LoadingComponent />;
       case ChatScreen.DISCONNECT:

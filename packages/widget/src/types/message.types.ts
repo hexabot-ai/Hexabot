@@ -34,8 +34,6 @@ export type WebUrlButton = {
   type: ButtonType.web_url;
   title: string;
   url: string;
-  messenger_extensions?: boolean;
-  webview_height_ratio?: "compact" | "tall" | "full";
 };
 
 export type Button = PostBackButton | WebUrlButton;
@@ -222,7 +220,6 @@ export namespace Web {
     title: string;
     subtitle?: string;
     image_url?: string;
-    default_action?: Omit<WebUrlButton, "title">;
     buttons?: Button[];
   }
 

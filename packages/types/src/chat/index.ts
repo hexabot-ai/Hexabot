@@ -23,7 +23,6 @@ export {
   type Button,
   type PostBackButton,
   type WebUrlButton,
-  type WebviewHeightRatio,
 } from "./button";
 
 export {

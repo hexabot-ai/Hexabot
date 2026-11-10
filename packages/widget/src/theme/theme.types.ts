@@ -41,7 +41,6 @@ export type ThemeSemanticTokens = {
     overlay: string;
     elevated: string;
     suggestion: string;
-    webviewFooter: string;
   };
   text: {
     primary: string;

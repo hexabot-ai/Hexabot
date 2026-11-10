@@ -32,7 +32,7 @@ const contentTypes: TContentTypeFixtures['values'][] = [
         status: { type: 'boolean', title: 'Status' },
         description: { type: 'string', title: 'Description' },
         image: { type: 'file', title: 'Image' },
-        subtitle: { type: 'file', title: 'Subtitle' },
+        subtitle: { type: 'string', title: 'Subtitle' },
       } as any,
     },
   },

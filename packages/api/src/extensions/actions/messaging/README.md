@@ -14,5 +14,5 @@ Common settings:
 List-specific settings:
 - `content.display` (`list` | `carousel`) — controls whether the content is rendered as a list or carousel.
 - `content.fields` — mapping of the content fields to render (`title`, `subtitle`, `image_url`, optional `url`, `action_title`, `action_payload`).
-- `content.buttons` — buttons to attach to each content element.
+- `content.buttons` — buttons to attach to each content element. A `web_url` button links to the content's `url` field (a `uri` field of the content type) when it has a value, else to the button's own `url`; an element with neither gets no such button. Buttons open their link in a new tab: there are no webview options.
 - `content.limit` — maximum number of items to fetch per page; `content.entity` optionally targets a specific content type.

@@ -563,7 +563,6 @@
     "command": "Command",
     "args": "Arguments",
     "cwd": "Working directory",
-    "html": "HTML",
     "name": "Name",
     "slug": "Slug",
     "scope": "Scope",

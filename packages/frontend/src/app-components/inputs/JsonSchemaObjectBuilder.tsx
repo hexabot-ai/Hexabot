@@ -5,6 +5,10 @@
  */
 
 import {
+  type ContentFieldType,
+  resolveContentFieldType,
+} from "@hexabot-ai/types";
+import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
@@ -55,12 +59,11 @@ const BASE_TYPE_OPTIONS = {
     { value: "textarea", label: "Textarea" },
     { value: "boolean", label: "Checkbox" },
     { value: "file", label: "File" },
-    { value: "html", label: "HTML" },
   ],
 } as const satisfies Record<
   JsonSchemaOptionContext,
   { value: string; label: string }[]
->;
+> & { fieldInput: { value: ContentFieldType; label: string }[] };
 
 export type JsonSchemaType<C extends JsonSchemaOptionContext = "default"> =
   (typeof BASE_TYPE_OPTIONS)[C][number]["value"];
@@ -177,6 +180,12 @@ const resolveSchemaType = <C extends JsonSchemaOptionContext = "default">(
 ): JsonSchemaType => {
   const rawType = schema.type;
   const options = getContextTypeOptions(context);
+
+  if (context === "fieldInput") {
+    const fieldType = resolveContentFieldType(schema);
+
+    if (fieldType) return fieldType as JsonSchemaType;
+  }
 
   if (Array.isArray(rawType)) {
     const match = rawType.find((entry) => isJsonSchemaType(entry, options));

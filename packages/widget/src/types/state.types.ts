@@ -24,8 +24,6 @@ export enum ChatScreen {
   PRE_CHAT = "preChat",
   // Screen that shows up after the chat is closed (not in use yet)
   POST_CHAT = "postChat",
-  // Screen shows up when user clicks on a url button where there is a webview
-  WEBVIEW = "webview",
   // Screen that shows the messages and text input
   CHAT = "chat",
   // Screen that shows when trying to connect

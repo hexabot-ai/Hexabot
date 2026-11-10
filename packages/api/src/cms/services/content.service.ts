@@ -5,32 +5,126 @@
  */
 
 import {
+  buildContentPropertiesSchema,
   ContentFull,
   ContentType,
+  FileType,
   StdOutgoingListMessageData,
   ContentOptions,
 } from '@hexabot-ai/types';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import Papa from 'papaparse';
-import { FindManyOptions, FindOptionsWhere, In } from 'typeorm';
+import { FindManyOptions, FindOneOptions, FindOptionsWhere, In } from 'typeorm';
 
 import { HelperService } from '@/helper/helper.service';
 import { HelperType } from '@/helper/types';
+import { UpdateOneOptions } from '@/utils/generics/base-orm.repository';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
 
-import { ContentCreateDto } from '../dto/content.dto';
+import { ContentCreateDto, ContentUpdateDto } from '../dto/content.dto';
 import { ContentOrmEntity } from '../entities/content.entity';
 import { RagHelperConfigurationError } from '../errors/rag.errors';
 import { ContentRepository } from '../repositories/content.repository';
 import { RagHit, RagRetrieveOptions } from '../types/rag';
+
+import { ContentTypeService } from './content-type.service';
 
 @Injectable()
 export class ContentService extends BaseOrmService<ContentOrmEntity> {
   constructor(
     readonly repository: ContentRepository,
     private readonly helperService: HelperService,
+    private readonly contentTypeService: ContentTypeService,
   ) {
     super(repository);
+  }
+
+  override async create(payload: ContentCreateDto) {
+    await this.assertValidProperties(payload.contentType, payload.properties);
+
+    return await super.create(payload);
+  }
+
+  override async createMany(payloads: ContentCreateDto[]) {
+    for (const [index, { contentType, properties }] of payloads.entries()) {
+      await this.assertValidProperties(
+        contentType,
+        properties,
+        `Content ${index + 1}: `,
+      );
+    }
+
+    return await super.createMany(payloads);
+  }
+
+  /**
+   * Checks the properties against the content type when either changes: a
+   * change of `title` or `status` alone keeps the properties as they are.
+   */
+  override async updateOne(
+    idOrOptions: string | FindOneOptions<ContentOrmEntity>,
+    payload: ContentUpdateDto,
+    options?: UpdateOneOptions,
+  ) {
+    if (payload.properties !== undefined || payload.contentType !== undefined) {
+      const current = await this.findOne(idOrOptions);
+
+      if (current) {
+        await this.assertValidProperties(
+          payload.contentType ?? current.contentType,
+          payload.properties !== undefined
+            ? payload.properties
+            : current.properties,
+        );
+      }
+    }
+
+    return await super.updateOne(idOrOptions, payload, options);
+  }
+
+  /**
+   * Throws a `BadRequestException` unless the properties match the fields of
+   * the content type (see `buildContentPropertiesSchema`).
+   */
+  private async assertValidProperties(
+    contentTypeId: string,
+    properties: unknown,
+    prefix = '',
+  ) {
+    const contentType = await this.contentTypeService.findOne(contentTypeId);
+
+    if (!contentType) {
+      throw new BadRequestException(
+        `${prefix}Content type "${contentTypeId}" does not exist`,
+      );
+    }
+
+    const error = this.getPropertiesError(contentType, properties);
+
+    if (error) {
+      throw new BadRequestException(`${prefix}${error}`);
+    }
+  }
+
+  private getPropertiesError(
+    contentType: Pick<ContentType, 'name' | 'schema'>,
+    properties: unknown,
+  ): string | undefined {
+    const result = buildContentPropertiesSchema(contentType.schema).safeParse(
+      properties ?? {},
+    );
+
+    if (result.success) {
+      return undefined;
+    }
+
+    const issues = result.error.issues
+      .map(({ path, message }) =>
+        path.length ? `${path.join('.')}: ${message}` : message,
+      )
+      .join('; ');
+
+    return `Invalid properties for content type "${contentType.name}": ${issues}`;
   }
 
   /**
@@ -222,32 +316,61 @@ export class ContentService extends BaseOrmService<ContentOrmEntity> {
       );
     }
 
-    const contentsDto = result.data.reduce(
-      (acc, { title, status, ...rest }) => [
-        ...acc,
-        {
+    const fields: Record<string, unknown> =
+      contentType.schema?.properties ?? {};
+    const contentsDto = result.data.map(
+      ({ title, status, ...rest }) =>
+        ({
           title: String(title),
           status: status.trim().toLowerCase() === 'true',
           contentType: contentType.id,
-          properties: Object.keys(rest)
-            .filter((key) =>
-              Object.entries(contentType.schema.properties || {})
-                ?.map(([key]) => key)
-                .includes(key),
-            )
-            .reduce(
-              (filtered, key) => ({ ...filtered, [key]: rest[key] }),
-              {} as Record<string, string>,
-            ),
-        } satisfies ContentCreateDto,
-      ],
-      [] as ContentCreateDto[],
+          properties: Object.fromEntries(
+            Object.entries(rest)
+              .filter(([key, value]) => key in fields && value !== '')
+              .map(([key, value]) => [
+                key,
+                this.parseCsvValue(fields[key], value),
+              ]),
+          ),
+        }) satisfies ContentCreateDto,
     );
+    const errors = contentsDto.flatMap(({ properties }, index) => {
+      const error = this.getPropertiesError(contentType, properties);
+
+      // Row 1 holds the column names.
+      return error ? [`Row ${index + 2}: ${error}`] : [];
+    });
+
+    if (errors.length) {
+      throw new BadRequestException(errors.join('\n'));
+    }
+
     this.logger.log(`Parsed ${result.data.length} rows from CSV.`);
     try {
-      return await this.createMany(contentsDto);
+      return await super.createMany(contentsDto);
     } catch (err) {
       this.logger.error('Error occurred when extracting data. ', err);
     }
+  }
+
+  /**
+   * Reads a CSV cell as the value of its field: `true`/`false` (or `1`/`0`)
+   * for a boolean field, a file URL for a file field, the text otherwise.
+   */
+  private parseCsvValue(field: unknown, value: string): unknown {
+    const type = (field as { type?: unknown } | undefined)?.type;
+
+    if (type === 'boolean') {
+      const flag = value.trim().toLowerCase();
+
+      if (flag === 'true' || flag === '1') return true;
+      if (flag === 'false' || flag === '0') return false;
+    }
+
+    if (type === 'file') {
+      return { type: FileType.unknown, payload: { url: value.trim() } };
+    }
+
+    return value;
   }
 }

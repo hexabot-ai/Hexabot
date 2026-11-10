@@ -562,7 +562,6 @@
     "command": "Commande",
     "args": "Arguments",
     "cwd": "Répertoire de travail",
-    "html": "HTML",
     "name": "Nom",
     "slug": "Slug",
     "scope": "Portée",

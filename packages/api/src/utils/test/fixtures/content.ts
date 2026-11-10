@@ -31,6 +31,7 @@ const contents: TContentFixtures['values'][] = [
     properties: {
       subtitle: 'Jean Droit Taille Normale',
       image: {
+        type: 'image',
         payload: {
           url: 'https://images-na.ssl-images-amazon.com/images/I/31DY09uzLDL._SX38_SY50_CR,0,0,38,50_.jpg',
         },
@@ -43,6 +44,7 @@ const contents: TContentFixtures['values'][] = [
     properties: {
       subtitle: 'Rankie Adaptateur DisplayPort vers VGA, 1080P Full HD, Noir',
       image: {
+        type: 'image',
         payload: {
           url: 'https://images-eu.ssl-images-amazon.com/images/I/41mUnrSGKwL._SL75_.jpg',
         },
@@ -57,6 +59,7 @@ const contents: TContentFixtures['values'][] = [
       subtitle:
         'BestoU Sac a Main Femmes Cuir Bandoulieres Grand Sacs Porte Cabas (Marron)',
       image: {
+        type: 'image',
         payload: {
           url: 'https://images-na.ssl-images-amazon.com/images/I/51AV-LVMMEL._SS36_.jpg',
         },
@@ -69,6 +72,7 @@ const contents: TContentFixtures['values'][] = [
     properties: {
       subtitle: 'Kitten Heel Sling Back',
       image: {
+        type: 'image',
         payload: {
           url: 'https://images-na.ssl-images-amazon.com/images/I/31qzy-FAE5L._SS47_.jpg',
         },
@@ -82,6 +86,7 @@ const contents: TContentFixtures['values'][] = [
       subtitle:
         'Scenarios - A Collection of Nameless Detective Stories (English Edition)',
       image: {
+        type: 'image',
         payload: {
           url: 'https://images-na.ssl-images-amazon.com/images/I/31qzy-FAE5L._SS47_.jpg',
         },
@@ -94,6 +99,7 @@ const contents: TContentFixtures['values'][] = [
     properties: {
       address: '90،, Avenue Taher Ben Ammar, Tunis',
       image: {
+        type: 'image',
         payload: {
           url: 'https://www.google.com/maps/uv?hl=fr&pb=!1s0x12fd336848aa1b4d:0xeccb5887cef91140!3m1!7e115!4shttps://lh5.googleusercontent.com/p/AF1QipNEPe0sTSH08WF57AXb1YfmFCDFJPKCUwW0Ervn%3Dw260-h175-n-k-no!5spizza+hut+address+-+Recherche+Google&imagekey=!1e10!2sAF1QipNEPe0sTSH08WF57AXb1YfmFCDFJPKCUwW0Ervn',
         },

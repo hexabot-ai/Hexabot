@@ -4,7 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Action, contentTypeJsonSchema } from '@hexabot-ai/types';
+import {
+  Action,
+  CONTENT_FIELD_TYPES,
+  contentTypeJsonSchema,
+} from '@hexabot-ai/types';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Tool, ToolGuards } from '@rekog/mcp-nest';
 import { z } from 'zod';
@@ -24,6 +28,10 @@ import {
   paginationSchema,
   uuidSchema,
 } from './hexabot-mcp.schemas';
+
+const contentPropertiesSchema = jsonObjectSchema.describe(
+  'Values of the content type fields, by field key: a string for string, textarea and uri fields, a boolean for boolean fields, and { "type": "image"|"video"|"audio"|"file", "payload": { "url": "<file URL>" } } for file fields, or "payload": { "id": "<attachment id>" } for an uploaded attachment (the admin UI only shows file values that have an id). They are checked against the content type: required fields need a value, optional ones may be left out, and other keys are refused. `title` and `status` are arguments of their own, not properties.',
+);
 
 @Injectable()
 export class HexabotCmsMcpTools extends HexabotMcpToolBase {
@@ -75,7 +83,7 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_type_create',
-    description: 'Create a CMS content type.',
+    description: `Create a CMS content type. \`schema.properties\` maps each field key to { type, title?, description? }, where \`type\` is a Hexabot field type (${CONTENT_FIELD_TYPES.join(', ')}), not a JSON Schema type or \`format\`: use {"type":"uri"} for a URL, not {"type":"string","format":"uri"}. Keep the built-in \`title\` (string) and \`status\` (boolean) fields, and list the keys of mandatory fields in \`schema.required\`.`,
     parameters: z.object({
       name: z.string().min(1),
       schema: contentTypeJsonSchema,
@@ -92,7 +100,8 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_type_update',
-    description: 'Update a CMS content type.',
+    description:
+      'Update a CMS content type. `schema` replaces the whole schema and follows the rules of hexabot_content_type_create.',
     parameters: z.object({
       id: uuidSchema,
       name: z.string().min(1).optional(),
@@ -176,7 +185,7 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
       contentType: uuidSchema,
       title: z.string().min(1),
       status: z.boolean().optional(),
-      properties: jsonObjectSchema.optional(),
+      properties: contentPropertiesSchema.optional(),
     }),
   })
   async createContent(args: {
@@ -198,7 +207,7 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
       contentType: uuidSchema.optional(),
       title: z.string().min(1).optional(),
       status: z.boolean().optional(),
-      properties: jsonObjectSchema.optional(),
+      properties: contentPropertiesSchema.optional(),
     }),
   })
   async updateContent(args: { id: string } & Record<string, unknown>) {

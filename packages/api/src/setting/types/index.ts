@@ -6,8 +6,6 @@
 
 import { Setting } from '@hexabot-ai/types';
 
-export { FieldType } from '@hexabot-ai/types';
-
 export type AnySetting = Setting;
 
 export type ExtensionSetting<

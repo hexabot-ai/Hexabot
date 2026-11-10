@@ -4,17 +4,25 @@
  * Full terms: see LICENSE.md.
  */
 
-import { AttachmentResourceRef } from "@hexabot-ai/types";
+import {
+  AttachmentResourceRef,
+  CONTENT_TYPE_READ_ONLY_PROPERTY_KEYS,
+  type Content,
+  type ContentFieldType,
+  resolveContentFieldType,
+} from "@hexabot-ai/types";
 import { RJSFSchema } from "@rjsf/utils";
 
-import { getSchemaProperties } from "@/app-components/inputs/JsonSchemaForm/schema-defaults.utils";
-import { type JsonSchemaType } from "@/app-components/inputs/JsonSchemaObjectBuilder";
+import {
+  getSchemaDefaults,
+  getSchemaProperties,
+} from "@/app-components/inputs/JsonSchemaForm/schema-defaults.utils";
 
 import { type ContentFormData } from "./ContentForm";
 
 export type ContentField = {
   title: string;
-  type: JsonSchemaType<"fieldInput">;
+  type: ContentFieldType;
 };
 
 export type ContentSchemaProperties = Record<string, ContentField>;
@@ -53,14 +61,14 @@ const CONTENT_FIELD_SCHEMA_FACTORIES: Partial<
 > = {
   boolean: (title) => ({ type: "boolean", title, default: false }),
   textarea: buildStringFieldSchema,
-  uri: (title) => ({ type: "string", format: "uri", title, default: "" }),
-  html: buildStringFieldSchema,
+  // No "" default: "format" refuses an empty URL, and the URL input clears
+  // the value to undefined.
+  uri: (title) => ({ type: "string", format: "uri", title }),
   string: buildStringFieldSchema,
 };
-const REQUIRED_NON_EMPTY_FIELD_TYPES = new Set<ContentField["type"]>([
+const TEXT_FIELD_TYPES = new Set<ContentField["type"]>([
   "string",
   "textarea",
-  "html",
   "uri",
 ]);
 
@@ -89,22 +97,18 @@ const buildContentFieldSchema = (
   requiredFields: Set<string>,
 ): RJSFSchema => {
   const fieldTitle = property.title || propertyKey;
+  const fieldType = resolveContentFieldType(property) ?? property.type;
   const schemaFactory =
-    CONTENT_FIELD_SCHEMA_FACTORIES[property.type] ?? buildStringFieldSchema;
+    CONTENT_FIELD_SCHEMA_FACTORIES[fieldType] ?? buildStringFieldSchema;
   const baseFieldSchema =
-    property.type === "file"
+    fieldType === "file"
       ? buildFileFieldSchema(fieldTitle, requiredFields.has(propertyKey))
       : schemaFactory(fieldTitle);
-  const fieldSchema = REQUIRED_NON_EMPTY_FIELD_TYPES.has(property.type)
-    ? {
-        ...baseFieldSchema,
-        minLength:
-          typeof baseFieldSchema.minLength === "number"
-            ? Math.max(1, baseFieldSchema.minLength)
-            : 1,
-      }
-    : baseFieldSchema;
-  const fieldUiSchema = CONTENT_FIELD_UI_SCHEMAS[property.type];
+  const fieldSchema =
+    TEXT_FIELD_TYPES.has(fieldType) && requiredFields.has(propertyKey)
+      ? { ...baseFieldSchema, minLength: 1 }
+      : baseFieldSchema;
+  const fieldUiSchema = CONTENT_FIELD_UI_SCHEMAS[fieldType];
 
   return fieldUiSchema ? { ...fieldSchema, ...fieldUiSchema } : fieldSchema;
 };
@@ -136,12 +140,52 @@ export const buildContentSchema = (rjsfSchema: RJSFSchema) => {
   } as RJSFSchema;
 };
 
-export const buildContentParams = ({
+/**
+ * Form data of a content: the defaults of the form, then the content and its
+ * properties. Empty texts are left to the defaults, since an empty URL is
+ * not a valid URL.
+ */
+export const buildContentFormData = (
+  schema: RJSFSchema,
+  contentTypeId: string,
+  content?: Content | null,
+) =>
+  ({
+    contentType: contentTypeId,
+    ...getSchemaDefaults(schema),
+    ...content,
+    ...Object.fromEntries(
+      Object.entries(content?.properties ?? {}).filter(
+        ([, value]) => value !== "",
+      ),
+    ),
+  }) as ContentFormData;
+
+const isEmptyValue = (value: unknown) =>
+  value === undefined ||
+  (typeof value === "object" &&
+    value !== null &&
+    Object.keys(value).length === 0);
+
+/**
+ * Splits the form data into the columns of the content and its properties.
+ * Properties only hold the values of the content type fields: the form data
+ * also carries the content it was seeded with (id, dates, content type, ...)
+ * and the values of fields removed from the content type.
+ */
+export const buildContentParams = (
+  { title, status, ...values }: ContentFormData,
+  contentTypeSchema: unknown,
+) => ({
   title,
   status,
-  ...rest
-}: ContentFormData) => ({
-  title,
-  status,
-  properties: rest,
+  properties: Object.fromEntries(
+    Object.keys(getSchemaProperties(contentTypeSchema) ?? {})
+      .filter(
+        (key) =>
+          !CONTENT_TYPE_READ_ONLY_PROPERTY_KEYS.includes(key) &&
+          !isEmptyValue(values[key]),
+      )
+      .map((key) => [key, values[key]]),
+  ),
 });

@@ -9,8 +9,7 @@
     "greeting": "Bienvenue !",
     "placeholder": "Écrivez quelque chose...",
     "disconnected": "Connexion perdue",
-    "error": "Quelque chose s'est mal passé",
-    "back": "Retour"
+    "error": "Quelque chose s'est mal passé"
   },
   "messages": {
     "get_started": "Démarrer",

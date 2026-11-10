@@ -52,28 +52,6 @@ export const buttonsMessage: StdOutgoingButtonsMessageData = {
       type: ButtonType.web_url,
       title: 'Second button',
       url: 'http://button.com',
-      messenger_extensions: true,
-      webview_height_ratio: 'compact',
-    },
-  ],
-};
-
-export const urlButtonsMessage: StdOutgoingButtonsMessageData = {
-  text: 'Hit one of these buttons :',
-  buttons: [
-    {
-      type: ButtonType.web_url,
-      title: 'First button',
-      url: 'http://button1.com',
-      messenger_extensions: true,
-      webview_height_ratio: 'compact',
-    },
-    {
-      type: ButtonType.web_url,
-      title: 'Second button',
-      url: 'http://button2.com',
-      messenger_extensions: true,
-      webview_height_ratio: 'compact',
     },
   ],
 };

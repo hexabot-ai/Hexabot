@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { OutgoingMessageType } from '@hexabot-ai/types';
+import { ButtonType, OutgoingMessageType } from '@hexabot-ai/types';
 
 import {
   attachmentMessage,
@@ -108,6 +108,64 @@ describe('WebOutboundMessageEncoder', () => {
         content: {
           ...contentMessage.options,
           display: OutgoingMessageType.carousel,
+        },
+      },
+    );
+
+    expect(formatted).toEqual(webCarousel);
+  });
+
+  it('links the web_url buttons of content elements to their URL field, else to the button URL', async () => {
+    const visit = {
+      type: ButtonType.web_url,
+      title: 'Visit',
+      url: 'https://hexabot.ai',
+    };
+    const formatted = await render(
+      {
+        type: OutgoingMessageType.carousel,
+        data: {
+          ...contentMessage,
+          elements: [
+            { ...contentMessage.elements[0], link: 'https://hexabot.ai/first' },
+            { ...contentMessage.elements[1], link: '' },
+          ],
+        },
+      },
+      {
+        content: {
+          ...contentMessage.options,
+          display: OutgoingMessageType.carousel,
+          fields: { ...contentMessage.options.fields, url: 'link' },
+          buttons: [visit],
+        },
+      },
+    );
+
+    expect(formatted).toMatchObject({
+      data: {
+        elements: [
+          { buttons: [{ ...visit, url: 'https://hexabot.ai/first' }] },
+          { buttons: [visit] },
+        ],
+      },
+    });
+  });
+
+  it('leaves out the web_url buttons of content elements without a URL', async () => {
+    const formatted = await render(
+      {
+        type: OutgoingMessageType.carousel,
+        data: contentMessage,
+      },
+      {
+        content: {
+          ...contentMessage.options,
+          display: OutgoingMessageType.carousel,
+          buttons: [
+            { type: ButtonType.web_url, title: 'Visit', url: '' },
+            ...contentMessage.options.buttons,
+          ],
         },
       },
     );

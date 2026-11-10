@@ -22,7 +22,6 @@ import {
 } from 'typeorm';
 
 import { AuditLabel } from '@/audit/decorators/audit-label.decorator';
-import { config } from '@/config';
 import { JsonColumn } from '@/database/decorators/json-column.decorator';
 import {
   OnBeforeInsert,
@@ -87,13 +86,6 @@ export class ContentOrmEntity extends BaseOrmEntity<ContentDto> {
 
   @Column({ name: 'searchText', type: 'text', nullable: false })
   searchText: string;
-
-  /**
-   * Helper to return the internal url of this content.
-   */
-  static getUrl(item: ContentElement): string {
-    return new URL('/content/view/' + item.id, config.apiBaseUrl).toString();
-  }
 
   /**
    * Helper that returns the relative chatbot payload for this content.

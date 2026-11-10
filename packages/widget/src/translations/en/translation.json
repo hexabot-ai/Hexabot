@@ -9,8 +9,7 @@
     "greeting": "Welcome !",
     "placeholder": "Write something...",
     "disconnected": "Connection Lost",
-    "error": "Something went wrong",
-    "back": "Back"
+    "error": "Something went wrong"
   },
   "messages": {
     "get_started": "Get Started",

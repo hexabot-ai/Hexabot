@@ -45,8 +45,6 @@ export const webButtons: Web.OutboundMessageBase = {
         type: ButtonType.web_url,
         title: 'Second button',
         url: 'http://button.com',
-        messenger_extensions: true,
-        webview_height_ratio: 'compact',
       },
     ],
     text: 'Hit one of these buttons :',

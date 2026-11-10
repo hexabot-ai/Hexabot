@@ -4,11 +4,16 @@
  * Full terms: see LICENSE.md.
  */
 
+import { z } from "zod";
+
 import {
   AttachmentAccess,
   AttachmentCreatedByRef,
   AttachmentResourceRef,
-  FieldType,
+  buildContentPropertiesSchema,
+  CONTENT_FIELD_TYPES,
+  normalizeContentTypeSchema,
+  resolveContentFieldType,
   MemoryScope,
   McpServerTransport,
   MenuType,
@@ -87,6 +92,208 @@ describe("@hexabot-ai/types schemas", () => {
         properties: {},
       }).success,
     ).toBe(false);
+  });
+
+  it("only takes Hexabot field types in content type fields", () => {
+    const withField = (field: unknown) =>
+      contentTypeJsonSchema.safeParse({
+        ...DEFAULT_CONTENT_TYPE_SCHEMA,
+        properties: { ...DEFAULT_CONTENT_TYPE_SCHEMA.properties, field },
+        required: ["field"],
+        additionalProperties: false,
+      });
+
+    for (const type of CONTENT_FIELD_TYPES) {
+      expect(
+        withField({ type, title: "Field", description: "Help" }).success,
+      ).toBe(true);
+    }
+
+    expect(withField({ type: "html", title: "Field" }).success).toBe(false);
+
+    const unknownType = withField({ type: "number", title: "Field" });
+
+    expect(unknownType.success).toBe(false);
+    expect(unknownType.error?.issues[0]?.path).toEqual([
+      "properties",
+      "field",
+      "type",
+    ]);
+
+    const formatted = withField({
+      type: "string",
+      format: "uri",
+      title: "Field",
+    });
+
+    expect(formatted.success).toBe(false);
+    expect(formatted.error?.issues[0]?.path).toEqual(["properties", "field"]);
+    expect(formatted.error?.issues[0]?.message).toContain('{"type":"uri"}');
+  });
+
+  it("documents content field types in the content type JSON Schema", () => {
+    const jsonSchema = z.toJSONSchema(contentTypeJsonSchema, {
+      io: "input",
+    }) as any;
+    const fieldSchema = jsonSchema.properties.properties.additionalProperties;
+
+    expect(jsonSchema.description).toContain('"type":"uri"');
+    expect(fieldSchema.additionalProperties).toBe(false);
+    expect(fieldSchema.properties.type.enum).toEqual([...CONTENT_FIELD_TYPES]);
+    expect(fieldSchema.properties.type.description).toContain(
+      '"file": an attachment',
+    );
+  });
+
+  describe("content fields saved with a former spelling", () => {
+    it("are read as the kind they stand for", () => {
+      for (const type of CONTENT_FIELD_TYPES) {
+        expect(resolveContentFieldType({ type })).toBe(type);
+      }
+      expect(resolveContentFieldType({ type: "html" })).toBe("textarea");
+      expect(resolveContentFieldType({ type: "string", format: "uri" })).toBe(
+        "uri",
+      );
+      expect(resolveContentFieldType({ type: "string", format: "url" })).toBe(
+        "uri",
+      );
+      expect(resolveContentFieldType({ type: "string", format: "email" })).toBe(
+        "string",
+      );
+      expect(resolveContentFieldType({ type: "number" })).toBeUndefined();
+      expect(resolveContentFieldType(null)).toBeUndefined();
+    });
+
+    it("are rewritten to their current type in a content type schema", () => {
+      expect(
+        normalizeContentTypeSchema({
+          ...DEFAULT_CONTENT_TYPE_SCHEMA,
+          properties: {
+            ...DEFAULT_CONTENT_TYPE_SCHEMA.properties,
+            body: { type: "html", title: "Body" },
+            link: { type: "string", format: "uri", title: "Link" },
+            count: { type: "number", title: "Count" },
+          },
+          required: ["body"],
+        }),
+      ).toEqual({
+        ...DEFAULT_CONTENT_TYPE_SCHEMA,
+        properties: {
+          ...DEFAULT_CONTENT_TYPE_SCHEMA.properties,
+          body: { type: "textarea", title: "Body" },
+          link: { type: "uri", title: "Link" },
+          count: { type: "number", title: "Count" },
+        },
+        required: ["body"],
+      });
+      expect(normalizeContentTypeSchema(null)).toBeNull();
+    });
+
+    it("take the values of the kind they stand for", () => {
+      const schema = buildContentPropertiesSchema({
+        type: "object",
+        properties: {
+          body: { type: "html" },
+          link: { type: "string", format: "uri" },
+        },
+      });
+
+      expect(
+        schema.safeParse({ body: "<p>Text</p>", link: "https://hexabot.ai" })
+          .success,
+      ).toBe(true);
+      expect(
+        schema
+          .safeParse({ body: 3, link: "hexabot.ai" })
+          .error?.issues.map(({ path }) => path.join(".")),
+      ).toEqual(["body", "link"]);
+    });
+  });
+
+  describe("buildContentPropertiesSchema", () => {
+    const schema = buildContentPropertiesSchema({
+      ...DEFAULT_CONTENT_TYPE_SCHEMA,
+      properties: {
+        ...DEFAULT_CONTENT_TYPE_SCHEMA.properties,
+        body: { type: "textarea", title: "Body" },
+        link: { type: "uri", title: "Link" },
+        featured: { type: "boolean", title: "Featured" },
+        image: { type: "file", title: "Image" },
+        legacy: { type: "number", title: "Legacy" },
+      },
+      required: ["link", "image"],
+    });
+    const image = { type: "image", payload: { id: "attachment-id" } };
+    const failedPaths = (properties: unknown) =>
+      schema
+        .safeParse(properties)
+        .error?.issues.map(({ path }) => path.join("."));
+
+    it("takes the values of the content type fields", () => {
+      expect(
+        schema.safeParse({ link: "https://hexabot.ai", image }).success,
+      ).toBe(true);
+      expect(
+        schema.safeParse({
+          link: "https://hexabot.ai",
+          image: {
+            type: "image",
+            payload: { url: "https://hexabot.ai/a.png" },
+          },
+          body: "Text",
+          featured: true,
+          legacy: 3,
+        }).success,
+      ).toBe(true);
+    });
+
+    it("takes empty values for optional fields only", () => {
+      expect(
+        schema.safeParse({
+          link: "https://hexabot.ai",
+          image,
+          body: "",
+          featured: null,
+        }).success,
+      ).toBe(true);
+      expect(failedPaths({})).toEqual(["link", "image"]);
+      expect(
+        failedPaths({
+          link: "",
+          image: { type: "image", payload: { id: null } },
+        }),
+      ).toEqual(["link", "image"]);
+    });
+
+    it("refuses values of another type", () => {
+      expect(
+        failedPaths({
+          link: "hexabot.ai",
+          image: "https://hexabot.ai/a.png",
+          body: 3,
+          featured: "yes",
+        }),
+      ).toEqual(["body", "link", "featured", "image"]);
+    });
+
+    it("refuses keys that are not fields of the content type", () => {
+      const issue = schema.safeParse({
+        link: "https://hexabot.ai",
+        image,
+        title: "Title",
+        extra: "Extra",
+      }).error?.issues[0];
+
+      expect(issue?.message).toBe(
+        'Unknown field(s) "title", "extra": the content type has "body", "link", "featured", "image", "legacy" ("title" and "status" are not properties)',
+      );
+    });
+
+    it("takes any properties when the content type has no fields", () => {
+      expect(
+        buildContentPropertiesSchema(null).safeParse({ any: "value" }).success,
+      ).toBe(true);
+    });
   });
 
   it("never carries inline webhook secrets", () => {
@@ -1369,7 +1576,7 @@ describe("@hexabot-ai/types schemas", () => {
       createdAt: now,
       updatedAt: now,
       dummy: "ok",
-      dynamicField: { field: FieldType.text },
+      dynamicField: { field: "text" },
       shouldDrop: true,
     });
 
@@ -1378,7 +1585,7 @@ describe("@hexabot-ai/types schemas", () => {
     expect(record.workflow).toBe("wf_1");
     expect(record.run).toBe("run_1");
     expect(record.thread).toBe("th_1");
-    expect(dummy.dynamicField).toEqual({ field: FieldType.text });
+    expect(dummy.dynamicField).toEqual({ field: "text" });
     expect("shouldDrop" in dummy).toBe(false);
   });
 

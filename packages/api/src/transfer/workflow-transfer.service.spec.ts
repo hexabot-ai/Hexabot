@@ -1024,6 +1024,57 @@ describe('WorkflowTransferService', () => {
     ).rejects.toThrow(ConflictException);
   });
 
+  it('imports content type fields saved with a former spelling as their current type', async () => {
+    const legacySchema = {
+      type: 'object',
+      properties: {
+        title: { type: 'string', title: 'Title' },
+        body: { type: 'html', title: 'Body' },
+        link: { type: 'string', format: 'uri', title: 'Link' },
+      },
+    };
+    const currentSchema = {
+      type: 'object',
+      properties: {
+        title: { type: 'string', title: 'Title' },
+        body: { type: 'textarea', title: 'Body' },
+        link: { type: 'uri', title: 'Link' },
+      },
+    };
+    const repository = dataSource.getRepository(ContentTypeOrmEntity);
+    const importLegacyBundle = async (contentTypeName: string) => {
+      const result = await transferService.importWorkflow(
+        buildTaskResourceBundleYaml({
+          workflowName: `Legacy content type workflow ${Date.now()}`,
+          contentTypeExportId: `legacy-content-type-${Date.now()}`,
+          contentTypeName,
+          contentTypeSchema: legacySchema,
+          labelGroupExportId: `legacy-label-group-${Date.now()}`,
+          labelExportId: `legacy-label-${Date.now()}`,
+        }),
+        creatorId,
+      );
+
+      return result.resources.find(({ kind }) => kind === 'contentType');
+    };
+    const created = await importLegacyBundle(`Legacy article ${Date.now()}`);
+
+    expect(created?.action).toBe('created');
+    expect(
+      (await repository.findOneByOrFail({ id: created!.localId })).schema,
+    ).toEqual(currentSchema);
+
+    const existing = await repository.save(
+      repository.create({
+        name: `Current article ${Date.now()}`,
+        schema: currentSchema as any,
+      }),
+    );
+    const reused = await importLegacyBundle(existing.name);
+
+    expect(reused).toMatchObject({ action: 'reused', localId: existing.id });
+  });
+
   it('fails when a matching content type has different schema', async () => {
     const contentTypeName = `Conflicting content type ${Date.now()}`;
     await createContentTypeResource(contentTypeName);
