@@ -240,26 +240,19 @@ const missingActionIssue = (
   path: ['defs', defName, 'action'],
   actionName,
 });
+/**
+ * List the binding kinds a def may mount, or null when they cannot be known:
+ * no action catalog was given, or the def's action is missing from it.
+ */
 const resolveSupportedBindingKinds = (
   definition: DefLike,
-  defName: string,
   kinds: BindingKindSchemas,
   actions: Record<string, BindingValidationActionMetadata> | undefined,
-  issues: WorkflowValidationIssue[],
 ): readonly string[] | null => {
   if (definition.action) {
-    if (!actions) {
-      return null;
-    }
+    const action = actions?.[definition.action];
 
-    const action = actions[definition.action];
-    if (!action) {
-      issues.push(missingActionIssue(defName, definition.action));
-
-      return [];
-    }
-
-    return action.supportedBindings ?? [];
+    return action ? (action.supportedBindings ?? []) : null;
   }
 
   if (definition.kind === TASK_KIND) {
@@ -308,6 +301,9 @@ export const validateAndResolveBindings = (
         path: ['defs', defName, 'kind'],
         bindingKind: defDefinition.kind,
       });
+      if (defDefinition.action && actions && !actions[defDefinition.action]) {
+        issues.push(missingActionIssue(defName, defDefinition.action));
+      }
       continue;
     }
 
@@ -365,10 +361,8 @@ export const validateAndResolveBindings = (
 
     const supportedKinds = resolveSupportedBindingKinds(
       defDefinition,
-      defName,
       kinds,
       actions,
-      issues,
     );
     const shouldValidateSupportedKinds = Array.isArray(supportedKinds);
 

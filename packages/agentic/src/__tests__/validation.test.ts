@@ -720,6 +720,80 @@ describe('validateWorkflow', () => {
       }
     });
 
+    it('reports a missing action once, without judging the bindings it would support', () => {
+      const workflow = {
+        defs: mergeTaskDefs(
+          {
+            agent_step: {
+              action: 'not_installed_action',
+              bindings: { toolset: ['support_tools'] },
+            },
+          },
+          {
+            support_tools: { kind: 'toolset', settings: { name: 'support' } },
+          },
+        ),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {},
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues).toEqual([
+          {
+            code: 'missing_action',
+            message:
+              'defs.agent_step.action: No action implementation provided for "not_installed_action".',
+            path: ['defs', 'agent_step', 'action'],
+            actionName: 'not_installed_action',
+          },
+        ]);
+      }
+    });
+
+    it('reports the missing action of a def whose kind is unknown', () => {
+      const workflow = {
+        defs: mergeTaskDefs(
+          { agent_step: { action: 'understand_request_action' } },
+          {
+            remote_server: {
+              kind: 'mcp_server',
+              action: 'not_installed_action',
+              settings: {},
+              bindings: { toolset: ['support_tools'] },
+            },
+            support_tools: { kind: 'toolset', settings: { name: 'support' } },
+          },
+        ),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: { understand_request_action: {} },
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues.map(({ code, path }) => ({ code, path }))).toEqual(
+          [
+            {
+              code: 'unknown_binding_kind',
+              path: ['defs', 'remote_server', 'kind'],
+            },
+            {
+              code: 'missing_action',
+              path: ['defs', 'remote_server', 'action'],
+            },
+          ],
+        );
+      }
+    });
+
     it('reports unknown task references per task with paths', () => {
       const parsed = parseYaml(fixtureYaml) as Record<string, unknown>;
       parsed.flow = [
