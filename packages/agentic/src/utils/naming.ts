@@ -9,6 +9,15 @@ export const SNAKE_CASE_REGEX = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
 export type WorkflowEntity = 'action' | 'workflow' | 'predicate';
 
 /**
+ * Checks whether the provided string is snake_case compliant.
+ *
+ * @param value - Text to evaluate.
+ * @returns `true` when the value is snake_case; otherwise `false`.
+ */
+export const isSnakeCaseName = (value: string): boolean =>
+  SNAKE_CASE_REGEX.test(value);
+
+/**
  * Verifies that names follow the snake_case convention required by the system.
  *
  * @param name - Candidate name that should be validated.
@@ -19,21 +28,12 @@ export function assertSnakeCaseName(
   name: string,
   entity: WorkflowEntity,
 ): void {
-  if (!SNAKE_CASE_REGEX.test(name)) {
+  if (!isSnakeCaseName(name)) {
     throw new Error(
-      `${entity} name must be snake_case with at least one underscore. Received: "${name}"`,
+      `${entity} name must be snake_case (lowercase letters and digits separated by single underscores). Received: "${name}"`,
     );
   }
 }
-
-/**
- * Checks whether the provided string is snake_case compliant.
- *
- * @param value - Text to evaluate.
- * @returns `true` when the value is snake_case; otherwise `false`.
- */
-export const isSnakeCaseName = (value: string): boolean =>
-  SNAKE_CASE_REGEX.test(value);
 
 /**
  * Converts arbitrary text into snake_case for use in workflow entities.

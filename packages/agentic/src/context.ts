@@ -162,10 +162,9 @@ export abstract class BaseWorkflowContext<
   public abstract eventEmitter: WorkflowEventEmitterLike<E>;
 
   /**
-   * Sets up the context and copies any initial state onto the instance.
+   * Sets up the context with its initial state.
    *
-   * @param initialState - Optional properties to assign to the context instance.
-   * @param eventEmitter - Optional workflow event emitter to expose to actions.
+   * @param initialState - State exposed to expressions as `$context`.
    */
   constructor(initialState: S) {
     this.state = (initialState ?? {}) as S;
