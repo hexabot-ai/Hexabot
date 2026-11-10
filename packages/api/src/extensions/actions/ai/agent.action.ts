@@ -81,11 +81,7 @@ export class AiAgentAction extends AiBaseAction<
     return {
       text: result.text,
       content: result.content,
-      reasoning:
-        result.reasoningText ??
-        (result.reasoning?.length
-          ? result.reasoning.map((part) => part.text).join('\n')
-          : undefined),
+      reasoning: this.extractReasoning(result),
       files: result.files,
       sources: result.sources,
       tool_calls: result.steps.flatMap((step) => step.toolCalls),

@@ -8,6 +8,7 @@ import { AuditLogService as SdkAuditLogService } from 'nestjs-auditlog';
 import { DataSource, InsertEvent, ObjectLiteral } from 'typeorm';
 
 import { config } from '@/config';
+import { registerOrmSubscriber } from '@/database/register-orm-subscriber';
 
 import { AuditLabel } from '../decorators/audit-label.decorator';
 import { AuditContextService } from '../services/audit-context.service';
@@ -69,7 +70,7 @@ describe('AuditLogSubscriber', () => {
   it('registers itself once in datasource subscribers', () => {
     expect(dataSource.subscribers).toEqual([subscriber]);
 
-    (subscriber as any).registerAsSubscriber();
+    registerOrmSubscriber(dataSource, subscriber);
 
     expect(dataSource.subscribers).toHaveLength(1);
   });

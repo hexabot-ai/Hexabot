@@ -697,6 +697,18 @@ export abstract class AiBaseAction<
     };
   }
 
+  protected extractReasoning(result: {
+    reasoningText?: string;
+    reasoning?: ReadonlyArray<{ text: string }>;
+  }): string | undefined {
+    return (
+      result.reasoningText ??
+      (result.reasoning?.length
+        ? result.reasoning.map((part) => part.text).join('\n')
+        : undefined)
+    );
+  }
+
   protected buildStopWhen(
     settings: Partial<{
       stop_step_count: number;

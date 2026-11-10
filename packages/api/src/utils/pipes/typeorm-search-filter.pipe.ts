@@ -308,32 +308,9 @@ export class TypeOrmSearchFilterPipe<T>
         }
       }
       case 'neq': {
-        const values = this.ensureArray(rawValue)
-          .map((value) => this.normalizePrimitive(value))
-          .filter((value) => value !== undefined);
+        const equality = this.resolveEqualityValue(rawValue);
 
-        if (!values.length) {
-          return undefined;
-        }
-
-        if (values.length === 1) {
-          const [value] = values;
-          if (value === null) {
-            return Not(IsNull());
-          }
-
-          return Not(value);
-        }
-
-        const nonNullValues = values.filter(
-          (value): value is Exclude<typeof value, null> => value !== null,
-        );
-
-        if (!nonNullValues.length) {
-          return Not(IsNull());
-        }
-
-        return Not(In(nonNullValues));
+        return equality === undefined ? undefined : Not(equality);
       }
       case 'in': {
         const values = this.ensureArray(rawValue)
@@ -350,35 +327,38 @@ export class TypeOrmSearchFilterPipe<T>
         return In(values);
       }
       case 'eq':
-      default: {
-        const values = this.ensureArray(rawValue)
-          .map((value) => this.normalizePrimitive(value))
-          .filter((value) => value !== undefined);
-
-        if (!values.length) {
-          return undefined;
-        }
-
-        if (values.length === 1) {
-          const [value] = values;
-          if (value === null) {
-            return IsNull();
-          }
-
-          return value;
-        }
-
-        const nonNullValues = values.filter(
-          (value): value is Exclude<typeof value, null> => value !== null,
-        );
-
-        if (!nonNullValues.length) {
-          return IsNull();
-        }
-
-        return In(nonNullValues);
-      }
+      default:
+        return this.resolveEqualityValue(rawValue);
     }
+  }
+
+  private resolveEqualityValue(rawValue: unknown): unknown {
+    const values = this.ensureArray(rawValue)
+      .map((value) => this.normalizePrimitive(value))
+      .filter((value) => value !== undefined);
+
+    if (!values.length) {
+      return undefined;
+    }
+
+    if (values.length === 1) {
+      const [value] = values;
+      if (value === null) {
+        return IsNull();
+      }
+
+      return value;
+    }
+
+    const nonNullValues = values.filter(
+      (value): value is Exclude<typeof value, null> => value !== null,
+    );
+
+    if (!nonNullValues.length) {
+      return IsNull();
+    }
+
+    return In(nonNullValues);
   }
 
   private assignNestedWhereValue(

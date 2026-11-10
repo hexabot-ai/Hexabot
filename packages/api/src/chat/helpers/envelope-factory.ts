@@ -37,6 +37,20 @@ export class EnvelopeFactory {
   }
 
   /**
+   * Processes the title and payload of a quick reply.
+   *
+   * @param quickReply - The quick reply to process.
+   * @returns - The processed quick reply.
+   */
+  private processQuickReply(quickReply: StdQuickReply): StdQuickReply {
+    return {
+      ...quickReply,
+      title: this.processText(quickReply.title),
+      payload: this.processText(quickReply.payload),
+    };
+  }
+
+  /**
    * Returns an envelope builder instance for the specified message type.
    *
    * @template F - The envelope message type extending OutgoingMessageType.
@@ -82,11 +96,7 @@ export class EnvelopeFactory {
     const envelope = builder.setText(processedText);
 
     quickReplies.forEach((qr) => {
-      envelope.appendToQuickReplies({
-        ...qr,
-        title: this.processText(qr.title),
-        payload: this.processText(qr.payload),
-      });
+      envelope.appendToQuickReplies(this.processQuickReply(qr));
     });
 
     return envelope.build();
@@ -146,11 +156,7 @@ export class EnvelopeFactory {
     const envelope = builder.setAttachment(attachment);
 
     quickReplies.forEach((qr) => {
-      envelope.appendToQuickReplies({
-        ...qr,
-        title: this.processText(qr.title),
-        payload: this.processText(qr.payload),
-      });
+      envelope.appendToQuickReplies(this.processQuickReply(qr));
     });
 
     return envelope.build();

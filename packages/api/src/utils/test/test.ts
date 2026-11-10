@@ -36,14 +36,13 @@ export const registerTestingModule = (module: TestingModule) => {
   testingModules.push(module);
 };
 
-export const closeTestingModules = async () => {
+const closeTestingModules = async () => {
   const modules = [...testingModules];
 
   testingModules.length = 0;
   await Promise.all(modules.map((module) => module.close()));
 };
-
-export const closeTypeOrmConnections = async () => {
+const closeTypeOrmConnections = async () => {
   await Promise.all(
     typeOrmDataSources.map(async (dataSource) => {
       if (dataSource.isInitialized) {

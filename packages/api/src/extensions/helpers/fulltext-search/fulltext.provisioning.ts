@@ -14,18 +14,12 @@ import { qualifiedName } from '@/helper/lib/content-search.store';
 // SQLite FTS5 virtual table with its sync triggers — so the v3.4.0 migration
 // and any future runtime self-heal share exactly the same DDL and can never
 // drift apart.
-export const CONTENTS_TABLE = 'contents';
-
-export const CONTENTS_FTS_INDEX = 'contents_fts_idx';
-
-export const CONTENTS_FTS_TABLE = 'contents_fts';
-
-export const CONTENTS_FTS_INSERT_TRIGGER = 'contents_fts_insert';
-
-export const CONTENTS_FTS_UPDATE_TRIGGER = 'contents_fts_update';
-
-export const CONTENTS_FTS_DELETE_TRIGGER = 'contents_fts_delete';
-
+const CONTENTS_TABLE = 'contents';
+const CONTENTS_FTS_INDEX = 'contents_fts_idx';
+const CONTENTS_FTS_TABLE = 'contents_fts';
+const CONTENTS_FTS_INSERT_TRIGGER = 'contents_fts_insert';
+const CONTENTS_FTS_UPDATE_TRIGGER = 'contents_fts_update';
+const CONTENTS_FTS_DELETE_TRIGGER = 'contents_fts_delete';
 // The current SQLite sync triggers, dropped and recreated together with the
 // FTS5 table so a re-run rebuilds cleanly.
 const CONTENTS_FTS_TRIGGERS = [

@@ -50,7 +50,7 @@ export const vercelAiSdkProviders = [
   'xai',
 ] as const;
 
-export type VercelAiSdkProvider = (typeof vercelAiSdkProviders)[number];
+type VercelAiSdkProvider = (typeof vercelAiSdkProviders)[number];
 
 const providerPackageOverrides: Partial<Record<VercelAiSdkProvider, string>> = {
   claude: 'anthropic',

@@ -11,7 +11,7 @@ import { config } from '.';
  * values of the `.env.example` files. Anyone can sign session cookies or
  * tokens with them.
  */
-export const PUBLIC_SECRET_VALUES: ReadonlySet<string> = new Set([
+const PUBLIC_SECRET_VALUES: ReadonlySet<string> = new Set([
   'changeme',
   'dev_only',
   'f661ff500fff6b0c8f91310b6fff6b0c',

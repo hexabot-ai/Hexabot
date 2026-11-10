@@ -22,6 +22,7 @@ import {
 } from 'typeorm';
 
 import { config } from '@/config';
+import { registerOrmSubscriber } from '@/database/register-orm-subscriber';
 
 import { getAuditLabelProperty } from '../decorators/audit-label.decorator';
 import { AuditContextService } from '../services/audit-context.service';
@@ -48,16 +49,7 @@ export class AuditLogSubscriber implements EntitySubscriberInterface {
     private readonly auditLogService: SdkAuditLogService,
     private readonly auditContext: AuditContextService,
   ) {
-    this.registerAsSubscriber();
-  }
-
-  private registerAsSubscriber(): void {
-    const alreadyRegistered = this.dataSource.subscribers.some(
-      (subscriber) => subscriber === this,
-    );
-    if (!alreadyRegistered) {
-      this.dataSource.subscribers.push(this);
-    }
+    registerOrmSubscriber(this.dataSource, this);
   }
 
   private shouldSkip(metadata: EntityMetadata): boolean {

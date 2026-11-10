@@ -6,7 +6,7 @@
 
 import { MailerService } from '@/mailer/mailer.service';
 
-export const mailerMock = {
+const mailerMock = {
   sendMail: jest.fn((_options) =>
     Promise.resolve({
       envelope: { from: false, to: [] },
