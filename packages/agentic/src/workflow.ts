@@ -23,6 +23,7 @@ import {
   validateWorkflow,
   type FlowStep,
 } from './dsl.types';
+import { collectTaskReferences } from './utils/flow-steps';
 import { getValueAtPath, setValueAtPath } from './utils/object-path';
 import { safeRenameTaskInDefinition as renameTaskInDefinition } from './utils/workflow-definition';
 import { issueMessages } from './validation-issue';
@@ -69,28 +70,39 @@ const getTaskNameFromStep = (step: unknown): string | null => {
 
   return typeof taskName === 'string' ? taskName : null;
 };
-const hasTaskReference = (steps: FlowStep[], taskName: string): boolean => {
-  return steps.some((step) => {
-    if ('do' in step) {
-      return step.do === taskName;
-    }
+/** The step list a step path points into, and the index it points at. */
+const resolveStepSlot = (
+  definition: WorkflowDefinition,
+  stepPath: FlowStepPath,
+): { stepsPath: FlowStepPath; steps: unknown[]; index: number } | null => {
+  const index = stepPath[stepPath.length - 1];
+  if (typeof index !== 'number') {
+    return null;
+  }
 
-    if ('parallel' in step) {
-      return hasTaskReference(step.parallel.steps, taskName);
-    }
+  const stepsPath = stepPath.slice(0, -1);
+  const steps = getValueAtPath(definition, stepsPath);
 
-    if ('conditional' in step) {
-      return step.conditional.when.some((branch) =>
-        hasTaskReference(branch.steps, taskName),
-      );
-    }
+  return Array.isArray(steps) ? { stepsPath, steps, index } : null;
+};
+/** Drop a task def once no flow step references it anymore. */
+const dropUnreferencedTask = (
+  definition: WorkflowDefinition,
+  taskName: string,
+): WorkflowDefinition => {
+  if (
+    !Object.prototype.hasOwnProperty.call(definition.defs, taskName) ||
+    definition.defs[taskName]?.kind !== TASK_KIND ||
+    collectTaskReferences(definition.flow).some(
+      ({ taskId }) => taskId === taskName,
+    )
+  ) {
+    return definition;
+  }
 
-    if ('loop' in step) {
-      return hasTaskReference(step.loop.steps, taskName);
-    }
+  const { [taskName]: _removedTask, ...remainingDefs } = definition.defs;
 
-    return false;
-  });
+  return { ...definition, defs: remainingDefs };
 };
 
 /**
@@ -177,63 +189,25 @@ export class Workflow {
     definition: WorkflowDefinition,
     stepPath: FlowStepPath,
   ): WorkflowDefinition | null {
-    if (!stepPath.length) {
+    const slot = resolveStepSlot(definition, stepPath);
+    if (!slot || slot.index < 0 || slot.index >= slot.steps.length) {
       return null;
     }
 
-    const removeIndex = stepPath[stepPath.length - 1];
+    const removedTaskName = getTaskNameFromStep(slot.steps[slot.index]);
+    const nextSteps = [...slot.steps];
 
-    if (typeof removeIndex !== 'number') {
-      return null;
-    }
+    nextSteps.splice(slot.index, 1);
 
-    const stepsPath = stepPath.slice(0, -1);
-    const steps = Workflow.getValueAtPath(definition, stepsPath);
-
-    if (!Array.isArray(steps)) {
-      return null;
-    }
-
-    if (removeIndex < 0 || removeIndex >= steps.length) {
-      return null;
-    }
-
-    const removedTaskName = getTaskNameFromStep(steps[removeIndex]);
-    const nextSteps = [...steps];
-
-    nextSteps.splice(removeIndex, 1);
-
-    const nextDefinition = Workflow.setValueAtPath(
+    const nextDefinition = setValueAtPath(
       definition,
-      stepsPath,
+      slot.stepsPath,
       nextSteps,
     );
 
-    if (
-      !removedTaskName ||
-      !Object.prototype.hasOwnProperty.call(
-        nextDefinition.defs,
-        removedTaskName,
-      )
-    ) {
-      return nextDefinition;
-    }
-
-    if (nextDefinition.defs[removedTaskName]?.kind !== TASK_KIND) {
-      return nextDefinition;
-    }
-
-    if (hasTaskReference(nextDefinition.flow, removedTaskName)) {
-      return nextDefinition;
-    }
-
-    const { [removedTaskName]: _removedTask, ...remainingDefs } =
-      nextDefinition.defs;
-
-    return {
-      ...nextDefinition,
-      defs: remainingDefs,
-    };
+    return removedTaskName
+      ? dropUnreferencedTask(nextDefinition, removedTaskName)
+      : nextDefinition;
   }
 
   /**
@@ -244,29 +218,17 @@ export class Workflow {
     insertPath: FlowStepPath,
     step: FlowStep,
   ): WorkflowDefinition | null {
-    if (!insertPath.length) {
+    const slot = resolveStepSlot(definition, insertPath);
+    if (!slot) {
       return null;
     }
 
-    const insertIndex = insertPath[insertPath.length - 1];
-
-    if (typeof insertIndex !== 'number') {
-      return null;
-    }
-
-    const stepsPath = insertPath.slice(0, -1);
-    const steps = Workflow.getValueAtPath(definition, stepsPath);
-
-    if (!Array.isArray(steps)) {
-      return null;
-    }
-
-    const nextSteps = [...steps];
-    const safeIndex = Math.min(Math.max(insertIndex, 0), nextSteps.length);
+    const nextSteps = [...slot.steps];
+    const safeIndex = Math.min(Math.max(slot.index, 0), nextSteps.length);
 
     nextSteps.splice(safeIndex, 0, step);
 
-    return Workflow.setValueAtPath(definition, stepsPath, nextSteps);
+    return setValueAtPath(definition, slot.stepsPath, nextSteps);
   }
 
   /**

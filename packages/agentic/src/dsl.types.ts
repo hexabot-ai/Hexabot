@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { BindingKindSchemas } from './bindings/base-binding';
 import { validateAndResolveBindings } from './bindings/base-binding';
 import { isRecord } from './utils/clone';
+import { collectTaskReferences } from './utils/flow-steps';
 import { SNAKE_CASE_REGEX } from './utils/naming';
 import { getValueAtPath } from './utils/object-path';
 import {
@@ -380,68 +381,6 @@ export type ValidateWorkflowOptions = {
 export type WorkflowValidationResult =
   | { success: true; data: WorkflowDefinition }
   | { success: false; issues: WorkflowValidationIssue[] };
-
-type TaskReference = {
-  taskId: string;
-  path: Array<string | number>;
-};
-
-const collectTaskReferences = (
-  steps: FlowStep[],
-  basePath: Array<string | number> = ['flow'],
-): TaskReference[] => {
-  const refs: TaskReference[] = [];
-
-  steps.forEach((step, index) => {
-    const stepPath = [...basePath, index];
-
-    if ('do' in step) {
-      refs.push({ taskId: step.do, path: [...stepPath, 'do'] });
-
-      return;
-    }
-
-    if ('parallel' in step) {
-      refs.push(
-        ...collectTaskReferences(step.parallel.steps, [
-          ...stepPath,
-          'parallel',
-          'steps',
-        ]),
-      );
-
-      return;
-    }
-
-    if ('conditional' in step) {
-      step.conditional.when.forEach((branch, branchIndex) => {
-        refs.push(
-          ...collectTaskReferences(branch.steps, [
-            ...stepPath,
-            'conditional',
-            'when',
-            branchIndex,
-            'steps',
-          ]),
-        );
-      });
-
-      return;
-    }
-
-    if ('loop' in step) {
-      refs.push(
-        ...collectTaskReferences(step.loop.steps, [
-          ...stepPath,
-          'loop',
-          'steps',
-        ]),
-      );
-    }
-  });
-
-  return refs;
-};
 
 export const isTaskDefinition = (
   definition: DefDefinition,
