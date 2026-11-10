@@ -12,10 +12,10 @@ import { defineAction } from '../../../src';
 import type { AgentBindings } from '../bindings';
 import type { AgentExampleContext } from '../context';
 
-import { caculateScore } from './caculate-score';
+import { calculateScore } from './calculate-score';
 
 const actionRegistry = {
-  caculate_score: caculateScore,
+  calculate_score: calculateScore,
 } as const;
 const inputSchema = z.strictObject({
   prompt: z.string(),

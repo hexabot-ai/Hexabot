@@ -7,9 +7,9 @@
 import type { Action } from '../../../src';
 
 import { aiAgent } from './ai-agent';
-import { caculateScore } from './caculate-score';
+import { calculateScore } from './calculate-score';
 
 export const defsBindingsActions: Record<string, Action> = {
   ai_agent: aiAgent,
-  caculate_score: caculateScore,
+  calculate_score: calculateScore,
 };

@@ -21,17 +21,17 @@ const settingSchema = z.strictObject({
   multiplier: z.number().default(1),
 });
 
-type CaculateScoreInput = z.infer<typeof inputSchema>;
-type CaculateScoreOutput = z.infer<typeof outputSchema>;
-type CaculateScoreSettings = z.infer<typeof settingSchema>;
+type CalculateScoreInput = z.infer<typeof inputSchema>;
+type CalculateScoreOutput = z.infer<typeof outputSchema>;
+type CalculateScoreSettings = z.infer<typeof settingSchema>;
 
-export const caculateScore = defineAction<
-  CaculateScoreInput,
-  CaculateScoreOutput,
+export const calculateScore = defineAction<
+  CalculateScoreInput,
+  CalculateScoreOutput,
   AgentExampleContext,
-  CaculateScoreSettings
+  CalculateScoreSettings
 >({
-  name: 'caculate_score',
+  name: 'calculate_score',
   description: 'Calculates a score with score = multiplier * x + bias.',
   inputSchema,
   outputSchema,
