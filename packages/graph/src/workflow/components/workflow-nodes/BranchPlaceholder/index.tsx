@@ -6,10 +6,13 @@
 
 import { type NodeProps } from "@xyflow/react";
 import { Plus } from "lucide-react";
-import { useCallback, type FC, type MouseEvent } from "react";
+import type { FC } from "react";
 
 import { useWorkflowGraphHost } from "../../../contexts/workflow-graph-host.context";
-import { useWorkflowInsertMenu } from "../../../contexts/workflow-insert-menu.context";
+import {
+  useOpenInsertMenuHandler,
+  useWorkflowInsertMenu,
+} from "../../../contexts/workflow-insert-menu.context";
 import { WorkflowNodeProvider } from "../../../providers/WorkflowNodeProvider";
 import {
   ELinkType,
@@ -29,18 +32,7 @@ export const BranchPlaceholder: FC<
   const addLabel = translate("button.add");
   const insertPath = data?.insertPath;
   const canInsert = Boolean(insertPath && onOpenInsertMenu);
-  const handleOpenInsertMenu = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!insertPath) {
-        return;
-      }
-      onOpenInsertMenu?.(event.currentTarget, insertPath);
-    },
-    [insertPath, onOpenInsertMenu],
-  );
+  const handleOpenInsertMenu = useOpenInsertMenuHandler(insertPath);
 
   return (
     <WorkflowNodeProvider node={props}>

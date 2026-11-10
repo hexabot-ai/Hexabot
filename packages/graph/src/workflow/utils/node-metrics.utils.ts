@@ -15,8 +15,7 @@ import {
 
 const DEFAULT_NODE_DIMENSIONS = { height: 0, width: 0 } as const;
 const toPx = (value: number) => `${value}px`;
-
-export const getWorkflowNodeMetrics = (
+const getWorkflowNodeMetrics = (
   nodeType: ENodeType,
   config?: INodeConfig,
 ): TNodeMetricsEntry | undefined => {

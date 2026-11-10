@@ -48,7 +48,7 @@ export const getSpreadCoordinate = (
   position: NodePosition,
   isVertical: boolean,
 ) => (isVertical ? position.x : position.y);
-export const getAxisCoordinate = (
+const getAxisCoordinate = (
   position: NodePosition,
   isVertical: boolean,
   axis: Axis,
@@ -56,13 +56,14 @@ export const getAxisCoordinate = (
   axis === "flow"
     ? getFlowCoordinate(position, isVertical)
     : getSpreadCoordinate(position, isVertical);
+
 export const getFlowSize = (dimensions: NodeDimensions, isVertical: boolean) =>
   isVertical ? dimensions.height : dimensions.width;
 export const getSpreadSize = (
   dimensions: NodeDimensions,
   isVertical: boolean,
 ) => (isVertical ? dimensions.width : dimensions.height);
-export const getAxisSize = (
+const getAxisSize = (
   dimensions: NodeDimensions,
   isVertical: boolean,
   axis: Axis,
@@ -70,6 +71,7 @@ export const getAxisSize = (
   axis === "flow"
     ? getFlowSize(dimensions, isVertical)
     : getSpreadSize(dimensions, isVertical);
+
 export const withFlowCoordinate = (
   position: NodePosition,
   isVertical: boolean,

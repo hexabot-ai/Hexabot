@@ -15,8 +15,8 @@ import { GenericNodePorts } from "../GenericNodePorts";
 import { GenericNodeRightContent } from "../GenericNodeRightContent";
 import { GenericNodeTitle } from "../GenericNodeTitle";
 
-export const BindingSingle: FC<
-  NodeProps<GraphNode<ENodeType.BINDING_SINGLE>>
+export const Binding: FC<
+  NodeProps<GraphNode<ENodeType.BINDING_SINGLE | ENodeType.BINDING_MULTI>>
 > = (props) => {
   const { data } = props;
   const hasDescription = Boolean(data?.description?.trim());

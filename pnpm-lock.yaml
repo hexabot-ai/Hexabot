@@ -780,6 +780,12 @@ importers:
         specifier: ^1.22.0
         version: 1.22.0(react@19.2.7)
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.3.1
+        version: 3.3.1
+      '@eslint/js':
+        specifier: ^9.37.0
+        version: 9.37.0
       '@types/node':
         specifier: ^24.1.0
         version: 24.12.0
@@ -798,12 +804,12 @@ importers:
       '@xyflow/react':
         specifier: ^12.10.0
         version: 12.10.0(@types/react@19.2.18)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@xyflow/system':
+        specifier: ^0.0.74
+        version: 0.0.74
       eslint:
         specifier: ^9.37.0
         version: 9.37.0(jiti@2.6.1)
-      eslint-import-resolver-typescript:
-        specifier: ^4.4.4
-        version: 4.4.4(eslint-plugin-import@2.32.0)(eslint@9.37.0(jiti@2.6.1))
       eslint-plugin-header:
         specifier: ^3.1.1
         version: 3.1.1(eslint@9.37.0(jiti@2.6.1))
@@ -816,6 +822,9 @@ importers:
       eslint-plugin-react-hooks:
         specifier: ^7.0.0
         version: 7.0.0(eslint@9.37.0(jiti@2.6.1))
+      globals:
+        specifier: ^14.0.0
+        version: 14.0.0
       jsdom:
         specifier: ^28.0.0
         version: 28.0.0(@noble/hashes@1.8.0)

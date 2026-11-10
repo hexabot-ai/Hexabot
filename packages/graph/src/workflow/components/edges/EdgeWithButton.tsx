@@ -11,10 +11,13 @@ import {
   type EdgeProps,
 } from "@xyflow/react";
 import { Plus } from "lucide-react";
-import { useCallback, useMemo, type MouseEvent } from "react";
+import { useMemo } from "react";
 
 import { useWorkflowGraphHost } from "../../contexts/workflow-graph-host.context";
-import { useWorkflowInsertMenu } from "../../contexts/workflow-insert-menu.context";
+import {
+  useOpenInsertMenuHandler,
+  useWorkflowInsertMenu,
+} from "../../contexts/workflow-insert-menu.context";
 import type { EdgeInsertData } from "../../types/workflow-path.types";
 import { PulseIconButton } from "../PulseIconButton";
 
@@ -54,19 +57,7 @@ export const EdgeWithButton = ({
     sourcePosition,
     targetPosition,
   ]);
-  const handleOpenInsertMenu = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!insertPath) {
-        return;
-      }
-
-      onOpenInsertMenu?.(event.currentTarget, insertPath);
-    },
-    [insertPath, onOpenInsertMenu],
-  );
+  const handleOpenInsertMenu = useOpenInsertMenuHandler(insertPath);
   const showInsert = Boolean(
     showEdgeInsertControls && insertPath && onOpenInsertMenu,
   );
