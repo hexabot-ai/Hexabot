@@ -42,8 +42,6 @@ export * from './extension';
 
 export * from './extensions';
 
-export * from './extra';
-
 export * from './helper';
 
 export * from './i18n';
