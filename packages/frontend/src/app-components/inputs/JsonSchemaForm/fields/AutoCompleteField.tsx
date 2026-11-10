@@ -26,7 +26,7 @@ export type Rjsf = FieldProps & {
   };
 };
 
-export const AutoCompleteFieldWrapper = ({
+const AutoCompleteFieldWrapper = ({
   id,
   entity,
   valueKey = "",

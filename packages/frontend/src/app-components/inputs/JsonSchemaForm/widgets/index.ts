@@ -12,7 +12,7 @@ import { EmailWidget, PasswordWidget, TextWidget } from "./BaseInputWidget";
 import { JsonataTextWidget } from "./JsonataTextWidget";
 import { withTooltipLabel } from "./shared";
 
-export const FORM_WIDGETS_BASE = {
+const FORM_WIDGETS_BASE = {
   SelectWidget: withTooltipLabel(Widgets.SelectWidget, {
     mergeInputLabelSx: true,
   }),
@@ -25,8 +25,7 @@ export const FORM_WIDGETS_BASE = {
   EmailWidget,
   PasswordWidget,
 } as const;
-
-export const FORM_WIDGETS = {
+const FORM_WIDGETS = {
   ...FORM_WIDGETS_BASE,
   TextWidget: JsonataTextWidget,
   TextareaWidget: JsonataTextWidget,

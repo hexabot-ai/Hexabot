@@ -18,15 +18,13 @@ import { isRecord } from "@/utils/object";
 
 type SourceLike = Source | SourceFull;
 type SourceSearchPayload = SearchPayload<EntityType.SOURCE>;
-export const CONSOLE_CHANNEL_NAME = "console";
-export const PUBLIC_CHANNEL_VISIBILITY: ChannelVisibility = "public";
-export const SYSTEM_CHANNEL_VISIBILITY: ChannelVisibility = "system";
-
-export const EMPTY_SOURCE_SETTINGS_SCHEMA: RJSFSchema = {
+const CONSOLE_CHANNEL_NAME = "console";
+const PUBLIC_CHANNEL_VISIBILITY: ChannelVisibility = "public";
+const SYSTEM_CHANNEL_VISIBILITY: ChannelVisibility = "system";
+const EMPTY_SOURCE_SETTINGS_SCHEMA: RJSFSchema = {
   type: "object",
   properties: {},
 } as const;
-
 const normalizeSourceSettings = (
   settings: unknown,
 ): Record<string, unknown> => {
@@ -47,11 +45,10 @@ export const isConsoleSourceChannel = (
   channelName: string | null | undefined,
 ): boolean => channelName === CONSOLE_CHANNEL_NAME;
 
-export const getChannelVisibility = (
+const getChannelVisibility = (
   channel: Pick<IChannel, "visibility"> | null | undefined,
 ): ChannelVisibility => channel?.visibility ?? PUBLIC_CHANNEL_VISIBILITY;
-
-export const isSystemChannel = (
+const isSystemChannel = (
   channel: Pick<IChannel, "visibility"> | null | undefined,
 ): boolean => getChannelVisibility(channel) === SYSTEM_CHANNEL_VISIBILITY;
 

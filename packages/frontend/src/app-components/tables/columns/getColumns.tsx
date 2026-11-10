@@ -138,7 +138,7 @@ function StackComponent<T extends GridValidRowModel>({
   );
 }
 
-export const getActionsColumn = <T extends GridValidRowModel>(
+const getActionsColumn = <T extends GridValidRowModel>(
   actions: ActionColumn<T>[],
   headerName: string,
 ): GridColDef<T> => {

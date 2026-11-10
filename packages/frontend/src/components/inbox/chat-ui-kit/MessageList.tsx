@@ -258,5 +258,3 @@ export const MessageList = forwardRef<MessageListRef, MessageListProps>(
 );
 
 MessageList.displayName = "MessageList";
-
-export default MessageList;

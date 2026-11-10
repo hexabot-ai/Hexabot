@@ -4,12 +4,12 @@
  * Full terms: see LICENSE.md.
  */
 
-import { QueryType, TMutationOptions } from "@/services/types";
+import { TMutationOptions } from "@/services/types";
 import { THook } from "@/types/base.types";
 
 import { useEntityApiClient } from "../useApiClient";
 
-import { useTanstackMutation, useTanstackQueryClient } from "./useTanstack";
+import { useTanstackMutation } from "./useTanstack";
 
 export const useDelete = <
   TE extends THook["entity"],
@@ -29,18 +29,4 @@ export const useDelete = <
     },
     ...otherOptions,
   });
-};
-
-export const useDeleteFromCache = <TE extends THook["entity"]>(entity: TE) => {
-  const queryClient = useTanstackQueryClient();
-
-  return (id: string) => {
-    queryClient.removeQueries({
-      predicate: ({ queryKey }) => {
-        const [qType, qEntity, qId] = queryKey;
-
-        return qType === QueryType.item && qEntity === entity && qId === id;
-      },
-    });
-  };
 };

@@ -12,7 +12,7 @@ import { useFind } from "@/hooks/crud/useFind";
 import { useAuth } from "@/hooks/useAuth";
 import { EntityType } from "@/services/types";
 
-export const SettingsContext = createContext<{
+const SettingsContext = createContext<{
   settings: { [key: string]: Setting[] } | undefined;
 }>({ settings: undefined });
 
@@ -22,7 +22,7 @@ interface SettingsProviderProps {
   children: ReactNode;
 }
 
-export const useLoadSettings = () => {
+const useLoadSettings = () => {
   const { isAuthenticated } = useAuth();
   const { data: settings, ...rest } = useFind(
     { entity: EntityType.SETTING },

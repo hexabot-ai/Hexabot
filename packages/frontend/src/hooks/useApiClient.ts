@@ -130,7 +130,7 @@ export const useAxiosInstance = () => {
   return axiosInstance;
 };
 
-export const entityApiClients = new Map();
+const entityApiClients = new Map();
 
 export const getApiClientByEntity = <TE extends THook["entity"]>(
   entity: TE,

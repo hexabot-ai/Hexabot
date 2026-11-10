@@ -9,7 +9,7 @@ import { useApiClient } from "@/hooks/useApiClient";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 
-export type WebhookTokenResult = {
+type WebhookTokenResult = {
   token: string;
 };
 

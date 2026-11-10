@@ -69,7 +69,7 @@ export type Filter = ({
 } & EntityField[keyof EntityField]) &
   (EnumFilterType | EntityFilterType);
 
-export const GenericFilters = ({ filters }: { filters?: Filter[] }) =>
+const GenericFilters = ({ filters }: { filters?: Filter[] }) =>
   filters?.map(
     ({
       value,
@@ -148,7 +148,6 @@ export const GenericFilters = ({ filters }: { filters?: Filter[] }) =>
       );
     },
   );
-
 const collapseBreakpoint = (n: number) => 720 + n * 190;
 const filtersButtonSx = (t: Theme) => ({
   width: t.spacing(4.5),

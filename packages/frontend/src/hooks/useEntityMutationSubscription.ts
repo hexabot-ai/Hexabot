@@ -20,14 +20,13 @@ import { InfiniteData, QueryClient } from "@/types/tanstack.types";
 import { applyFullNameDerivedFields } from "@/utils/full-name.utils";
 import { useSocketGetQuery, useSubscribe } from "@/websocket/socket-hooks";
 
-export const SYNC_TARGET_BY_ENTITY_TYPE = {
+const SYNC_TARGET_BY_ENTITY_TYPE = {
   [EntityType.USER]: EntityType.SUBSCRIBER,
 } as const;
-export const PAYLOAD_TRANSFORMERS_BY_ENTITY_TYPE = {
+const PAYLOAD_TRANSFORMERS_BY_ENTITY_TYPE = {
   [EntityType.USER]: applyFullNameDerivedFields,
   [EntityType.SUBSCRIBER]: applyFullNameDerivedFields,
 } as const;
-
 const getAffectedEntityTypes = (entityType: EntityType): EntityType[] => {
   const syncTarget = SYNC_TARGET_BY_ENTITY_TYPE[entityType];
 

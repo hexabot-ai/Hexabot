@@ -46,7 +46,7 @@ export function extractGlobals(globalsSchema: GlobalsSchema): {
   };
 }
 
-export function resolveRef(
+function resolveRef(
   root: JsonSchemaLike,
   ref?: string,
 ): JsonSchemaLike | undefined {
@@ -78,7 +78,7 @@ export function deref(
   return { ...resolved, ...rest };
 }
 
-export function variantsOf(schema: JsonSchemaLike): JsonSchemaLike[] {
+function variantsOf(schema: JsonSchemaLike): JsonSchemaLike[] {
   const out: JsonSchemaLike[] = [];
 
   if (schema.allOf?.length) out.push(...schema.allOf);

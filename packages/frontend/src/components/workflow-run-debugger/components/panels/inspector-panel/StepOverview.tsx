@@ -6,16 +6,14 @@
 
 import type { StepExecutionRecord, WaitInfo } from "@hexabot-ai/agentic";
 import type { WorkflowRun } from "@hexabot-ai/types";
-import { Divider, Stack, Typography } from "@mui/material";
+import { Stack, Typography } from "@mui/material";
 
 import { ActionStatusIndicator } from "../step-trace-panel/ActionStatusIndicator";
 
-import { DataSummaryGrid } from "./DataSummaryGrid";
-import { ErrorSummary } from "./ErrorSummary";
 import type { OverviewLabels } from "./overview.types";
+import { OverviewDetails } from "./OverviewDetails";
 import { SummaryGrid } from "./SummaryGrid";
 import { SummaryItem } from "./SummaryItem";
-import { WaitsSummary } from "./WaitsSummary";
 
 type StepOverviewProps = {
   run: WorkflowRun | null;
@@ -65,24 +63,13 @@ export const StepOverview = ({
       />
       <SummaryItem label={labels.duration} value={stepDurationLabel} />
     </SummaryGrid>
-    {waits.length > 0 ? (
-      <>
-        <Divider />
-        <WaitsSummary run={run} labels={labels} waits={waits} />
-      </>
-    ) : null}
-    <Divider />
-    <DataSummaryGrid
-      inputLabel={labels.input}
-      contextLabel={labels.context}
-      outputLabel={labels.output}
+    <OverviewDetails
+      run={run}
+      waits={waits}
+      labels={labels}
       inputSummary={inputSummary}
       contextSummary={contextSummary}
       outputSummary={outputSummary}
-    />
-    <Divider />
-    <ErrorSummary
-      label={labels.error}
       errorSummary={errorSummary}
       hasError={hasError}
     />

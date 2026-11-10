@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { StepType } from "@hexabot-ai/agentic";
+import { StepType, Workflow as WorkflowHelper } from "@hexabot-ai/agentic";
 import {
   ENodeType,
   type FlowStepPath,
@@ -15,7 +15,7 @@ import { useMemo } from "react";
 
 import { useWorkflow } from "./useWorkflow";
 
-type OperatorStepType =
+export type OperatorStepType =
   | StepType.Conditional
   | StepType.Loop
   | StepType.Parallel;
@@ -84,7 +84,7 @@ export const useSelectedActionNode = (): SelectedActionNode | undefined => {
   return useMemo(() => getSelectedActionNode(graphSelection), [graphSelection]);
 };
 
-export const useSelectedOperatorNode = <TStepType extends OperatorStepType>(
+const useSelectedOperatorNode = <TStepType extends OperatorStepType>(
   stepType: TStepType,
 ): SelectedOperatorNode<TStepType> | undefined => {
   const { graphSelection } = useWorkflow();
@@ -93,4 +93,31 @@ export const useSelectedOperatorNode = <TStepType extends OperatorStepType>(
     () => getSelectedOperatorNode(graphSelection, stepType),
     [graphSelection, stepType],
   );
+};
+
+/**
+ * Selected operator node of `stepType`, with the step it points to in the
+ * current definition when `isStep` accepts it.
+ */
+export const useSelectedOperatorStep = <
+  TStepType extends OperatorStepType,
+  TStep,
+>(
+  stepType: TStepType,
+  isStep: (step: unknown) => step is TStep,
+) => {
+  const { definition } = useWorkflow();
+  const selectedOperatorNode = useSelectedOperatorNode(stepType);
+  const stepPath = selectedOperatorNode?.stepPath;
+  const selectedStep = useMemo(() => {
+    if (!definition || !stepPath) {
+      return undefined;
+    }
+
+    const stepAtPath = WorkflowHelper.getValueAtPath(definition, stepPath);
+
+    return isStep(stepAtPath) ? stepAtPath : undefined;
+  }, [definition, isStep, stepPath]);
+
+  return { selectedOperatorNode, stepPath, selectedStep };
 };

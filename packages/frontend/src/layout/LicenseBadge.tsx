@@ -21,8 +21,7 @@ const gradients = {
   pro: "linear-gradient(135deg, #7c3aed 0%, #ec4899 100%)",
   unlimited: "linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)",
 } as const;
-
-export const LicenseBadge = ({ license, className, sx }: LicenseBadgeProps) => {
+const LicenseBadge = ({ license, className, sx }: LicenseBadgeProps) => {
   const { t } = useTranslate();
   const isActive = license.status === "active";
   const badgeLabel = t(`label.license_badge_${license.plan}`);

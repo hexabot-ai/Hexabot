@@ -150,8 +150,7 @@ const componentMap: { [key in FileType]: FC<AttachmentInterface> } = {
     );
   },
 };
-
-export const MessageAttachmentViewer = ({
+const MessageAttachmentViewer = ({
   attachment,
 }: {
   attachment: IAttachmentPayload;

@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-export function isIdentifierSafe(name: string) {
+function isIdentifierSafe(name: string) {
   // JSONata identifiers similar to JS-ish: start letter/_/$ then alnum/_/$
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name);
 }

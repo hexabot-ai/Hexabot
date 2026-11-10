@@ -8,8 +8,6 @@ import { MenuType } from "@hexabot-ai/types";
 
 import { IBaseSchema } from "./base.types";
 
-export { MenuType };
-
 export interface IMenuNodeStub extends IBaseSchema {
   type: MenuType;
   url?: string | null;

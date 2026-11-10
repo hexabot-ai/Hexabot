@@ -14,8 +14,7 @@ const createOpenObjectSchema = (): JsonSchemaLike => ({
   properties: {},
   additionalProperties: true,
 });
-
-export const DEFAULT_JSONATA_GLOBALS_SCHEMA: GlobalsSchema = {
+const DEFAULT_JSONATA_GLOBALS_SCHEMA: GlobalsSchema = {
   type: "object",
   properties: {
     $input: createOpenObjectSchema(),
@@ -23,7 +22,6 @@ export const DEFAULT_JSONATA_GLOBALS_SCHEMA: GlobalsSchema = {
     $context: createOpenObjectSchema(),
   },
 };
-
 const JsonataGlobalsSchemaContext = createContext<GlobalsSchema | undefined>(
   undefined,
 );

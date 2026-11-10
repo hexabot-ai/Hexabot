@@ -27,27 +27,24 @@ const normalizeDisplayLabel = (value?: string | null): string | undefined => {
 
   return trimmed ? trimmed : undefined;
 };
-
-export const AUDIT_STATUS_META: Record<
-  AuditLog["operationStatus"],
-  AuditStatusMeta
-> = {
-  SUCCEEDED: {
-    icon: CheckCircle2,
-    labelKey: "label.audit_status_succeeded",
-    tone: "success",
-  },
-  FAILED: {
-    icon: XCircle,
-    labelKey: "label.audit_status_failed",
-    tone: "error",
-  },
-  UNSPECIFIED: {
-    icon: CircleHelp,
-    labelKey: "label.audit_status_unspecified",
-    tone: "warning",
-  },
-};
+const AUDIT_STATUS_META: Record<AuditLog["operationStatus"], AuditStatusMeta> =
+  {
+    SUCCEEDED: {
+      icon: CheckCircle2,
+      labelKey: "label.audit_status_succeeded",
+      tone: "success",
+    },
+    FAILED: {
+      icon: XCircle,
+      labelKey: "label.audit_status_failed",
+      tone: "error",
+    },
+    UNSPECIFIED: {
+      icon: CircleHelp,
+      labelKey: "label.audit_status_unspecified",
+      tone: "warning",
+    },
+  };
 
 export const getAuditStatusMeta = (
   status: AuditLog["operationStatus"],

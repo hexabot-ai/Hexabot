@@ -9,16 +9,7 @@ import {
   Workflow as WorkflowHelper,
   type FlowStep,
 } from "@hexabot-ai/agentic";
-import {
-  Box,
-  FormControl,
-  FormControlLabel,
-  FormLabel,
-  Radio,
-  RadioGroup,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import { Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -26,7 +17,8 @@ import { DrawerPrimaryFooterAction } from "@/app-components/drawers/DrawerPrimar
 import { useTranslate } from "@/hooks/useTranslate";
 
 import { useWorkflow } from "../../../hooks/useWorkflow";
-import { useSelectedOperatorNode } from "../../../hooks/useWorkflowSelection";
+import { useSelectedOperatorStep } from "../../../hooks/useWorkflowSelection";
+import { StepOptionRadioGroup } from "../StepDrawer/StepOptionRadioGroup";
 import {
   useStepDrawerClose,
   withStepDrawerLayout,
@@ -88,40 +80,13 @@ const ParallelFormDrawerContent = ({
   }
 
   return (
-    <FormControl component="fieldset" fullWidth>
-      <FormLabel component="legend">{strategyLabel}</FormLabel>
-      <RadioGroup
-        value={strategy}
-        onChange={(event) => {
-          const nextStrategy = event.target.value;
-
-          if (isParallelStrategy(nextStrategy)) {
-            onStrategyChange(nextStrategy);
-          }
-        }}
-      >
-        <Stack spacing={1} mt={1}>
-          {options.map((option) => (
-            <Box
-              key={option.value}
-              border={(theme) => `1px solid ${theme.palette.divider}`}
-              borderRadius={1}
-              px={1}
-              py={0.5}
-            >
-              <FormControlLabel
-                value={option.value}
-                control={<Radio size="small" />}
-                label={option.label}
-              />
-              <Typography variant="body2" color="text.secondary" ml={4}>
-                {option.description}
-              </Typography>
-            </Box>
-          ))}
-        </Stack>
-      </RadioGroup>
-    </FormControl>
+    <StepOptionRadioGroup
+      label={strategyLabel}
+      value={strategy}
+      options={options}
+      isOptionValue={isParallelStrategy}
+      onChange={onStrategyChange}
+    />
   );
 };
 const ParallelFormDrawerLayout = withStepDrawerLayout(
@@ -131,18 +96,9 @@ const ParallelFormDrawerLayout = withStepDrawerLayout(
 export const ParallelFormDrawer = () => {
   const { t } = useTranslate();
   const { definition, updateDefinitionState, isSaving } = useWorkflow();
-  const selectedOperatorNode = useSelectedOperatorNode(StepType.Parallel);
+  const { selectedOperatorNode, stepPath, selectedStep } =
+    useSelectedOperatorStep(StepType.Parallel, isParallelStep);
   const selectedNodeId = selectedOperatorNode?.id;
-  const stepPath = selectedOperatorNode?.stepPath;
-  const selectedStep = useMemo(() => {
-    if (!definition || !stepPath) {
-      return undefined;
-    }
-
-    const stepAtPath = WorkflowHelper.getValueAtPath(definition, stepPath);
-
-    return isParallelStep(stepAtPath) ? stepAtPath : undefined;
-  }, [definition, stepPath]);
   const [strategy, setStrategy] = useState<ParallelStrategy>(
     DEFAULT_PARALLEL_STRATEGY,
   );

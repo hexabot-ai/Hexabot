@@ -6,12 +6,12 @@
 
 import {
   ILicense,
+  LicenseQuotaResource,
   LicenseQuotaTier,
   PaidLicensePlan,
 } from "@/types/user.types";
 
 type LicenseQuotas = ILicense["quotas"];
-export type LicenseQuotaResource = keyof LicenseQuotas["resources"];
 export type LicenseQuotaResourceState =
   LicenseQuotas["resources"][LicenseQuotaResource];
 
@@ -53,7 +53,7 @@ export const getQuotaUpgradeTargetPlan = (
   return QUOTA_UPGRADE_TARGET_BY_RESOURCE[resource][tier] ?? null;
 };
 
-export const getLicenseQuotaLimitLabel = (
+const getLicenseQuotaLimitLabel = (
   quota: LicenseQuotaResourceState | undefined,
   unlimitedLabel: string,
 ): string =>

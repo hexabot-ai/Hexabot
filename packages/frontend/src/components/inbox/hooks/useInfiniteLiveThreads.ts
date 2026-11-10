@@ -46,8 +46,7 @@ const mapOrClauses = (orClauses: unknown) => {
     })
     .filter((clause): clause is Record<string, unknown> => clause !== null);
 };
-
-export const mapSubscriberWhereToThreadWhere = (
+const mapSubscriberWhereToThreadWhere = (
   where: SearchPayload<EntityType.SUBSCRIBER>["where"] = {},
 ) => {
   const mappedWhere: Record<string, unknown> = {};

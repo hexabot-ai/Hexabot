@@ -13,7 +13,7 @@ type QueryParamSerializer<T> = {
   stringify: (val: T) => string | string[] | undefined;
 };
 
-export function defaultSerializer<T = string>(): QueryParamSerializer<T> {
+function defaultSerializer<T = string>(): QueryParamSerializer<T> {
   return {
     parse: (raw) => {
       if (Array.isArray(raw)) return raw[0] as unknown as T;

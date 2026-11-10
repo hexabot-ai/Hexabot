@@ -4,16 +4,16 @@
  * Full terms: see LICENSE.md.
  */
 
-import { lighten } from "@mui/material";
-import { darken, type Theme } from "@mui/system";
+import { darken, lighten, type Theme } from "@mui/material";
 
 export const getNotistackVariantStyles = (theme: Theme) => {
-  return ["success", "error", "info", "warning"].reduce((acc, variant) => {
-    const mainColor = theme.palette?.[variant].main;
+  return (["success", "error", "info", "warning"] as const).reduce(
+    (acc, variant) => {
+      const mainColor = theme.palette?.[variant].main;
 
-    return (
-      acc +
-      `.notistack-MuiContent-${variant} {
+      return (
+        acc +
+        `.notistack-MuiContent-${variant} {
       background-color: ${lighten(mainColor, 0.8)};
       color: ${mainColor};
       font-weight: 700;
@@ -23,6 +23,8 @@ export const getNotistackVariantStyles = (theme: Theme) => {
       color: ${lighten(mainColor, 0.6)};
     }
   `
-    );
-  }, "");
+      );
+    },
+    "",
+  );
 };

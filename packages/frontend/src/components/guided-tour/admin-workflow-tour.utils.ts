@@ -8,7 +8,7 @@ import { WorkflowType } from "@hexabot-ai/types";
 
 import { RouterType } from "@/services/types";
 
-export const ADMIN_WORKFLOW_TOUR_STORAGE_PREFIX =
+const ADMIN_WORKFLOW_TOUR_STORAGE_PREFIX =
   "hexabot.admin_workflow_editor_tour.v1";
 
 export const ADMIN_WORKFLOW_TOUR_SELECTORS = {
@@ -218,7 +218,7 @@ export const isAdminWorkflowTourTargetReady = (
 export const getAdminWorkflowTourStorageKey = (userId: string) =>
   `${ADMIN_WORKFLOW_TOUR_STORAGE_PREFIX}.${userId}`;
 
-export const getAdminWorkflowTourStorage = (): TourStorage | null => {
+const getAdminWorkflowTourStorage = (): TourStorage | null => {
   if (typeof window === "undefined") {
     return null;
   }

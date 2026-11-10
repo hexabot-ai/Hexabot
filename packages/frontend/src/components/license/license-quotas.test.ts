@@ -8,14 +8,12 @@ import { describe, expect, it } from "vitest";
 
 import type {
   ILicense,
+  LicenseQuotaResource,
   LicenseQuotaTier,
   PaidLicensePlan,
 } from "@/types/user.types";
 
-import {
-  getQuotaUpgradeTargetPlan,
-  type LicenseQuotaResource,
-} from "./license-quotas";
+import { getQuotaUpgradeTargetPlan } from "./license-quotas";
 
 const buildLicense = (tier: LicenseQuotaTier): ILicense => ({
   activationLimit: null,

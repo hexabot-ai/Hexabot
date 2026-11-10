@@ -17,7 +17,7 @@ interface PermissionProviderProps {
   children: ReactNode;
 }
 
-export const useUserPermissions = () => {
+const useUserPermissions = () => {
   const { isAuthenticated } = useAuth();
 
   return useApiClientQuery("getUserPermissions", {

@@ -17,7 +17,7 @@ import {
 
 const ActionFormDrawerLayout = withStepDrawerLayout(ActionFormDrawerContent);
 
-export type { ActionFormDrawerCloseReason, ActionFormDrawerCreateTarget };
+export type { ActionFormDrawerCreateTarget };
 
 type ActionFormDrawerProps = {
   target: ActionFormDrawerCreateTarget | null;
