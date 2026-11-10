@@ -35,12 +35,3 @@ export type SettingStub = z.infer<typeof settingStubSchema>;
 export type Setting = z.infer<typeof settingSchema>;
 
 export type SettingFull = z.infer<typeof settingFullSchema>;
-
-export enum FieldType {
-  text = "text",
-  url = "url",
-  textarea = "textarea",
-  checkbox = "checkbox",
-  file = "file",
-  html = "html",
-}

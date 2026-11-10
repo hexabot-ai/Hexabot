@@ -17,7 +17,6 @@ export {
   DEFAULT_CONTENT_TYPE_SCHEMA,
   normalizeContentTypeSchema,
   resolveContentFieldType,
-  withDefaultContentTypeProperties,
   type ContentFieldType,
   type ContentType,
   type ContentTypeFull,

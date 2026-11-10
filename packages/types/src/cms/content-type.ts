@@ -27,15 +27,6 @@ export const CONTENT_TYPE_READ_ONLY_PROPERTY_KEYS = Object.keys(
   DEFAULT_CONTENT_TYPE_SCHEMA.properties,
 );
 
-export const withDefaultContentTypeProperties = <
-  T extends Record<string, unknown> | undefined,
->(
-  properties?: T,
-) => ({
-  ...DEFAULT_CONTENT_TYPE_SCHEMA.properties,
-  ...properties,
-});
-
 /**
  * Kinds of content type fields. They are stored as the field's `type`,
  * in place of a JSON Schema type: the admin UI picks the input of each field,

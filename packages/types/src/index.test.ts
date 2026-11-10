@@ -14,7 +14,6 @@ import {
   CONTENT_FIELD_TYPES,
   normalizeContentTypeSchema,
   resolveContentFieldType,
-  FieldType,
   MemoryScope,
   McpServerTransport,
   MenuType,
@@ -1577,7 +1576,7 @@ describe("@hexabot-ai/types schemas", () => {
       createdAt: now,
       updatedAt: now,
       dummy: "ok",
-      dynamicField: { field: FieldType.text },
+      dynamicField: { field: "text" },
       shouldDrop: true,
     });
 
@@ -1586,7 +1585,7 @@ describe("@hexabot-ai/types schemas", () => {
     expect(record.workflow).toBe("wf_1");
     expect(record.run).toBe("run_1");
     expect(record.thread).toBe("th_1");
-    expect(dummy.dynamicField).toEqual({ field: FieldType.text });
+    expect(dummy.dynamicField).toEqual({ field: "text" });
     expect("shouldDrop" in dummy).toBe(false);
   });
 

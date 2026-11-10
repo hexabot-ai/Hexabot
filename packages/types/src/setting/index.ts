@@ -5,7 +5,6 @@
  */
 
 export {
-  FieldType,
   settingFullSchema,
   settingSchema,
   settingStubSchema,

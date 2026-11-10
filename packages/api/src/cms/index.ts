@@ -47,5 +47,3 @@ export * from './types/menu-types';
 export * from './types/menu';
 
 export * from './utilities/verifyTree';
-
-export * from './validators/validate-required-fields.validator';

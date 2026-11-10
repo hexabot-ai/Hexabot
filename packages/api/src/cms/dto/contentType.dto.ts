@@ -11,30 +11,11 @@ import {
   contentTypeSchema,
 } from '@hexabot-ai/types';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
 
-import { FieldType } from '@/setting/types';
 import { Validate } from '@/utils/decorators/validate.decorator';
 import { TDto } from '@/utils/types/dto.types';
-
-export class ContentField {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
-
-  @IsString()
-  @IsNotEmpty()
-  label: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @IsEnum(FieldType, {
-    message:
-      "type must be one of the following values: 'text', 'url', 'textarea', 'checkbox', 'file', 'html'",
-  })
-  type: `${FieldType}`;
-}
 
 export class ContentTypeCreateDto {
   @ApiProperty({ description: 'Content type name', type: String })
