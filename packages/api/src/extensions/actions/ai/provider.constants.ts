@@ -41,6 +41,7 @@ export const vercelAiSdkProviders = [
   'open-responses',
   'openai',
   'openai-compatible',
+  'orcarouter',
   'perplexity',
   'prodia',
   'replicate',
