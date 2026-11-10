@@ -5,6 +5,7 @@
  */
 
 import {
+  CONTENT_FIELD_TYPES,
   contentTypeFullSchema,
   contentTypeJsonSchema,
   contentTypeSchema,
@@ -42,7 +43,7 @@ export class ContentTypeCreateDto {
   name: string;
 
   @ApiProperty({
-    description: 'JSON Schema describing the content structure',
+    description: `JSON Schema describing the content structure. Each field of \`properties\` is { type, title?, description? }, where \`type\` is one of: ${CONTENT_FIELD_TYPES.join(', ')}`,
     type: Object,
   })
   @Validate(contentTypeJsonSchema)

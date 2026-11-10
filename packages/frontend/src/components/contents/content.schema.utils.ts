@@ -4,17 +4,20 @@
  * Full terms: see LICENSE.md.
  */
 
-import { AttachmentResourceRef } from "@hexabot-ai/types";
+import {
+  AttachmentResourceRef,
+  type ContentFieldType,
+} from "@hexabot-ai/types";
 import { RJSFSchema } from "@rjsf/utils";
 
 import { getSchemaProperties } from "@/app-components/inputs/JsonSchemaForm/schema-defaults.utils";
-import { type JsonSchemaType } from "@/app-components/inputs/JsonSchemaObjectBuilder";
+import { getContentFieldType } from "@/utils/content-field.utils";
 
 import { type ContentFormData } from "./ContentForm";
 
 export type ContentField = {
   title: string;
-  type: JsonSchemaType<"fieldInput">;
+  type: ContentFieldType;
 };
 
 export type ContentSchemaProperties = Record<string, ContentField>;
@@ -89,13 +92,14 @@ const buildContentFieldSchema = (
   requiredFields: Set<string>,
 ): RJSFSchema => {
   const fieldTitle = property.title || propertyKey;
+  const fieldType = getContentFieldType(property) ?? property.type;
   const schemaFactory =
-    CONTENT_FIELD_SCHEMA_FACTORIES[property.type] ?? buildStringFieldSchema;
+    CONTENT_FIELD_SCHEMA_FACTORIES[fieldType] ?? buildStringFieldSchema;
   const baseFieldSchema =
-    property.type === "file"
+    fieldType === "file"
       ? buildFileFieldSchema(fieldTitle, requiredFields.has(propertyKey))
       : schemaFactory(fieldTitle);
-  const fieldSchema = REQUIRED_NON_EMPTY_FIELD_TYPES.has(property.type)
+  const fieldSchema = REQUIRED_NON_EMPTY_FIELD_TYPES.has(fieldType)
     ? {
         ...baseFieldSchema,
         minLength:
@@ -104,7 +108,7 @@ const buildContentFieldSchema = (
             : 1,
       }
     : baseFieldSchema;
-  const fieldUiSchema = CONTENT_FIELD_UI_SCHEMAS[property.type];
+  const fieldUiSchema = CONTENT_FIELD_UI_SCHEMAS[fieldType];
 
   return fieldUiSchema ? { ...fieldSchema, ...fieldUiSchema } : fieldSchema;
 };

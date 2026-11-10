@@ -35,6 +35,13 @@ from `await_approval`) and `AWAITING_RESUME_REASON` (`awaiting_resume`, from
 `details`) and `workflowResumeWaitDataSchema` (`message`, `details`,
 `payload_schema`).
 
+Content type fields store their kind as their `type`, in place of a JSON Schema
+type: one of `CONTENT_FIELD_TYPES` (`string`, `textarea`, `html`, `uri`,
+`boolean`, `file`; type `ContentFieldType`). `contentTypeJsonSchema` validates a
+content type schema: the built-in `title` and `status` fields, then every other
+field with `contentFieldSchema`, which takes only `type`, `title` and
+`description`.
+
 ## Standard Export Pattern
 
 Each migrated entity exposes:

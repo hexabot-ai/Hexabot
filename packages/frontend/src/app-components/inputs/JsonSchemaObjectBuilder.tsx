@@ -4,6 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
+import { type ContentFieldType } from "@hexabot-ai/types";
 import {
   Accordion,
   AccordionDetails,
@@ -36,6 +37,7 @@ import {
 } from "react-hook-form";
 
 import { useTranslate } from "@/hooks/useTranslate";
+import { getContentFieldType } from "@/utils/content-field.utils";
 
 export type JsonSchemaOptionContext = "default" | "fieldInput";
 
@@ -60,7 +62,7 @@ const BASE_TYPE_OPTIONS = {
 } as const satisfies Record<
   JsonSchemaOptionContext,
   { value: string; label: string }[]
->;
+> & { fieldInput: { value: ContentFieldType; label: string }[] };
 
 export type JsonSchemaType<C extends JsonSchemaOptionContext = "default"> =
   (typeof BASE_TYPE_OPTIONS)[C][number]["value"];
@@ -177,6 +179,12 @@ const resolveSchemaType = <C extends JsonSchemaOptionContext = "default">(
 ): JsonSchemaType => {
   const rawType = schema.type;
   const options = getContextTypeOptions(context);
+
+  if (context === "fieldInput") {
+    const fieldType = getContentFieldType(schema);
+
+    if (fieldType) return fieldType as JsonSchemaType;
+  }
 
   if (Array.isArray(rawType)) {
     const match = rawType.find((entry) => isJsonSchemaType(entry, options));

@@ -4,10 +4,13 @@
  * Full terms: see LICENSE.md.
  */
 
+import { z } from "zod";
+
 import {
   AttachmentAccess,
   AttachmentCreatedByRef,
   AttachmentResourceRef,
+  CONTENT_FIELD_TYPES,
   FieldType,
   MemoryScope,
   McpServerTransport,
@@ -87,6 +90,55 @@ describe("@hexabot-ai/types schemas", () => {
         properties: {},
       }).success,
     ).toBe(false);
+  });
+
+  it("only takes Hexabot field types in content type fields", () => {
+    const withField = (field: unknown) =>
+      contentTypeJsonSchema.safeParse({
+        ...DEFAULT_CONTENT_TYPE_SCHEMA,
+        properties: { ...DEFAULT_CONTENT_TYPE_SCHEMA.properties, field },
+        required: ["field"],
+        additionalProperties: false,
+      });
+
+    for (const type of CONTENT_FIELD_TYPES) {
+      expect(
+        withField({ type, title: "Field", description: "Help" }).success,
+      ).toBe(true);
+    }
+
+    const unknownType = withField({ type: "number", title: "Field" });
+
+    expect(unknownType.success).toBe(false);
+    expect(unknownType.error?.issues[0]?.path).toEqual([
+      "properties",
+      "field",
+      "type",
+    ]);
+
+    const formatted = withField({
+      type: "string",
+      format: "uri",
+      title: "Field",
+    });
+
+    expect(formatted.success).toBe(false);
+    expect(formatted.error?.issues[0]?.path).toEqual(["properties", "field"]);
+    expect(formatted.error?.issues[0]?.message).toContain('{"type":"uri"}');
+  });
+
+  it("documents content field types in the content type JSON Schema", () => {
+    const jsonSchema = z.toJSONSchema(contentTypeJsonSchema, {
+      io: "input",
+    }) as any;
+    const fieldSchema = jsonSchema.properties.properties.additionalProperties;
+
+    expect(jsonSchema.description).toContain('"type":"uri"');
+    expect(fieldSchema.additionalProperties).toBe(false);
+    expect(fieldSchema.properties.type.enum).toEqual([...CONTENT_FIELD_TYPES]);
+    expect(fieldSchema.properties.type.description).toContain(
+      '"file": an attachment',
+    );
   });
 
   it("never carries inline webhook secrets", () => {

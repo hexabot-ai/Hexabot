@@ -35,19 +35,80 @@ export const withDefaultContentTypeProperties = <
   ...properties,
 });
 
-export const contentTypeJsonSchema = z.looseObject({
-  type: z.literal(DEFAULT_CONTENT_TYPE_SCHEMA.type),
-  properties: z.looseObject(
-    Object.fromEntries(
-      Object.entries(DEFAULT_CONTENT_TYPE_SCHEMA.properties).map(
-        ([key, { type }]) => [
-          key,
-          z.looseObject({ type: z.literal(type), title: z.string() }),
-        ],
-      ),
-    ),
-  ),
+/**
+ * Kinds of content type fields. They are stored as the field's `type`,
+ * in place of a JSON Schema type: the admin UI picks the input of each field,
+ * and `send_list` the fields it offers, from this value alone.
+ */
+export const CONTENT_FIELD_TYPES = [
+  "string",
+  "textarea",
+  "html",
+  "uri",
+  "boolean",
+  "file",
+] as const;
+
+export type ContentFieldType = (typeof CONTENT_FIELD_TYPES)[number];
+
+const CONTENT_FIELD_TYPE_DESCRIPTIONS: Record<ContentFieldType, string> = {
+  string: "a single-line text, stored as a string",
+  textarea: "a multi-line text, stored as a string",
+  html: "HTML markup, stored as a string",
+  uri: "a URL, stored as a string (send_list offers it as the link of web_url buttons)",
+  boolean: "a switch, stored as a boolean",
+  file: 'an attachment, stored as { "type": "image"|"video"|"audio"|"file", "payload": { "id": "<attachment id>" } or { "url": "<file URL>" } } (send_list offers it as the image of an element)',
+};
+
+export const contentFieldTypeSchema = z.enum(CONTENT_FIELD_TYPES).meta({
+  description: `Hexabot content field type, not a JSON Schema type (no "format"): ${Object.entries(
+    CONTENT_FIELD_TYPE_DESCRIPTIONS,
+  )
+    .map(([type, description]) => `"${type}": ${description}`)
+    .join("; ")}.`,
 });
+
+export const contentFieldSchema = z
+  .strictObject(
+    {
+      type: contentFieldTypeSchema,
+      title: z.string().optional(),
+      description: z.string().optional(),
+    },
+    {
+      // Other JSON Schema keywords ("format", "enum", "default", ...) would be
+      // saved, then ignored by every consumer of the field.
+      error: (issue) =>
+        issue.code === "unrecognized_keys"
+          ? `Unsupported key(s) ${issue.keys.map((key) => `"${key}"`).join(", ")}: a content field only takes "type", "title" and "description". Pick the kind of field with "type" (${CONTENT_FIELD_TYPES.join(", ")}), e.g. {"type":"uri"} for a URL, not {"type":"string","format":"uri"}.`
+          : undefined,
+    },
+  )
+  .meta({
+    description:
+      'A content type field: { "type": <field type>, "title"?: <label>, "description"?: <help text> }.',
+  });
+
+export const contentTypeJsonSchema = z
+  .looseObject({
+    type: z.literal(DEFAULT_CONTENT_TYPE_SCHEMA.type),
+    properties: z
+      .object(
+        Object.fromEntries(
+          Object.entries(DEFAULT_CONTENT_TYPE_SCHEMA.properties).map(
+            ([key, { type }]) => [
+              key,
+              z.looseObject({ type: z.literal(type), title: z.string() }),
+            ],
+          ),
+        ),
+      )
+      .catchall(contentFieldSchema),
+  })
+  .meta({
+    description:
+      'Content type schema: { "type": "object", "properties": { <field key>: <field> }, "required"?: [<field key>] }. The built-in "title" ({ "type": "string", "title": "Title" }) and "status" ({ "type": "boolean", "title": "Status" }) fields must be kept. Example: {"type":"object","properties":{"title":{"type":"string","title":"Title"},"status":{"type":"boolean","title":"Status"},"link":{"type":"uri","title":"Link"},"image":{"type":"file","title":"Image"}},"required":["link"]}',
+  });
 
 export const contentTypeStubSchema = contentTypeObjectSchema;
 

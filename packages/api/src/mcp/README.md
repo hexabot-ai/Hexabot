@@ -316,6 +316,45 @@ channel cannot change through MCP.
 property keys (e.g. `["url"]`); each hit then carries those keys in
 `properties`, so a client can cite the source page.
 
+#### Content type schemas
+
+A content type's `schema` is an object schema whose `properties` map each field
+key to `{ type, title?, description? }`. `type` is a Hexabot field type, not a
+JSON Schema type (`CONTENT_FIELD_TYPES` in `@hexabot-ai/types`):
+
+| `type`     | Content value                                   | Admin UI input      | Used by `send_list` as |
+| ---------- | ----------------------------------------------- | ------------------- | ---------------------- |
+| `string`   | string                                          | single-line text    | title, subtitle        |
+| `textarea` | string                                          | multi-line text     |                        |
+| `html`     | string                                          | text                |                        |
+| `uri`      | string                                          | URL                 | `web_url` button link  |
+| `boolean`  | boolean                                         | switch              |                        |
+| `file`     | `{ "type": "image", "payload": { "id": "…" } }` | attachment uploader | element image          |
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string", "title": "Title" },
+    "status": { "type": "boolean", "title": "Status" },
+    "link": { "type": "uri", "title": "Link" },
+    "image": { "type": "file", "title": "Image" }
+  },
+  "required": ["link"]
+}
+```
+
+The built-in `title` and `status` fields must be kept. A field takes no other
+key: `format`, `enum`, `default` and the like are refused (REST and MCP alike),
+since nothing would use them; write `{"type":"uri"}`, not
+`{"type":"string","format":"uri"}`.
+
+In `hexabot_content_create`/`hexabot_content_update`, `properties` holds the
+field values by key; `title` and `status` are arguments of their own. A `file`
+value's `type` is `image`, `video`, `audio` or `file`, and its `payload` is
+`{ "id": "<attachment id>" }` or `{ "url": "<file URL>" }`. Channels send
+either, but the admin UI only shows file values that have an `id`.
+
 ## Extending the MCP module
 
 Add new tools in the focused provider file under `tools/` that matches the
