@@ -56,6 +56,8 @@ export * from './contexts/conversational-workflow.context';
 
 export * from './contexts/workflow-runtime.context';
 
+export * from './resource-refs';
+
 export * from './types';
 
 export * from './services/workflow.service';
