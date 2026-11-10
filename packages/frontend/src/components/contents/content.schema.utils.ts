@@ -9,6 +9,7 @@ import {
   CONTENT_TYPE_READ_ONLY_PROPERTY_KEYS,
   type Content,
   type ContentFieldType,
+  resolveContentFieldType,
 } from "@hexabot-ai/types";
 import { RJSFSchema } from "@rjsf/utils";
 
@@ -16,7 +17,6 @@ import {
   getSchemaDefaults,
   getSchemaProperties,
 } from "@/app-components/inputs/JsonSchemaForm/schema-defaults.utils";
-import { getContentFieldType } from "@/utils/content-field.utils";
 
 import { type ContentFormData } from "./ContentForm";
 
@@ -64,13 +64,11 @@ const CONTENT_FIELD_SCHEMA_FACTORIES: Partial<
   // No "" default: "format" refuses an empty URL, and the URL input clears
   // the value to undefined.
   uri: (title) => ({ type: "string", format: "uri", title }),
-  html: buildStringFieldSchema,
   string: buildStringFieldSchema,
 };
 const TEXT_FIELD_TYPES = new Set<ContentField["type"]>([
   "string",
   "textarea",
-  "html",
   "uri",
 ]);
 
@@ -99,7 +97,7 @@ const buildContentFieldSchema = (
   requiredFields: Set<string>,
 ): RJSFSchema => {
   const fieldTitle = property.title || propertyKey;
-  const fieldType = getContentFieldType(property) ?? property.type;
+  const fieldType = resolveContentFieldType(property) ?? property.type;
   const schemaFactory =
     CONTENT_FIELD_SCHEMA_FACTORIES[fieldType] ?? buildStringFieldSchema;
   const baseFieldSchema =

@@ -12,6 +12,8 @@ import {
   AttachmentResourceRef,
   buildContentPropertiesSchema,
   CONTENT_FIELD_TYPES,
+  normalizeContentTypeSchema,
+  resolveContentFieldType,
   FieldType,
   MemoryScope,
   McpServerTransport,
@@ -108,6 +110,8 @@ describe("@hexabot-ai/types schemas", () => {
       ).toBe(true);
     }
 
+    expect(withField({ type: "html", title: "Field" }).success).toBe(false);
+
     const unknownType = withField({ type: "number", title: "Field" });
 
     expect(unknownType.success).toBe(false);
@@ -140,6 +144,71 @@ describe("@hexabot-ai/types schemas", () => {
     expect(fieldSchema.properties.type.description).toContain(
       '"file": an attachment',
     );
+  });
+
+  describe("content fields saved with a former spelling", () => {
+    it("are read as the kind they stand for", () => {
+      for (const type of CONTENT_FIELD_TYPES) {
+        expect(resolveContentFieldType({ type })).toBe(type);
+      }
+      expect(resolveContentFieldType({ type: "html" })).toBe("textarea");
+      expect(resolveContentFieldType({ type: "string", format: "uri" })).toBe(
+        "uri",
+      );
+      expect(resolveContentFieldType({ type: "string", format: "url" })).toBe(
+        "uri",
+      );
+      expect(resolveContentFieldType({ type: "string", format: "email" })).toBe(
+        "string",
+      );
+      expect(resolveContentFieldType({ type: "number" })).toBeUndefined();
+      expect(resolveContentFieldType(null)).toBeUndefined();
+    });
+
+    it("are rewritten to their current type in a content type schema", () => {
+      expect(
+        normalizeContentTypeSchema({
+          ...DEFAULT_CONTENT_TYPE_SCHEMA,
+          properties: {
+            ...DEFAULT_CONTENT_TYPE_SCHEMA.properties,
+            body: { type: "html", title: "Body" },
+            link: { type: "string", format: "uri", title: "Link" },
+            count: { type: "number", title: "Count" },
+          },
+          required: ["body"],
+        }),
+      ).toEqual({
+        ...DEFAULT_CONTENT_TYPE_SCHEMA,
+        properties: {
+          ...DEFAULT_CONTENT_TYPE_SCHEMA.properties,
+          body: { type: "textarea", title: "Body" },
+          link: { type: "uri", title: "Link" },
+          count: { type: "number", title: "Count" },
+        },
+        required: ["body"],
+      });
+      expect(normalizeContentTypeSchema(null)).toBeNull();
+    });
+
+    it("take the values of the kind they stand for", () => {
+      const schema = buildContentPropertiesSchema({
+        type: "object",
+        properties: {
+          body: { type: "html" },
+          link: { type: "string", format: "uri" },
+        },
+      });
+
+      expect(
+        schema.safeParse({ body: "<p>Text</p>", link: "https://hexabot.ai" })
+          .success,
+      ).toBe(true);
+      expect(
+        schema
+          .safeParse({ body: 3, link: "hexabot.ai" })
+          .error?.issues.map(({ path }) => path.join(".")),
+      ).toEqual(["body", "link"]);
+    });
   });
 
   describe("buildContentPropertiesSchema", () => {

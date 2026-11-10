@@ -44,7 +44,6 @@ export const withDefaultContentTypeProperties = <
 export const CONTENT_FIELD_TYPES = [
   "string",
   "textarea",
-  "html",
   "uri",
   "boolean",
   "file",
@@ -55,7 +54,6 @@ export type ContentFieldType = (typeof CONTENT_FIELD_TYPES)[number];
 const CONTENT_FIELD_TYPE_DESCRIPTIONS: Record<ContentFieldType, string> = {
   string: "a single-line text, stored as a string",
   textarea: "a multi-line text, stored as a string",
-  html: "HTML markup, stored as a string",
   uri: "a URL, stored as a string (send_list offers it as the link of web_url buttons)",
   boolean: "a switch, stored as a boolean",
   file: 'an attachment, stored as { "type": "image"|"video"|"audio"|"file", "payload": { "id": "<attachment id>" } or { "url": "<file URL>" } } (send_list offers it as the image of an element)',
@@ -116,6 +114,54 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isContentFieldType = (value: unknown): value is ContentFieldType =>
   typeof value === "string" &&
   (CONTENT_FIELD_TYPES as readonly string[]).includes(value);
+
+/**
+ * Kind of a stored content type field, `undefined` when it has none. Fields
+ * saved with a former spelling are read as the kind they stand for:
+ * `{ "type": "string", "format": "uri" }` (saved before the API checked field
+ * types) as "uri", and "html" (no longer a field type) as "textarea".
+ */
+export const resolveContentFieldType = (
+  field: unknown,
+): ContentFieldType | undefined => {
+  if (!isRecord(field)) return undefined;
+
+  const { type, format } = field;
+
+  if (type === "string" && (format === "uri" || format === "url")) {
+    return "uri";
+  }
+  if (type === "html") return "textarea";
+
+  return isContentFieldType(type) ? type : undefined;
+};
+
+/**
+ * Rewrites the fields of a content type schema saved with a former spelling
+ * (see `resolveContentFieldType`) to their current type. Other fields and
+ * keys are kept as they are.
+ */
+export const normalizeContentTypeSchema = <T>(schema: T): T => {
+  if (!isRecord(schema) || !isRecord(schema.properties)) return schema;
+
+  return {
+    ...schema,
+    properties: Object.fromEntries(
+      Object.entries(schema.properties).map(([key, field]) => {
+        const type = resolveContentFieldType(field);
+
+        if (!type || !isRecord(field) || field.type === type) {
+          return [key, field];
+        }
+
+        const { format: _format, ...rest } = field;
+
+        return [key, { ...rest, type }];
+      }),
+    ),
+  } as T;
+};
+
 const contentFileValueSchema = z.object({
   type: fileTypeSchema,
   payload: z.looseObject({
@@ -131,7 +177,6 @@ const CONTENT_FIELD_VALUE_SCHEMAS: Record<
 > = {
   string: buildTextValueSchema,
   textarea: buildTextValueSchema,
-  html: buildTextValueSchema,
   uri: (required) => (required ? z.url() : z.union([z.url(), z.literal("")])),
   boolean: () => z.boolean(),
   file: (required) =>
@@ -147,7 +192,8 @@ const CONTENT_FIELD_VALUE_SCHEMAS: Record<
  * Validates the `properties` of a content against the schema of its content
  * type: each value matches the type of its field, required fields have a
  * value, and no other key is given (`title` and `status` are columns of the
- * content, not properties). Fields of an unknown type take any value, and a
+ * content, not properties). Fields saved with a former spelling are read with
+ * `resolveContentFieldType`, fields of an unknown type take any value, and a
  * content type without properties takes any properties.
  */
 export const buildContentPropertiesSchema = (contentTypeSchema: unknown) => {
@@ -168,9 +214,9 @@ export const buildContentPropertiesSchema = (contentTypeSchema: unknown) => {
   return z.strictObject(
     Object.fromEntries(
       fields.map(([key, field]) => {
-        const type = isRecord(field) ? field.type : undefined;
+        const type = resolveContentFieldType(field);
         const isRequired = requiredKeys.has(key);
-        const schema = isContentFieldType(type)
+        const schema = type
           ? CONTENT_FIELD_VALUE_SCHEMAS[type](isRequired)
           : z.unknown();
 

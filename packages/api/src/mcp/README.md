@@ -326,7 +326,6 @@ JSON Schema type (`CONTENT_FIELD_TYPES` in `@hexabot-ai/types`):
 | ---------- | ----------------------------------------------- | ------------------- | ---------------------- |
 | `string`   | string                                          | single-line text    | title, subtitle        |
 | `textarea` | string                                          | multi-line text     |                        |
-| `html`     | string                                          | text                |                        |
 | `uri`      | string                                          | URL                 | `web_url` button link  |
 | `boolean`  | boolean                                         | switch              |                        |
 | `file`     | `{ "type": "image", "payload": { "id": "…" } }` | attachment uploader | element image          |
@@ -347,7 +346,9 @@ JSON Schema type (`CONTENT_FIELD_TYPES` in `@hexabot-ai/types`):
 The built-in `title` and `status` fields must be kept. A field takes no other
 key: `format`, `enum`, `default` and the like are refused (REST and MCP alike),
 since nothing would use them; write `{"type":"uri"}`, not
-`{"type":"string","format":"uri"}`.
+`{"type":"string","format":"uri"}`. `html` is no longer a field type: fields
+stored with it are read as `textarea` (and imported workflow bundles turn them
+into `textarea`), but a schema sent with it is refused.
 
 In `hexabot_content_create`/`hexabot_content_update`, `properties` holds the
 field values by key; `title` and `status` are arguments of their own. A `file`

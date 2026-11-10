@@ -7,6 +7,7 @@
 import { isDeepStrictEqual } from 'node:util';
 
 import {
+  normalizeContentTypeSchema,
   type WorkflowExportBundle,
   type WorkflowExportBundleContentType,
   type WorkflowImportResourceResult,
@@ -113,9 +114,11 @@ export class ContentTypeTransferAdapter extends WorkflowTransferResourceAdapter 
         continue;
       }
 
+      // Bundles exported before may hold fields with a former spelling (e.g.
+      // the "html" field type): they are imported with their current type.
       const payload = {
         name: contentType.name,
-        schema: contentType.schema,
+        schema: normalizeContentTypeSchema(contentType.schema),
       };
       const created = await ctx.manager.save(
         ContentTypeOrmEntity,
@@ -149,6 +152,9 @@ export class ContentTypeTransferAdapter extends WorkflowTransferResourceAdapter 
     existing: ContentTypeOrmEntity,
     imported: WorkflowExportBundle['resources']['contentTypes'][number],
   ): boolean {
-    return isDeepStrictEqual(existing.schema, imported.schema);
+    return isDeepStrictEqual(
+      normalizeContentTypeSchema(existing.schema),
+      normalizeContentTypeSchema(imported.schema),
+    );
   }
 }
