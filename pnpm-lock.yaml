@@ -97,6 +97,12 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@ai-sdk/openai':
+        specifier: ^3.0.7
+        version: 3.0.7(zod@4.6.7)
+      '@eslint/eslintrc':
+        specifier: ^3.3.1
+        version: 3.3.1
       '@types/jest':
         specifier: ^30.0.0
         version: 30.0.0
@@ -109,21 +115,24 @@ importers:
       '@typescript-eslint/parser':
         specifier: ^8.46.0
         version: 8.46.0(eslint@9.37.0(jiti@2.6.1))(typescript@5.9.3)
+      ai:
+        specifier: ^6.0.20
+        version: 6.0.20(zod@4.6.7)
       eslint:
         specifier: ^9.37.0
         version: 9.37.0(jiti@2.6.1)
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@9.37.0(jiti@2.6.1))
-      eslint-import-resolver-typescript:
-        specifier: ^4.4.4
-        version: 4.4.4(eslint-plugin-import@2.32.0)(eslint@9.37.0(jiti@2.6.1))
       eslint-plugin-header:
         specifier: ^3.1.1
         version: 3.1.1(eslint@9.37.0(jiti@2.6.1))
       eslint-plugin-import:
         specifier: ^2.32.0
         version: 2.32.0(@typescript-eslint/parser@8.46.0(eslint@9.37.0(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@4.4.4)(eslint@9.37.0(jiti@2.6.1))
+      globals:
+        specifier: ^14.0.0
+        version: 14.0.0
       jest:
         specifier: ^30.2.0
         version: 30.2.0(@types/node@24.12.0)(babel-plugin-macros@3.1.0)(ts-node@10.9.2(@swc/core@1.15.32)(@types/node@24.12.0)(typescript@5.9.3))
