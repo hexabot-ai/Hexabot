@@ -23,7 +23,6 @@
     "Fields": "Fields",
     "File attachment submitted via an Attachment action": "File attachment submitted via an Attachment action",
     "Image URL Field": "Image URL Field",
-    "Messenger extensions": "Messenger extensions",
     "No": "No",
     "Options": "Options",
     "Payload": "Payload",
@@ -31,7 +30,6 @@
     "Sends an attachment message to the subscriber.": "Sends an attachment message to the subscriber.",
     "Subtitle": "Subtitle",
     "The destination URL opened when the button is clicked.": "The destination URL opened when the button is clicked.",
-    "The height of the webview.": "The height of the webview.",
     "The label shown to the user.": "The label shown to the user.",
     "The type of button.": "The type of button.",
     "The type of quick reply to render.": "The type of quick reply to render.",
@@ -42,8 +40,6 @@
     "Type": "Type",
     "Typing indicator (ms)": "Typing indicator (ms)",
     "URL": "URL",
-    "Webview height ratio": "Webview height ratio",
-    "Whether to enable Messenger Extensions for the webview.": "Whether to enable Messenger Extensions for the webview.",
     "Yes": "Yes"
   },
   "send_buttons": {
@@ -57,14 +53,12 @@
     "Display": "Display",
     "Fields": "Fields",
     "Image URL Field": "Image URL Field",
-    "Messenger extensions": "Messenger extensions",
     "Options": "Options",
     "Payload": "Payload",
     "Sends a text message with buttons to the subscriber.": "Sends a text message with buttons to the subscriber.",
     "Subtitle": "Subtitle",
     "Text": "Text",
     "The destination URL opened when the button is clicked.": "The destination URL opened when the button is clicked.",
-    "The height of the webview.": "The height of the webview.",
     "The label shown to the user.": "The label shown to the user.",
     "The text message to be sent.": "The text message to be sent.",
     "The type of button.": "The type of button.",
@@ -76,9 +70,7 @@
     "Type": "Type",
     "Typing indicator (ms)": "Typing indicator (ms)",
     "URL": "URL",
-    "Website": "Website",
-    "Webview height ratio": "Webview height ratio",
-    "Whether to enable Messenger Extensions for the webview.": "Whether to enable Messenger Extensions for the webview."
+    "Website": "Website"
   },
   "send_list": {
     "Action Payload": "Action Payload",
@@ -92,11 +84,9 @@
     "Fields": "Fields",
     "Hexabot": "Hexabot",
     "Image URL Field": "Image URL Field",
-    "Messenger extensions": "Messenger extensions",
     "Payload": "Payload",
     "Subtitle": "Subtitle",
     "The destination URL opened when the button is clicked.": "The destination URL opened when the button is clicked.",
-    "The height of the webview.": "The height of the webview.",
     "The label shown to the user.": "The label shown to the user.",
     "The type of button.": "The type of button.",
     "The type of quick reply to render.": "The type of quick reply to render.",
@@ -105,9 +95,7 @@
     "Title": "Title",
     "Top Element Style": "Top Element Style",
     "Type": "Type",
-    "URL": "URL",
-    "Webview height ratio": "Webview height ratio",
-    "Whether to enable Messenger Extensions for the webview.": "Whether to enable Messenger Extensions for the webview."
+    "URL": "URL"
   },
   "send_quick_replies": {
     "Action Payload": "Action Payload",
@@ -118,7 +106,6 @@
     "Display": "Display",
     "Fields": "Fields",
     "Image URL Field": "Image URL Field",
-    "Messenger extensions": "Messenger extensions",
     "No": "No",
     "Options": "Options",
     "Payload": "Payload",
@@ -127,7 +114,6 @@
     "Subtitle": "Subtitle",
     "Text": "Text",
     "The destination URL opened when the button is clicked.": "The destination URL opened when the button is clicked.",
-    "The height of the webview.": "The height of the webview.",
     "The label shown to the user.": "The label shown to the user.",
     "The text message to be sent.": "The text message to be sent.",
     "The type of button.": "The type of button.",
@@ -139,8 +125,6 @@
     "Type": "Type",
     "Typing indicator (ms)": "Typing indicator (ms)",
     "URL": "URL",
-    "Webview height ratio": "Webview height ratio",
-    "Whether to enable Messenger Extensions for the webview.": "Whether to enable Messenger Extensions for the webview.",
     "Yes": "Yes"
   },
   "send_text_message": {
@@ -152,13 +136,11 @@
     "Display": "Display",
     "Fields": "Fields",
     "Image URL Field": "Image URL Field",
-    "Messenger extensions": "Messenger extensions",
     "Payload": "Payload",
     "Sends a text message to the subscriber.": "Sends a text message to the subscriber.",
     "Subtitle": "Subtitle",
     "Text": "Text",
     "The destination URL opened when the button is clicked.": "The destination URL opened when the button is clicked.",
-    "The height of the webview.": "The height of the webview.",
     "The label shown to the user.": "The label shown to the user.",
     "The text message to be sent.": "The text message to be sent.",
     "The type of button.": "The type of button.",
@@ -169,8 +151,6 @@
     "Top Element Style": "Top Element Style",
     "Type": "Type",
     "Typing indicator (ms)": "Typing indicator (ms)",
-    "URL": "URL",
-    "Webview height ratio": "Webview height ratio",
-    "Whether to enable Messenger Extensions for the webview.": "Whether to enable Messenger Extensions for the webview."
+    "URL": "URL"
   }
 }

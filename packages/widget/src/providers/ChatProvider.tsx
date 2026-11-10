@@ -30,11 +30,7 @@ import {
   UiMessage,
   Web,
 } from "../types/message.types";
-import {
-  ChatScreen,
-  ConnectionState,
-  OutgoingMessageState,
-} from "../types/state.types";
+import { ConnectionState, OutgoingMessageState } from "../types/state.types";
 import { SocketIoClientError } from "../utils/SocketIoClientError";
 import { buildWebhookUrl, rebaseDownloadUrls } from "../utils/webhook-url";
 
@@ -209,12 +205,6 @@ interface ChatContextType {
   setNewMessagesCount: (count: number) => void;
 
   /**
-   * URL for a webview, if applicable in the chat context.
-   */
-  webviewUrl: string;
-  setWebviewUrl: (url: string) => void;
-
-  /**
    * The current message being composed.
    */
   message: string;
@@ -282,8 +272,6 @@ const defaultCtx: ChatContextType = {
   setNewIOMessage: () => {},
   newMessagesCount: 0,
   setNewMessagesCount: () => {},
-  webviewUrl: "",
-  setWebviewUrl: () => {},
   message: "",
   setMessage: () => {},
   file: null,
@@ -310,7 +298,6 @@ const ChatProvider: React.FC<{
   const { postMessage } = useBroadcastChannel();
   const config = useConfig();
   const settings = useSettings();
-  const { setScreen } = useWidget();
   const { setScroll, syncState, isOpen } = useWidget();
   const { socket, socketErrorHandlers } = useSocket();
   const { t } = useTranslation();
@@ -337,7 +324,6 @@ const ChatProvider: React.FC<{
   const [outgoingMessageState, setOutgoingMessageState] =
     useState<OutgoingMessageState>(defaultCtx.outgoingMessageState);
   const [file, setFile] = useState<File | null>(defaultCtx.file);
-  const [webviewUrl, setWebviewUrl] = useState<string>(defaultCtx.webviewUrl);
   const [profile, setProfile] = useState<undefined | SubscriberFull>();
   const getWebhookUrl = useCallback(
     (query?: URLSearchParams | Record<string, string>) =>
@@ -517,14 +503,6 @@ const ChatProvider: React.FC<{
 
   useSubscribe<boolean>(StdEventType.typing, setShowTypingIndicator);
 
-  const updateWebviewUrl = (url: string) => {
-    if (url) {
-      setWebviewUrl(url);
-      setScreen(ChatScreen.WEBVIEW);
-    } else {
-      setScreen(ChatScreen.CHAT);
-    }
-  };
   // A ref, not the effect alone: StrictMode runs mount effects twice.
   const reportedConnectionState = useRef<ConnectionState>(undefined);
 
@@ -623,8 +601,6 @@ const ChatProvider: React.FC<{
     setShowTypingIndicator,
     suggestions,
     setSuggestions,
-    webviewUrl,
-    setWebviewUrl: updateWebviewUrl,
     file,
     setFile,
     message,

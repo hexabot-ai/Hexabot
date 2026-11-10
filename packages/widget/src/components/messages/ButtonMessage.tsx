@@ -16,17 +16,13 @@ interface ButtonsMessageProps {
 }
 
 const ButtonsMessage: React.FC<ButtonsMessageProps> = ({ message }) => {
-  const { send, setWebviewUrl } = useChat();
+  const { send } = useChat();
   const handleClick = (
     event: React.MouseEvent<HTMLButtonElement>,
     button: Button,
   ) => {
     if (button.type === "web_url" && button.url) {
-      if (button.messenger_extensions) {
-        setWebviewUrl(button.url);
-      } else {
-        window.open(button.url, "_blank");
-      }
+      window.open(button.url, "_blank");
     } else if (button.type === "postback") {
       send({
         event,

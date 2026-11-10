@@ -23,7 +23,6 @@
     "Fields": "Champs",
     "File attachment submitted via an Attachment action": "Pièce jointe envoyée via une action de type « Pièce jointe ».",
     "Image URL Field": "Champ URL de l'image",
-    "Messenger extensions": "Extensions Messenger",
     "No": "Non",
     "Options": "Options",
     "Payload": "Charge utile",
@@ -31,7 +30,6 @@
     "Sends an attachment message to the subscriber.": "Envoie un message avec pièce jointe à l'abonné.",
     "Subtitle": "Sous-titre",
     "The destination URL opened when the button is clicked.": "URL de destination ouverte lorsque l'utilisateur clique sur le bouton.",
-    "The height of the webview.": "Hauteur de la webview.",
     "The label shown to the user.": "Libellé affiché à l'utilisateur.",
     "The type of button.": "Type de bouton.",
     "The type of quick reply to render.": "Type de réponse rapide à afficher.",
@@ -42,8 +40,6 @@
     "Type": "Type",
     "Typing indicator (ms)": "Indicateur de saisie (ms)",
     "URL": "URL",
-    "Webview height ratio": "Ratio de hauteur de la webview",
-    "Whether to enable Messenger Extensions for the webview.": "Indique s'il faut activer les extensions Messenger pour la webview.",
     "Yes": "Oui"
   },
   "send_buttons": {
@@ -57,14 +53,12 @@
     "Display": "Affichage",
     "Fields": "Champs",
     "Image URL Field": "Champ URL de l'image",
-    "Messenger extensions": "Extensions Messenger",
     "Options": "Options",
     "Payload": "Charge utile",
     "Sends a text message with buttons to the subscriber.": "Envoie un message texte avec boutons à l'abonné.",
     "Subtitle": "Sous-titre",
     "Text": "Texte",
     "The destination URL opened when the button is clicked.": "URL de destination ouverte lorsque l'utilisateur clique sur le bouton.",
-    "The height of the webview.": "Hauteur de la webview.",
     "The label shown to the user.": "Libellé affiché à l'utilisateur.",
     "The text message to be sent.": "Message texte à envoyer.",
     "The type of button.": "Type de bouton.",
@@ -76,9 +70,7 @@
     "Type": "Type",
     "Typing indicator (ms)": "Indicateur de saisie (ms)",
     "URL": "URL",
-    "Website": "Site web",
-    "Webview height ratio": "Ratio de hauteur de la webview",
-    "Whether to enable Messenger Extensions for the webview.": "Indique s'il faut activer les extensions Messenger pour la webview."
+    "Website": "Site web"
   },
   "send_list": {
     "Action Payload": "Charge utile de l'action",
@@ -92,11 +84,9 @@
     "Fields": "Champs",
     "Hexabot": "Hexabot",
     "Image URL Field": "Champ URL de l'image",
-    "Messenger extensions": "Extensions Messenger",
     "Payload": "Charge utile",
     "Subtitle": "Sous-titre",
     "The destination URL opened when the button is clicked.": "URL de destination ouverte lorsque l'utilisateur clique sur le bouton.",
-    "The height of the webview.": "Hauteur de la webview.",
     "The label shown to the user.": "Libellé affiché à l'utilisateur.",
     "The type of button.": "Type de bouton.",
     "The type of quick reply to render.": "Type de réponse rapide à afficher.",
@@ -105,9 +95,7 @@
     "Title": "Titre",
     "Top Element Style": "Style de l'élément supérieur",
     "Type": "Type",
-    "URL": "URL",
-    "Webview height ratio": "Ratio de hauteur de la webview",
-    "Whether to enable Messenger Extensions for the webview.": "Indique s'il faut activer les extensions Messenger pour la webview."
+    "URL": "URL"
   },
   "send_quick_replies": {
     "Action Payload": "Charge utile de l'action",
@@ -118,7 +106,6 @@
     "Display": "Affichage",
     "Fields": "Champs",
     "Image URL Field": "Champ URL de l'image",
-    "Messenger extensions": "Extensions Messenger",
     "No": "Non",
     "Options": "Options",
     "Payload": "Charge utile",
@@ -127,7 +114,6 @@
     "Subtitle": "Sous-titre",
     "Text": "Texte",
     "The destination URL opened when the button is clicked.": "URL de destination ouverte lorsque l'utilisateur clique sur le bouton.",
-    "The height of the webview.": "Hauteur de la webview.",
     "The label shown to the user.": "Libellé affiché à l'utilisateur.",
     "The text message to be sent.": "Message texte à envoyer.",
     "The type of button.": "Type de bouton.",
@@ -139,8 +125,6 @@
     "Type": "Type",
     "Typing indicator (ms)": "Indicateur de saisie (ms)",
     "URL": "URL",
-    "Webview height ratio": "Ratio de hauteur de la webview",
-    "Whether to enable Messenger Extensions for the webview.": "Indique s'il faut activer les extensions Messenger pour la webview.",
     "Yes": "Oui"
   },
   "send_text_message": {
@@ -152,13 +136,11 @@
     "Display": "Affichage",
     "Fields": "Champs",
     "Image URL Field": "Champ URL de l'image",
-    "Messenger extensions": "Extensions Messenger",
     "Payload": "Charge utile",
     "Sends a text message to the subscriber.": "Envoie un message texte à l'abonné.",
     "Subtitle": "Sous-titre",
     "Text": "Texte",
     "The destination URL opened when the button is clicked.": "URL de destination ouverte lorsque l'utilisateur clique sur le bouton.",
-    "The height of the webview.": "Hauteur de la webview.",
     "The label shown to the user.": "Libellé affiché à l'utilisateur.",
     "The text message to be sent.": "Message texte à envoyer.",
     "The type of button.": "Type de bouton.",
@@ -169,8 +151,6 @@
     "Top Element Style": "Style de l'élément supérieur",
     "Type": "Type",
     "Typing indicator (ms)": "Indicateur de saisie (ms)",
-    "URL": "URL",
-    "Webview height ratio": "Ratio de hauteur de la webview",
-    "Whether to enable Messenger Extensions for the webview.": "Indique s'il faut activer les extensions Messenger pour la webview."
+    "URL": "URL"
   }
 }

@@ -164,14 +164,15 @@ export class WebOutboundMessageEncoder extends ChannelOutboundMessageEncoder<
       buttons.forEach((button: Button, index) => {
         const btn = { ...button };
         if (btn.type === ButtonType.web_url) {
-          const urlField = fields.url;
-          btn.url =
-            urlField && item[urlField]
-              ? item[urlField]
-              : ContentOrmEntity.getUrl(item);
-          if (!btn.url.startsWith('http')) {
-            btn.url = 'https://' + btn.url;
+          // The URL field of the content, else the URL of the button.
+          const url: string | undefined =
+            (fields.url && item[fields.url]) || btn.url;
+
+          if (!url) {
+            return;
           }
+
+          btn.url = url.startsWith('http') ? url : 'https://' + url;
           if (!element.default_action) {
             const { title: _title, ...defaultAction } = btn;
             element.default_action = defaultAction;

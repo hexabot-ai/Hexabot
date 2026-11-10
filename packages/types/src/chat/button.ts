@@ -17,14 +17,10 @@ export type PostBackButton = {
   payload: string;
 };
 
-export type WebviewHeightRatio = "compact" | "tall" | "full";
-
 export type WebUrlButton = {
   type: ButtonType.web_url;
   title: string;
   url: string;
-  messenger_extensions?: boolean;
-  webview_height_ratio?: WebviewHeightRatio;
 };
 
 export type Button = PostBackButton | WebUrlButton;
@@ -52,14 +48,6 @@ export const buttonSchema = z
         title: "URL",
         description: "The destination URL opened when the button is clicked.",
       }),
-    messenger_extensions: z.boolean().optional().meta({
-      title: "Messenger extensions",
-      description: "Whether to enable Messenger Extensions for the webview.",
-    }),
-    webview_height_ratio: z.enum(["compact", "tall", "full"]).optional().meta({
-      title: "Webview height ratio",
-      description: "The height of the webview.",
-    }),
   })
   .superRefine((button, ctx) => {
     if (button.type === ButtonType.postback && !button.payload) {
