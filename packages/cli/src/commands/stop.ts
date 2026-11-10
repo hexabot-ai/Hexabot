@@ -9,16 +9,9 @@ import * as path from 'path';
 import chalk from 'chalk';
 import { Command } from 'commander';
 
+import { runProjectCompose } from '../core/compose.js';
 import { loadProjectConfig } from '../core/config.js';
-import {
-  dockerCompose,
-  generateComposeFiles,
-  resolveComposeEnvFile,
-  resolveComposeFile,
-} from '../core/docker.js';
-import { checkDocker } from '../core/prerequisites.js';
-import { assertHexabotProject, ensureDockerFolder } from '../core/project.js';
-import { parseServices } from '../utils/services.js';
+import { assertHexabotProject } from '../core/project.js';
 
 export interface StopOptions {
   docker?: boolean;
@@ -56,26 +49,6 @@ export const runStop = async (options: StopOptions = {}) => {
   }
 
   const config = loadProjectConfig(projectRoot);
-  await runDockerStop(projectRoot, options, config);
-};
-
-const runDockerStop = async (
-  projectRoot: string,
-  options: StopOptions,
-  config: ReturnType<typeof loadProjectConfig>,
-) => {
-  checkDocker({ silent: true });
-  ensureDockerFolder(projectRoot);
-  const servicesInput = parseServices(options.services || '');
-  const services = servicesInput.length
-    ? servicesInput
-    : config.docker.defaultServices;
-  const composeFile = resolveComposeFile(
-    projectRoot,
-    config.docker.composeFile,
-  );
-  const envFile = resolveComposeEnvFile(projectRoot, config.env.docker);
-  const composeArgs = generateComposeFiles(composeFile, services);
   const downArgs = ['down'];
   if (options.volumes) {
     downArgs.push('--volumes');
@@ -84,13 +57,9 @@ const runDockerStop = async (
     downArgs.push('--remove-orphans');
   }
 
-  const composeCommand = `${composeArgs} ${downArgs.join(' ')}`.trim();
-  console.log(
-    chalk.blue(
-      `Stopping Docker services${
-        services.length ? ` (${services.join(', ')})` : ''
-      }`,
-    ),
-  );
-  dockerCompose(composeCommand, { envFile });
+  runProjectCompose(projectRoot, config, {
+    services: options.services,
+    args: downArgs,
+    action: 'Stopping Docker services',
+  });
 };

@@ -89,7 +89,7 @@ export const ensureProjectConfig = (
   return loadProjectConfig(projectRoot);
 };
 
-export const writeProjectConfig = (
+const writeProjectConfig = (
   config: HexabotConfig,
   projectRoot = process.cwd(),
 ) => {

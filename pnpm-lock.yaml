@@ -535,6 +535,9 @@ importers:
         specifier: ^1.12.0
         version: 1.12.0
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.3.1
+        version: 3.3.1
       '@jest/globals':
         specifier: ^30.4.1
         version: 30.4.1
@@ -571,6 +574,9 @@ importers:
       eslint-plugin-prettier:
         specifier: ^5.5.4
         version: 5.5.4(@types/eslint@9.6.1)(eslint-config-prettier@10.1.8(eslint@9.37.0(jiti@2.6.1)))(eslint@9.37.0(jiti@2.6.1))(prettier@3.6.2)
+      globals:
+        specifier: ^14.0.0
+        version: 14.0.0
       jest:
         specifier: ^30.2.0
         version: 30.2.0(@types/node@24.12.0)(babel-plugin-macros@3.1.0)(ts-node@10.9.2(@swc/core@1.15.32)(@types/node@24.12.0)(typescript@5.9.3))
