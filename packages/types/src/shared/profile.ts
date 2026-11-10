@@ -7,17 +7,11 @@
 import { z } from "zod";
 
 import { baseStubSchema } from "./base";
-import { preprocess } from "./preprocess";
-
-export const nullableStringSchema = preprocess(
-  (value) => (value == null ? null : value),
-  z.string().nullable(),
-);
-
-export const nullableDateSchema = preprocess(
-  (value) => (value == null ? null : value),
-  z.coerce.date().nullable(),
-);
+import {
+  nullableDateSchema,
+  nullableStringSchema,
+  preprocess,
+} from "./preprocess";
 
 export const userProfileBaseSchema = baseStubSchema.extend({
   firstName: z.string(),
@@ -26,7 +20,7 @@ export const userProfileBaseSchema = baseStubSchema.extend({
   timezone: z.coerce.number().default(0),
 });
 
-export const subscriberChannelSchema = z.object({
+const subscriberChannelSchema = z.object({
   name: nullableStringSchema,
   data: preprocess(
     (value) => (value == null ? null : value),

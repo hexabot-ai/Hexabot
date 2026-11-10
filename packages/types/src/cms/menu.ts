@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { asId, withAliases } from "../shared/aliases";
+import { nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
 import { preprocess } from "../shared/preprocess";
 
@@ -32,10 +32,7 @@ export const menuStubSchema = menuStubObjectSchema;
 export const menuSchema = preprocess(
   (value) => withAliases(value, menuAliasMap),
   menuStubObjectSchema.extend({
-    parent: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ).optional(),
+    parent: nullableIdSchema.optional(),
   }),
 );
 

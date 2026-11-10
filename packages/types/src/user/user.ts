@@ -8,8 +8,12 @@ import { z } from "zod";
 
 import { attachmentSchema } from "../attachment/attachment";
 import { labelSchema } from "../chat/label";
-import { asId, asIdArray, withAliases } from "../shared/aliases";
-import { preprocess } from "../shared/preprocess";
+import {
+  idArraySchema,
+  nullableIdSchema,
+  withAliases,
+} from "../shared/aliases";
+import { nullableStringSchema, preprocess } from "../shared/preprocess";
 import { subscriberBaseSchema } from "../shared/profile";
 
 import { roleSchema } from "./role";
@@ -30,10 +34,7 @@ const userStubObjectSchema = subscriberBaseSchema.extend({
   sendEmail: z.coerce.boolean(),
   state: z.coerce.boolean(),
   resetCount: z.coerce.number(),
-  resetToken: preprocess(
-    (value) => (value == null ? null : value),
-    z.string().nullable(),
-  ),
+  resetToken: nullableStringSchema,
   provider: userProviderSchema.optional(),
 });
 
@@ -42,22 +43,10 @@ export const userStubSchema = userStubObjectSchema;
 export const userSchema = preprocess(
   (value) => withAliases(value, userAliasMap),
   userStubObjectSchema.extend({
-    labels: preprocess(
-      (value) => (Array.isArray(value) ? asIdArray(value) : []),
-      z.array(z.string()),
-    ),
-    assignedTo: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
-    roles: preprocess(
-      (value) => (Array.isArray(value) ? asIdArray(value) : []),
-      z.array(z.string()),
-    ),
-    avatar: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
+    labels: idArraySchema,
+    assignedTo: nullableIdSchema,
+    roles: idArraySchema,
+    avatar: nullableIdSchema,
   }),
 );
 

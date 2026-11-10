@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { asId, withAliases } from "../shared/aliases";
+import { nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
 import { preprocess } from "../shared/preprocess";
 import { userProfileAssignedSchema } from "../user/user-profile-assigned";
@@ -55,10 +55,7 @@ export const attachmentStubSchema = attachmentStubObjectSchema;
 export const attachmentSchema = preprocess(
   (value) => withAliases(value, attachmentAliasMap),
   attachmentStubObjectSchema.extend({
-    createdBy: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ).optional(),
+    createdBy: nullableIdSchema.optional(),
   }),
 );
 

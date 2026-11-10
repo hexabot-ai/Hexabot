@@ -4,7 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
+import { z } from "zod";
+
 import { cloneWithPrototype, toRecord } from "./object";
+import { preprocess } from "./preprocess";
 
 export const withAliases = (
   value: unknown,
@@ -39,10 +42,22 @@ export const asId = (value: unknown): unknown => {
   return typeof record.id === "string" ? record.id : value;
 };
 
-export const asIdArray = (value: unknown): unknown => {
+const asIdArray = (value: unknown): unknown => {
   if (!Array.isArray(value)) {
     return value;
   }
 
   return value.map((entry) => asId(entry));
 };
+
+/** A relation given as an id or a populated entity, kept as its id. */
+export const nullableIdSchema = preprocess(
+  (value) => (value == null ? null : asId(value)),
+  z.string().nullable(),
+);
+
+/** A list of relations given as ids or populated entities, kept as ids. */
+export const idArraySchema = preprocess(
+  (value) => (Array.isArray(value) ? asIdArray(value) : []),
+  z.array(z.string()),
+);
