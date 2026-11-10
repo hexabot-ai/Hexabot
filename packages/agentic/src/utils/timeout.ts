@@ -57,62 +57,44 @@ export async function withTimeout<T>(
 
   return new Promise<T>((resolve, reject) => {
     let settled = false;
-    const timer = timeoutMs
-      ? setTimeout(() => {
-          settled = true;
-          signal?.removeEventListener('abort', onAbort);
-          reject(
-            new Error(`Step execution exceeded timeout of ${timeoutMs}ms`),
-          );
-        }, timeoutMs)
-      : undefined;
-    const onAbort = () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // The first of the promise, the timeout and the abort settles the
+    // result; the other two are detached.
+    const settle = (finish: () => void) => {
       if (settled) {
         return;
       }
 
       settled = true;
-      if (timer) {
-        clearTimeout(timer);
-      }
-      reject(getAbortReason(signal as AbortSignal));
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      finish();
     };
+    const onAbort = () =>
+      settle(() => reject(getAbortReason(signal as AbortSignal)));
 
-    if (signal) {
-      if (signal.aborted) {
-        onAbort();
-
-        return;
-      }
-
-      signal.addEventListener('abort', onAbort, { once: true });
+    if (timeoutMs) {
+      timer = setTimeout(
+        () =>
+          settle(() =>
+            reject(
+              new Error(`Step execution exceeded timeout of ${timeoutMs}ms`),
+            ),
+          ),
+        timeoutMs,
+      );
     }
 
+    if (signal?.aborted) {
+      onAbort();
+
+      return;
+    }
+
+    signal?.addEventListener('abort', onAbort, { once: true });
     promise.then(
-      (value) => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        if (timer) {
-          clearTimeout(timer);
-        }
-        signal?.removeEventListener('abort', onAbort);
-        resolve(value);
-      },
-      (error) => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        if (timer) {
-          clearTimeout(timer);
-        }
-        signal?.removeEventListener('abort', onAbort);
-        reject(error);
-      },
+      (value) => settle(() => resolve(value)),
+      (error) => settle(() => reject(error)),
     );
   });
 }

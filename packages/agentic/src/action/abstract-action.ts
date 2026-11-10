@@ -26,6 +26,55 @@ import {
 
 const BASE_SETTINGS_KEYS = Object.keys(BaseSettingsSchema.shape);
 
+type RetryPolicy = {
+  maxAttempts: number;
+  backoffMs: number;
+  maxDelayMs: number;
+  jitter: number;
+  multiplier: number;
+};
+
+/**
+ * Read the retry settings of a run. Without a `retries` block an action runs
+ * once; a block that leaves `enabled` out turns retries on.
+ */
+const resolveRetryPolicy = (
+  retries: RuntimeSettings['retries'],
+): RetryPolicy => {
+  if (!retries) {
+    return {
+      maxAttempts: 1,
+      backoffMs: 0,
+      maxDelayMs: 0,
+      jitter: 0,
+      multiplier: 1,
+    };
+  }
+
+  return {
+    maxAttempts: (retries.enabled ?? true) ? retries.max_attempts : 1,
+    backoffMs: retries.backoff_ms ?? 0,
+    maxDelayMs: retries.max_delay_ms,
+    jitter: retries.jitter,
+    multiplier: retries.multiplier,
+  };
+};
+/** Cap a retry delay at the policy's `max_delay_ms`, when one is set. */
+const capDelay = (delay: number, { maxDelayMs }: RetryPolicy): number =>
+  maxDelayMs > 0 ? Math.min(delay, maxDelayMs) : delay;
+/** Pause before the next attempt: the delay, capped, then spread by the jitter. */
+const retryPause = (delay: number, policy: RetryPolicy): number => {
+  const cappedDelay = capDelay(delay, policy);
+  if (cappedDelay <= 0) {
+    return 0;
+  }
+
+  const jitterFactor =
+    policy.jitter > 0 ? 1 + (Math.random() * 2 - 1) * policy.jitter : 1;
+
+  return Math.max(0, Math.round(cappedDelay * jitterFactor));
+};
+
 /**
  * Base implementation that enforces schema-validated input/output.
  */
@@ -98,11 +147,10 @@ export abstract class AbstractAction<
   }
 
   /**
-   * Executes the action with retry, timeout, and schema safety.
+   * Parses settings over the base execution settings (timeout, retries).
    *
-   * @param payload - Raw input being provided to the action.
-   * @returns Validated output produced by the action.
-   * @throws Error when retries are exhausted or validation fails.
+   * @param payload - Raw settings of the task.
+   * @returns Settings typed as `RuntimeSettings<S>` after schema validation.
    */
   parseSettings(payload: unknown): RuntimeSettings<S> {
     const settings = z
@@ -112,6 +160,13 @@ export abstract class AbstractAction<
     return (settings ?? {}) as RuntimeSettings<S>;
   }
 
+  /**
+   * Executes the action with retry, timeout, and schema safety.
+   *
+   * @param payload - Raw input being provided to the action.
+   * @returns Validated output produced by the action.
+   * @throws Error when retries are exhausted or validation fails.
+   */
   async run(
     payload: unknown,
     context: C,
@@ -124,22 +179,8 @@ export abstract class AbstractAction<
     const parsedBindings = (bindings ?? {}) as B;
     this.assertSupportedBindings(parsedBindings);
     const timeoutMs = parsedSettings.timeout_ms ?? 0;
-    const retrySettings = parsedSettings.retries ?? {
-      enabled: false,
-      max_attempts: 1,
-      backoff_ms: 0,
-      max_delay_ms: 0,
-      jitter: 0,
-      multiplier: 1,
-    };
-    const retriesEnabled = retrySettings.enabled ?? true;
-    const maxAttempts = retriesEnabled ? retrySettings.max_attempts : 1;
-
-    let attempt = 0;
-    let currentDelay = retrySettings.backoff_ms ?? 0;
-    const maxDelayMs = retrySettings.max_delay_ms;
-    const jitter = retrySettings.jitter;
-    const multiplier = retrySettings.multiplier;
+    const retryPolicy = resolveRetryPolicy(parsedSettings.retries);
+    let delay = retryPolicy.backoffMs;
     // Suspend keys are positional within the body, so every attempt has to
     // start from where this run did: otherwise a retry asks for `index:2`
     // where the first attempt resolved `index:1`, and the step suspends on a
@@ -148,7 +189,7 @@ export abstract class AbstractAction<
       ?.getWorkflowRuntime?.()
       ?.markSuspendCursor?.();
 
-    while (attempt < maxAttempts) {
+    for (let attempt = 1; attempt <= retryPolicy.maxAttempts; attempt += 1) {
       if (signal) {
         throwIfAborted(signal);
       }
@@ -170,36 +211,22 @@ export abstract class AbstractAction<
 
         return this.parseOutput(result);
       } catch (error) {
-        attempt += 1;
-
         // A retry would read the same refused resume payload again, or replay
         // the same body into the same mismatch with what it recorded.
         if (
-          attempt >= maxAttempts ||
+          attempt >= retryPolicy.maxAttempts ||
           isWorkflowResumeRejectedError(error) ||
           isNonDeterministicWorkflowError(error)
         ) {
           throw error;
         }
 
-        let delay = currentDelay;
-        if (maxDelayMs > 0) {
-          delay = Math.min(delay, maxDelayMs);
+        const pause = retryPause(delay, retryPolicy);
+        if (pause > 0) {
+          await sleep(pause, signal);
         }
 
-        if (delay > 0) {
-          const jitterFactor =
-            jitter > 0 ? 1 + (Math.random() * 2 - 1) * jitter : 1;
-          const jitteredDelay = Math.max(0, Math.round(delay * jitterFactor));
-
-          if (jitteredDelay > 0) {
-            await sleep(jitteredDelay, signal);
-          }
-        }
-
-        const nextDelay = currentDelay * multiplier;
-        currentDelay =
-          maxDelayMs > 0 ? Math.min(nextDelay, maxDelayMs) : nextDelay;
+        delay = capDelay(delay * retryPolicy.multiplier, retryPolicy);
       }
     }
 
