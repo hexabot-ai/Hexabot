@@ -82,6 +82,18 @@ type ResumedRun = {
   report: RunReport;
 };
 
+/** Execution state of the root flow, outside any loop iteration. */
+const rootState = (
+  input: Record<string, unknown>,
+  output: Record<string, unknown>,
+): ExecutionState => ({ input, output, iterationStack: [] });
+/** Copy a step record, so callers cannot change the one the runner keeps. */
+const copyStepRecord = (record: StepExecutionRecord): StepExecutionRecord => ({
+  ...record,
+  context: record.context ? { ...record.context } : undefined,
+  error: record.error ? { ...record.error } : undefined,
+});
+
 /**
  * Executes a compiled workflow definition, tracking state, suspensions, and event hooks.
  * Create a new instance per execution to avoid leaking state between runs.
@@ -164,11 +176,7 @@ export class WorkflowRunner {
     return Object.fromEntries(
       Object.entries(this.stepLog).map(([id, record]) => [
         id,
-        {
-          ...record,
-          context: record.context ? { ...record.context } : undefined,
-          error: record.error ? { ...record.error } : undefined,
-        },
+        copyStepRecord(record),
       ]),
     );
   }
@@ -196,11 +204,10 @@ export class WorkflowRunner {
     this.stepLog = {};
     this.checkpoint = undefined;
     this.context = args.context;
-    this.state = {
-      input: this.compiled.inputParser.parse(args.inputData ?? {}),
-      output: {},
-      iterationStack: [],
-    };
+    this.state = rootState(
+      this.compiled.inputParser.parse(args.inputData ?? {}),
+      {},
+    );
 
     this.runtimeControl = new RunnerRuntimeControl();
     this.context.attachWorkflowRuntime(this.runtimeControl);
@@ -308,11 +315,7 @@ export class WorkflowRunner {
       // copy, so both see exactly what a host would have persisted.
       const from = resumed ? cloneAsJson(resumed.checkpoint) : undefined;
       if (from) {
-        this.state = {
-          input: from.input,
-          output: from.output,
-          iterationStack: [],
-        };
+        this.state = rootState(from.input, from.output);
       }
 
       const state = this.state;
@@ -474,11 +477,7 @@ export class WorkflowRunner {
     });
 
     runner.checkpoint = checkpoint;
-    runner.state = {
-      input: checkpoint.input,
-      output: checkpoint.output,
-      iterationStack: [],
-    };
+    runner.state = rootState(checkpoint.input, checkpoint.output);
     runner.context = options.context;
     runner.snapshots = { ...(options.snapshot?.actions ?? {}) };
     runner.status = EWorkflowRunStatus.SUSPENDED;
@@ -590,11 +589,7 @@ export class WorkflowRunner {
 
     this.stepLog[step.id] = nextRecord;
 
-    return {
-      ...nextRecord,
-      context: nextRecord.context ? { ...nextRecord.context } : undefined,
-      error: nextRecord.error ? { ...nextRecord.error } : undefined,
-    };
+    return copyStepRecord(nextRecord);
   }
 
   /**

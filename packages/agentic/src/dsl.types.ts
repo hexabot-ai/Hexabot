@@ -267,10 +267,7 @@ const ConditionalElseSchema: z.ZodType<ConditionalBranch> = z.lazy(() =>
     steps: z.array(FlowStepSchema),
   }),
 );
-const ConditionalSchema: z.ZodType<{
-  description?: string;
-  when: ConditionalBranch[];
-}> = z.strictObject({
+const ConditionalSchema: z.ZodType<ConditionalBlock> = z.strictObject({
   description: z.string().optional(),
   when: z.array(z.union([ConditionalWhenSchema, ConditionalElseSchema])).min(1),
 });
