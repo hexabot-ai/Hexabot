@@ -56,22 +56,6 @@ export const buttonsMessage: StdOutgoingButtonsMessageData = {
   ],
 };
 
-export const urlButtonsMessage: StdOutgoingButtonsMessageData = {
-  text: 'Hit one of these buttons :',
-  buttons: [
-    {
-      type: ButtonType.web_url,
-      title: 'First button',
-      url: 'http://button1.com',
-    },
-    {
-      type: ButtonType.web_url,
-      title: 'Second button',
-      url: 'http://button2.com',
-    },
-  ],
-};
-
 const MOCK_ATTACHMENT_ID = '11111111-1111-4111-8111-111111111111';
 const attachment: AttachmentOrmEntity = Object.assign(
   new AttachmentOrmEntity(),

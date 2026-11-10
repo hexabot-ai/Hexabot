@@ -145,20 +145,8 @@ describe('WebOutboundMessageEncoder', () => {
     expect(formatted).toMatchObject({
       data: {
         elements: [
-          {
-            buttons: [{ ...visit, url: 'https://hexabot.ai/first' }],
-            default_action: {
-              type: ButtonType.web_url,
-              url: 'https://hexabot.ai/first',
-            },
-          },
-          {
-            buttons: [visit],
-            default_action: {
-              type: ButtonType.web_url,
-              url: 'https://hexabot.ai',
-            },
-          },
+          { buttons: [{ ...visit, url: 'https://hexabot.ai/first' }] },
+          { buttons: [visit] },
         ],
       },
     });

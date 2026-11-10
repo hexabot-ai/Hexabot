@@ -135,7 +135,6 @@ const LIGHT_THEME_BASE_TOKENS = (
     overlay: "rgba(148, 149, 150, 0.2)",
     elevated: "#FFFFFF",
     suggestion: "#FFFFFF",
-    webviewFooter: palette.primary,
   },
   text: {
     primary: "#263238",
@@ -195,7 +194,6 @@ const DARK_THEME_BASE_TOKENS = (
     overlay: "rgba(0, 0, 0, 0.45)",
     elevated: "#1A222D",
     suggestion: "#1A222D",
-    webviewFooter: palette.primary,
   },
   text: {
     primary: "#ECF0F1",
@@ -367,7 +365,6 @@ export const themeToCssVariables = (theme: WidgetTheme): CssVariables => {
     "--hb-color-surface-menu": tokens.surface.menu,
     "--hb-color-surface-elevated": tokens.surface.elevated,
     "--hb-color-surface-suggestion": tokens.surface.suggestion,
-    "--hb-color-surface-webview-footer": tokens.surface.webviewFooter,
     "--hb-color-surface-overlay": tokens.surface.overlay,
     "--hb-color-text-primary": tokens.text.primary,
     "--hb-color-text-secondary": tokens.text.secondary,

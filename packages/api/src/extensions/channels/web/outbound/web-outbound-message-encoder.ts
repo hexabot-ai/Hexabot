@@ -173,10 +173,6 @@ export class WebOutboundMessageEncoder extends ChannelOutboundMessageEncoder<
           }
 
           btn.url = url.startsWith('http') ? url : 'https://' + url;
-          if (!element.default_action) {
-            const { title: _title, ...defaultAction } = btn;
-            element.default_action = defaultAction;
-          }
         } else {
           if (
             'action_payload' in fields &&

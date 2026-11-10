@@ -220,7 +220,6 @@ export namespace Web {
     title: string;
     subtitle?: string;
     image_url?: string;
-    default_action?: Omit<WebUrlButton, "title">;
     buttons?: Button[];
   }
 
