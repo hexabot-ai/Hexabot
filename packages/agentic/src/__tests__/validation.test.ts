@@ -853,6 +853,50 @@ describe('validateWorkflow', () => {
       }
     });
 
+    it('does not take inherited object members for installed actions', () => {
+      const workflow = {
+        defs: mergeTaskDefs({ agent_step: { action: 'constructor' } }),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {},
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues.map(({ code, path }) => ({ code, path }))).toEqual(
+          [{ code: 'missing_action', path: ['defs', 'agent_step', 'action'] }],
+        );
+      }
+    });
+
+    it('reports an empty task action as missing', () => {
+      const workflow = {
+        defs: mergeTaskDefs({ agent_step: { action: '' } }),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {},
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues).toEqual([
+          {
+            code: 'missing_action',
+            message:
+              'defs.agent_step.action: No action implementation provided for "".',
+            path: ['defs', 'agent_step', 'action'],
+            actionName: '',
+          },
+        ]);
+      }
+    });
+
     it('reports the missing action of a def whose kind is unknown', () => {
       const workflow = {
         defs: mergeTaskDefs(

@@ -233,11 +233,33 @@ const missingActionIssue = (
   path: ['defs', defName, 'action'],
   actionName,
 });
-const isMissingAction = (
-  actionName: string | undefined,
+/** Look an action up in the catalog; inherited object members are not actions. */
+const findAction = (
   actions: ActionCatalog | undefined,
-): actionName is string =>
-  Boolean(actionName && actions && !actions[actionName]);
+  actionName: string,
+): BindingValidationActionMetadata | undefined =>
+  actions && Object.prototype.hasOwnProperty.call(actions, actionName)
+    ? actions[actionName]
+    : undefined;
+/**
+ * Whether a def names an action the catalog does not hold. A task always runs
+ * its action, so an empty name is missing as well; other defs may leave it
+ * empty.
+ */
+const isMissingAction = (
+  definition: DefLike,
+  actions: ActionCatalog | undefined,
+): definition is DefLike & { action: string } => {
+  if (!actions || typeof definition.action !== 'string') {
+    return false;
+  }
+
+  if (definition.action === '' && definition.kind !== TASK_KIND) {
+    return false;
+  }
+
+  return !findAction(actions, definition.action);
+};
 const actionPolicyIssues = (
   defName: string,
   definition: DefLike,
@@ -276,7 +298,7 @@ const validateDef = (
   actions: ActionCatalog | undefined,
   parsedSettings: Map<string, unknown>,
 ): WorkflowValidationIssue[] => {
-  const missingAction = isMissingAction(definition.action, actions)
+  const missingAction = isMissingAction(definition, actions)
     ? [missingActionIssue(defName, definition.action)]
     : [];
 
@@ -313,7 +335,7 @@ const validateDef = (
 
   // `?.` on `safeParse` too: hosts may pass serialized schemas.
   const actionParsed = definition.action
-    ? actions?.[definition.action]?.settingSchema?.safeParse?.(
+    ? findAction(actions, definition.action)?.settingSchema?.safeParse?.(
         definition.settings,
       )
     : undefined;
@@ -333,7 +355,7 @@ const resolveSupportedBindingKinds = (
   actions: ActionCatalog | undefined,
 ): readonly string[] | null => {
   if (definition.action) {
-    const action = actions?.[definition.action];
+    const action = findAction(actions, definition.action);
 
     return action ? (action.supportedBindings ?? []) : null;
   }
