@@ -4,11 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
-export const truncate = (s: string, length = 100) => {
+const truncate = (s: string, length = 100) => {
   return s.length > length ? s.substr(0, length) + "..." : s;
 };
-
-export const linebreak = (s: string) => {
+const linebreak = (s: string) => {
   return s.replace(/\n/g, "<br />");
 };
 

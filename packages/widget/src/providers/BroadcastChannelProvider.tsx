@@ -13,7 +13,7 @@ import {
   useRef,
 } from "react";
 
-export enum EBCEvent {
+enum EBCEvent {
   LOGOUT = "logout",
   SUBSCRIBED = "subscribed",
 }
@@ -40,11 +40,10 @@ interface IBroadcastChannelContext {
   postMessage: (message: BroadcastChannelMessage) => void;
 }
 
-export const BroadcastChannelContext = createContext<
+const BroadcastChannelContext = createContext<
   IBroadcastChannelContext | undefined
 >(undefined);
-
-export const BroadcastChannelProvider: FC<IBroadcastChannelProps> = ({
+const BroadcastChannelProvider: FC<IBroadcastChannelProps> = ({
   children,
   channelName,
 }) => {
