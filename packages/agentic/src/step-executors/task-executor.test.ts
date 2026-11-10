@@ -23,6 +23,7 @@ import type {
   ExecutionState,
   TaskStep,
 } from '../workflow-types';
+import { compileValue } from '../workflow-values';
 
 import { executeTaskStep } from './task-executor';
 import type { StepExecutorEnv } from './types';
@@ -160,7 +161,12 @@ describe('executeTaskStep', () => {
       expect.any(AbortSignal),
     );
     expect(env.markSnapshot).toHaveBeenNthCalledWith(1, stepInfo, 'running');
-    expect(env.markSnapshot).toHaveBeenNthCalledWith(2, stepInfo, 'completed');
+    expect(env.markSnapshot).toHaveBeenNthCalledWith(
+      2,
+      stepInfo,
+      'completed',
+      undefined,
+    );
     expect(env.recordStepExecution).toHaveBeenNthCalledWith(
       1,
       stepInfo,
@@ -587,5 +593,128 @@ describe('executeTaskStep', () => {
       }),
       error: expect.any(Error),
     });
+  });
+  it('does not start the action when the run is aborted while its inputs are evaluated', async () => {
+    const controller = new AbortController();
+    const task = {
+      ...createTask(jest.fn()),
+      inputs: {
+        payload: compileValue('=$stopRun()', {
+          jsonataFunctions: {
+            stopRun: () => {
+              controller.abort(new Error('stopped'));
+
+              return 1;
+            },
+          },
+        }),
+      },
+    };
+    const env = {
+      ...createEnv(createCompiled(task), stepInfo),
+      signal: controller.signal,
+    };
+
+    await expect(executeTaskStep(env, step, createState(), [])).rejects.toThrow(
+      'stopped',
+    );
+    expect(task.action.run).not.toHaveBeenCalled();
+    expect(env.recordStepExecution).toHaveBeenCalledTimes(1);
+    expect(env.recordStepExecution).toHaveBeenCalledWith(
+      stepInfo,
+      expect.objectContaining({ status: 'cancelled' }),
+    );
+    expect(env.markSnapshot).toHaveBeenCalledWith(
+      stepInfo,
+      'cancelled',
+      'stopped',
+    );
+  });
+
+  it('releases the step when the run is aborted before its action starts', async () => {
+    const task = createTask(jest.fn());
+    const controller = new AbortController();
+    const env = {
+      ...createEnv(createCompiled(task), stepInfo),
+      signal: controller.signal,
+    };
+    const endStep = jest.spyOn(env.runtime, 'endStep');
+    env.emit = jest.fn((event) => {
+      if (event === 'hook:step:start') {
+        controller.abort(new Error('stopped'));
+      }
+    });
+
+    await expect(executeTaskStep(env, step, createState(), [])).rejects.toThrow(
+      'stopped',
+    );
+    expect(task.action.run).not.toHaveBeenCalled();
+    expect(endStep).toHaveBeenCalledTimes(1);
+    expect(env.runtime.hasRecordedResult()).toBe(false);
+  });
+
+  it('records a failure that is not an Error by its string form', async () => {
+    const task = createTask(jest.fn().mockRejectedValue('boom'));
+    const env = createEnv(createCompiled(task), stepInfo);
+
+    await expect(executeTaskStep(env, step, createState(), [])).rejects.toBe(
+      'boom',
+    );
+    expect(env.recordStepExecution).toHaveBeenCalledWith(
+      stepInfo,
+      expect.objectContaining({
+        status: 'failed',
+        error: { message: 'boom' },
+      }),
+    );
+    expect(env.markSnapshot).toHaveBeenCalledWith(stepInfo, 'failed', 'boom');
+    expect(env.emit).toHaveBeenCalledWith(
+      'hook:step:error',
+      expect.objectContaining({ error: 'boom' }),
+    );
+  });
+  it('does not evaluate the inputs of a step whose run is already aborted', async () => {
+    const evaluated = jest.fn(() => 1);
+    const task = {
+      ...createTask(jest.fn()),
+      inputs: {
+        payload: compileValue('=$probe()', {
+          jsonataFunctions: { probe: evaluated },
+        }),
+      },
+    };
+    const controller = new AbortController();
+    controller.abort(new Error('stopped'));
+    const env = {
+      ...createEnv(createCompiled(task), stepInfo),
+      signal: controller.signal,
+    };
+
+    await expect(executeTaskStep(env, step, createState(), [])).rejects.toThrow(
+      'stopped',
+    );
+    expect(evaluated).not.toHaveBeenCalled();
+  });
+
+  it('detaches the action signal from the run once the step is over', async () => {
+    let actionSignal: AbortSignal | undefined;
+    const task = createTask(
+      jest.fn(async (_input, _context, _settings, _bindings, signal) => {
+        actionSignal = signal;
+
+        return { ok: true };
+      }),
+    );
+    const controller = new AbortController();
+    const env = {
+      ...createEnv(createCompiled(task), stepInfo),
+      signal: controller.signal,
+    };
+
+    await executeTaskStep(env, step, createState(), []);
+    controller.abort(new Error('later'));
+
+    expect(actionSignal).toBeDefined();
+    expect(actionSignal?.aborted).toBe(false);
   });
 });

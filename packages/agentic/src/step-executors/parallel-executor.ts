@@ -112,11 +112,7 @@ export async function executeParallel(
     }),
   );
 
-  if (step.strategy === 'wait_any') {
-    return executeWaitAny(env, step, branches, outcomes, state);
-  }
-
-  return executeWaitAll(env, step, branches, outcomes, state);
+  return settleBlock(env, step, branches, outcomes, state);
 }
 
 /**
@@ -149,7 +145,13 @@ function keepRecordedBranch(
       };
 }
 
-async function executeWaitAll(
+/**
+ * Collect branch results as they settle. A failed or cancelled branch fails
+ * the block; under `wait_any` the first fulfilled branch wins it. Otherwise
+ * the block suspends once every branch settled with at least one suspended,
+ * and completes when all of them fulfilled.
+ */
+async function settleBlock(
   env: StepExecutorEnv,
   step: ParallelStep,
   branches: BranchHandle[],
@@ -167,34 +169,8 @@ async function executeWaitAll(
       await abandonBranches(env, branches, pending, outcomes, result.error);
       throw result.error;
     }
-  }
 
-  if (hasSuspendedBranch(outcomes)) {
-    return buildParallelFrame(step, outcomes);
-  }
-
-  mergeBranchOutputs(state, outcomes);
-}
-
-async function executeWaitAny(
-  env: StepExecutorEnv,
-  step: ParallelStep,
-  branches: BranchHandle[],
-  outcomes: Map<number, BranchResult>,
-  state: ExecutionState,
-): Promise<ParallelFrame | void> {
-  const pending = new Set(branches);
-
-  while (pending.size > 0) {
-    const { branch, result } = await raceNext(pending);
-    pending.delete(branch);
-    outcomes.set(result.index, result);
-
-    if (result.status === 'suspended') {
-      continue;
-    }
-
-    if (result.status === 'fulfilled') {
+    if (result.status === 'fulfilled' && step.strategy === 'wait_any') {
       // Parked losers will never be resumed; drop their waits with the race.
       await abandonBranches(
         env,
@@ -208,13 +184,14 @@ async function executeWaitAny(
 
       return undefined;
     }
-
-    await abandonBranches(env, branches, pending, outcomes, result.error);
-    throw result.error;
   }
 
-  // Every branch settled without a winner, so all of them are suspended.
-  return buildParallelFrame(step, outcomes);
+  // Without a winner, every branch of a wait_any block is suspended.
+  if (hasSuspendedBranch(outcomes)) {
+    return buildParallelFrame(step, outcomes);
+  }
+
+  mergeBranchOutputs(state, outcomes);
 }
 
 /**

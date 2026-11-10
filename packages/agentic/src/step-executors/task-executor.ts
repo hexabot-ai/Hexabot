@@ -10,6 +10,7 @@ import {
   type TaskFrame,
   type WaitInfo,
 } from '../checkpoint';
+import type { StepExecutionRecord } from '../context';
 import {
   createLinkedAbortController,
   getAbortReason,
@@ -25,14 +26,10 @@ import type {
 } from '../runner-runtime-control';
 import { cloneAsJson, cloneValue } from '../utils/clone';
 import type { StepInfo } from '../workflow-event-emitter';
-import type {
-  CompiledTask,
-  EvaluationScope,
-  ExecutionState,
-  TaskStep,
-} from '../workflow-types';
+import type { CompiledTask, ExecutionState, TaskStep } from '../workflow-types';
 import { evaluateMapping } from '../workflow-values';
 
+import { buildEvaluationScope } from './scope';
 import type { StepExecutorEnv } from './types';
 
 type TaskProgressOutcome =
@@ -75,38 +72,18 @@ export async function executeTaskStep(
   }
 
   const stepInfo = env.buildInstanceStepInfo(step, state.iterationStack);
-  if (env.signal.aborted) {
-    const error = getAbortReason(env.signal);
-    recordTaskCancellation(env, stepInfo, error, frame?.wait);
-    throw error;
-  }
+  throwIfCancelled(env, stepInfo, frame);
 
   // Resumed bodies reuse the inputs they first ran with: re-evaluating could
   // differ, e.g. when an expression depends on the event that woke the run.
   const inputs = frame
     ? cloneValue(frame.inputs)
-    : await evaluateMapping(task.inputs, buildScope(env, state));
-  if (env.signal.aborted) {
-    const error = getAbortReason(env.signal);
-    recordTaskCancellation(env, stepInfo, error, frame?.wait);
-    throw error;
-  }
+    : await evaluateMapping(task.inputs, buildEvaluationScope(env, state));
+  throwIfCancelled(env, stepInfo, frame);
   // Kept apart from the object the body gets, so that a body changing its
   // inputs cannot change the inputs every later pass replays.
   const recordedInputs = frame ? frame.inputs : copyInputs(inputs);
   const resumeData = frame ? env.resolutions.get(frame.wait.waitId) : undefined;
-  const seed: StepReplaySeed | undefined = frame
-    ? {
-        awaitResults: {
-          ...readRecordedResults(frame.awaitResults),
-          [frame.wait.suspendKey]: resumeData,
-        },
-        expected: {
-          suspendKey: frame.wait.suspendKey,
-          reason: frame.wait.reason,
-        },
-      }
-    : undefined;
   const stepExecution = env.recordStepExecution(stepInfo, {
     action: task.actionName,
     status: 'running',
@@ -116,7 +93,9 @@ export async function executeTaskStep(
     input: inputs,
     context: { before: env.context.snapshot() },
   });
-  env.runtime.beginStep(stepInfo, { seed });
+  env.runtime.beginStep(stepInfo, {
+    seed: frame ? buildReplaySeed(frame, resumeData) : undefined,
+  });
   env.markSnapshot(stepInfo, 'running');
   if (frame) {
     env.emit('hook:step:resumed', {
@@ -219,15 +198,39 @@ const copyInputs = (
     return inputs;
   }
 };
-const buildScope = (
+/**
+ * Record the task cancelled and throw when the run was aborted before its
+ * body started.
+ */
+const throwIfCancelled = (
   env: StepExecutorEnv,
-  state: ExecutionState,
-): EvaluationScope => ({
-  input: state.input,
-  context: env.context.state,
-  output: state.output,
-  iteration: state.iteration,
-  accumulator: state.accumulator,
+  stepInfo: StepInfo,
+  frame?: TaskFrame,
+): void => {
+  if (!env.signal.aborted) {
+    return;
+  }
+
+  const error = getAbortReason(env.signal);
+  recordTaskCancellation(env, stepInfo, error, frame?.wait);
+  throw error;
+};
+/**
+ * Seed a resumed body with every answer it already got, including the one
+ * this pass resolved, and the suspension it is expected to reach again.
+ */
+const buildReplaySeed = (
+  frame: TaskFrame,
+  resumeData: unknown,
+): StepReplaySeed => ({
+  awaitResults: {
+    ...readRecordedResults(frame.awaitResults),
+    [frame.wait.suspendKey]: resumeData,
+  },
+  expected: {
+    suspendKey: frame.wait.suspendKey,
+    reason: frame.wait.reason,
+  },
 });
 const waitForTaskProgress = async (
   signal: AbortSignal,
@@ -273,13 +276,9 @@ const completeTask = async (
   result: unknown,
 ) => {
   await env.captureTaskOutput(task, state, result);
-  const stepExecution = env.recordStepExecution(stepInfo, {
-    status: 'completed',
-    endedAt: Date.now(),
+  const stepExecution = endStepExecution(env, stepInfo, 'completed', {
     output: result,
-    context: { after: env.context.snapshot() },
   });
-  env.markSnapshot(stepInfo, 'completed');
   env.emit('hook:step:success', {
     runId: env.runId,
     step: stepInfo,
@@ -302,13 +301,13 @@ const suspendTask = (
     ...(request.accepts ? { accepts: request.accepts } : {}),
     ...(request.payloadOptional ? { payloadOptional: true } : {}),
   };
-  const stepExecution = env.recordStepExecution(stepInfo, {
-    status: 'suspended',
-    endedAt: Date.now(),
-    reason: request.reason,
-    context: { after: env.context.snapshot() },
-  });
-  env.markSnapshot(stepInfo, 'suspended', request.reason);
+  const stepExecution = endStepExecution(
+    env,
+    stepInfo,
+    'suspended',
+    { reason: request.reason },
+    request.reason,
+  );
   env.emit('hook:step:suspended', {
     runId: env.runId,
     step: stepInfo,
@@ -347,13 +346,13 @@ const keepWaiting = (
   frame: TaskFrame,
   error: WorkflowResumeRejectedError,
 ): TaskFrame => {
-  const stepExecution = env.recordStepExecution(stepInfo, {
-    status: 'suspended',
-    endedAt: Date.now(),
-    reason: frame.wait.reason,
-    context: { after: env.context.snapshot() },
-  });
-  env.markSnapshot(stepInfo, 'suspended', frame.wait.reason);
+  const stepExecution = endStepExecution(
+    env,
+    stepInfo,
+    'suspended',
+    { reason: frame.wait.reason },
+    frame.wait.reason,
+  );
   env.emit('hook:step:resume_rejected', {
     runId: env.runId,
     step: stepInfo,
@@ -370,14 +369,12 @@ const recordTaskFailure = (
   stepInfo: StepInfo,
   error: unknown,
 ) => {
-  const normalizedError = normalizeError(error);
-  const stepExecution = env.recordStepExecution(stepInfo, {
-    status: 'failed',
-    endedAt: Date.now(),
-    error: normalizedError,
-    context: { after: env.context.snapshot() },
-  });
-  env.markSnapshot(stepInfo, 'failed', normalizeErrorMessage(error));
+  const stepExecution = endStepExecutionWithError(
+    env,
+    stepInfo,
+    'failed',
+    error,
+  );
   env.emit('hook:step:error', {
     runId: env.runId,
     step: stepInfo,
@@ -395,14 +392,12 @@ const recordTaskCancellation = (
   error: unknown,
   wait?: WaitInfo,
 ) => {
-  const normalizedError = normalizeError(error);
-  const stepExecution = env.recordStepExecution(stepInfo, {
-    status: 'cancelled',
-    endedAt: Date.now(),
-    error: normalizedError,
-    context: { after: env.context.snapshot() },
-  });
-  env.markSnapshot(stepInfo, 'cancelled', normalizeErrorMessage(error));
+  const stepExecution = endStepExecutionWithError(
+    env,
+    stepInfo,
+    'cancelled',
+    error,
+  );
   env.emit('hook:step:cancelled', {
     runId: env.runId,
     step: stepInfo,
@@ -411,9 +406,44 @@ const recordTaskCancellation = (
     ...(wait ? { wait } : {}),
   });
 };
-const normalizeError = (error: unknown): { message: string; stack?: string } =>
-  error instanceof Error
-    ? { message: error.message, stack: error.stack }
-    : { message: String(error) };
-const normalizeErrorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+/**
+ * Close the step's execution record with the status the step ended (or
+ * paused) with, and mirror that status on its snapshot.
+ *
+ * @returns The updated execution record, for the event announcing it.
+ */
+const endStepExecution = (
+  env: StepExecutorEnv,
+  stepInfo: StepInfo,
+  status: 'completed' | 'suspended' | 'failed' | 'cancelled',
+  details: Pick<StepExecutionRecord, 'output' | 'reason' | 'error'>,
+  snapshotReason?: string,
+): StepExecutionRecord => {
+  const stepExecution = env.recordStepExecution(stepInfo, {
+    status,
+    endedAt: Date.now(),
+    ...details,
+    context: { after: env.context.snapshot() },
+  });
+  env.markSnapshot(stepInfo, status, snapshotReason);
+
+  return stepExecution;
+};
+const endStepExecutionWithError = (
+  env: StepExecutorEnv,
+  stepInfo: StepInfo,
+  status: 'failed' | 'cancelled',
+  error: unknown,
+): StepExecutionRecord =>
+  endStepExecution(
+    env,
+    stepInfo,
+    status,
+    {
+      error:
+        error instanceof Error
+          ? { message: error.message, stack: error.stack }
+          : { message: String(error) },
+    },
+    error instanceof Error ? error.message : String(error),
+  );

@@ -135,6 +135,34 @@ describe('executeLoop', () => {
     expect(state.output).toMatchObject({ item_0: 2, item_1: 4, item_2: 6 });
   });
 
+  it('stops before the last item once until holds, seeing the accumulator before the merge', async () => {
+    const executeFlow = jest.fn(recordItem);
+    const state = createState();
+    const step: LoopStep = {
+      id: 'loop',
+      type: StepType.Loop,
+      loopType: 'for_each',
+      label: 'loop',
+      name: 'collector',
+      forEach: { item: 'entry', in: { kind: 'literal', value: [1, 2, 3, 4] } },
+      // At index 2 the accumulator is still 1 + 2, before this item is merged.
+      until: compileValue('=$accumulator >= 3'),
+      accumulate: {
+        as: 'sum',
+        initial: 0,
+        merge: compileValue('=$accumulator + $iteration.item'),
+      },
+      steps: [createTaskStep('child')],
+    };
+
+    await expect(
+      executeLoop(createEnv(executeFlow), step, state, []),
+    ).resolves.toBeUndefined();
+    expect(executeFlow).toHaveBeenCalledTimes(3);
+    expect(state.output.collector).toEqual({ sum: 6 });
+    expect(state.output).not.toHaveProperty('item_3');
+  });
+
   it('records the suspended iteration and resumes it with the recorded items and accumulator', async () => {
     const step: LoopStep = {
       id: 'loop',
@@ -298,6 +326,33 @@ describe('loop helpers', () => {
 
     await expect(updateAccumulator(step, scope, 5)).resolves.toBe(5);
     await expect(shouldStopLoop(step, scope)).resolves.toBe(false);
+  });
+
+  it('treats a for_each frame without recorded items as an empty item list', async () => {
+    const step: LoopStep = {
+      id: 'loop',
+      type: StepType.Loop,
+      loopType: 'for_each',
+      label: 'loop',
+      name: 'collector',
+      forEach: { item: 'entry', in: { kind: 'literal', value: [1, 2] } },
+      accumulate: { as: 'sum', initial: 0, merge: compileValue('=0') },
+      steps: [createTaskStep('child')],
+    };
+    const flow = jest.fn(recordItem);
+    const state = createState();
+
+    await expect(
+      executeLoop(createEnv(flow), step, state, [], {
+        kind: 'loop',
+        stepId: 'loop',
+        index: 0,
+        accumulator: 7,
+        child: childFrame,
+      }),
+    ).resolves.toBeUndefined();
+    expect(flow).not.toHaveBeenCalled();
+    expect(state.output.collector).toEqual({ sum: 7 });
   });
 
   it('does not stop while loops through until semantics', async () => {

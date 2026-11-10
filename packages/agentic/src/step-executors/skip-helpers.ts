@@ -4,90 +4,49 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { ActionSnapshot } from '../context';
-import {
-  StepType,
-  type StepInfo,
-  type WorkflowEventMap,
-} from '../workflow-event-emitter';
+import { StepType, type StepInfo } from '../workflow-event-emitter';
 import type { CompiledStep } from '../workflow-types';
 
-type SkipStepEnv = {
-  runId?: string;
-  buildInstanceStepInfo: (
-    step: CompiledStep,
-    iterationStack: number[],
-  ) => StepInfo;
-  markSnapshot: (
-    step: StepInfo,
-    status: ActionSnapshot['status'],
-    reason?: string,
-  ) => void;
-  emit: <K extends keyof WorkflowEventMap>(
-    event: K,
-    payload: WorkflowEventMap[K],
-  ) => void;
-};
+import type { StepExecutorEnv } from './types';
 
-const markStepSkipped = (
-  env: SkipStepEnv,
-  step: CompiledStep,
-  iterationStack: number[],
-  reason?: string,
-) => {
-  const stepInfo = env.buildInstanceStepInfo(step, iterationStack);
-  env.markSnapshot(stepInfo, 'skipped', reason);
-  env.emit('hook:step:skipped', { runId: env.runId, step: stepInfo, reason });
+type SkipStepEnv = Pick<
+  StepExecutorEnv,
+  'runId' | 'buildInstanceStepInfo' | 'markSnapshot' | 'emit'
+>;
 
-  switch (step.type) {
-    case StepType.Parallel:
-      step.steps.forEach((child) =>
-        markStepSkipped(env, child, iterationStack, reason),
-      );
-      break;
-    case StepType.Conditional:
-      step.branches.forEach((branch) =>
-        branch.steps.forEach((child) =>
-          markStepSkipped(env, child, iterationStack, reason),
-        ),
-      );
-      break;
-    case StepType.Loop:
-    case StepType.Task:
-      break;
+/**
+ * Visit steps depth first, entering parallel and conditional children. Loop
+ * bodies are not entered: their step instances depend on iterations that
+ * never ran.
+ */
+const forEachStepInTree = (
+  steps: CompiledStep[],
+  visit: (step: CompiledStep) => void,
+): void => {
+  for (const step of steps) {
+    visit(step);
+
+    if (step.type === StepType.Parallel) {
+      forEachStepInTree(step.steps, visit);
+    } else if (step.type === StepType.Conditional) {
+      step.branches.forEach((branch) => forEachStepInTree(branch.steps, visit));
+    }
   }
 };
-const markStepCancelled = (
+/** Mark every step of the tree with `status`, then announce it. */
+const markStepTree = (
   env: SkipStepEnv,
-  step: CompiledStep,
+  steps: CompiledStep[],
   iterationStack: number[],
-  reason?: string,
+  status: 'skipped' | 'cancelled',
+  reason: string | undefined,
+  announce: (stepInfo: StepInfo) => void,
 ) => {
-  const stepInfo = env.buildInstanceStepInfo(step, iterationStack);
-  env.markSnapshot(stepInfo, 'cancelled', reason);
-  env.emit('hook:step:cancelled', {
-    runId: env.runId,
-    step: stepInfo,
-    error: new Error(reason ?? 'Step execution was cancelled.'),
+  forEachStepInTree(steps, (step) => {
+    const stepInfo = env.buildInstanceStepInfo(step, iterationStack);
+    env.markSnapshot(stepInfo, status, reason);
+    announce(stepInfo);
   });
-
-  switch (step.type) {
-    case StepType.Parallel:
-      step.steps.forEach((child) =>
-        markStepCancelled(env, child, iterationStack, reason),
-      );
-      break;
-    case StepType.Conditional:
-      step.branches.forEach((branch) =>
-        branch.steps.forEach((child) =>
-          markStepCancelled(env, child, iterationStack, reason),
-        ),
-      );
-      break;
-    case StepType.Loop:
-    case StepType.Task:
-      break;
-  }
 };
 
 export const markStepsSkipped = (
@@ -96,7 +55,9 @@ export const markStepsSkipped = (
   iterationStack: number[],
   reason?: string,
 ) => {
-  steps.forEach((step) => markStepSkipped(env, step, iterationStack, reason));
+  markStepTree(env, steps, iterationStack, 'skipped', reason, (stepInfo) =>
+    env.emit('hook:step:skipped', { runId: env.runId, step: stepInfo, reason }),
+  );
 };
 
 export const markStepsCancelled = (
@@ -105,5 +66,11 @@ export const markStepsCancelled = (
   iterationStack: number[],
   reason?: string,
 ) => {
-  steps.forEach((step) => markStepCancelled(env, step, iterationStack, reason));
+  markStepTree(env, steps, iterationStack, 'cancelled', reason, (stepInfo) =>
+    env.emit('hook:step:cancelled', {
+      runId: env.runId,
+      step: stepInfo,
+      error: new Error(reason ?? 'Step execution was cancelled.'),
+    }),
+  );
 };
