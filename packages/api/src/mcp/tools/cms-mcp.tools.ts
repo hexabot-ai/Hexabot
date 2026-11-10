@@ -30,7 +30,7 @@ import {
 } from './hexabot-mcp.schemas';
 
 const contentPropertiesSchema = jsonObjectSchema.describe(
-  'Values of the content type fields, by field key: a string for string, textarea, html and uri fields, a boolean for boolean fields, and { "type": "image"|"video"|"audio"|"file", "payload": { "url": "<file URL>" } } for file fields, or "payload": { "id": "<attachment id>" } for an uploaded attachment (the admin UI only shows file values that have an id). `title` and `status` are arguments of their own, not properties.',
+  'Values of the content type fields, by field key: a string for string, textarea, html and uri fields, a boolean for boolean fields, and { "type": "image"|"video"|"audio"|"file", "payload": { "url": "<file URL>" } } for file fields, or "payload": { "id": "<attachment id>" } for an uploaded attachment (the admin UI only shows file values that have an id). They are checked against the content type: required fields need a value, optional ones may be left out, and other keys are refused. `title` and `status` are arguments of their own, not properties.',
 );
 
 @Injectable()

@@ -4,7 +4,13 @@
  * Full terms: see LICENSE.md.
  */
 
-import { OutgoingMessageType, ContentOptions } from '@hexabot-ai/types';
+import {
+  ContentOptions,
+  ContentType,
+  DEFAULT_CONTENT_TYPE_SCHEMA,
+  OutgoingMessageType,
+} from '@hexabot-ai/types';
+import { BadRequestException } from '@nestjs/common';
 
 import { HelperService } from '@/helper/helper.service';
 import { LoggerService } from '@/logger/logger.service';
@@ -259,6 +265,145 @@ describe('ContentService (TypeORM)', () => {
         contentType: { id: '00000000-0000-4000-8000-000000000001' },
       });
       expect(errorSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('properties validation', () => {
+    let article: ContentType;
+    const image = { type: 'image', payload: { id: 'attachment-id' } };
+
+    beforeAll(async () => {
+      article = await contentTypeService.create({
+        name: 'Article',
+        schema: {
+          ...DEFAULT_CONTENT_TYPE_SCHEMA,
+          properties: {
+            ...DEFAULT_CONTENT_TYPE_SCHEMA.properties,
+            body: { type: 'textarea', title: 'Body' },
+            link: { type: 'uri', title: 'Link' },
+            featured: { type: 'boolean', title: 'Featured' },
+            image: { type: 'file', title: 'Image' },
+          },
+          required: ['link'],
+        } as any,
+      });
+    });
+    afterAll(async () => {
+      await contentTypeService.deleteOne(article.id);
+    });
+
+    it('creates contents whose properties match their content type', async () => {
+      const created = await contentService.create({
+        contentType: article.id,
+        title: 'Valid',
+        properties: { link: 'https://hexabot.ai', body: '', image },
+      });
+
+      createdContentIds.push(created.id);
+      expect(created.properties).toEqual({
+        link: 'https://hexabot.ai',
+        body: '',
+        image,
+      });
+    });
+
+    it('refuses properties that do not match the content type', async () => {
+      await expect(
+        contentService.create({
+          contentType: article.id,
+          title: 'Invalid',
+          properties: { link: 'hexabot.ai', featured: 'yes', extra: 'value' },
+        }),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Invalid properties for content type "Article": link: Invalid URL; featured: Invalid input: expected boolean, received string; Unknown field(s) "extra": the content type has "body", "link", "featured", "image" ("title" and "status" are not properties)',
+        ),
+      );
+      await expect(
+        contentService.create({ contentType: article.id, title: 'Empty' }),
+      ).rejects.toThrow(/link: Invalid input: expected string/);
+    });
+
+    it('refuses an unknown content type', async () => {
+      await expect(
+        contentService.create({
+          contentType: '9b2b7a52-4d35-4c43-9a8f-0c0b9c0f5a10',
+          title: 'Orphan',
+        }),
+      ).rejects.toThrow(
+        'Content type "9b2b7a52-4d35-4c43-9a8f-0c0b9c0f5a10" does not exist',
+      );
+    });
+
+    it('names the content that failed in createMany', async () => {
+      await expect(
+        contentService.createMany([
+          {
+            contentType: article.id,
+            title: 'First',
+            properties: { link: 'https://hexabot.ai' },
+          },
+          { contentType: article.id, title: 'Second', properties: {} },
+        ]),
+      ).rejects.toThrow(/^Content 2: Invalid properties/);
+    });
+
+    it('checks the properties on update only when they or the content type change', async () => {
+      // Stored before the properties were checked.
+      const stored = await contentService.repository.create({
+        contentType: article.id,
+        title: 'Legacy',
+        properties: { link: 'hexabot.ai' },
+      });
+      createdContentIds.push(stored.id);
+      const [product] = await contentTypeService.find({
+        where: { name: 'Product' },
+      });
+
+      await expect(
+        contentService.updateOne(stored.id, { status: false }),
+      ).resolves.toMatchObject({ status: false });
+      await expect(
+        contentService.updateOne(stored.id, {
+          properties: { link: 'still-not-a-url' },
+        }),
+      ).rejects.toThrow(/link: Invalid URL/);
+      await expect(
+        contentService.updateOne(stored.id, { contentType: product.id }),
+      ).rejects.toThrow(/content type "Product": Unknown field\(s\) "link"/);
+      await expect(
+        contentService.updateOne(stored.id, {
+          properties: { link: 'https://hexabot.ai' },
+        }),
+      ).resolves.toMatchObject({ properties: { link: 'https://hexabot.ai' } });
+    });
+
+    it('reads CSV cells as the values of their fields', async () => {
+      const created = await contentService.parseAndSaveDataset(
+        'title,status,link,featured,image,body\nDemo,true,https://hexabot.ai,1,https://hexabot.ai/a.png,',
+        article,
+      );
+
+      createdContentIds.push(...(created ?? []).map(({ id }) => id));
+      expect(created?.[0]?.properties).toEqual({
+        link: 'https://hexabot.ai',
+        featured: true,
+        image: {
+          type: 'unknown',
+          payload: { url: 'https://hexabot.ai/a.png' },
+        },
+      });
+    });
+
+    it('reports the CSV rows whose properties are invalid', async () => {
+      await expect(
+        contentService.parseAndSaveDataset(
+          'title,status,link,featured\nDemo,true,https://hexabot.ai,true\nBroken,true,,maybe',
+          article,
+        ),
+      ).rejects.toThrow(
+        'Row 3: Invalid properties for content type "Article": link: Invalid input: expected string, received undefined; featured: Invalid input: expected boolean, received string',
+      );
     });
   });
 

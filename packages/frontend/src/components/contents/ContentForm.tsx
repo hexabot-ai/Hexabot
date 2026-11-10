@@ -50,8 +50,8 @@ export const ContentForm: FC<ComponentFormProps<Content, ContentType>> = ({
   );
   const [formData, setFormData] = useState<ContentFormData>(defaultFormData);
   const params = useMemo(
-    () => buildContentParams(formData),
-    [formData, schema],
+    () => buildContentParams(formData, contentType?.schema),
+    [formData, contentType?.schema],
   );
   const [hasVisibleErrors, setHasVisibleErrors] = useState(false);
   const [validateOnSubmit, setValidateOnSubmit] = useState(false);

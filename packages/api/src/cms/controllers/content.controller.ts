@@ -56,8 +56,8 @@ export class ContentController extends BaseOrmController<ContentOrmEntity> {
   }
 
   /**
-   * Creates new content based on the provided DTO, filtering content properties to match
-   * the associated content type before persisting it.
+   * Creates new content based on the provided DTO. Its properties must match
+   * the fields of its content type (400 otherwise).
    *
    * @param contentDto - The DTO containing the content data to be created.
    *
@@ -252,7 +252,9 @@ export class ContentController extends BaseOrmController<ContentOrmEntity> {
   }
 
   /**
-   * Updates a content record by ID, after filtering content properties to match the associated content type.
+   * Updates a content record by ID. When the properties or the content type
+   * change, the properties must match the fields of the content type (400
+   * otherwise).
    *
    * @param contentDto - The DTO containing the updated content data.
    * @param id - The ID of the content to update.

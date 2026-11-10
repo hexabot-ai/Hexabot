@@ -355,6 +355,16 @@ value's `type` is `image`, `video`, `audio` or `file`, and its `payload` is
 `{ "id": "<attachment id>" }` or `{ "url": "<file URL>" }`. Channels send
 either, but the admin UI only shows file values that have an `id`.
 
+The properties are checked against the content type
+(`buildContentPropertiesSchema` in `@hexabot-ai/types`), over MCP and REST
+alike: each value must match its field type (a `uri` value must be a URL),
+required fields need a value, optional ones may be left out, `null` or `""`,
+and keys that are not fields of the content type are refused. An update checks
+them only when it changes `properties` or `contentType`, so toggling `status`
+keeps the properties stored before. CSV imports read `true`/`false` (or
+`1`/`0`) cells for boolean fields and file URLs for file fields, and report the
+rows that do not match.
+
 ## Extending the MCP module
 
 Add new tools in the focused provider file under `tools/` that matches the

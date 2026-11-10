@@ -6,6 +6,7 @@
 
 import {
   AttachmentResourceRef,
+  CONTENT_TYPE_READ_ONLY_PROPERTY_KEYS,
   type ContentFieldType,
 } from "@hexabot-ai/types";
 import { RJSFSchema } from "@rjsf/utils";
@@ -140,12 +141,31 @@ export const buildContentSchema = (rjsfSchema: RJSFSchema) => {
   } as RJSFSchema;
 };
 
-export const buildContentParams = ({
+const isEmptyValue = (value: unknown) =>
+  value === undefined ||
+  (typeof value === "object" &&
+    value !== null &&
+    Object.keys(value).length === 0);
+
+/**
+ * Splits the form data into the columns of the content and its properties.
+ * Properties only hold the values of the content type fields: the form data
+ * also carries the content it was seeded with (id, dates, content type, ...)
+ * and the values of fields removed from the content type.
+ */
+export const buildContentParams = (
+  { title, status, ...values }: ContentFormData,
+  contentTypeSchema: unknown,
+) => ({
   title,
   status,
-  ...rest
-}: ContentFormData) => ({
-  title,
-  status,
-  properties: rest,
+  properties: Object.fromEntries(
+    Object.keys(getSchemaProperties(contentTypeSchema) ?? {})
+      .filter(
+        (key) =>
+          !CONTENT_TYPE_READ_ONLY_PROPERTY_KEYS.includes(key) &&
+          !isEmptyValue(values[key]),
+      )
+      .map((key) => [key, values[key]]),
+  ),
 });

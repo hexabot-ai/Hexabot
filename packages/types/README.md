@@ -40,7 +40,9 @@ type: one of `CONTENT_FIELD_TYPES` (`string`, `textarea`, `html`, `uri`,
 `boolean`, `file`; type `ContentFieldType`). `contentTypeJsonSchema` validates a
 content type schema: the built-in `title` and `status` fields, then every other
 field with `contentFieldSchema`, which takes only `type`, `title` and
-`description`.
+`description`. `buildContentPropertiesSchema(contentType.schema)` validates the
+`properties` of a content against its content type: values of the field types,
+required fields set, no other key.
 
 ## Standard Export Pattern
 

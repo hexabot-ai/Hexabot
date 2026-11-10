@@ -5,6 +5,7 @@
  */
 
 export {
+  buildContentPropertiesSchema,
   CONTENT_FIELD_TYPES,
   CONTENT_TYPE_READ_ONLY_PROPERTY_KEYS,
   contentFieldSchema,

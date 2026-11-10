@@ -10,6 +10,7 @@ import {
   AttachmentAccess,
   AttachmentCreatedByRef,
   AttachmentResourceRef,
+  buildContentPropertiesSchema,
   CONTENT_FIELD_TYPES,
   FieldType,
   MemoryScope,
@@ -139,6 +140,92 @@ describe("@hexabot-ai/types schemas", () => {
     expect(fieldSchema.properties.type.description).toContain(
       '"file": an attachment',
     );
+  });
+
+  describe("buildContentPropertiesSchema", () => {
+    const schema = buildContentPropertiesSchema({
+      ...DEFAULT_CONTENT_TYPE_SCHEMA,
+      properties: {
+        ...DEFAULT_CONTENT_TYPE_SCHEMA.properties,
+        body: { type: "textarea", title: "Body" },
+        link: { type: "uri", title: "Link" },
+        featured: { type: "boolean", title: "Featured" },
+        image: { type: "file", title: "Image" },
+        legacy: { type: "number", title: "Legacy" },
+      },
+      required: ["link", "image"],
+    });
+    const image = { type: "image", payload: { id: "attachment-id" } };
+    const failedPaths = (properties: unknown) =>
+      schema
+        .safeParse(properties)
+        .error?.issues.map(({ path }) => path.join("."));
+
+    it("takes the values of the content type fields", () => {
+      expect(
+        schema.safeParse({ link: "https://hexabot.ai", image }).success,
+      ).toBe(true);
+      expect(
+        schema.safeParse({
+          link: "https://hexabot.ai",
+          image: {
+            type: "image",
+            payload: { url: "https://hexabot.ai/a.png" },
+          },
+          body: "Text",
+          featured: true,
+          legacy: 3,
+        }).success,
+      ).toBe(true);
+    });
+
+    it("takes empty values for optional fields only", () => {
+      expect(
+        schema.safeParse({
+          link: "https://hexabot.ai",
+          image,
+          body: "",
+          featured: null,
+        }).success,
+      ).toBe(true);
+      expect(failedPaths({})).toEqual(["link", "image"]);
+      expect(
+        failedPaths({
+          link: "",
+          image: { type: "image", payload: { id: null } },
+        }),
+      ).toEqual(["link", "image"]);
+    });
+
+    it("refuses values of another type", () => {
+      expect(
+        failedPaths({
+          link: "hexabot.ai",
+          image: "https://hexabot.ai/a.png",
+          body: 3,
+          featured: "yes",
+        }),
+      ).toEqual(["body", "link", "featured", "image"]);
+    });
+
+    it("refuses keys that are not fields of the content type", () => {
+      const issue = schema.safeParse({
+        link: "https://hexabot.ai",
+        image,
+        title: "Title",
+        extra: "Extra",
+      }).error?.issues[0];
+
+      expect(issue?.message).toBe(
+        'Unknown field(s) "title", "extra": the content type has "body", "link", "featured", "image", "legacy" ("title" and "status" are not properties)',
+      );
+    });
+
+    it("takes any properties when the content type has no fields", () => {
+      expect(
+        buildContentPropertiesSchema(null).safeParse({ any: "value" }).success,
+      ).toBe(true);
+    });
   });
 
   it("never carries inline webhook secrets", () => {
