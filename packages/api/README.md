@@ -45,6 +45,7 @@ The API is divided into several key modules, each responsible for specific funct
 - Additional extensions are discovered from `hexabot-channel-*`, `hexabot-action-*`, and `hexabot-helper-*` packages, plus compiled extensions in `dist/extensions`.
 - Channel/helper runtime setting group keys and settings hook namespaces are now the extension `name` (kebab-case).
 - Third-party channel/helper extensions must define settings groups and i18n namespaces with the same kebab-case extension `name`.
+- Action input/settings and binding schemas that hold a resource id should tag that field with `workflowResourceRef(kind)` (exported from `@hexabot-ai/api`) inside its zod `.meta({...})`, e.g. `...workflowResourceRef('contentType')`. Workflow export/import uses the tag to bundle the referenced resource and remap its id on import. Built-in kinds: `workflow`, `memoryDefinition`, `mcpServer`, `credential`, `contentType`, `label`. Any other kind needs a `WorkflowTransferResourceAdapter` decorated with `@WorkflowTransferAdapter()`, otherwise exporting a workflow that uses it fails with "unsupported resource kind".
 
 ## Installation
 
