@@ -23,6 +23,7 @@ import {
   validateWorkflow,
   type FlowStep,
 } from './dsl.types';
+import { getValueAtPath, setValueAtPath } from './utils/object-path';
 import { safeRenameTaskInDefinition as renameTaskInDefinition } from './utils/workflow-definition';
 import { issueMessages } from './validation-issue';
 import {
@@ -155,19 +156,7 @@ export class Workflow {
    * Resolve a nested value from a workflow definition by path.
    */
   static getValueAtPath(value: unknown, path: FlowStepPath): unknown {
-    return path.reduce<unknown>((acc, key) => {
-      if (acc === null || acc === undefined) {
-        return undefined;
-      }
-      if (Array.isArray(acc)) {
-        return typeof key === 'number' ? acc[key] : undefined;
-      }
-      if (typeof acc === 'object') {
-        return (acc as Record<string, unknown>)[String(key)];
-      }
-
-      return undefined;
-    }, value);
+    return getValueAtPath(value, path);
   }
 
   /**
@@ -178,35 +167,7 @@ export class Workflow {
     path: FlowStepPath,
     nextValue: unknown,
   ): T {
-    if (path.length === 0) {
-      return nextValue as T;
-    }
-
-    const [key, ...rest] = path;
-
-    if (Array.isArray(value)) {
-      if (typeof key !== 'number') {
-        return value;
-      }
-      const nextArray = [...value];
-
-      nextArray[key] = Workflow.setValueAtPath(value[key], rest, nextValue);
-
-      return nextArray as unknown as T;
-    }
-
-    if (value && typeof value === 'object') {
-      return {
-        ...(value as Record<string, unknown>),
-        [String(key)]: Workflow.setValueAtPath(
-          (value as Record<string, unknown>)[String(key)],
-          rest,
-          nextValue,
-        ),
-      } as T;
-    }
-
-    return value;
+    return setValueAtPath(value, path, nextValue);
   }
 
   /**

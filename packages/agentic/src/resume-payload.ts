@@ -271,6 +271,18 @@ export function checkResumePayload(
 }
 
 /**
+ * Describe schema issues as `<path>: <message>` lines.
+ *
+ * @param issues The schema issues.
+ * @returns One line per issue.
+ */
+export function describeSchemaIssues(issues: z.core.$ZodIssue[]): string[] {
+  return issues.map(
+    (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
+  );
+}
+
+/**
  * Build the error refusing a payload that failed a schema.
  *
  * @param subject What the payload was meant for, used in the message.
@@ -281,9 +293,7 @@ export function rejectResumePayload(
   subject: string,
   issues: z.core.$ZodIssue[],
 ): WorkflowResumeRejectedError {
-  const messages = issues.map(
-    (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
-  );
+  const messages = describeSchemaIssues(issues);
 
   return new WorkflowResumeRejectedError(
     `Resume payload for ${subject} was rejected: ${messages.join('; ')}`,

@@ -4,9 +4,12 @@
  * Full terms: see LICENSE.md.
  */
 
-import { z, type ZodIssue } from 'zod';
+import { z } from 'zod';
 
-import { type WorkflowValidationIssue } from '../validation-issue';
+import {
+  toValidationIssues,
+  type WorkflowValidationIssue,
+} from '../validation-issue';
 
 const TASK_KIND = 'task';
 
@@ -123,26 +126,14 @@ const hasBindingsConfigured = (workflow: BindingAwareWorkflowLike): boolean => {
   return hasNonTaskDefs || hasNestedBindings;
 };
 const toBindingSettingsIssues = (
-  zodIssues: ZodIssue[],
+  schemaIssues: z.core.$ZodIssue[],
   defName: string,
 ): WorkflowValidationIssue[] =>
-  zodIssues.map((issue) => {
-    const path = issue.path.join('.') || '<root>';
-
-    return {
-      code: 'binding_settings',
-      message: `defs.${defName}.settings.${path}: ${issue.message}`,
-      path: [
-        'defs',
-        defName,
-        'settings',
-        ...issue.path.filter(
-          (segment): segment is string | number =>
-            typeof segment === 'string' || typeof segment === 'number',
-        ),
-      ],
-    };
-  });
+  toValidationIssues('binding_settings', schemaIssues, [
+    'defs',
+    defName,
+    'settings',
+  ]);
 const collectDuplicateReferences = (refs: string[]): string[] => {
   const seen = new Set<string>();
   const duplicates = new Set<string>();

@@ -13,7 +13,7 @@ import {
   WorkflowWaitAmbiguousError,
   WorkflowWaitNotFoundError,
 } from './errors';
-import { checkResumePayload } from './resume-payload';
+import { checkResumePayload, describeSchemaIssues } from './resume-payload';
 import { isRecord } from './utils/clone';
 import { StepType, type StepInfo } from './workflow-event-emitter';
 import { fingerprintWorkflow } from './workflow-fingerprint';
@@ -410,9 +410,7 @@ const parseCheckpoint = (checkpoint: unknown): WorkflowCheckpoint => {
 
   const result = workflowCheckpointSchema.safeParse(checkpoint);
   if (!result.success) {
-    const issues = result.error.issues.map(
-      (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
-    );
+    const issues = describeSchemaIssues(result.error.issues);
 
     throw new WorkflowCheckpointInvalidError(
       'malformed',

@@ -10,9 +10,15 @@ import { z } from 'zod';
 
 import type { BindingKindSchemas } from './bindings/base-binding';
 import { validateAndResolveBindings } from './bindings/base-binding';
+import { isRecord } from './utils/clone';
 import { SNAKE_CASE_REGEX } from './utils/naming';
-import { type WorkflowValidationIssue } from './validation-issue';
-import { mergeSettings } from './workflow-values';
+import { getValueAtPath } from './utils/object-path';
+import {
+  toIssuePath,
+  toValidationIssues,
+  type WorkflowValidationIssue,
+} from './validation-issue';
+import { isExpressionString, mergeSettings } from './workflow-values';
 
 export const ExpressionStringSchema = z
   .string()
@@ -451,31 +457,8 @@ export const extractTaskDefinitions = (defs: DefDefinitions): TaskDefinitions =>
   }, {});
 
 const EXECUTION_SETTING_KEYS = new Set(Object.keys(BaseSettingsSchema.shape));
-const isExpressionString = (value: unknown): boolean =>
-  typeof value === 'string' && value.startsWith('=');
-const toIssuePath = (path: readonly PropertyKey[]): Array<string | number> =>
-  path.filter(
-    (segment): segment is string | number =>
-      typeof segment === 'string' || typeof segment === 'number',
-  );
-const getValueAtPath = (
-  value: unknown,
-  path: Array<string | number>,
-): unknown => {
-  let current = value;
-
-  for (const segment of path) {
-    if (current === null || typeof current !== 'object') {
-      return undefined;
-    }
-
-    current = (current as Record<string | number, unknown>)[segment];
-  }
-
-  return current;
-};
 const extractActionSettings = (settings: unknown): Record<string, unknown> => {
-  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+  if (!isRecord(settings)) {
     return {};
   }
 
@@ -582,19 +565,6 @@ const validateTaskActionSchemas = (
 
   return issues;
 };
-const toSchemaIssues = (zodIssues: z.ZodIssue[]): WorkflowValidationIssue[] =>
-  zodIssues.map((issue) => {
-    const path = issue.path.join('.') || '<root>';
-
-    return {
-      code: 'schema',
-      message: `${path}: ${issue.message}`,
-      path: issue.path.filter(
-        (segment): segment is string | number =>
-          typeof segment === 'string' || typeof segment === 'number',
-      ),
-    };
-  });
 const invalidWorkflow = (
   issues: WorkflowValidationIssue[],
 ): WorkflowValidationResult => ({
@@ -625,7 +595,7 @@ export function validateWorkflow(
   const parsed = WorkflowDefinitionSchema.safeParse(candidate);
 
   if (!parsed.success) {
-    return invalidWorkflow(toSchemaIssues(parsed.error.issues));
+    return invalidWorkflow(toValidationIssues('schema', parsed.error.issues));
   }
 
   const issues: WorkflowValidationIssue[] = [];

@@ -174,4 +174,17 @@ describe('workflow values', () => {
       },
     });
   });
+  it('merges nested objects only, letting other overrides replace the default', () => {
+    expect(
+      mergeSettings(
+        { a: 'text', b: { keep: 1, swap: 1 }, c: [1, 2], d: { x: 1 } },
+        { a: { nested: true }, b: { swap: 2 }, c: [3], d: 'flat' },
+      ),
+    ).toEqual({
+      a: { nested: true },
+      b: { keep: 1, swap: 2 },
+      c: [3],
+      d: 'flat',
+    });
+  });
 });

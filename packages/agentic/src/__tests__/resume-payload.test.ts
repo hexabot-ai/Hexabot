@@ -13,6 +13,7 @@ import {
   describeResumePayload,
   findNonJsonTypes,
   isPayloadOptional,
+  rejectResumePayload,
 } from '../resume-payload';
 import { StepType } from '../workflow-event-emitter';
 
@@ -241,5 +242,33 @@ describe('checkResumePayload', () => {
     expect(
       checkResumePayload(waitFor({ type: 'not-a-json-type' }), 'anything').ok,
     ).toBe(true);
+  });
+});
+
+describe('rejectResumePayload', () => {
+  it('lists one "<path>: <message>" line per issue, (root) for the payload itself', () => {
+    const nested = z
+      .object({ user: z.object({ name: z.string() }) })
+      .safeParse({ user: { name: 1 } });
+    const root = z.string().safeParse(1);
+    if (nested.success || root.success) {
+      throw new Error('Expected both payloads to be refused');
+    }
+
+    const error = rejectResumePayload('wait "w1"', [
+      ...nested.error.issues,
+      ...root.error.issues,
+    ]);
+
+    expect(error).toBeInstanceOf(WorkflowResumeRejectedError);
+    expect(error.issues).toEqual([
+      'user.name: Invalid input: expected string, received number',
+      '(root): Invalid input: expected string, received number',
+    ]);
+    expect(error.message).toBe(
+      'Resume payload for wait "w1" was rejected: ' +
+        'user.name: Invalid input: expected string, received number; ' +
+        '(root): Invalid input: expected string, received number',
+    );
   });
 });
