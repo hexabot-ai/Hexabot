@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { asId, withAliases } from "../shared/aliases";
+import { nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
 import { preprocess } from "../shared/preprocess";
 
@@ -30,10 +30,7 @@ export const sourceStubSchema = sourceObjectSchema;
 export const sourceSchema = preprocess(
   (value) => withAliases(value, sourceAliasMap),
   sourceObjectSchema.extend({
-    defaultWorkflow: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
+    defaultWorkflow: nullableIdSchema,
   }),
 );
 

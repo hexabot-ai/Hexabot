@@ -24,7 +24,7 @@ export interface LicenseActivatedModalProps {
   onClose: () => void;
 }
 
-export const LicenseActivatedModal = ({
+const LicenseActivatedModal = ({
   open,
   onClose,
 }: LicenseActivatedModalProps) => {

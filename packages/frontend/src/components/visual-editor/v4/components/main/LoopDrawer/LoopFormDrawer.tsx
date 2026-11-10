@@ -12,11 +12,7 @@ import {
 } from "@hexabot-ai/agentic";
 import {
   Box,
-  FormControl,
   FormControlLabel,
-  FormLabel,
-  Radio,
-  RadioGroup,
   Stack,
   Switch,
   TextField,
@@ -30,7 +26,8 @@ import { JsonataFormulaField } from "@/app-components/inputs/JsonataFormulaField
 import { useTranslate } from "@/hooks/useTranslate";
 
 import { useWorkflow } from "../../../hooks/useWorkflow";
-import { useSelectedOperatorNode } from "../../../hooks/useWorkflowSelection";
+import { useSelectedOperatorStep } from "../../../hooks/useWorkflowSelection";
+import { StepOptionRadioGroup } from "../StepDrawer/StepOptionRadioGroup";
 import {
   useStepDrawerClose,
   withStepDrawerLayout,
@@ -148,40 +145,13 @@ const LoopFormDrawerContent = ({
 
   return (
     <Stack spacing={2}>
-      <FormControl component="fieldset" fullWidth>
-        <FormLabel component="legend">{loopTypeLabel}</FormLabel>
-        <RadioGroup
-          value={values.loopType}
-          onChange={(event) => {
-            const nextLoopType = event.target.value;
-
-            if (isLoopType(nextLoopType)) {
-              onFieldChange("loopType", nextLoopType);
-            }
-          }}
-        >
-          <Stack spacing={1} mt={1}>
-            {loopTypeOptions.map((option) => (
-              <Box
-                key={option.value}
-                border={(theme) => `1px solid ${theme.palette.divider}`}
-                borderRadius={1}
-                px={1}
-                py={0.5}
-              >
-                <FormControlLabel
-                  value={option.value}
-                  control={<Radio size="small" />}
-                  label={option.label}
-                />
-                <Typography variant="body2" color="text.secondary" ml={4}>
-                  {option.description}
-                </Typography>
-              </Box>
-            ))}
-          </Stack>
-        </RadioGroup>
-      </FormControl>
+      <StepOptionRadioGroup
+        label={loopTypeLabel}
+        value={values.loopType}
+        options={loopTypeOptions}
+        isOptionValue={isLoopType}
+        onChange={(nextLoopType) => onFieldChange("loopType", nextLoopType)}
+      />
 
       {/* <TextField
         fullWidth
@@ -372,18 +342,9 @@ const LoopFormDrawerLayout = withStepDrawerLayout(LoopFormDrawerContent);
 export const LoopFormDrawer = () => {
   const { t } = useTranslate();
   const { definition, updateDefinitionState, isSaving } = useWorkflow();
-  const selectedOperatorNode = useSelectedOperatorNode(StepType.Loop);
+  const { selectedOperatorNode, stepPath, selectedStep } =
+    useSelectedOperatorStep(StepType.Loop, isLoopStep);
   const selectedNodeId = selectedOperatorNode?.id;
-  const stepPath = selectedOperatorNode?.stepPath;
-  const selectedStep = useMemo(() => {
-    if (!definition || !stepPath) {
-      return undefined;
-    }
-
-    const stepAtPath = WorkflowHelper.getValueAtPath(definition, stepPath);
-
-    return isLoopStep(stepAtPath) ? stepAtPath : undefined;
-  }, [definition, stepPath]);
   const [formValues, setFormValues] =
     useState<LoopFormValues>(getLoopFormValues());
   const open = Boolean(selectedOperatorNode && selectedNodeId);

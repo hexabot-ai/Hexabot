@@ -20,12 +20,12 @@ import {
 
 import { type ContentFormData } from "./ContentForm";
 
-export type ContentField = {
+type ContentField = {
   title: string;
   type: ContentFieldType;
 };
 
-export type ContentSchemaProperties = Record<string, ContentField>;
+type ContentSchemaProperties = Record<string, ContentField>;
 const buildStringFieldSchema = (title: string): RJSFSchema => ({
   type: "string",
   title,

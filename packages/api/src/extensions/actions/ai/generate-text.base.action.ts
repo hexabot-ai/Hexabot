@@ -47,11 +47,7 @@ export abstract class AiGenerateTextBaseAction<
       ...(tools ? { tools } : {}),
       ...(stopWhen ? { stopWhen } : {}),
     });
-    const reasoning =
-      result.reasoningText ??
-      (result.reasoning?.length
-        ? result.reasoning.map((part) => part.text).join('\n')
-        : undefined);
+    const reasoning = this.extractReasoning(result);
 
     return {
       text: result.text,

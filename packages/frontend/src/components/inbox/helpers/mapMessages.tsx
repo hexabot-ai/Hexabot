@@ -67,7 +67,7 @@ function hasSameRecipient(
 /**
  * @description Two messages are concidered from the same source if they have equal properties of sender, sentBy and recipient.
  */
-export function isSubsequent(
+function isSubsequent(
   currMessage: MessageFull | MessageEntity | undefined,
   nextMessage: MessageFull | MessageEntity | undefined,
 ): boolean {

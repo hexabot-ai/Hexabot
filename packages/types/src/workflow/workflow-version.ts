@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { asId, withAliases } from "../shared/aliases";
+import { asId, nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
 import { preprocess } from "../shared/preprocess";
 import { userSchema } from "../user/user";
@@ -32,18 +32,12 @@ export const workflowVersionStubSchema = workflowVersionStubObjectSchema;
 export const workflowVersionSchema = preprocess(
   (value) => withAliases(value, workflowVersionAliasMap),
   workflowVersionStubObjectSchema.extend({
-    parentVersion: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
+    parentVersion: nullableIdSchema,
     workflow: preprocess(
       (value) => (value == null ? null : asId(value)),
       z.string(),
     ),
-    createdBy: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
+    createdBy: nullableIdSchema,
   }),
 );
 

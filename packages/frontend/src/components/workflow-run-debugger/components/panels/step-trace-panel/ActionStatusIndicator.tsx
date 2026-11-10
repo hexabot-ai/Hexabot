@@ -71,12 +71,10 @@ const getStatusIndicator = (
   }
 };
 
-export const ActionStatusIndicator = ({
-  status,
-  size = 16,
-}: ActionStatusIndicatorProps) => {
+export const useActionStatusLabels = (): StatusLabels => {
   const { t } = useTranslate();
-  const statusLabels: StatusLabels = useMemo(
+
+  return useMemo(
     () => ({
       completed: t("label.step_trace.status_completed"),
       running: t("label.step_trace.status_running"),
@@ -88,6 +86,13 @@ export const ActionStatusIndicator = ({
     }),
     [t],
   );
+};
+
+export const ActionStatusIndicator = ({
+  status,
+  size = 16,
+}: ActionStatusIndicatorProps) => {
+  const statusLabels = useActionStatusLabels();
   const statusConfig = getStatusIndicator(status, statusLabels);
 
   return (

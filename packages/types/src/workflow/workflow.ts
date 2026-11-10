@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { asId, withAliases } from "../shared/aliases";
+import { asId, nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
 import { cloneWithPrototype, toRecord } from "../shared/object";
 import { preprocess } from "../shared/preprocess";
@@ -242,10 +242,7 @@ export const workflowSchema = preprocess(
         value === undefined ? undefined : value == null ? null : asId(value),
       z.string().nullable().optional(),
     ).optional(),
-    createdBy: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
+    createdBy: nullableIdSchema,
     runAfterMs: preprocess(
       (value) => (value == null ? 0 : value),
       z.coerce.number(),

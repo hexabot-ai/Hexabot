@@ -48,11 +48,7 @@ export class WorkflowVersionController extends BaseOrmController<WorkflowVersion
    */
   @Get(':id/versions/count')
   async countAll(@UuidParam('id') id: string) {
-    const workflow = await this.workflowService.findOne(id);
-    if (!workflow) {
-      this.logger.warn(`Unable to find Workflow by id ${id}`);
-      throw new NotFoundException(`Workflow with ID ${id} not found`);
-    }
+    await this.findWorkflowOrFail(id);
 
     return await this.count({ where: { workflow: { id } } });
   }
@@ -70,11 +66,7 @@ export class WorkflowVersionController extends BaseOrmController<WorkflowVersion
     @Body() dto: WorkflowNewVersionDto,
     @Req() req: Request,
   ): Promise<WorkflowVersion> {
-    const workflow = await this.workflowService.findOne(id);
-    if (!workflow) {
-      this.logger.warn(`Unable to find Workflow by id ${id}`);
-      throw new NotFoundException(`Workflow with ID ${id} not found`);
-    }
+    const workflow = await this.findWorkflowOrFail(id);
     const userId = req.session?.passport?.user?.id;
 
     if (!userId) {
@@ -124,11 +116,7 @@ export class WorkflowVersionController extends BaseOrmController<WorkflowVersion
     @Query(PopulatePipe)
     populate: string[] = [],
   ) {
-    const workflow = await this.workflowService.findOne(id);
-    if (!workflow) {
-      this.logger.warn(`Unable to find Workflow by id ${id}`);
-      throw new NotFoundException(`Workflow with ID ${id} not found`);
-    }
+    await this.findWorkflowOrFail(id);
 
     return await this.find(
       {
@@ -155,11 +143,7 @@ export class WorkflowVersionController extends BaseOrmController<WorkflowVersion
     @Query(PopulatePipe)
     populate: string[] = [],
   ) {
-    const workflow = await this.workflowService.findOne(id);
-    if (!workflow) {
-      this.logger.warn(`Unable to find Workflow by id ${id}`);
-      throw new NotFoundException(`Workflow with ID ${id} not found`);
-    }
+    await this.findWorkflowOrFail(id);
 
     return await this.findOne(versionId, populate);
   }
@@ -177,11 +161,7 @@ export class WorkflowVersionController extends BaseOrmController<WorkflowVersion
     @UuidParam('versionId') versionId: string,
     @Body() dto: WorkflowVersionUpdateDto,
   ): Promise<WorkflowVersion> {
-    const workflow = await this.workflowService.findOne(id);
-    if (!workflow) {
-      this.logger.warn(`Unable to find Workflow by id ${id}`);
-      throw new NotFoundException(`Workflow with ID ${id} not found`);
-    }
+    await this.findWorkflowOrFail(id);
 
     const version = await this.workflowVersionService.findOne({
       where: {
@@ -196,5 +176,15 @@ export class WorkflowVersionController extends BaseOrmController<WorkflowVersion
     }
 
     return await this.workflowVersionService.updateOne(versionId, dto);
+  }
+
+  private async findWorkflowOrFail(id: string) {
+    const workflow = await this.workflowService.findOne(id);
+    if (!workflow) {
+      this.logger.warn(`Unable to find Workflow by id ${id}`);
+      throw new NotFoundException(`Workflow with ID ${id} not found`);
+    }
+
+    return workflow;
   }
 }

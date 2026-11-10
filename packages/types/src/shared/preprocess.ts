@@ -12,3 +12,13 @@ export const preprocess = <T>(
 ): z.ZodType<T> => {
   return z.preprocess(transformer, schema) as z.ZodType<T>;
 };
+
+export const nullableStringSchema = preprocess(
+  (value) => (value == null ? null : value),
+  z.string().nullable(),
+);
+
+export const nullableDateSchema = preprocess(
+  (value) => (value == null ? null : value),
+  z.coerce.date().nullable(),
+);

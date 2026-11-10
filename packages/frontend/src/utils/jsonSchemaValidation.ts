@@ -10,7 +10,7 @@ import { JsonSchemaOptionContext } from "@/app-components/inputs/JsonSchemaObjec
 import draft07Schema from "@/utils/jsonschema/draft-07.json";
 import fieldInput from "@/utils/jsonschema/field-input.json";
 
-export const getSchemaValidatorByContext = <
+const getSchemaValidatorByContext = <
   C extends JsonSchemaOptionContext = "default",
 >(
   context?: C,

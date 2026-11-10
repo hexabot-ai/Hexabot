@@ -72,9 +72,7 @@ type ContextTypeOption<C extends JsonSchemaOptionContext = "default"> = {
   label: string;
   value: JsonSchemaType<C>;
 };
-export const getContextTypeOptions = <
-  C extends JsonSchemaOptionContext = "default",
->(
+const getContextTypeOptions = <C extends JsonSchemaOptionContext = "default">(
   context?: C,
 ) => {
   return BASE_TYPE_OPTIONS[context || "default"] as ContextTypeOption<C>[];

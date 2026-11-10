@@ -4,9 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Badge, Box, IconButton, Tooltip } from "@mui/material";
-import { Code, Plus, Search, Upload } from "lucide-react";
+import { Box, IconButton, Tooltip } from "@mui/material";
+import { Plus, Search, Upload } from "lucide-react";
 import type { ReactElement } from "react";
+
+import { YamlToggleButton } from "./YamlToggleButton";
 
 type FlowsDrawerCollapsedActionsProps = {
   searchLabel: string;
@@ -54,24 +56,12 @@ export const FlowsDrawerCollapsedActions = ({
         <Search size={16} />
       </IconButton>
     </Tooltip>
-    <Tooltip title={yamlLabel}>
-      <IconButton
-        size="small"
-        onClick={onToggleYaml}
-        color={isYamlOpen ? "primary" : "default"}
-        aria-pressed={isYamlOpen}
-      >
-        <Badge
-          badgeContent={yamlIssueCount}
-          color="error"
-          max={9}
-          overlap="circular"
-          invisible={!yamlIssueCount}
-        >
-          <Code size={16} />
-        </Badge>
-      </IconButton>
-    </Tooltip>
+    <YamlToggleButton
+      label={yamlLabel}
+      onToggle={onToggleYaml}
+      isOpen={isYamlOpen}
+      issueCount={yamlIssueCount}
+    />
     <Tooltip title={importWorkflowLabel}>
       <span>
         <IconButton

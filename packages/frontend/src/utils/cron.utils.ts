@@ -25,9 +25,8 @@ export const FREQUENCY_VALUES: Frequency[] = [
 ];
 
 // Divisors of 60/24 only, so runs stay aligned to clock boundaries
-export const SECOND_MINUTE_INTERVALS = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30];
-
-export const HOUR_INTERVALS = [1, 2, 3, 4, 6, 8, 12];
+const SECOND_MINUTE_INTERVALS = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30];
+const HOUR_INTERVALS = [1, 2, 3, 4, 6, 8, 12];
 
 export function getIntervalOptions(frequency: Frequency): number[] {
   switch (frequency) {

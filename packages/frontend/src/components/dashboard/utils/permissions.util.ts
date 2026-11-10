@@ -17,7 +17,7 @@ import type {
   DashboardVisibleItem,
 } from "../types";
 
-export const DASHBOARD_KPI_REQUIREMENTS = {
+const DASHBOARD_KPI_REQUIREMENTS = {
   totalWorkflows: [
     [EntityType.STATS, Action.READ],
     [EntityType.WORKFLOW, Action.READ],
@@ -56,7 +56,7 @@ export const DASHBOARD_WIDGET_REQUIREMENTS = {
   ],
 } satisfies Record<string, readonly DashboardPermissionRequirement[]>;
 
-export const DASHBOARD_QUICK_ACTIONS = [
+const DASHBOARD_QUICK_ACTIONS = [
   {
     id: "create",
     label: "button.create_workflow",
@@ -110,7 +110,7 @@ export const hasDashboardPermissions = (
   !requirements?.length ||
   requirements.every(([entity, action]) => hasPermission(entity, action));
 
-export const isDashboardItemVisible = <T extends DashboardVisibleItem>(
+const isDashboardItemVisible = <T extends DashboardVisibleItem>(
   item: T,
   hasPermission: DashboardPermissionChecker,
 ): boolean =>

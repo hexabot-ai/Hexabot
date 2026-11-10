@@ -26,7 +26,7 @@ import { JsonataFormulaField } from "@/app-components/inputs/JsonataFormulaField
 import { useTranslate } from "@/hooks/useTranslate";
 
 import { useWorkflow } from "../../../hooks/useWorkflow";
-import { useSelectedOperatorNode } from "../../../hooks/useWorkflowSelection";
+import { useSelectedOperatorStep } from "../../../hooks/useWorkflowSelection";
 import {
   useStepDrawerClose,
   withStepDrawerLayout,
@@ -162,18 +162,9 @@ const ConditionalFormDrawerLayout = withStepDrawerLayout(
 export const ConditionalFormDrawer = () => {
   const { t } = useTranslate();
   const { definition, updateDefinitionState, isSaving } = useWorkflow();
-  const selectedOperatorNode = useSelectedOperatorNode(StepType.Conditional);
+  const { selectedOperatorNode, stepPath, selectedStep } =
+    useSelectedOperatorStep(StepType.Conditional, isConditionalStep);
   const selectedNodeId = selectedOperatorNode?.id;
-  const stepPath = selectedOperatorNode?.stepPath;
-  const selectedStep = useMemo(() => {
-    if (!definition || !stepPath) {
-      return undefined;
-    }
-
-    const stepAtPath = WorkflowHelper.getValueAtPath(definition, stepPath);
-
-    return isConditionalStep(stepAtPath) ? stepAtPath : undefined;
-  }, [definition, stepPath]);
   const [conditions, setConditions] = useState<string[]>([DEFAULT_CONDITION]);
   const open = Boolean(selectedOperatorNode && selectedNodeId);
 

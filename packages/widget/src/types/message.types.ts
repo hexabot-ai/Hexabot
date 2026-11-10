@@ -74,13 +74,6 @@ export type SubscriberFull = {
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Web {
-  export type RequestSession = {
-    web?: {
-      profile: SubscriberFull;
-      threadId?: string;
-    };
-  };
-
   export enum StatusEventType {
     delivery = "delivery",
     read = "read",
@@ -94,8 +87,6 @@ export namespace Web {
     location = "location",
     file = "file",
   }
-
-  export type EventType = Web.StatusEventType | Web.InboundMessageType;
 
   export enum OutboundMessageType {
     text = "text",
@@ -149,12 +140,6 @@ export namespace Web {
   export type InboundAttachmentMessageData =
     | InboundAttachmentHistoryMessageData
     | InboundAttachmentUploadMessageData;
-
-  export type InboundMessageData =
-    | InboundTextMessageData
-    | InboundPayloadMessageData
-    | InboundLocationMessageData
-    | InboundAttachmentMessageData;
 
   export type StatusDeliveryEvent = {
     type: StatusEventType.delivery;
@@ -214,8 +199,6 @@ export namespace Web {
     T extends InboundMessageBase = InboundMessageBase,
   > = T;
 
-  export type Event = StatusEvent | InboundMessageBase;
-
   export interface MessageElement {
     title: string;
     subtitle?: string;
@@ -249,14 +232,6 @@ export namespace Web {
     top_element_style?: "large" | "compact";
     buttons: Button[];
   };
-
-  export type OutboundMessageData =
-    | OutboundTextMessageData
-    | OutboundQuickRepliesMessageData
-    | OutboundButtonsMessageData
-    | OutboundFileMessageData
-    | OutboundCarouselMessageData
-    | OutboundListMessageData;
 
   export type OutboundMessageBase =
     | {

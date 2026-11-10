@@ -29,6 +29,7 @@ import {
   OrmHookName,
 } from '@/database/decorators/orm-event-hooks.decorator';
 import { BaseOrmEntity } from '@/database/entities/base.entity';
+import { registerOrmSubscriber } from '@/database/register-orm-subscriber';
 import { LoggerService } from '@/logger/logger.service';
 import { flatten } from '@/utils/helpers/flatten';
 
@@ -83,7 +84,10 @@ export abstract class BaseOrmRepository<
     protected readonly populateRelations: string[] = [],
   ) {
     this.dataSource = repository.manager.connection;
-    this.registerAsSubscriber();
+    registerOrmSubscriber(
+      this.dataSource,
+      this as EntitySubscriberInterface<any>,
+    );
     this.joinRelationMap = Object.fromEntries(
       this.repository.metadata.relationIds.map((rid) => [
         rid.relation.propertyName,
@@ -526,15 +530,6 @@ export abstract class BaseOrmRepository<
   listenTo() {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     return this.repository.target as Function;
-  }
-
-  private registerAsSubscriber(): void {
-    const alreadyRegistered = this.dataSource.subscribers.some(
-      (subscriber) => subscriber === this,
-    );
-    if (!alreadyRegistered) {
-      this.dataSource.subscribers.push(this as EntitySubscriberInterface<any>);
-    }
   }
 
   protected getEntityName(metadata: EntityMetadata) {

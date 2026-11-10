@@ -93,5 +93,3 @@ export const Avatar = forwardRef<HTMLDivElement, AvatarProps>(function Avatar(
 });
 
 Avatar.displayName = "Avatar";
-
-export default Avatar;

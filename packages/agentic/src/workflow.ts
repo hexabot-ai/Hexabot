@@ -111,19 +111,7 @@ export class Workflow {
     definition: WorkflowDefinition,
     options: WorkflowCompileOptions,
   ): Workflow {
-    const validation = validateWorkflow(definition, {
-      bindingKinds: options.bindingKinds,
-      actions: options.actions,
-    });
-    if (!validation.success) {
-      throw new Error(
-        `Workflow validation failed: ${issueMessages(validation.issues).join('; ')}`,
-      );
-    }
-
-    const compiled = compileWorkflow(validation.data, options);
-
-    return new Workflow(compiled);
+    return Workflow.validateAndCompile(definition, options);
   }
 
   /**
@@ -131,7 +119,14 @@ export class Workflow {
    * YAML is validated and compiled before being wrapped in a {@link Workflow} instance.
    */
   static fromYaml(yaml: string, options: WorkflowCompileOptions): Workflow {
-    const validation = validateWorkflow(yaml, {
+    return Workflow.validateAndCompile(yaml, options);
+  }
+
+  private static validateAndCompile(
+    source: WorkflowDefinition | string,
+    options: WorkflowCompileOptions,
+  ): Workflow {
+    const validation = validateWorkflow(source, {
       bindingKinds: options.bindingKinds,
       actions: options.actions,
     });

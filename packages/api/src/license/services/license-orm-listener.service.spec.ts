@@ -7,6 +7,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { DataSource, InsertEvent, ObjectLiteral } from 'typeorm';
 
+import { registerOrmSubscriber } from '@/database/register-orm-subscriber';
 import { UserOrmEntity } from '@/user/entities/user.entity';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 
@@ -90,7 +91,7 @@ describe('LicenseOrmListener', () => {
 
     expect(dataSource.subscribers).toEqual([listener]);
 
-    (listener as any).registerAsSubscriber();
+    registerOrmSubscriber(dataSource, listener);
 
     expect(dataSource.subscribers).toHaveLength(1);
   });

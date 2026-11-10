@@ -36,6 +36,7 @@ import { PermissionService } from '@/user/services/permission.service';
 import { UserService } from '@/user/services/user.service';
 import { Action } from '@/user/types/action.type';
 import { type TModel } from '@/user/types/model.type';
+import { rolesCanPerform } from '@/user/utilities/permissions';
 import { getSessionMiddleware } from '@/utils/constants/session-middleware';
 import { getSessionStore } from '@/utils/constants/session-store';
 import { type WorkflowContextState } from '@/workflow/types';
@@ -441,19 +442,12 @@ export class WebsocketGateway
     const roleIds = user?.roles || [];
     const permissions = await this.permissionService.getPermissions();
 
-    if (permissions) {
-      const permissionsFromRoles = Object.entries(permissions)
-        .filter(([key, _]) => roleIds.includes(key))
-        .map(([_, value]) => value);
-
-      if (
-        model &&
-        permissionsFromRoles.some((permission) =>
-          permission[model]?.includes(action),
-        )
-      ) {
-        return true;
-      }
+    if (
+      permissions &&
+      model &&
+      rolesCanPerform(permissions, roleIds, model, action)
+    ) {
+      return true;
     }
   }
 

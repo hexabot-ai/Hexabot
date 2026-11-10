@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { asId, withAliases } from "../shared/aliases";
+import { nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
 import { preprocess } from "../shared/preprocess";
 
@@ -29,10 +29,7 @@ export const labelStubSchema = labelStubObjectSchema;
 export const labelSchema = preprocess(
   (value) => withAliases(value, labelAliasMap),
   labelStubObjectSchema.extend({
-    group: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ).optional(),
+    group: nullableIdSchema.optional(),
     users: preprocess(() => undefined, z.undefined().optional()).optional(),
   }),
 );

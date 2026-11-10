@@ -121,6 +121,5 @@ export const unmountDefBindingRef = <TDefDefinition extends DefDefinition>(
 };
 
 // Deprecated aliases kept to avoid broad call-site churn.
-export const setTaskBindingRefs = setDefBindingRefs;
 export const mountTaskBindingRef = mountDefBindingRef;
 export const unmountTaskBindingRef = unmountDefBindingRef;

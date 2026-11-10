@@ -125,10 +125,7 @@ export interface WorkflowContextProps {
   workflow?: Workflow;
 }
 
-export type {
-  SubscribeWorkflowProps,
-  WorkflowEvent,
-} from "@/websocket/types/workflow.types";
+export type { SubscribeWorkflowProps } from "@/websocket/types/workflow.types";
 
 export type NodeExecutionState =
   | "idle"

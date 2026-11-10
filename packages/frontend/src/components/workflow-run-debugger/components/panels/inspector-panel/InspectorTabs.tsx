@@ -21,6 +21,7 @@ import {
   getOpenWaits,
   getStepWaits,
 } from "../../../utils";
+import { useActionStatusLabels } from "../step-trace-panel/ActionStatusIndicator";
 import { getStepDuration } from "../step-trace-panel/utils";
 
 import type { OverviewLabels } from "./overview.types";
@@ -171,18 +172,7 @@ export const InspectorTabs = ({ run, step }: InspectorTabsProps) => {
   const stepDurationLabel = step
     ? formatDurationMs(getStepDuration(step))
     : "-";
-  const statusLabels = useMemo(
-    () => ({
-      completed: t("label.step_trace.status_completed"),
-      running: t("label.step_trace.status_running"),
-      failed: t("label.step_trace.status_failed"),
-      skipped: t("label.step_trace.status_skipped"),
-      suspended: t("label.step_trace.status_suspended"),
-      cancelled: t("label.step_trace.status_cancelled"),
-      pending: t("label.step_trace.status_pending"),
-    }),
-    [t],
-  );
+  const statusLabels = useActionStatusLabels();
   const stepStatusLabel = step ? statusLabels[step.status] : t("label.none");
 
   return (

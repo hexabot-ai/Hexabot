@@ -26,7 +26,6 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import {
   formatLicenseQuotaUsage,
   getLicenseQuotaResource,
@@ -38,16 +37,15 @@ import {
   WORKFLOW_TYPES,
   WORKFLOW_TYPE_ORDER,
 } from "@/constants/workflow.constants";
-import { useDelete } from "@/hooks/crud/useDelete";
 import { useFind } from "@/hooks/crud/useFind";
 import { useAuth } from "@/hooks/useAuth";
 import { useCronFormatter } from "@/hooks/useCronFormatter";
-import { useDialogs } from "@/hooks/useDialogs";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 
 import { useResizableDrawerSize } from "../../../../../../hooks/useResizableDrawerSize";
+import { useConfirmDeleteWorkflow } from "../../../hooks/useConfirmDeleteWorkflow";
 import { useWorkflow } from "../../../hooks/useWorkflow";
 import { uniqueIssueMessages } from "../../../utils/workflow-issue-localization";
 import { YamlEditor } from "../../yaml-editor";
@@ -72,11 +70,12 @@ import {
 } from "./utils";
 import { WorkflowVersions } from "./WorkflowVersions";
 
-export const defaultDrawerWidth = 320;
-export const collapsedWidth = 64;
-export const minDrawerWidth = 260;
-export const maxDrawerWidth = 920;
-export const drawerWidthStorageKey = "hexabot.visual_editor.drawer_width";
+const defaultDrawerWidth = 320;
+const collapsedWidth = 64;
+const minDrawerWidth = 260;
+const maxDrawerWidth = 920;
+const drawerWidthStorageKey = "hexabot.visual_editor.drawer_width";
+
 export const drawerIsOpenStorage = "hexabot.visual_editor.drawer_is_open";
 const openPricing = () => {
   window.open(
@@ -96,8 +95,7 @@ export const FlowsDrawer = ({
 }: FlowsDrawerProps) => {
   const { t } = useTranslate();
   const formatCron = useCronFormatter();
-  const dialogs = useDialogs();
-  const { user, refetchUser } = useAuth();
+  const { user } = useAuth();
   const {
     workflows,
     selectedFlowId,
@@ -179,7 +177,7 @@ export const FlowsDrawer = ({
     },
     { enabled: isSearching },
   );
-  const { mutate: deleteWorkflow } = useDelete(EntityType.WORKFLOW);
+  const confirmDeleteWorkflow = useConfirmDeleteWorkflow();
   const workflowQuota = getLicenseQuotaResource(user?.license, "workflows");
   const workflowQuotaReached = isLicenseQuotaReached(
     user?.license,
@@ -472,30 +470,11 @@ export const FlowsDrawer = ({
     handleCloseMenu();
   };
   const handleDelete = async () => {
-    if (!selectedMenuFlow) {
-      handleCloseMenu();
-
-      return;
-    }
-
-    const flowId = selectedMenuFlow.id;
-    const fallbackFlowId = workflows?.find((flow) => flow.id !== flowId)?.id;
-
     handleCloseMenu();
-    const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
 
-    if (!isConfirmed) {
-      return;
+    if (selectedMenuFlow) {
+      await confirmDeleteWorkflow(selectedMenuFlow.id);
     }
-
-    deleteWorkflow(flowId, {
-      onSuccess: () => {
-        void refetchUser();
-        if (selectedFlowId === flowId && fallbackFlowId) {
-          updateWorkflowURL(fallbackFlowId);
-        }
-      },
-    });
   };
 
   return (

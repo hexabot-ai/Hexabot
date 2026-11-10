@@ -23,6 +23,7 @@ import { TRole } from '../entities/role.entity';
 import { PermissionService } from '../services/permission.service';
 import { MethodToAction } from '../types/action.type';
 import { TModel } from '../types/model.type';
+import { rolesCanPerform } from '../utilities/permissions';
 
 @Injectable()
 export class Ability implements CanActivate {
@@ -89,14 +90,13 @@ export class Ability implements CanActivate {
       const permissions = await this.permissionService.getPermissions();
 
       if (permissions) {
-        const permissionsFromRoles = Object.entries(permissions)
-          .filter(([key, _]) => roleIds.includes(key))
-          .map(([_, value]) => value);
-
         if (
           modelFromPathname &&
-          permissionsFromRoles.some((permission) =>
-            permission[modelFromPathname]?.includes(MethodToAction[method]),
+          rolesCanPerform(
+            permissions,
+            roleIds,
+            modelFromPathname,
+            MethodToAction[method],
           )
         ) {
           return true;

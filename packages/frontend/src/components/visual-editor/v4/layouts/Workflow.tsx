@@ -37,16 +37,13 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import { getSchemaDefaults } from "@/app-components/inputs/JsonSchemaForm";
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
 import { useWorkflowBindingsCatalog } from "@/contexts/workflow-bindings.context";
-import { useDelete } from "@/hooks/crud/useDelete";
 import { useAppRouter } from "@/hooks/useAppRouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useDialogs } from "@/hooks/useDialogs";
 import { useTranslate } from "@/hooks/useTranslate";
-import { EntityType } from "@/services/types";
 import type { IAction } from "@/types/action.types";
 
 import { WorkflowFormDialog } from "../components/forms/WorkflowFormDialog";
@@ -68,6 +65,7 @@ import { WorkflowBottomDrawer } from "../components/main/WorkflowBottomDrawer";
 import { WorkflowMenu } from "../components/main/WorkflowMenu";
 import { WorkflowTitleBar } from "../components/main/WorkflowTitleBar";
 import { WorkflowSettingsDialog } from "../components/main/WorkflowTitleBar/WorkflowSettingsDialog";
+import { useConfirmDeleteWorkflow } from "../hooks/useConfirmDeleteWorkflow";
 import { useWorkflow } from "../hooks/useWorkflow";
 import { useWorkflowExecutionState } from "../hooks/useWorkflowExecutionState";
 import { humanizeBindingKind } from "../utils/binding-kind.utils";
@@ -159,7 +157,7 @@ export const Workflow = () => {
   const { bindingsByName } = useWorkflowBindingsCatalog();
   const dialogs = useDialogs();
   const { refetchUser } = useAuth();
-  const { mutate: deleteWorkflow } = useDelete(EntityType.WORKFLOW);
+  const confirmDeleteWorkflow = useConfirmDeleteWorkflow();
   const isEmptyWorkflow = !definition?.flow?.length;
   const [actionsDrawerOpen, setActionsDrawerOpen] = useState(false);
   const [pendingInsertPath, setPendingInsertPath] =
@@ -469,30 +467,11 @@ export const Workflow = () => {
     handleCloseMenu();
   };
   const handleDelete = async () => {
-    if (!selectedMenuWorkflow) {
-      handleCloseMenu();
-
-      return;
-    }
-
-    const flowId = selectedMenuWorkflow.id;
-    const fallbackFlowId = workflows?.find((flow) => flow.id !== flowId)?.id;
-
     handleCloseMenu();
-    const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
 
-    if (!isConfirmed) {
-      return;
+    if (selectedMenuWorkflow) {
+      await confirmDeleteWorkflow(selectedMenuWorkflow.id);
     }
-
-    deleteWorkflow(flowId, {
-      onSuccess: () => {
-        void refetchUser();
-        if (selectedFlowId === flowId && fallbackFlowId) {
-          updateWorkflowURL(fallbackFlowId);
-        }
-      },
-    });
   };
   const handleSaveWorkflowSettings = useCallback(
     (settings: Settings) => {
@@ -568,32 +547,52 @@ export const Workflow = () => {
     },
     [bindingsByName, definition],
   );
-  const handleSelectBinding = useCallback(
+  // Mounts `bindingName` on the owner of the pending binding add; `undefined`
+  // when the owner definition or the binding kind cannot be resolved.
+  const mountPendingBinding = useCallback(
     (bindingName: string) => {
       if (!pendingBindingAdd || !definition) {
-        return;
+        return undefined;
       }
 
       const { ownerDefName, bindingKind } = pendingBindingAdd;
       const ownerDefinition = definition.defs[ownerDefName];
 
       if (!ownerDefinition) {
-        return;
+        return undefined;
       }
 
       const bindingDefinition = bindingsByName.get(bindingKind);
 
       if (!bindingDefinition) {
-        return;
+        return undefined;
       }
 
       const multiple = bindingDefinition.multiple ?? true;
-      const nextOwnerDefinition = mountDefBindingRef(
-        ownerDefinition,
+
+      return {
+        ownerDefName,
         bindingKind,
-        bindingName,
-        multiple,
-      );
+        ownerDefinition,
+        nextOwnerDefinition: mountDefBindingRef(
+          ownerDefinition,
+          bindingKind,
+          bindingName,
+          multiple,
+        ),
+      };
+    },
+    [bindingsByName, definition, pendingBindingAdd],
+  );
+  const handleSelectBinding = useCallback(
+    (bindingName: string) => {
+      const mounted = mountPendingBinding(bindingName);
+
+      if (!definition || !mounted) {
+        return;
+      }
+
+      const { ownerDefName, ownerDefinition, nextOwnerDefinition } = mounted;
 
       if (nextOwnerDefinition === ownerDefinition) {
         setPendingBindingAdd(null);
@@ -613,7 +612,7 @@ export const Workflow = () => {
       setPendingBindingAdd(null);
       setEditingBindingTarget(null);
     },
-    [bindingsByName, definition, pendingBindingAdd, updateDefinitionState],
+    [definition, mountPendingBinding, updateDefinitionState],
   );
   const handleCreateBindingDefinition = useCallback(
     (
@@ -621,34 +620,25 @@ export const Workflow = () => {
       bindingDefinitionPayload: Record<string, unknown>,
       description?: string,
     ) => {
-      if (!pendingBindingAdd || !definition) {
+      if (
+        !definition ||
+        !isDefinitionNameAvailable(bindingName, definition.defs)
+      ) {
         return;
       }
 
-      if (!isDefinitionNameAvailable(bindingName, definition.defs)) {
+      const mounted = mountPendingBinding(bindingName);
+
+      if (!mounted) {
         return;
       }
 
-      const { ownerDefName, bindingKind } = pendingBindingAdd;
-      const ownerDefinition = definition.defs[ownerDefName];
-
-      if (!ownerDefinition) {
-        return;
-      }
-
-      const bindingDefinition = bindingsByName.get(bindingKind);
-
-      if (!bindingDefinition) {
-        return;
-      }
-
-      const multiple = bindingDefinition.multiple ?? true;
-      const nextOwnerDefinition = mountDefBindingRef(
-        ownerDefinition,
+      const {
+        ownerDefName,
         bindingKind,
-        bindingName,
-        multiple,
-      );
+        ownerDefinition,
+        nextOwnerDefinition,
+      } = mounted;
 
       if (nextOwnerDefinition === ownerDefinition) {
         setPendingBindingAdd(null);
@@ -675,7 +665,7 @@ export const Workflow = () => {
       setPendingBindingAdd(null);
       setEditingBindingTarget(null);
     },
-    [bindingsByName, definition, pendingBindingAdd, updateDefinitionState],
+    [definition, mountPendingBinding, updateDefinitionState],
   );
   const handleUpdateBindingDefinition = useCallback(
     (

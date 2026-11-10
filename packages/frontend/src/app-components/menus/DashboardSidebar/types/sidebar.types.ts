@@ -13,7 +13,7 @@ import { type TTranslationKeys } from "@/i18n/i18n.types";
 import { EntityType } from "@/services/types";
 import { User } from "@/types/user.types";
 
-export type TMenuItemBadgeProps = {
+type TMenuItemBadgeProps = {
   /** `count` next to the label, `dot` over the icon of a mini sidebar. */
   variant?: "count" | "dot";
 };
@@ -72,10 +72,6 @@ export interface DashboardSidebarPageItemProps {
   selected?: boolean;
   disabled?: boolean;
   nestedNavigation?: React.ReactNode;
-}
-
-export interface DashboardSidebarHeaderItemProps {
-  children?: React.ReactNode;
 }
 
 export type DashboardSidebarProviderProps = PropsWithChildren<{

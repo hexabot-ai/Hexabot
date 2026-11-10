@@ -7,7 +7,7 @@
 import { z } from "zod";
 
 import { threadSchema } from "../chat/thread";
-import { asId, withAliases } from "../shared/aliases";
+import { asId, nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
 import { cloneWithPrototype, toRecord } from "../shared/object";
 import { preprocess } from "../shared/preprocess";
@@ -126,18 +126,9 @@ export const workflowRunSchema = preprocess(
       (value) => (value == null ? null : asId(value)),
       z.string(),
     ),
-    workflowVersion: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
-    triggeredBy: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
-    parentRun: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
+    workflowVersion: nullableIdSchema,
+    triggeredBy: nullableIdSchema,
+    parentRun: nullableIdSchema,
   }),
 );
 

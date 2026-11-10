@@ -6,9 +6,13 @@
 
 import { z } from "zod";
 
-import { asId, asIdArray, withAliases } from "../shared/aliases";
-import { preprocess } from "../shared/preprocess";
-import { nullableStringSchema, subscriberBaseSchema } from "../shared/profile";
+import {
+  idArraySchema,
+  nullableIdSchema,
+  withAliases,
+} from "../shared/aliases";
+import { nullableStringSchema, preprocess } from "../shared/preprocess";
+import { subscriberBaseSchema } from "../shared/profile";
 
 const userProfileAssignedAliasMap = {
   labelIds: "labels",
@@ -23,14 +27,8 @@ export const userProviderSchema = z.object({
 });
 
 const userProfileAssignedObjectSchema = subscriberBaseSchema.extend({
-  labels: preprocess(
-    (value) => (Array.isArray(value) ? asIdArray(value) : []),
-    z.array(z.string()),
-  ),
-  assignedTo: preprocess(
-    (value) => (value == null ? null : asId(value)),
-    z.string().nullable(),
-  ),
+  labels: idArraySchema,
+  assignedTo: nullableIdSchema,
   username: z.string(),
   email: z.string(),
   sendEmail: z.coerce.boolean(),
@@ -38,14 +36,8 @@ const userProfileAssignedObjectSchema = subscriberBaseSchema.extend({
   resetCount: z.coerce.number(),
   resetToken: nullableStringSchema,
   provider: userProviderSchema.optional(),
-  roles: preprocess(
-    (value) => (Array.isArray(value) ? asIdArray(value) : []),
-    z.array(z.string()),
-  ),
-  avatar: preprocess(
-    (value) => (value == null ? null : asId(value)),
-    z.string().nullable(),
-  ),
+  roles: idArraySchema,
+  avatar: nullableIdSchema,
 });
 
 export const userProfileAssignedStubSchema = userProfileAssignedObjectSchema;

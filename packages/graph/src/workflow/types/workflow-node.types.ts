@@ -21,9 +21,8 @@ import type { CSSProperties, JSXElementConstructor, ReactNode } from "react";
 import { memo } from "react";
 
 import { EdgeWithButton } from "../components/edges/EdgeWithButton";
-import { BindingMulti } from "../components/workflow-nodes/BindingMulti";
+import { Binding } from "../components/workflow-nodes/Binding";
 import { BindingPlaceholder } from "../components/workflow-nodes/BindingPlaceholder";
-import { BindingSingle } from "../components/workflow-nodes/BindingSingle";
 import { BranchPlaceholder } from "../components/workflow-nodes/BranchPlaceholder";
 import { Group } from "../components/workflow-nodes/Group";
 import { Indicator } from "../components/workflow-nodes/Indicator";
@@ -320,8 +319,8 @@ export enum EEdgeType {
 }
 
 export const NODE_TYPES = {
-  [ENodeType.BINDING_SINGLE]: memo(BindingSingle),
-  [ENodeType.BINDING_MULTI]: memo(BindingMulti),
+  [ENodeType.BINDING_SINGLE]: memo(Binding),
+  [ENodeType.BINDING_MULTI]: memo(Binding),
   [ENodeType.INDICATOR]: memo(Indicator),
   [ENodeType.OPERATOR]: memo(Operator),
   [ENodeType.TASK]: memo(Task),

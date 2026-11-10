@@ -69,7 +69,7 @@ export type OperatorOutcome = TranslatedMessage & {
 };
 
 /** Error codes of the operator endpoints (`WorkflowRunOperatorService`). */
-export type OperatorErrorCode =
+type OperatorErrorCode =
   | "wait_ambiguous"
   | "wait_kind_mismatch"
   | "run_not_suspended"

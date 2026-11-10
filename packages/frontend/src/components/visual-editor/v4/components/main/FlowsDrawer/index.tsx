@@ -5,4 +5,3 @@
  */
 
 export { FlowsDrawer } from "./FlowsDrawer";
-export type { FlowsDrawerProps } from "./types";

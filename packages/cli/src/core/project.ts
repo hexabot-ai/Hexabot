@@ -19,10 +19,6 @@ export interface PackageJson {
   devDependencies?: Record<string, string>;
 }
 
-export const resolveProjectRoot = (cwd = process.cwd()) => {
-  return path.resolve(cwd);
-};
-
 export const readPackageJson = (
   projectRoot = process.cwd(),
 ): PackageJson | null => {

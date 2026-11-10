@@ -9,7 +9,7 @@ import { hasPublicPath, isLoginPath } from "@/utils/URL";
 
 import { useAppRouter } from "../useAppRouter";
 
-export const REDIRECTION_QUERY_PARAM_NAME = "next" as const;
+const REDIRECTION_QUERY_PARAM_NAME = "next" as const;
 
 export const useAuthRedirection = () => {
   const router = useAppRouter();

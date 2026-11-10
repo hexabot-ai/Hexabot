@@ -6,9 +6,9 @@
 
 import { z } from "zod";
 
-import { asId, withAliases } from "../shared/aliases";
+import { nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
-import { preprocess } from "../shared/preprocess";
+import { nullableStringSchema, preprocess } from "../shared/preprocess";
 import { credentialSchema } from "../user/credential";
 
 import { mcpServerTransportSchema } from "./domain";
@@ -20,22 +20,13 @@ const mcpServerStubObjectSchema = baseStubSchema.extend({
   name: z.string(),
   enabled: z.coerce.boolean(),
   transport: mcpServerTransportSchema,
-  url: preprocess(
-    (value) => (value == null ? null : value),
-    z.string().nullable(),
-  ),
-  command: preprocess(
-    (value) => (value == null ? null : value),
-    z.string().nullable(),
-  ),
+  url: nullableStringSchema,
+  command: nullableStringSchema,
   args: preprocess(
     (value) => (value == null ? null : value),
     z.array(z.string()).nullable(),
   ),
-  cwd: preprocess(
-    (value) => (value == null ? null : value),
-    z.string().nullable(),
-  ),
+  cwd: nullableStringSchema,
 });
 
 export const mcpServerStubSchema = mcpServerStubObjectSchema;
@@ -43,10 +34,7 @@ export const mcpServerStubSchema = mcpServerStubObjectSchema;
 export const mcpServerSchema = preprocess(
   (value) => withAliases(value, mcpServerAliasMap),
   mcpServerStubObjectSchema.extend({
-    credential: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ),
+    credential: nullableIdSchema,
   }),
 );
 

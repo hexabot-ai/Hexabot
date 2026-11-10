@@ -28,9 +28,8 @@ import { useAppRouter } from "@/hooks/useAppRouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useTranslate } from "@/hooks/useTranslate";
 import { TTranslationKeys } from "@/i18n/i18n.types";
-import { ILicense } from "@/types/user.types";
+import { ILicense, LicensePlan } from "@/types/user.types";
 
-export type LicensePlan = ILicense["plan"];
 export type PaidPlan = Exclude<LicensePlan, "unknown">;
 
 const PLAN_ORDER = ["unknown", "starter", "pro", "unlimited"] as const;
@@ -132,7 +131,7 @@ export const shouldDisableBlockedChild = ({
   disableChildWhenBlocked: boolean;
 }): boolean => !allowed && supportsDisabled && disableChildWhenBlocked;
 
-export const LicenseGate = ({
+const LicenseGate = ({
   requiredPlan,
   children,
   reasonText,
@@ -340,7 +339,6 @@ export const LicenseGate = ({
     </>
   );
 };
-
 const PlanHint = ({
   requiredPlan,
   dark,

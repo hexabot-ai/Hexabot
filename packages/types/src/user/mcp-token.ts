@@ -8,14 +8,10 @@ import { z } from "zod";
 
 import { asId, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
-import { preprocess } from "../shared/preprocess";
+import { nullableDateSchema, preprocess } from "../shared/preprocess";
 
 import { userSchema } from "./user";
 
-const nullableDateSchema = preprocess(
-  (value) => (value == null ? null : value),
-  z.coerce.date().nullable(),
-);
 const mcpTokenAliasMap = {
   ownerId: "owner",
 } as const;

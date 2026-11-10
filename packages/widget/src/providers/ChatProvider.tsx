@@ -103,7 +103,7 @@ const toUiMessage = (
 export const subscribesSilently = ({ channel, profile }: Config) =>
   channel === "console" || !!profile;
 
-export const getQuickReplies = (message?: UiMessage): Suggestion[] =>
+const getQuickReplies = (message?: UiMessage): Suggestion[] =>
   message && "data" in message && "quick_replies" in message.data
     ? (message.data.quick_replies || []).map((quickReply) => ({
         text: quickReply.title,

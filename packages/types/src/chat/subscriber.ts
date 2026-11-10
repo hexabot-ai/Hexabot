@@ -8,7 +8,11 @@ import { z } from "zod";
 
 import { attachmentSchema } from "../attachment/attachment";
 import { sourceSchema } from "../channel/source";
-import { asId, asIdArray, withAliases } from "../shared/aliases";
+import {
+  idArraySchema,
+  nullableIdSchema,
+  withAliases,
+} from "../shared/aliases";
 import { preprocess } from "../shared/preprocess";
 import { subscriberBaseSchema } from "../shared/profile";
 import { userProfileAssignedSchema } from "../user/user-profile-assigned";
@@ -22,22 +26,10 @@ const subscriberAliasMap = {
   sourceId: "source",
 } as const;
 const subscriberObjectSchema = subscriberBaseSchema.extend({
-  labels: preprocess(
-    (value) => (Array.isArray(value) ? asIdArray(value) : []),
-    z.array(z.string()),
-  ),
-  assignedTo: preprocess(
-    (value) => (value == null ? null : asId(value)),
-    z.string().nullable(),
-  ),
-  avatar: preprocess(
-    (value) => (value == null ? null : asId(value)),
-    z.string().nullable(),
-  ),
-  source: preprocess(
-    (value) => (value == null ? null : asId(value)),
-    z.string().nullable(),
-  ),
+  labels: idArraySchema,
+  assignedTo: nullableIdSchema,
+  avatar: nullableIdSchema,
+  source: nullableIdSchema,
 });
 
 export const subscriberStubSchema = subscriberBaseSchema;

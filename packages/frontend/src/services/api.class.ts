@@ -673,27 +673,6 @@ export class EntityApiClient<
   }
 
   /**
-   * Bulk Update entries.
-   */
-  async updateMany(
-    ids: string[],
-    payload: Partial<TAttr>,
-    routeParams?: RouteParams,
-  ) {
-    const { _csrf } = await this.getCsrf();
-    const { data } = await this.request.patch<string>(
-      `${this.getRoute(routeParams)}/bulk`,
-      {
-        _csrf,
-        ids,
-        payload,
-      },
-    );
-
-    return data;
-  }
-
-  /**
    * Delete an entry.
    */
   async delete(id: string, routeParams?: RouteParams) {

@@ -4,15 +4,13 @@
  * Full terms: see LICENSE.md.
  */
 
-import { QueryType, TMutationOptions, TSetCacheProps } from "@/services/types";
-import { IEntityMapTypes, THook, TType } from "@/types/base.types";
-import { merge } from "@/utils/object";
+import { TMutationOptions } from "@/services/types";
+import { THook } from "@/types/base.types";
 
 import { useEntityApiClient } from "../useApiClient";
 
 import { useNormalizeAndCache } from "./helpers";
-import { useGetFromCache } from "./useGet";
-import { useTanstackMutation, useTanstackQueryClient } from "./useTanstack";
+import { useTanstackMutation } from "./useTanstack";
 
 export const useUpdate = <
   TE extends THook["entity"],
@@ -40,25 +38,4 @@ export const useUpdate = <
     },
     ...otherOptions,
   });
-};
-
-export const useUpdateCache = <E extends keyof IEntityMapTypes>(entity: E) => {
-  const getFromCache = useGetFromCache(entity);
-  const queryClient = useTanstackQueryClient();
-
-  return ({
-    id,
-    payload = {},
-    preprocess = (data) => data,
-    strategy = "merge",
-  }: TSetCacheProps<TType<E>["basic"]>) => {
-    const oldData = getFromCache(id);
-    const newData =
-      strategy === "merge" && oldData
-        ? merge(preprocess(oldData), payload)
-        : payload;
-    const [qEntity] = entity.split("/");
-
-    queryClient.setQueryData([QueryType.item, qEntity, id], newData);
-  };
 };

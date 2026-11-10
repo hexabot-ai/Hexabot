@@ -323,5 +323,3 @@ export const Message = Object.assign(MessageBase, {
   CustomContent: MessageCustomContent,
   Footer: MessageFooter,
 }) as MessageComponent;
-
-export default Message;

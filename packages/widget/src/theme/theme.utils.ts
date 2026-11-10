@@ -279,8 +279,7 @@ const deepMerge = <T>(base: T, override?: DeepPartial<T>): T => {
 const isThemeMode = (mode: unknown): mode is ThemeMode => {
   return mode === "light" || mode === "dark" || mode === "system";
 };
-
-export const resolveThemeMode = (
+const resolveThemeMode = (
   mode: unknown,
   prefersDarkMode: boolean,
 ): { mode: ThemeMode; resolvedMode: ThemeResolvedMode } => {
@@ -294,8 +293,7 @@ export const resolveThemeMode = (
 
   return { mode: normalizedMode, resolvedMode };
 };
-
-export const resolveThemePalette = (
+const resolveThemePalette = (
   primaryColor: unknown,
   resolvedMode: ThemeResolvedMode,
 ): ThemePalette => {
@@ -308,7 +306,6 @@ export const resolveThemePalette = (
 
   return buildThemePalette(selectedPrimaryColor, resolvedMode);
 };
-
 const buildBaseTokens = (
   resolvedMode: ThemeResolvedMode,
   palette: ThemePalette,

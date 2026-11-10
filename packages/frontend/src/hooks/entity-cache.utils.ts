@@ -62,7 +62,7 @@ export const mergeStepExecutionRecord = (
   };
 };
 
-export const mergeStepExecutionLogs = (
+const mergeStepExecutionLogs = (
   previous: unknown,
   next: unknown,
 ): Record<string, StepExecutionRecord> | null | undefined => {
@@ -86,7 +86,6 @@ export const mergeStepExecutionLogs = (
     { ...previous },
   );
 };
-
 const preserveRelationObjects = (
   entityType: EntityType,
   previousData: CacheRecord | undefined,

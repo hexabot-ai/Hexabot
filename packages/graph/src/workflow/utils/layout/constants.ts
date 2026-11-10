@@ -4,9 +4,10 @@
  * Full terms: see LICENSE.md.
  */
 
-export const GROUP_BASE_ALPHA = 0.22;
-export const GROUP_ALPHA_DECAY_PER_LEVEL = 0.05;
-export const GROUP_MIN_ALPHA = 0.08;
+const GROUP_BASE_ALPHA = 0.22;
+const GROUP_ALPHA_DECAY_PER_LEVEL = 0.05;
+const GROUP_MIN_ALPHA = 0.08;
+
 export const BRANCH_SPREAD_GAP = 64;
 export const EXTRA_NODE_OFFSET = 200;
 export const EXTRA_NODE_GAP = 56;

@@ -15,6 +15,7 @@ import {
   ObjectLiteral,
 } from 'typeorm';
 
+import { registerOrmSubscriber } from '@/database/register-orm-subscriber';
 import { UserOrmEntity } from '@/user/entities/user.entity';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 
@@ -54,16 +55,7 @@ export class LicenseOrmListener implements EntitySubscriberInterface {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly licenseService: LicenseService,
   ) {
-    this.registerAsSubscriber();
-  }
-
-  private registerAsSubscriber(): void {
-    const alreadyRegistered = this.dataSource.subscribers.some(
-      (subscriber) => subscriber === this,
-    );
-    if (!alreadyRegistered) {
-      this.dataSource.subscribers.push(this);
-    }
+    registerOrmSubscriber(this.dataSource, this);
   }
 
   private resolveRule(

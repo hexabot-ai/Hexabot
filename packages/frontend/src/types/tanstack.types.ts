@@ -6,16 +6,12 @@
 
 import type {
   DefaultError,
-  DefinedInitialDataOptions,
   InfiniteData,
   QueryClient,
   QueryKey,
-  QueryObserverResult,
   QueryOptions,
-  RefetchOptions,
   UseQueryOptions as TanstackUseQueryOptions,
   UseInfiniteQueryOptions,
-  UseMutateFunction,
   UseMutationOptions,
 } from "@tanstack/react-query";
 
@@ -34,15 +30,11 @@ interface UseQueryOptions<
 
 export type {
   DefaultError,
-  DefinedInitialDataOptions,
   InfiniteData,
   QueryClient,
   QueryKey,
-  QueryObserverResult,
   QueryOptions,
-  RefetchOptions,
   UseInfiniteQueryOptions,
-  UseMutateFunction,
   UseMutationOptions,
   UseQueryOptions,
 };

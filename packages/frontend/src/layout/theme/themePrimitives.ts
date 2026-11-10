@@ -77,7 +77,7 @@ export const green = {
   900: "hsl(120, 87%, 6%)",
 };
 
-export const orange = {
+const orange = {
   50: "hsl(45, 100%, 97%)",
   100: "hsl(45, 92%, 90%)",
   200: "hsl(45, 94%, 80%)",

@@ -4,10 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Badge, Box, IconButton, Tooltip, Typography } from "@mui/material";
-import { ChevronLeft, ChevronRight, Code, History } from "lucide-react";
+import { Box, IconButton, Tooltip, Typography } from "@mui/material";
+import { ChevronLeft, ChevronRight, History } from "lucide-react";
 
 import { FlowDrawerHeader } from "./styles";
+import { YamlToggleButton } from "./YamlToggleButton";
 
 type FlowsDrawerHeaderProps = {
   open: boolean;
@@ -53,24 +54,12 @@ export const FlowsDrawerHeader = ({
               <History size={16} />
             </IconButton>
           </Tooltip>
-          <Tooltip title={yamlLabel}>
-            <IconButton
-              size="small"
-              onClick={onToggleYaml}
-              color={isYamlOpen ? "primary" : "default"}
-              aria-pressed={isYamlOpen}
-            >
-              <Badge
-                badgeContent={yamlIssueCount}
-                color="error"
-                max={9}
-                overlap="circular"
-                invisible={!yamlIssueCount}
-              >
-                <Code size={16} />
-              </Badge>
-            </IconButton>
-          </Tooltip>
+          <YamlToggleButton
+            label={yamlLabel}
+            onToggle={onToggleYaml}
+            isOpen={isYamlOpen}
+            issueCount={yamlIssueCount}
+          />
           <IconButton size="small" onClick={onToggle}>
             <ChevronLeft size={16} />
           </IconButton>

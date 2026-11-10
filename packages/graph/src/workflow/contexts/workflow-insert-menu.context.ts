@@ -4,9 +4,12 @@
  * Full terms: see LICENSE.md.
  */
 
-import { createContext, useContext } from "react";
+import { createContext, useCallback, useContext, type MouseEvent } from "react";
 
-import type { OnOpenInsertMenu } from "../types/workflow-path.types";
+import type {
+  FlowStepPath,
+  OnOpenInsertMenu,
+} from "../types/workflow-path.types";
 
 export type WorkflowInsertMenuContextValue = {
   onOpenInsertMenu?: OnOpenInsertMenu;
@@ -20,3 +23,22 @@ export const WorkflowInsertMenuContext =
 
 export const useWorkflowInsertMenu = (): WorkflowInsertMenuContextValue =>
   useContext(WorkflowInsertMenuContext);
+
+/** Click handler opening the insert menu at `insertPath`, anchored on the clicked button. */
+export const useOpenInsertMenuHandler = (insertPath?: FlowStepPath) => {
+  const { onOpenInsertMenu } = useWorkflowInsertMenu();
+
+  return useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!insertPath) {
+        return;
+      }
+
+      onOpenInsertMenu?.(event.currentTarget, insertPath);
+    },
+    [insertPath, onOpenInsertMenu],
+  );
+};

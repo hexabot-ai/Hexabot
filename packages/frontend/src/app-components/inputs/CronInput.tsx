@@ -134,6 +134,23 @@ export const CronInput: FC<CronInputProps> = ({
   const showAtMinute = frequency === "hour";
   const showDow = frequency === "week";
   const showDom = frequency === "month";
+  const minuteSelect = (
+    <Select
+      size="small"
+      value={minute}
+      onChange={handleMinute}
+      disabled={disabled}
+      inputProps={{ "aria-label": t("label.minute") }}
+      MenuProps={MENU_PROPS}
+      sx={{ minWidth: 72 }}
+    >
+      {Array.from({ length: 60 }, (_, i) => i).map((m) => (
+        <MenuItem key={m} value={m}>
+          {pad(m)}
+        </MenuItem>
+      ))}
+    </Select>
+  );
 
   return (
     <FormControl
@@ -234,21 +251,7 @@ export const CronInput: FC<CronInputProps> = ({
         {showAtMinute && (
           <Unit>
             <Typography variant="body2">{t("label.cron_at_minute")}</Typography>
-            <Select
-              size="small"
-              value={minute}
-              onChange={handleMinute}
-              disabled={disabled}
-              inputProps={{ "aria-label": t("label.minute") }}
-              MenuProps={MENU_PROPS}
-              sx={{ minWidth: 72 }}
-            >
-              {Array.from({ length: 60 }, (_, i) => i).map((m) => (
-                <MenuItem key={m} value={m}>
-                  {pad(m)}
-                </MenuItem>
-              ))}
-            </Select>
+            {minuteSelect}
           </Unit>
         )}
 
@@ -271,21 +274,7 @@ export const CronInput: FC<CronInputProps> = ({
               ))}
             </Select>
             <Typography variant="body2">:</Typography>
-            <Select
-              size="small"
-              value={minute}
-              onChange={handleMinute}
-              disabled={disabled}
-              inputProps={{ "aria-label": t("label.minute") }}
-              MenuProps={MENU_PROPS}
-              sx={{ minWidth: 72 }}
-            >
-              {Array.from({ length: 60 }, (_, i) => i).map((m) => (
-                <MenuItem key={m} value={m}>
-                  {pad(m)}
-                </MenuItem>
-              ))}
-            </Select>
+            {minuteSelect}
           </Unit>
         )}
       </Stack>

@@ -73,11 +73,7 @@ export const scheduledWorkflowInputJsonSchema = toDraft07JsonSchema(
   scheduledWorkflowInputZodSchema,
 );
 
-export const manualWorkflowDefaultInputSchemaZodSchema = z.looseObject({});
-
-export type ManualWorkflowDefaultInputSchema = z.infer<
-  typeof manualWorkflowDefaultInputSchemaZodSchema
->;
+const manualWorkflowDefaultInputSchemaZodSchema = z.looseObject({});
 
 export const manualWorkflowDefaultInputJsonSchema = toDraft07JsonSchema(
   manualWorkflowDefaultInputSchemaZodSchema,

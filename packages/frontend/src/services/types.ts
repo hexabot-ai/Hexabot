@@ -44,8 +44,6 @@ export enum EntityType {
 }
 
 export enum Format {
-  NONE = 0,
-  STUB = 1,
   BASIC = 2,
   FULL = 3,
 }
@@ -68,8 +66,6 @@ export enum RouterType {
   SETTINGS = "settings",
 }
 
-export type TRouterValues = `${RouterType}`;
-
 export type TMutationOptions<
   TData = unknown,
   TError = unknown,
@@ -80,13 +76,6 @@ export type TMutationOptions<
   "mutationFn" | "mutationKey"
 > & {
   routeParams?: RouteParams;
-};
-
-export type TSetCacheProps<TData> = {
-  id: string;
-  payload?: Partial<TData>;
-  preprocess?: (data: TData) => TData;
-  strategy?: "merge" | "overwrite";
 };
 
 export type TPopulateTypeFromFormat<T> = T extends { format: Format.FULL }

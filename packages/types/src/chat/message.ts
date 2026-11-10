@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { asId, withAliases } from "../shared/aliases";
+import { asId, nullableIdSchema, withAliases } from "../shared/aliases";
 import { baseStubSchema } from "../shared/base";
 import { preprocess } from "../shared/preprocess";
 import { userSchema } from "../user/user";
@@ -123,18 +123,9 @@ export const messageStubSchema = messageStubObjectSchema;
 export const messageSchema = preprocess(
   normalizeMessageRecord,
   messageStubObjectSchema.extend({
-    sender: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ).optional(),
-    recipient: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ).optional(),
-    sentBy: preprocess(
-      (value) => (value == null ? null : asId(value)),
-      z.string().nullable(),
-    ).optional(),
+    sender: nullableIdSchema.optional(),
+    recipient: nullableIdSchema.optional(),
+    sentBy: nullableIdSchema.optional(),
     thread: preprocess(
       (value) => (value == null ? null : asId(value)),
       z.string(),

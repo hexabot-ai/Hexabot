@@ -18,22 +18,15 @@ const processCommonStrategy = <T extends IBaseSchema>(entity: T) => ({
   ...(entity.createdAt && { createdAt: new Date(entity.createdAt) }),
   ...(entity.updatedAt && { updatedAt: new Date(entity.updatedAt) }),
 });
-
-export const RoleEntity = new schema.Entity(EntityType.ROLE, undefined, {
+const RoleEntity = new schema.Entity(EntityType.ROLE, undefined, {
   idAttribute: ({ id }) => id,
   processStrategy: processCommonStrategy,
 });
-
-export const AttachmentEntity = new schema.Entity(
-  EntityType.ATTACHMENT,
-  undefined,
-  {
-    idAttribute: ({ id }) => id,
-    processStrategy: processCommonStrategy,
-  },
-);
-
-export const UserEntity = new schema.Entity(
+const AttachmentEntity = new schema.Entity(EntityType.ATTACHMENT, undefined, {
+  idAttribute: ({ id }) => id,
+  processStrategy: processCommonStrategy,
+});
+const UserEntity = new schema.Entity(
   EntityType.USER,
   {
     roles: [RoleEntity],
@@ -45,8 +38,7 @@ export const UserEntity = new schema.Entity(
       processCommonStrategy(applyFullNameDerivedFields(entity)),
   },
 );
-
-export const SubscriberEntity = new schema.Entity(
+const SubscriberEntity = new schema.Entity(
   EntityType.SUBSCRIBER,
   {
     assignedTo: UserEntity,
@@ -70,8 +62,7 @@ export const SubscriberEntity = new schema.Entity(
     },
   },
 );
-
-export const LabelGroupEntity = new schema.Entity(
+const LabelGroupEntity = new schema.Entity(
   EntityType.LABEL_GROUP,
   {},
   {
@@ -79,8 +70,7 @@ export const LabelGroupEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const LabelEntity = new schema.Entity(
+const LabelEntity = new schema.Entity(
   EntityType.LABEL,
   {
     users: [SubscriberEntity],
@@ -91,11 +81,12 @@ export const LabelEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
+
 SubscriberEntity.define({
   labels: [LabelEntity],
 });
 
-export const ThreadEntity = new schema.Entity(
+const ThreadEntity = new schema.Entity(
   EntityType.THREAD,
   {
     subscriber: SubscriberEntity,
@@ -105,8 +96,7 @@ export const ThreadEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const MessageEntity = new schema.Entity(
+const MessageEntity = new schema.Entity(
   EntityType.MESSAGE,
   {
     thread: ThreadEntity,
@@ -119,25 +109,18 @@ export const MessageEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const PermissionEntity = new schema.Entity(
-  EntityType.PERMISSION,
-  undefined,
-  {
-    idAttribute: ({ id }) => id,
-    processStrategy: processCommonStrategy,
-  },
-);
-
-export const ModelEntity = new schema.Entity(
+const PermissionEntity = new schema.Entity(EntityType.PERMISSION, undefined, {
+  idAttribute: ({ id }) => id,
+  processStrategy: processCommonStrategy,
+});
+const ModelEntity = new schema.Entity(
   EntityType.MODEL,
   { permissions: [PermissionEntity] },
   {
     idAttribute: ({ id }) => id,
   },
 );
-
-export const CredentialEntity = new schema.Entity(
+const CredentialEntity = new schema.Entity(
   EntityType.CREDENTIAL,
   { owner: UserEntity },
   {
@@ -145,8 +128,7 @@ export const CredentialEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const McpServerEntity = new schema.Entity(
+const McpServerEntity = new schema.Entity(
   EntityType.MCP_SERVER,
   { credential: CredentialEntity },
   {
@@ -154,13 +136,11 @@ export const McpServerEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const MenuLeafEntity = new schema.Entity(EntityType.MENU, undefined, {
+const MenuLeafEntity = new schema.Entity(EntityType.MENU, undefined, {
   idAttribute: ({ id }) => id,
   processStrategy: processCommonStrategy,
 });
-
-export const MenuItemEntity = new schema.Entity(
+const MenuItemEntity = new schema.Entity(
   EntityType.MENU,
   {
     parent: MenuLeafEntity,
@@ -171,8 +151,7 @@ export const MenuItemEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const MenuNodeEntity = new schema.Entity(EntityType.MENU, undefined, {
+const MenuNodeEntity = new schema.Entity(EntityType.MENU, undefined, {
   idAttribute: ({ id }) => id,
   processStrategy: processCommonStrategy,
 });
@@ -190,7 +169,7 @@ export const ContentTypeEntity = new schema.Entity(
   },
 );
 
-export const ContentEntity = new schema.Entity(
+const ContentEntity = new schema.Entity(
   EntityType.CONTENT,
   { contentType: ContentTypeEntity },
   {
@@ -198,39 +177,25 @@ export const ContentEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const SettingEntity = new schema.Entity(EntityType.SETTING, undefined, {
+const SettingEntity = new schema.Entity(EntityType.SETTING, undefined, {
   idAttribute: ({ id }) => id,
   processStrategy: processCommonStrategy,
 });
-
-export const LanguageEntity = new schema.Entity(
-  EntityType.LANGUAGE,
-  undefined,
-  {
-    idAttribute: ({ id }) => id,
-    processStrategy: processCommonStrategy,
-  },
-);
-
-export const TranslationEntity = new schema.Entity(
-  EntityType.TRANSLATION,
-  undefined,
-  {
-    idAttribute: ({ id }) => id,
-    processStrategy: processCommonStrategy,
-  },
-);
-
-export const ChannelEntity = new schema.Entity(EntityType.CHANNEL, undefined, {
+const LanguageEntity = new schema.Entity(EntityType.LANGUAGE, undefined, {
+  idAttribute: ({ id }) => id,
+  processStrategy: processCommonStrategy,
+});
+const TranslationEntity = new schema.Entity(EntityType.TRANSLATION, undefined, {
+  idAttribute: ({ id }) => id,
+  processStrategy: processCommonStrategy,
+});
+const ChannelEntity = new schema.Entity(EntityType.CHANNEL, undefined, {
   idAttribute: ({ name }) => name,
 });
-
-export const HelperEntity = new schema.Entity(EntityType.HELPER, undefined, {
+const HelperEntity = new schema.Entity(EntityType.HELPER, undefined, {
   idAttribute: ({ name }) => name,
 });
-
-export const StorageHelperEntity = new schema.Entity(
+const StorageHelperEntity = new schema.Entity(
   EntityType.STORAGE_HELPER,
   undefined,
   {
@@ -246,7 +211,7 @@ export const RagHelperEntity = new schema.Entity(
   },
 );
 
-export const MemoryDefinitionEntity = new schema.Entity(
+const MemoryDefinitionEntity = new schema.Entity(
   EntityType.MEMORY_DEFINITION,
   undefined,
   {
@@ -254,8 +219,7 @@ export const MemoryDefinitionEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const WorkflowVersionEntity = new schema.Entity(
+const WorkflowVersionEntity = new schema.Entity(
   EntityType.WORKFLOW_VERSION,
   undefined,
   {
@@ -263,8 +227,7 @@ export const WorkflowVersionEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const WorkflowEntity = new schema.Entity(
+const WorkflowEntity = new schema.Entity(
   EntityType.WORKFLOW,
   {
     currentVersion: WorkflowVersionEntity,
@@ -275,8 +238,7 @@ export const WorkflowEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
-
-export const SourceEntity = new schema.Entity(
+const SourceEntity = new schema.Entity(
   EntityType.SOURCE,
   {
     defaultWorkflow: WorkflowEntity,
@@ -286,6 +248,7 @@ export const SourceEntity = new schema.Entity(
     processStrategy: processCommonStrategy,
   },
 );
+
 ThreadEntity.define({
   source: SourceEntity,
 });
@@ -296,7 +259,7 @@ WorkflowVersionEntity.define({
   createdBy: UserEntity,
 });
 
-export const WorkflowRunEntity = new schema.Entity(
+const WorkflowRunEntity = new schema.Entity(
   EntityType.WORKFLOW_RUN,
   {
     workflow: WorkflowEntity,
@@ -324,15 +287,10 @@ export const WorkflowRunEntity = new schema.Entity(
     },
   },
 );
-
-export const AuditLogEntity = new schema.Entity(
-  EntityType.AUDIT_LOG,
-  undefined,
-  {
-    idAttribute: ({ id }) => id,
-    processStrategy: processCommonStrategy,
-  },
-);
+const AuditLogEntity = new schema.Entity(EntityType.AUDIT_LOG, undefined, {
+  idAttribute: ({ id }) => id,
+  processStrategy: processCommonStrategy,
+});
 
 export const ENTITY_MAP = {
   [EntityType.WORKFLOW]: WorkflowEntity,

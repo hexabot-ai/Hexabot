@@ -5,12 +5,5 @@
  */
 
 export { JsonataFormulaField } from "./JsonataFormulaField";
-export {
-  JsonataGlobalsSchemaProvider,
-  useJsonataGlobalsSchema,
-} from "./globals-schema.context";
-export type {
-  JsonataFormulaFieldProps,
-  GlobalsSchema,
-  JsonSchemaLike,
-} from "./types";
+export { JsonataGlobalsSchemaProvider } from "./globals-schema.context";
+export type { GlobalsSchema, JsonSchemaLike } from "./types";
