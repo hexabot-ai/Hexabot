@@ -12,11 +12,12 @@ import {
   mountTaskBindings,
   validateAndResolveBindings,
 } from './bindings/base-binding';
-import type { BaseWorkflowContext } from './context';
 import type {
+  ConditionalBlock,
   FlowStep,
   InputField,
-  TaskDefinition,
+  LoopStep as LoopBlock,
+  ParallelBlock,
   WorkflowDefinition,
 } from './dsl.types';
 import { extractTaskDefinitions as extractTaskDefinitionsFromDefs } from './dsl.types';
@@ -27,7 +28,7 @@ import type {
   CompiledStep,
   CompiledTask,
   CompiledWorkflow,
-  ConditionalBranch,
+  ConditionalStep,
   LoopStep,
   ParallelStep,
 } from './workflow-types';
@@ -128,24 +129,6 @@ const compileMapping = (
     ]),
   );
 };
-/** Ensure every task references a provided action implementation. */
-const assertActionsBound = (
-  tasks: Record<string, TaskDefinition>,
-  actions: Record<string, Action<unknown, unknown, BaseWorkflowContext>>,
-) => {
-  const missing = Object.values(tasks)
-    .map((task) => task.action)
-    .filter(
-      (actionName) =>
-        !Object.prototype.hasOwnProperty.call(actions, actionName),
-    );
-
-  if (missing.length > 0) {
-    throw new Error(
-      `No action implementations provided for: ${missing.join(', ')}`,
-    );
-  }
-};
 /** Parse settings, compile inputs, and bind actions for each task. */
 const compileTasks = (
   definition: WorkflowDefinition,
@@ -164,8 +147,6 @@ const compileTasks = (
       `Workflow bindings validation failed: ${issueMessages(bindingValidation.issues).join('; ')}`,
     );
   }
-
-  assertActionsBound(taskDefinitions, options.actions);
 
   for (const [taskName, task] of Object.entries(taskDefinitions)) {
     const action = options.actions[task.action];
@@ -195,104 +176,106 @@ const compileFlowSteps = (
   path: Array<number | string> = [],
   options?: WorkflowCompileOptions,
 ): CompiledStep[] =>
-  steps.map<CompiledStep>((step, index) => {
-    const stepPath = [...path, index];
+  steps.map((step, index) => compileFlowStep(step, [...path, index], options));
+const compileFlowStep = (
+  step: FlowStep,
+  stepPath: Array<number | string>,
+  options?: WorkflowCompileOptions,
+): CompiledStep => {
+  if ('do' in step) {
+    return {
+      type: StepType.Task,
+      id: buildStepId(stepPath, step.do),
+      label: step.do,
+      taskName: step.do,
+    };
+  }
 
-    if ('do' in step) {
-      const label = step.do;
+  if ('parallel' in step) {
+    return compileParallelStep(step.parallel, stepPath, options);
+  }
 
-      return {
-        type: StepType.Task,
-        id: buildStepId(stepPath, step.do),
-        label,
-        taskName: step.do,
-      };
-    }
+  if ('conditional' in step) {
+    return compileConditionalStep(step.conditional, stepPath, options);
+  }
 
-    if ('parallel' in step) {
-      const label = step.parallel.description ?? 'parallel';
-
-      return {
-        type: StepType.Parallel,
-        id: buildStepId(stepPath, 'parallel'),
-        label,
-        description: step.parallel.description,
-        strategy: step.parallel.strategy ?? 'wait_all',
-        steps: compileFlowSteps(
-          step.parallel.steps,
-          [...stepPath, 'parallel'],
-          options,
-        ),
-      } as ParallelStep;
-    }
-
-    if ('conditional' in step) {
-      const label = step.conditional.description ?? 'conditional';
-      const branches: ConditionalBranch[] = step.conditional.when.map(
-        (branch, branchIdx) => ({
-          id: buildStepId([...stepPath, 'branch', branchIdx], 'conditional'),
-          condition:
-            'condition' in branch
-              ? compileValue(branch.condition, options)
-              : undefined,
-          steps: compileFlowSteps(
-            branch.steps,
-            [...stepPath, 'branch', branchIdx],
-            options,
-          ),
-        }),
-      );
-
-      return {
-        type: StepType.Conditional,
-        id: buildStepId(stepPath, 'conditional'),
-        label,
-        description: step.conditional.description,
-        branches,
-      };
-    }
-
-    const loop = step.loop;
-    const label = loop.name ?? 'loop';
-    const commonLoop = {
-      type: StepType.Loop,
-      id: buildStepId(stepPath, label),
-      label,
-      name: loop.name,
-      description: loop.description,
-      accumulate: loop.accumulate
-        ? {
-            as: loop.accumulate.as,
-            initial: loop.accumulate.initial,
-            merge: compileValue(loop.accumulate.merge, options),
-          }
-        : undefined,
-      steps: compileFlowSteps(
-        loop.steps,
-        [...stepPath, loop.name ?? 'loop'],
-        options,
-      ),
-    } as const;
-
-    if (loop.type === 'for_each') {
-      return {
-        ...commonLoop,
-        loopType: 'for_each',
-        forEach: {
-          item: loop.for_each.item,
-          in: compileValue(loop.for_each.in, options),
-        },
-        maxConcurrency: loop.max_concurrency,
-        until: loop.until ? compileValue(loop.until, options) : undefined,
-      } as LoopStep;
-    }
+  return compileLoopStep(step.loop, stepPath, options);
+};
+const compileParallelStep = (
+  parallel: ParallelBlock,
+  stepPath: Array<number | string>,
+  options?: WorkflowCompileOptions,
+): ParallelStep => ({
+  type: StepType.Parallel,
+  id: buildStepId(stepPath, 'parallel'),
+  label: parallel.description ?? 'parallel',
+  description: parallel.description,
+  strategy: parallel.strategy ?? 'wait_all',
+  steps: compileFlowSteps(parallel.steps, [...stepPath, 'parallel'], options),
+});
+const compileConditionalStep = (
+  conditional: ConditionalBlock,
+  stepPath: Array<number | string>,
+  options?: WorkflowCompileOptions,
+): ConditionalStep => ({
+  type: StepType.Conditional,
+  id: buildStepId(stepPath, 'conditional'),
+  label: conditional.description ?? 'conditional',
+  description: conditional.description,
+  branches: conditional.when.map((branch, branchIndex) => {
+    const branchPath = [...stepPath, 'branch', branchIndex];
 
     return {
-      ...commonLoop,
-      loopType: 'while',
-      while: compileValue(loop.while, options),
-    } as LoopStep;
-  });
+      id: buildStepId(branchPath, 'conditional'),
+      condition:
+        'condition' in branch
+          ? compileValue(branch.condition, options)
+          : undefined,
+      steps: compileFlowSteps(branch.steps, branchPath, options),
+    };
+  }),
+});
+const compileLoopStep = (
+  loop: LoopBlock,
+  stepPath: Array<number | string>,
+  options?: WorkflowCompileOptions,
+): LoopStep => {
+  const label = loop.name ?? 'loop';
+  const common = {
+    type: StepType.Loop,
+    id: buildStepId(stepPath, label),
+    label,
+    name: loop.name,
+    description: loop.description,
+    accumulate: loop.accumulate
+      ? {
+          as: loop.accumulate.as,
+          initial: loop.accumulate.initial,
+          merge: compileValue(loop.accumulate.merge, options),
+        }
+      : undefined,
+    steps: compileFlowSteps(loop.steps, [...stepPath, label], options),
+  } as const;
+
+  if (loop.type === 'for_each') {
+    return {
+      ...common,
+      loopType: 'for_each',
+      forEach: {
+        item: loop.for_each.item,
+        in: compileValue(loop.for_each.in, options),
+      },
+      maxConcurrency: loop.max_concurrency,
+      until: loop.until ? compileValue(loop.until, options) : undefined,
+    };
+  }
+
+  return {
+    ...common,
+    loopType: 'while',
+    while: compileValue(loop.while, options),
+  };
+};
 
 /** Compile a workflow definition into structures consumable by the runtime. */
 export const compileWorkflow = (

@@ -713,4 +713,188 @@ describe('compileWorkflow', () => {
       }),
     ).toThrow(/No action implementation provided for "calculate_score"/);
   });
+  it('compiles each step kind with its path-based id, label and defaults', () => {
+    const { action } = createAction();
+    const definition: WorkflowDefinition = {
+      defs: createTaskDefs({ worker_task: { action: 'worker_action' } }),
+      flow: [
+        { do: 'worker_task' },
+        { parallel: { steps: [{ do: 'worker_task' }] } },
+        {
+          parallel: {
+            description: 'race',
+            strategy: 'wait_any',
+            steps: [],
+          },
+        },
+        {
+          conditional: {
+            when: [
+              { condition: '=true', steps: [{ do: 'worker_task' }] },
+              { else: true, steps: [] },
+            ],
+          },
+        },
+        { conditional: { description: 'route', when: [{ steps: [] }] } },
+        {
+          loop: {
+            type: 'while',
+            while: '=false',
+            steps: [{ do: 'worker_task' }],
+          },
+        },
+        {
+          loop: {
+            type: 'for_each',
+            name: 'each_item',
+            description: 'items',
+            for_each: { item: 'item', in: '=[1]' },
+            max_concurrency: 2,
+            until: '=true',
+            accumulate: { as: 'all', initial: [], merge: '=$accumulator' },
+            steps: [],
+          },
+        },
+        {
+          loop: {
+            type: 'for_each',
+            for_each: { item: 'item', in: '=[]' },
+            steps: [],
+          },
+        },
+      ],
+      outputs: {},
+    };
+    const { flow } = compileWorkflow(definition, {
+      actions: { worker_action: action },
+    });
+    const expression = (source: string) =>
+      expect.objectContaining({ kind: 'expression', source });
+
+    expect(flow).toEqual([
+      {
+        type: StepType.Task,
+        id: '0:worker_task',
+        label: 'worker_task',
+        taskName: 'worker_task',
+      },
+      {
+        type: StepType.Parallel,
+        id: '1:parallel',
+        label: 'parallel',
+        description: undefined,
+        strategy: 'wait_all',
+        steps: [
+          {
+            type: StepType.Task,
+            id: '1.parallel.0:worker_task',
+            label: 'worker_task',
+            taskName: 'worker_task',
+          },
+        ],
+      },
+      {
+        type: StepType.Parallel,
+        id: '2:parallel',
+        label: 'race',
+        description: 'race',
+        strategy: 'wait_any',
+        steps: [],
+      },
+      {
+        type: StepType.Conditional,
+        id: '3:conditional',
+        label: 'conditional',
+        description: undefined,
+        branches: [
+          {
+            id: '3.branch.0:conditional',
+            condition: expression('=true'),
+            steps: [
+              {
+                type: StepType.Task,
+                id: '3.branch.0.0:worker_task',
+                label: 'worker_task',
+                taskName: 'worker_task',
+              },
+            ],
+          },
+          { id: '3.branch.1:conditional', condition: undefined, steps: [] },
+        ],
+      },
+      {
+        type: StepType.Conditional,
+        id: '4:conditional',
+        label: 'route',
+        description: 'route',
+        branches: [
+          { id: '4.branch.0:conditional', condition: undefined, steps: [] },
+        ],
+      },
+      {
+        type: StepType.Loop,
+        id: '5:loop',
+        label: 'loop',
+        name: undefined,
+        description: undefined,
+        accumulate: undefined,
+        loopType: 'while',
+        while: expression('=false'),
+        steps: [
+          {
+            type: StepType.Task,
+            id: '5.loop.0:worker_task',
+            label: 'worker_task',
+            taskName: 'worker_task',
+          },
+        ],
+      },
+      {
+        type: StepType.Loop,
+        id: '6:each_item',
+        label: 'each_item',
+        name: 'each_item',
+        description: 'items',
+        accumulate: {
+          as: 'all',
+          initial: [],
+          merge: expression('=$accumulator'),
+        },
+        loopType: 'for_each',
+        forEach: { item: 'item', in: expression('=[1]') },
+        maxConcurrency: 2,
+        until: expression('=true'),
+        steps: [],
+      },
+      {
+        type: StepType.Loop,
+        id: '7:loop',
+        label: 'loop',
+        name: undefined,
+        description: undefined,
+        accumulate: undefined,
+        loopType: 'for_each',
+        forEach: { item: 'item', in: expression('=[]') },
+        maxConcurrency: undefined,
+        until: undefined,
+        steps: [],
+      },
+    ]);
+  });
+  it('refuses to compile a task with an empty action name', () => {
+    const { action } = createAction();
+
+    expect(() =>
+      compileWorkflow(
+        {
+          defs: createTaskDefs({ worker_task: { action: '' } }),
+          flow: [{ do: 'worker_task' }],
+          outputs: {},
+        },
+        { actions: { worker_action: action } },
+      ),
+    ).toThrow(
+      'Workflow bindings validation failed: defs.worker_task.action: No action implementation provided for "".',
+    );
+  });
 });
