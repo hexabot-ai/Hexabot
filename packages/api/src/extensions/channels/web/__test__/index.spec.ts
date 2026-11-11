@@ -1156,4 +1156,211 @@ describe('WebChannelHandler', () => {
     expect(attachmentServiceMock.store).not.toHaveBeenCalled();
     clearMock.mockRestore();
   });
+
+  describe('handleEvent', () => {
+    const buildRequest = (firstName: string) =>
+      ({
+        isSocket: true,
+        query: { first_name: firstName, last_name: 'User' },
+        session: {},
+        headers: { 'user-agent': 'browser' },
+        socket: {
+          handshake: { address: '127.0.0.1' },
+        },
+        user: {},
+      }) as any as SocketRequest;
+    const buildResponse = () => {
+      const res = {
+        status: jest.fn(() => res),
+        json: jest.fn(() => res),
+      };
+
+      return res;
+    };
+    const openSession = async (req: SocketRequest) => {
+      const profile = await handler['getOrCreateSession'](
+        req as any,
+        webSource,
+      );
+      req.query = {};
+      req.session.web = {
+        ...req.session.web,
+        profile,
+      };
+
+      return profile;
+    };
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('returns 400 for a request without body', async () => {
+      const req = buildRequest('Empty');
+      const res = buildResponse();
+      const validateSessionSpy = jest.spyOn(
+        handler['sessionService'],
+        'validateSession',
+      );
+
+      await handler['handleEvent'](req as any, res as any, webSource);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        err: 'Web Channel Handler : Bad Request!',
+      });
+      expect(validateSessionSpy).not.toHaveBeenCalled();
+    });
+
+    it('parses event data sent as a JSON string', async () => {
+      const req = buildRequest('Stringified');
+      const res = buildResponse();
+      await openSession(req);
+      jest
+        .spyOn(handler['channelEventBus'], 'emitMessage')
+        .mockResolvedValue(undefined);
+      req.body = {
+        type: 'text',
+        data: JSON.stringify({ text: 'Stringified data' }),
+      };
+
+      await handler['handleEvent'](req as any, res as any, webSource);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'text',
+          data: { text: 'Stringified data' },
+        }),
+      );
+    });
+
+    it('leaves the response to the session check when it fails', async () => {
+      const req = buildRequest('Rejected');
+      const res = buildResponse();
+      jest
+        .spyOn(handler['sessionService'], 'validateSession')
+        .mockResolvedValue(null);
+      const createEventsSpy = jest.spyOn(
+        handler['inboundEventDecoder'],
+        'createEvents',
+      );
+      req.body = { type: 'text', data: { text: 'No session' } };
+
+      await handler['handleEvent'](req as any, res as any, webSource);
+
+      expect(createEventsSpy).not.toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when the payload holds no event', async () => {
+      const req = buildRequest('NoEvent');
+      const res = buildResponse();
+      await openSession(req);
+      jest
+        .spyOn(handler['inboundEventDecoder'], 'createEvents')
+        .mockReturnValue([]);
+      req.body = { type: 'text', data: { text: 'Nothing decoded' } };
+
+      await handler['handleEvent'](req as any, res as any, webSource);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        err: 'Web Channel Handler : Bad Request!',
+      });
+    });
+
+    it('acknowledges a message before the chatbot starts on it', async () => {
+      const req = buildRequest('Acknowledged');
+      const res = buildResponse();
+      await openSession(req);
+      const emitMessageSpy = jest
+        .spyOn(handler['channelEventBus'], 'emitMessage')
+        .mockResolvedValue(undefined);
+      req.body = { type: 'text', data: { text: 'Acknowledge me first' } };
+
+      await handler['handleEvent'](req as any, res as any, webSource);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(res.json).toHaveBeenCalledTimes(1);
+      expect(emitMessageSpy).toHaveBeenCalledTimes(1);
+      expect(res.json.mock.invocationCallOrder[0]).toBeLessThan(
+        emitMessageSpy.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('records a chatbot sync message as sent in the current thread', async () => {
+      const req = buildRequest('Synced');
+      const res = buildResponse();
+      const profile = await openSession(req);
+      jest
+        .spyOn(handler['sessionService'], 'resolveThreadForHistory')
+        .mockResolvedValue({ id: 'thread-sync' } as any);
+      const emitSentSpy = jest
+        .spyOn(handler['channelEventBus'], 'emitSent')
+        .mockImplementation(() => undefined);
+      const emitMessageSpy = jest.spyOn(
+        handler['channelEventBus'],
+        'emitMessage',
+      );
+      req.body = {
+        type: 'text',
+        mid: 'sync-mid-2',
+        author: 'chatbot',
+        sync: true,
+        data: { text: 'Synced bot message' },
+      };
+
+      await handler['handleEvent'](req as any, res as any, webSource);
+
+      expect(emitSentSpy).toHaveBeenCalledWith({
+        mid: 'sync-mid-2',
+        message: {
+          type: OutgoingMessageType.text,
+          data: { text: 'Synced bot message' },
+        },
+        recipient: profile.id,
+        thread: 'thread-sync',
+        read: true,
+        delivery: true,
+      });
+      expect(emitMessageSpy).not.toHaveBeenCalled();
+      expect(req.session.web?.threadId).toBe('thread-sync');
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ mid: 'sync-mid-2', sync: true }),
+      );
+    });
+
+    it('broadcasts status events with the thread of the session', async () => {
+      const req = buildRequest('Typing');
+      const res = buildResponse();
+      const profile = await openSession(req);
+      req.session.web!.threadId = 'thread-status';
+      const broadcastSpy = jest
+        .spyOn(handler as any, 'broadcast')
+        .mockImplementation(() => undefined);
+      const emitStatusSpy = jest
+        .spyOn(handler['channelEventBus'], 'emitStatusEvent')
+        .mockImplementation(() => undefined);
+      req.body = { type: 'typing' };
+
+      await handler['handleEvent'](req as any, res as any, webSource);
+
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        profile,
+        StdEventType.typing,
+        expect.objectContaining({ type: 'typing', thread_id: 'thread-status' }),
+      );
+      expect(emitStatusSpy).toHaveBeenCalledTimes(1);
+      expect(emitStatusSpy.mock.calls[0][0].getThreadId()).toBe(
+        'thread-status',
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'typing', thread_id: 'thread-status' }),
+      );
+    });
+  });
 });
