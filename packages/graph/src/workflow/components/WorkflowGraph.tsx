@@ -49,14 +49,12 @@ import {
   type ViewportState,
 } from "../hooks/useWorkflowViewport";
 import "../styles/index.css";
-import {
-  EDGE_TYPES,
-  NODE_TYPES,
-  type WorkflowAction,
-  type WorkflowBindingAddPayload,
-  type WorkflowBindingCatalog,
-  type WorkflowBindingRemovePayload,
-  type WorkflowExecutionStateMap,
+import type {
+  WorkflowAction,
+  WorkflowBindingAddPayload,
+  WorkflowBindingCatalog,
+  WorkflowBindingRemovePayload,
+  WorkflowExecutionStateMap,
 } from "../types/workflow-node.types";
 import type {
   EdgeInsertType,
@@ -70,6 +68,7 @@ import {
 } from "../utils/workflow-rendering.utils";
 import { applyWorkflowExecutionStatesToNodes } from "../utils/workflow-runtime-node.utils";
 
+import { EDGE_TYPES, NODE_TYPES } from "./workflow-graph.registry";
 import { WorkflowControls } from "./WorkflowControls";
 import { WorkflowEmptyState } from "./WorkflowEmptyState";
 import { WorkflowErrorState } from "./WorkflowErrorState";

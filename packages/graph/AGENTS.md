@@ -12,6 +12,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot work
 - Graph builder pipeline: `packages/graph/src/workflow/utils/graph-builder/*`.
 - Layout and projection utilities: `packages/graph/src/workflow/utils/workflow-node.utils.ts`.
 - Shared graph types: `packages/graph/src/workflow/types/workflow-node.types.ts`.
+- Node/edge renderer registries (`NODE_TYPES`, `EDGE_TYPES`): `packages/graph/src/workflow/components/workflow-graph.registry.ts`.
 - Constants and menu definitions: `packages/graph/src/workflow/constants/workflow.constants.ts`.
 - Stylesheet export source: `packages/graph/src/workflow/styles/index.css`.
 - Tests: `packages/graph/src/**/*.test.ts` and `packages/graph/src/**/*.test.tsx`.
@@ -89,7 +90,8 @@ Related runtime hooks:
 
 ## Common change recipes
 1. Add or change a node/edge type:
-   - Update enums, node/edge registries, and related data types in `workflow-node.types.ts`.
+   - Update enums and related data types in `workflow-node.types.ts`.
+   - Register the renderer in `NODE_TYPES`/`EDGE_TYPES` (`components/workflow-graph.registry.ts`); the types module must not import components.
    - Register defaults in `workflow.constants.ts`.
    - Add or update rendering component(s) under `components/workflow-nodes` or `components/edges`.
    - Validate graph-builder output and add tests in `workflow-node.utils.test.ts`.

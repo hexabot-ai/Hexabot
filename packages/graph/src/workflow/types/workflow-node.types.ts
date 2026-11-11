@@ -9,25 +9,9 @@ import type {
   DefDefinitions,
   StepType,
 } from "@hexabot-ai/agentic";
-import type {
-  Edge,
-  EdgeTypes,
-  Node,
-  NodeProps,
-  NodeTypes,
-} from "@xyflow/react";
+import type { Edge, Node, NodeProps } from "@xyflow/react";
 import type { EdgeMarkerType, ResizeControlDirection } from "@xyflow/system";
 import type { CSSProperties, JSXElementConstructor, ReactNode } from "react";
-import { memo } from "react";
-
-import { EdgeWithButton } from "../components/edges/EdgeWithButton";
-import { Binding } from "../components/workflow-nodes/Binding";
-import { BindingPlaceholder } from "../components/workflow-nodes/BindingPlaceholder";
-import { BranchPlaceholder } from "../components/workflow-nodes/BranchPlaceholder";
-import { Group } from "../components/workflow-nodes/Group";
-import { Indicator } from "../components/workflow-nodes/Indicator";
-import { Operator } from "../components/workflow-nodes/Operator";
-import { Task } from "../components/workflow-nodes/Task";
 
 import type { FlowStepPath, OnOpenInsertMenu } from "./workflow-path.types";
 
@@ -317,21 +301,6 @@ export enum ENodeType {
 export enum EEdgeType {
   EDGE_WITH_BUTTON = "edgeWithButton",
 }
-
-export const NODE_TYPES = {
-  [ENodeType.BINDING_SINGLE]: memo(Binding),
-  [ENodeType.BINDING_MULTI]: memo(Binding),
-  [ENodeType.INDICATOR]: memo(Indicator),
-  [ENodeType.OPERATOR]: memo(Operator),
-  [ENodeType.TASK]: memo(Task),
-  [ENodeType.GROUP]: memo(Group),
-  [ENodeType.BRANCH_PLACEHOLDER]: memo(BranchPlaceholder),
-  [ENodeType.BINDING_PLACEHOLDER]: memo(BindingPlaceholder),
-} satisfies NodeTypes;
-
-export const EDGE_TYPES = {
-  [EEdgeType.EDGE_WITH_BUTTON]: memo(EdgeWithButton),
-} satisfies EdgeTypes;
 
 type FlattenedNodeData<T extends ENodeType = ENodeType> = Omit<
   GraphNode<T>,
