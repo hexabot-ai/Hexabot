@@ -8,16 +8,16 @@ import { ForbiddenException } from '@nestjs/common';
 import { ExecutionContext } from '@nestjs/common/interfaces';
 import { Reflector } from '@nestjs/core';
 
-import {
-  MCP_PERMISSION_METADATA_KEY,
-  McpPermissionMetadata,
-} from '@/mcp/decorators/mcp-permission.decorator';
 import { PermissionService } from '@/user/services/permission.service';
 import { Action } from '@/user/types/action.type';
 
 import { HexabotMcpRequest } from '../types';
 
-import { McpPermissionGuard } from './mcp-permission.guard';
+import {
+  MCP_PERMISSION_METADATA_KEY,
+  McpPermissionGuard,
+  McpPermissionMetadata,
+} from './mcp-permission.guard';
 
 const buildContext = (
   request: HexabotMcpRequest,

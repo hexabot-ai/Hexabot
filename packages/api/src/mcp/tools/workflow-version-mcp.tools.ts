@@ -15,7 +15,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Tool, ToolGuards } from '@rekog/mcp-nest';
+import { Tool } from '@rekog/mcp-nest';
 import { z } from 'zod';
 
 import { ActionService } from '@/actions/actions.service';
@@ -25,7 +25,6 @@ import { WorkflowVersionService } from '@/workflow/services/workflow-version.ser
 import { WorkflowVersionAction } from '@/workflow/types';
 
 import { McpPermission } from '../decorators/mcp-permission.decorator';
-import { McpPermissionGuard } from '../guards/mcp-permission.guard';
 import { HexabotMcpRequest } from '../types';
 
 import { HexabotMcpToolBase } from './hexabot-mcp-tool.base';
@@ -49,7 +48,6 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('workflowversion', Action.CREATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_yaml_commit',
     description:
@@ -87,7 +85,6 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('workflow', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_yaml_validate',
     description:
@@ -117,7 +114,6 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('workflowversion', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_version_search',
     description:
@@ -148,7 +144,6 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('workflowversion', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_version_get',
     description:
@@ -176,7 +171,6 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('workflowversion', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_yaml_get',
     description:
@@ -224,7 +218,6 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('workflowversion', Action.UPDATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_version_update',
     description:
@@ -245,7 +238,6 @@ export class HexabotWorkflowVersionMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('workflowversion', Action.CREATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_workflow_rollback',
     description:

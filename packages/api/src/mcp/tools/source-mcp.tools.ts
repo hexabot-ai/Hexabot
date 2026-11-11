@@ -11,7 +11,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Tool, ToolGuards } from '@rekog/mcp-nest';
+import { Tool } from '@rekog/mcp-nest';
 import { I18nContext } from 'nestjs-i18n';
 import { z } from 'zod';
 
@@ -22,7 +22,6 @@ import { I18nService } from '@/i18n/services/i18n.service';
 import { toDraft07JsonSchema } from '@/utils/helpers/zod';
 
 import { McpPermission } from '../decorators/mcp-permission.decorator';
-import { McpPermissionGuard } from '../guards/mcp-permission.guard';
 
 import { HexabotMcpToolBase } from './hexabot-mcp-tool.base';
 import {
@@ -46,7 +45,6 @@ export class HexabotSourceMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('source', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_channel_search',
     description:
@@ -64,7 +62,6 @@ export class HexabotSourceMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('source', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_source_search',
     description:
@@ -107,7 +104,6 @@ export class HexabotSourceMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('source', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_source_get',
     description:
@@ -126,7 +122,6 @@ export class HexabotSourceMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('source', Action.CREATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_source_create',
     description:
@@ -153,7 +148,6 @@ export class HexabotSourceMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('source', Action.UPDATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_source_update',
     description:

@@ -5,6 +5,16 @@
  */
 
 import {
+  MCP_GUARDS_METADATA_KEY,
+  MCP_TOOL_METADATA_KEY,
+} from '@rekog/mcp-nest';
+
+import {
+  MCP_PERMISSION_METADATA_KEY,
+  McpPermissionGuard,
+} from '../guards/mcp-permission.guard';
+
+import {
   HEXABOT_MCP_TOOL_PROVIDERS,
   HexabotCatalogMcpTools,
   HexabotCmsMcpTools,
@@ -35,4 +45,37 @@ describe('HEXABOT_MCP_TOOL_PROVIDERS', () => {
       HexabotCmsMcpTools,
     ]);
   });
+});
+
+describe('Hexabot MCP tools', () => {
+  const tools = HEXABOT_MCP_TOOL_PROVIDERS.flatMap(({ prototype }) =>
+    Object.getOwnPropertyNames(prototype)
+      .map((name) => ({ name, method: prototype[name] }))
+      .filter(
+        ({ method }) =>
+          typeof method === 'function' &&
+          Reflect.hasMetadata(MCP_TOOL_METADATA_KEY, method),
+      )
+      .map(({ name, method }) => ({
+        tool: Reflect.getMetadata(MCP_TOOL_METADATA_KEY, method).name,
+        name,
+        permission: Reflect.getMetadata(MCP_PERMISSION_METADATA_KEY, method),
+        guards: Reflect.getMetadata(MCP_GUARDS_METADATA_KEY, method),
+      })),
+  );
+
+  it('are found', () => {
+    expect(tools.length).toBeGreaterThan(0);
+  });
+
+  it.each(tools)(
+    '$tool requires a permission and checks it',
+    ({ permission, guards }) => {
+      expect(permission).toEqual({
+        model: expect.any(String),
+        action: expect.any(String),
+      });
+      expect(guards).toEqual([McpPermissionGuard]);
+    },
+  );
 });

@@ -4,20 +4,28 @@
  * Full terms: see LICENSE.md.
  */
 
-import { SetMetadata } from '@nestjs/common';
+import { applyDecorators, SetMetadata } from '@nestjs/common';
+import { ToolGuards } from '@rekog/mcp-nest';
 
 import { Action } from '@/user/types/action.type';
 import { TModel } from '@/user/types/model.type';
 
-export const MCP_PERMISSION_METADATA_KEY = 'mcp:hexabot-permission';
+import {
+  MCP_PERMISSION_METADATA_KEY,
+  McpPermissionGuard,
+  type McpPermissionMetadata,
+} from '../guards/mcp-permission.guard';
 
-export type McpPermissionMetadata = {
-  model: TModel;
-  action: Action;
-};
-
+/**
+ * Restricts an MCP tool to the users whose roles grant `action` on `model`:
+ * `McpPermissionGuard` checks it before each call, and leaves the tool out of
+ * the tool list of the others.
+ */
 export const McpPermission = (model: TModel, action: Action): MethodDecorator =>
-  SetMetadata(MCP_PERMISSION_METADATA_KEY, {
-    model,
-    action,
-  } satisfies McpPermissionMetadata);
+  applyDecorators(
+    SetMetadata(MCP_PERMISSION_METADATA_KEY, {
+      model,
+      action,
+    } satisfies McpPermissionMetadata),
+    ToolGuards([McpPermissionGuard]),
+  );

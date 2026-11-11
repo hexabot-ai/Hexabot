@@ -6,13 +6,12 @@
 
 import { Action, type Setting, settingValueSchema } from '@hexabot-ai/types';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Tool, ToolGuards } from '@rekog/mcp-nest';
+import { Tool } from '@rekog/mcp-nest';
 import { z } from 'zod';
 
 import { SettingService } from '@/setting/services/setting.service';
 
 import { McpPermission } from '../decorators/mcp-permission.decorator';
-import { McpPermissionGuard } from '../guards/mcp-permission.guard';
 
 import { HexabotMcpToolBase } from './hexabot-mcp-tool.base';
 import { getReadableKeys, hasSecretValue } from './hexabot-mcp.utils';
@@ -24,7 +23,6 @@ export class HexabotSettingMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('setting', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_setting_search',
     description:
@@ -50,7 +48,6 @@ export class HexabotSettingMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('setting', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_setting_schema_get',
     description:
@@ -72,7 +69,6 @@ export class HexabotSettingMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('setting', Action.UPDATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_setting_update',
     description:

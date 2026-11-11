@@ -12,13 +12,18 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import {
-  MCP_PERMISSION_METADATA_KEY,
-  McpPermissionMetadata,
-} from '@/mcp/decorators/mcp-permission.decorator';
 import { PermissionService } from '@/user/services/permission.service';
+import { Action } from '@/user/types/action.type';
+import { TModel } from '@/user/types/model.type';
 
 import { HexabotMcpRequest } from '../types';
+
+export const MCP_PERMISSION_METADATA_KEY = 'mcp:hexabot-permission';
+
+export type McpPermissionMetadata = {
+  model: TModel;
+  action: Action;
+};
 
 @Injectable()
 export class McpPermissionGuard implements CanActivate {
