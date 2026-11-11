@@ -5,11 +5,13 @@
  */
 
 import type { WorkflowDefinition } from "@hexabot-ai/agentic";
+import { ENodeType } from "@hexabot-ai/graph";
 import { describe, expect, it } from "vitest";
 
 import type { WorkflowBindingDefinition } from "@/contexts/workflow-bindings.context";
 
 import {
+  getBindingNodeTarget,
   getDisabledBindingRefs,
   isNonToolBindingKind,
 } from "./workflow-binding-routing.utils";
@@ -131,5 +133,91 @@ describe("workflow-binding-routing.utils", () => {
         bindingsByName,
       }),
     ).toEqual([]);
+  });
+});
+
+describe("getBindingNodeTarget", () => {
+  const defs = createDefinition().defs;
+  const bindingsByName = createBindingsByName();
+  const bindingNode = (type: string, data: unknown) => ({ type, data });
+
+  it("opens the tool drawer for a tool binding node", () => {
+    expect(
+      getBindingNodeTarget(
+        bindingNode(ENodeType.BINDING_MULTI, {
+          bindingKind: "tools",
+          bindingName: "search",
+          ownerDefName: "agent",
+        }),
+        defs,
+        bindingsByName,
+      ),
+    ).toEqual({ drawer: "tool", ownerDefName: "agent", bindingName: "search" });
+  });
+
+  it("ignores a tool binding node without its owner", () => {
+    expect(
+      getBindingNodeTarget(
+        bindingNode(ENodeType.BINDING_MULTI, {
+          bindingKind: "tools",
+          bindingName: "search",
+        }),
+        defs,
+        bindingsByName,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("opens the binding drawer with the kind its definition declares", () => {
+    expect(
+      getBindingNodeTarget(
+        bindingNode(ENodeType.BINDING_SINGLE, {
+          bindingKind: "memory",
+          bindingName: "openai_chatgpt",
+        }),
+        defs,
+        bindingsByName,
+      ),
+    ).toEqual({
+      drawer: "binding",
+      bindingKind: "model",
+      bindingName: "openai_chatgpt",
+    });
+  });
+
+  it("falls back to the node kind for an undefined binding", () => {
+    expect(
+      getBindingNodeTarget(
+        bindingNode(ENodeType.BINDING_MULTI, {
+          bindingKind: "memory",
+          bindingName: "missing",
+        }),
+        defs,
+        bindingsByName,
+      ),
+    ).toEqual({
+      drawer: "binding",
+      bindingKind: "memory",
+      bindingName: "missing",
+    });
+  });
+
+  it("ignores other nodes, unknown kinds and incomplete data", () => {
+    const target = (type: string, data: unknown) =>
+      getBindingNodeTarget(bindingNode(type, data), defs, bindingsByName);
+
+    expect(
+      target("task", { bindingKind: "memory", bindingName: "profile" }),
+    ).toBeUndefined();
+    expect(
+      target(ENodeType.BINDING_SINGLE, {
+        bindingKind: "cache",
+        bindingName: "x",
+      }),
+    ).toBeUndefined();
+    expect(
+      target(ENodeType.BINDING_SINGLE, { bindingName: "profile" }),
+    ).toBeUndefined();
+    expect(target(ENodeType.BINDING_SINGLE, null)).toBeUndefined();
   });
 });

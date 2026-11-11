@@ -13,8 +13,7 @@ import {
 import { isDefinitionNameAvailable } from "./definition-name.utils";
 import {
   mountDefBindingRef,
-  setDefBindingRefs,
-  toBindingRefs,
+  renameDefBindingRefs,
 } from "./task-bindings.utils";
 
 export const TOOL_BINDING_KIND = "tools";
@@ -163,28 +162,14 @@ export const updateToolBindingDefinitionMutation = (
     ...(currentBindings ? { bindings: currentBindings } : {}),
   };
 
-  const nextDefsWithRenamedRefs = Object.fromEntries(
-    Object.entries(nextDefs).map(([defName, defDefinition]) => {
-      const refs = toBindingRefs(defDefinition.bindings?.[bindingKind], true);
-
-      if (!refs.includes(currentBindingName)) {
-        return [defName, defDefinition];
-      }
-
-      const replacedRefs = refs.map((ref) =>
-        ref === currentBindingName ? nextBindingName : ref,
-      );
-      const dedupedRefs = Array.from(new Set(replacedRefs));
-
-      return [
-        defName,
-        setDefBindingRefs(defDefinition, bindingKind, dedupedRefs, true),
-      ];
-    }),
-  ) as WorkflowDefinition["defs"];
-
   return {
     ...definition,
-    defs: nextDefsWithRenamedRefs,
+    defs: renameDefBindingRefs(
+      nextDefs,
+      bindingKind,
+      currentBindingName,
+      nextBindingName,
+      true,
+    ),
   };
 };

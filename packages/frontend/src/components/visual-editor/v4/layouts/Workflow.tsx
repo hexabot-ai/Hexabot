@@ -13,7 +13,6 @@ import {
   type WorkflowDefinition,
 } from "@hexabot-ai/agentic";
 import {
-  ENodeType,
   WorkflowGraph,
   type EdgeInsertType,
   type FlowStepPath,
@@ -68,23 +67,26 @@ import { WorkflowSettingsDialog } from "../components/main/WorkflowTitleBar/Work
 import { useConfirmDeleteWorkflow } from "../hooks/useConfirmDeleteWorkflow";
 import { useWorkflow } from "../hooks/useWorkflow";
 import { useWorkflowExecutionState } from "../hooks/useWorkflowExecutionState";
+import {
+  unmountBindingMutation,
+  updateBindingDefinitionMutation,
+} from "../utils/binding-definitions.utils";
 import { humanizeBindingKind } from "../utils/binding-kind.utils";
 import {
   createUniqueDefinitionName,
   isDefinitionNameAvailable,
 } from "../utils/definition-name.utils";
-import {
-  mountDefBindingRef,
-  setDefBindingRefs,
-  toBindingRefs,
-  unmountDefBindingRef,
-} from "../utils/task-bindings.utils";
+import { mountDefBindingRef } from "../utils/task-bindings.utils";
 import { TOOL_BINDING_KIND } from "../utils/tool-bindings.utils";
 import {
+  getBindingNodeTarget,
   getDisabledBindingRefs,
   isNonToolBindingKind,
 } from "../utils/workflow-binding-routing.utils";
-import { createBaseDefinition } from "../utils/workflow-definition.utils";
+import {
+  createBaseDefinition,
+  extractDefinitionNamesByKind,
+} from "../utils/workflow-definition.utils";
 import { uniqueIssueLocations } from "../utils/workflow-issue-locations";
 import "./workflow-layout.css";
 
@@ -236,10 +238,10 @@ export const Workflow = () => {
       return [];
     }
 
-    return Object.entries(definition?.defs ?? {})
-      .filter(([, defDefinition]) => defDefinition.kind === activeBindingKind)
-      .map(([defName]) => defName)
-      .sort();
+    return extractDefinitionNamesByKind(
+      definition?.defs ?? {},
+      activeBindingKind,
+    ).sort();
   }, [activeBindingKind, definition?.defs]);
   const activeBindingSchema = activeBindingKind
     ? bindingsByName.get(activeBindingKind)?.schema
@@ -679,82 +681,20 @@ export const Workflow = () => {
       }
 
       const { bindingKind } = editingBindingTarget;
-      const currentDefs = definition.defs ?? {};
-      const currentDef = currentDefs[currentBindingName];
-
-      if (!currentDef || currentDef.kind !== bindingKind) {
-        return;
-      }
-
-      if (
-        !isDefinitionNameAvailable(
-          nextBindingName,
-          currentDefs,
-          currentBindingName,
-        )
-      ) {
-        return;
-      }
-
-      const normalizedDescription = description?.trim() ?? "";
-      const nextDefs = { ...currentDefs };
-
-      if (currentBindingName !== nextBindingName) {
-        delete nextDefs[currentBindingName];
-      }
-
-      const updatedDefinition = {
-        ...currentDef,
-        kind: bindingKind,
+      const nextDefinition = updateBindingDefinitionMutation(definition, {
+        bindingKind,
+        currentBindingName,
+        nextBindingName,
         settings: bindingDefinitionPayload,
-        ...(normalizedDescription
-          ? { description: normalizedDescription }
-          : {}),
-      };
+        description,
+        multiple: bindingsByName.get(bindingKind)?.multiple ?? true,
+      });
 
-      if (!normalizedDescription) {
-        delete updatedDefinition.description;
+      if (nextDefinition === definition) {
+        return;
       }
 
-      nextDefs[nextBindingName] = updatedDefinition;
-
-      const bindingDefinition = bindingsByName.get(bindingKind);
-      const multiple = bindingDefinition?.multiple ?? true;
-      const nextDefsWithRenamedRefs =
-        currentBindingName !== nextBindingName
-          ? (Object.fromEntries(
-              Object.entries(nextDefs).map(([defName, defDefinition]) => {
-                const refs = toBindingRefs(
-                  defDefinition.bindings?.[bindingKind],
-                  multiple,
-                );
-
-                if (!refs.includes(currentBindingName)) {
-                  return [defName, defDefinition];
-                }
-
-                const replacedRefs = refs.map((refName) =>
-                  refName === currentBindingName ? nextBindingName : refName,
-                );
-                const dedupedRefs = Array.from(new Set(replacedRefs));
-
-                return [
-                  defName,
-                  setDefBindingRefs(
-                    defDefinition,
-                    bindingKind,
-                    dedupedRefs,
-                    multiple,
-                  ),
-                ];
-              }),
-            ) as typeof definition.defs)
-          : nextDefs;
-
-      updateDefinitionState({
-        ...definition,
-        defs: nextDefsWithRenamedRefs,
-      });
+      updateDefinitionState(nextDefinition);
       setEditingBindingTarget(null);
       setPendingBindingAdd(null);
     },
@@ -766,60 +706,29 @@ export const Workflow = () => {
   }, []);
   const handleGraphNodeClick = useCallback<NodeMouseHandler<Node>>(
     (_event, node) => {
-      if (
-        node.type !== ENodeType.BINDING_MULTI &&
-        node.type !== ENodeType.BINDING_SINGLE
-      ) {
-        return;
+      const target = getBindingNodeTarget(
+        node,
+        definition?.defs,
+        bindingsByName,
+      );
+
+      if (target?.drawer === "tool") {
+        setToolDrawerTarget({
+          mode: "edit",
+          ownerDefName: target.ownerDefName,
+          bindingKind: TOOL_BINDING_KIND,
+          bindingName: target.bindingName,
+        });
+        setEditingBindingTarget(null);
+      } else if (target?.drawer === "binding") {
+        setPendingBindingAdd(null);
+        setPendingToolBindingAdd(null);
+        setToolDrawerTarget(null);
+        setEditingBindingTarget({
+          bindingKind: target.bindingKind,
+          bindingName: target.bindingName,
+        });
       }
-
-      const nodeData =
-        node.data && typeof node.data === "object"
-          ? (node.data as Record<string, unknown>)
-          : undefined;
-      const bindingKind = nodeData?.bindingKind;
-      const bindingName = nodeData?.bindingName;
-      const ownerDefName = nodeData?.ownerDefName;
-
-      if (node.type === ENodeType.BINDING_MULTI) {
-        if (bindingKind === TOOL_BINDING_KIND) {
-          if (
-            typeof bindingName !== "string" ||
-            typeof ownerDefName !== "string"
-          ) {
-            return;
-          }
-
-          setToolDrawerTarget({
-            mode: "edit",
-            ownerDefName,
-            bindingKind: TOOL_BINDING_KIND,
-            bindingName,
-          });
-          setEditingBindingTarget(null);
-
-          return;
-        }
-      }
-
-      if (typeof bindingKind !== "string" || typeof bindingName !== "string") {
-        return;
-      }
-
-      const resolvedBindingKind =
-        definition?.defs?.[bindingName]?.kind ?? bindingKind;
-
-      if (!isNonToolBindingKind(resolvedBindingKind, bindingsByName)) {
-        return;
-      }
-
-      setPendingBindingAdd(null);
-      setPendingToolBindingAdd(null);
-      setToolDrawerTarget(null);
-      setEditingBindingTarget({
-        bindingKind: resolvedBindingKind,
-        bindingName,
-      });
     },
     [bindingsByName, definition?.defs],
   );
@@ -829,42 +738,22 @@ export const Workflow = () => {
       bindingKind,
       bindingName,
     }: WorkflowBindingRemovePayload) => {
-      if (!definition || !definition.defs[ownerDefName]) {
-        return;
-      }
-
-      const ownerDefinition = definition.defs[ownerDefName];
       const bindingDefinition = bindingsByName.get(bindingKind);
 
-      if (!bindingDefinition) {
+      if (!definition || !bindingDefinition) {
         return;
       }
 
-      const multiple = bindingDefinition.multiple ?? true;
-      const currentRefs = toBindingRefs(
-        ownerDefinition.bindings?.[bindingKind],
-        multiple,
-      );
-
-      if (!currentRefs.includes(bindingName)) {
-        return;
-      }
-
-      const nextOwnerDefinition = unmountDefBindingRef(
-        ownerDefinition,
+      const nextDefinition = unmountBindingMutation(definition, {
+        ownerDefName,
         bindingKind,
         bindingName,
-        multiple,
-      );
-      const nextDefinition = {
-        ...definition,
-        defs: {
-          ...definition.defs,
-          [ownerDefName]: nextOwnerDefinition,
-        },
-      };
+        multiple: bindingDefinition.multiple ?? true,
+      });
 
-      updateDefinitionState(nextDefinition);
+      if (nextDefinition !== definition) {
+        updateDefinitionState(nextDefinition);
+      }
     },
     [bindingsByName, definition, updateDefinitionState],
   );
