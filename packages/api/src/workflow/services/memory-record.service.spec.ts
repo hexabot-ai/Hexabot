@@ -266,4 +266,85 @@ describe('MemoryRecordService (TypeORM)', () => {
       );
     });
   });
+
+  describe('upsertScopedRecord relations', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    const upsert = async (
+      scope: MemoryScope,
+      ids: { workflowId?: string; threadId?: string; runId?: string },
+    ) => {
+      const findOneSpy = jest
+        .spyOn(memoryRecordService, 'findOne')
+        .mockResolvedValue(null);
+      const createSpy = jest
+        .spyOn(memoryRecordService, 'create')
+        .mockResolvedValue({} as any);
+
+      await memoryRecordService.upsertScopedRecord({
+        definition: { id: 'definition-1', scope, ttlSeconds: null },
+        ownerId: 'owner-1',
+        value: { step: scope },
+        ...ids,
+      });
+
+      return { findOneSpy, createSpy };
+    };
+    const allIds = {
+      workflowId: 'workflow-1',
+      threadId: 'thread-1',
+      runId: 'run-1',
+    };
+
+    it.each([
+      [MemoryScope.global, {}, { workflow: null, thread: null, run: null }],
+      [
+        MemoryScope.workflow,
+        { workflow: { id: 'workflow-1' } },
+        { workflow: 'workflow-1', thread: null, run: null },
+      ],
+      [
+        MemoryScope.thread,
+        { thread: { id: 'thread-1' } },
+        { workflow: null, thread: 'thread-1', run: null },
+      ],
+      [
+        MemoryScope.run,
+        { run: { id: 'run-1' } },
+        { workflow: 'workflow-1', thread: 'thread-1', run: 'run-1' },
+      ],
+    ])(
+      'finds a %s record by its scope and creates it with its relations',
+      async (scope, scopedWhere, relations) => {
+        const { findOneSpy, createSpy } = await upsert(scope, allIds);
+
+        expect(findOneSpy).toHaveBeenCalledWith({
+          where: {
+            definition: { id: 'definition-1' },
+            owner: { id: 'owner-1' },
+            ...scopedWhere,
+          },
+          order: { updatedAt: 'DESC', createdAt: 'DESC' },
+        });
+        expect(createSpy).toHaveBeenCalledWith({
+          definition: 'definition-1',
+          owner: 'owner-1',
+          ...relations,
+          value: { step: scope },
+          ttlSeconds: null,
+          expiresAt: null,
+        });
+      },
+    );
+
+    it('stores the relations a run record is given without id as null', async () => {
+      const { createSpy } = await upsert(MemoryScope.run, {});
+
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ workflow: null, thread: null, run: null }),
+      );
+    });
+  });
 });
