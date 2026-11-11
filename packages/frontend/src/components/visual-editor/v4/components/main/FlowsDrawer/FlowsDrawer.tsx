@@ -40,8 +40,8 @@ import { useTranslate } from "@/hooks/useTranslate";
 import { EntityType } from "@/services/types";
 
 import { useResizableDrawerSize } from "../../../../../../hooks/useResizableDrawerSize";
-import { useConfirmDeleteWorkflow } from "../../../hooks/useConfirmDeleteWorkflow";
 import { useWorkflow } from "../../../hooks/useWorkflow";
+import { useWorkflowMenu } from "../../../hooks/useWorkflowMenu";
 import { uniqueIssueMessages } from "../../../utils/workflow-issue-localization";
 import { YamlEditor } from "../../yaml-editor";
 import { WorkflowMenu } from "../WorkflowMenu";
@@ -100,9 +100,7 @@ export const FlowsDrawer = ({
     updateWorkflowURL,
     isDefinitionDirty,
     isSaving,
-    isExportingWorkflow,
     isImportingWorkflow,
-    exportWorkflow,
     importWorkflowBundle,
     definitionStatus,
     definitionIssues,
@@ -152,8 +150,6 @@ export const FlowsDrawer = ({
   const trimmedQuery = query.trim();
   const normalizedQuery = normalizeQuery(trimmedQuery);
   const isSearching = trimmedQuery.length > 0;
-  const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
-  const [menuFlowId, setMenuFlowId] = useState<string | null>(null);
   const [openTypeKeys, setOpenTypeKeys] = useState<string[]>([]);
   const searchParams = useMemo(
     () => ({
@@ -175,7 +171,6 @@ export const FlowsDrawer = ({
     },
     { enabled: isSearching },
   );
-  const confirmDeleteWorkflow = useConfirmDeleteWorkflow();
   const workflowQuota = getLicenseQuotaResource(user?.license, "workflows");
   const workflowQuotaReached = isLicenseQuotaReached(
     user?.license,
@@ -192,7 +187,6 @@ export const FlowsDrawer = ({
     : undefined;
   const newWorkflowLabel = t("visual_editor.flows_drawer.new_workflow");
   const importWorkflowLabel = t("visual_editor.flows_drawer.import_workflow");
-  const exportWorkflowLabel = t("visual_editor.flows_drawer.export_workflow");
   const newWorkflowTooltip = workflowQuotaReached
     ? t("message.workflows_quota_reached")
     : t("label.workflows_quota_usage", {
@@ -253,6 +247,11 @@ export const FlowsDrawer = ({
       };
     });
   }, [hasUnsaved, normalizedQuery, selectedFlowId, t, workflowsList]);
+  const { openMenu, menuProps } = useWorkflowMenu((menuFlowId) =>
+    menuFlowId
+      ? matches.find((match) => match.workflow.id === menuFlowId)?.workflow
+      : undefined,
+  );
   const selectedFlowTypeKey = useMemo(() => {
     if (!workflows || !selectedFlowId) return null;
 
@@ -336,12 +335,7 @@ export const FlowsDrawer = ({
     flowId: string,
   ) => {
     event.stopPropagation();
-    setMenuAnchorEl(event.currentTarget);
-    setMenuFlowId(flowId);
-  };
-  const handleCloseMenu = () => {
-    setMenuAnchorEl(null);
-    setMenuFlowId(null);
+    openMenu(event, flowId);
   };
   const handleOpenImportPicker = () => {
     importInputRef.current?.click();
@@ -352,33 +346,6 @@ export const FlowsDrawer = ({
     event.target.value = "";
     if (file) {
       importWorkflowBundle(file);
-    }
-  };
-  const selectedMenuFlow = menuFlowId
-    ? matches.find((match) => match.workflow.id === menuFlowId)?.workflow
-    : undefined;
-  const isSelectedMenuFlowDirty =
-    selectedMenuFlow?.id === selectedFlowId && isDefinitionDirty;
-  const exportDisabled =
-    !selectedMenuFlow ||
-    isExportingWorkflow ||
-    isSaving ||
-    isSelectedMenuFlowDirty;
-  const handleExport = () => {
-    if (!selectedMenuFlow || exportDisabled) {
-      handleCloseMenu();
-
-      return;
-    }
-
-    exportWorkflow(selectedMenuFlow.id);
-    handleCloseMenu();
-  };
-  const handleDelete = async () => {
-    handleCloseMenu();
-
-    if (selectedMenuFlow) {
-      await confirmDeleteWorkflow(selectedMenuFlow.id);
     }
   };
 
@@ -559,17 +526,7 @@ export const FlowsDrawer = ({
           aria-label={t("visual_editor.flows_drawer.resize")}
         />
       )}
-      <WorkflowMenu
-        anchorEl={menuAnchorEl}
-        open={Boolean(menuAnchorEl)}
-        onClose={handleCloseMenu}
-        onDelete={handleDelete}
-        deleteDisabled={Boolean(selectedMenuFlow?.builtin)}
-        deleteLabel={t("button.delete")}
-        onExport={handleExport}
-        exportDisabled={exportDisabled}
-        exportLabel={exportWorkflowLabel}
-      />
+      <WorkflowMenu {...menuProps} />
     </LeftSideFlowDrawer>
   );
 };

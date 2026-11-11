@@ -27,14 +27,7 @@ import { Box, Button, Stack, styled } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import type { Node, NodeMouseHandler } from "@xyflow/react";
 import { CloudOff, CloudUpload } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getSchemaDefaults } from "@/app-components/inputs/JsonSchemaForm";
 import { useWorkflowActionsCatalog } from "@/contexts/workflow-actions.context";
@@ -64,9 +57,9 @@ import { WorkflowBottomDrawer } from "../components/main/WorkflowBottomDrawer";
 import { WorkflowMenu } from "../components/main/WorkflowMenu";
 import { WorkflowTitleBar } from "../components/main/WorkflowTitleBar";
 import { WorkflowSettingsDialog } from "../components/main/WorkflowTitleBar/WorkflowSettingsDialog";
-import { useConfirmDeleteWorkflow } from "../hooks/useConfirmDeleteWorkflow";
 import { useWorkflow } from "../hooks/useWorkflow";
 import { useWorkflowExecutionState } from "../hooks/useWorkflowExecutionState";
+import { useWorkflowMenu } from "../hooks/useWorkflowMenu";
 import {
   unmountBindingMutation,
   updateBindingDefinitionMutation,
@@ -138,8 +131,6 @@ export const Workflow = () => {
     definitionIssues,
     isDefinitionDirty,
     isSaving: isDefinitionSaving,
-    isExportingWorkflow,
-    exportWorkflow,
     removeStepAtPath,
     setGraphSelection,
     updateDefinitionState,
@@ -159,7 +150,6 @@ export const Workflow = () => {
   const { bindingsByName } = useWorkflowBindingsCatalog();
   const dialogs = useDialogs();
   const { refetchUser } = useAuth();
-  const confirmDeleteWorkflow = useConfirmDeleteWorkflow();
   const isEmptyWorkflow = !definition?.flow?.length;
   const [actionsDrawerOpen, setActionsDrawerOpen] = useState(false);
   const [pendingInsertPath, setPendingInsertPath] =
@@ -174,8 +164,6 @@ export const Workflow = () => {
     useState<EditingBindingTarget | null>(null);
   const [toolDrawerTarget, setToolDrawerTarget] =
     useState<ToolFormDrawerTarget | null>(null);
-  const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
-  const [menuFlowId, setMenuFlowId] = useState<string | null>(null);
   // Bumped whenever the graph asks the drawer to open the YAML editor (error
   // panel CTA or a per-error line link). `nonce` changes every request so
   // repeat clicks re-fire; `line` (when set) is revealed in the editor.
@@ -189,7 +177,6 @@ export const Workflow = () => {
   const actionsDrawerId = "workflow-actions-drawer";
   const publishLabel = t("button.publish");
   const unpublishLabel = t("button.unpublish");
-  const exportLabel = t("visual_editor.flows_drawer.export_workflow");
   const graphColorMode: WorkflowGraphColorMode =
     mode === "light" || mode === "dark" ? mode : "system";
   const workflowGraphRef = useRef<WorkflowGraphHandle | null>(null);
@@ -438,43 +425,12 @@ export const Workflow = () => {
       { maxWidth: "lg" },
     );
   };
-  const handleOpenMenu = (
-    event: ReactMouseEvent<HTMLElement>,
-    flowId: string,
-  ) => {
-    setMenuAnchorEl(event.currentTarget);
-    setMenuFlowId(flowId);
-  };
-  const handleCloseMenu = () => {
-    setMenuAnchorEl(null);
-    setMenuFlowId(null);
-  };
-  const selectedMenuWorkflow = menuFlowId
-    ? (workflows?.find((flow) => flow.id === menuFlowId) ??
-      (workflow?.id === menuFlowId ? workflow : undefined))
-    : workflow;
-  const exportDisabled =
-    !selectedMenuWorkflow ||
-    isExportingWorkflow ||
-    isDefinitionSaving ||
-    (selectedMenuWorkflow.id === selectedFlowId && isDefinitionDirty);
-  const handleExport = () => {
-    if (!selectedMenuWorkflow || exportDisabled) {
-      handleCloseMenu();
-
-      return;
-    }
-
-    exportWorkflow(selectedMenuWorkflow.id);
-    handleCloseMenu();
-  };
-  const handleDelete = async () => {
-    handleCloseMenu();
-
-    if (selectedMenuWorkflow) {
-      await confirmDeleteWorkflow(selectedMenuWorkflow.id);
-    }
-  };
+  const { openMenu, menuProps } = useWorkflowMenu((menuFlowId) =>
+    menuFlowId
+      ? (workflows?.find((flow) => flow.id === menuFlowId) ??
+        (workflow?.id === menuFlowId ? workflow : undefined))
+      : workflow,
+  );
   const handleSaveWorkflowSettings = useCallback(
     (settings: Settings) => {
       if (!definition) {
@@ -891,7 +847,7 @@ export const Workflow = () => {
             <WorkflowTitleBar
               workflow={workflow}
               onEdit={handleEditWorkflow}
-              onOpenMenu={handleOpenMenu}
+              onOpenMenu={openMenu}
               onUndo={undo}
               onRedo={redo}
               undoDisabled={!canUndo}
@@ -1007,17 +963,7 @@ export const Workflow = () => {
       <ConditionalFormDrawer />
       <LoopFormDrawer />
       <ParallelFormDrawer />
-      <WorkflowMenu
-        anchorEl={menuAnchorEl}
-        open={Boolean(menuAnchorEl)}
-        onClose={handleCloseMenu}
-        deleteDisabled={Boolean(workflow?.builtin)}
-        onDelete={handleDelete}
-        deleteLabel={t("button.delete")}
-        onExport={handleExport}
-        exportDisabled={exportDisabled}
-        exportLabel={exportLabel}
-      />
+      <WorkflowMenu {...menuProps} />
     </div>
   );
 };
