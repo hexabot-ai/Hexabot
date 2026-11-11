@@ -10,7 +10,6 @@ import {
   normalizeContentTypeSchema,
   type WorkflowExportBundle,
   type WorkflowExportBundleContentType,
-  type WorkflowImportResourceResult,
 } from '@hexabot-ai/types';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { In } from 'typeorm';
@@ -22,13 +21,11 @@ import {
   WorkflowTransferAdapter,
   WorkflowTransferExportContext,
   WorkflowTransferImportContext,
+  WorkflowTransferImportResults,
   WorkflowTransferResourceAdapter,
 } from '../workflow-transfer-resource-adapter';
 import {
-  assertFoundAll,
-  buildPostCreateEvent,
-  buildResourceResult,
-  uniqueResourceIds,
+  findAllForExport,
   type WorkflowTransferImportAdapterResult,
 } from '../workflow-transfer.types';
 
@@ -56,18 +53,11 @@ export class ContentTypeTransferAdapter extends WorkflowTransferResourceAdapter 
   private async buildContentTypeExportResources(
     ids: string[],
   ): Promise<WorkflowExportBundleContentType[]> {
-    const uniqueIds = uniqueResourceIds(ids);
-    if (uniqueIds.length === 0) {
-      return [];
-    }
-
-    const contentTypes = await this.contentTypeService.find({
-      where: { id: In(uniqueIds) },
-    });
-    assertFoundAll(
+    const contentTypes = await findAllForExport(
       'content type',
-      uniqueIds,
-      contentTypes.map((contentType) => contentType.id),
+      ids,
+      (uniqueIds) =>
+        this.contentTypeService.find({ where: { id: In(uniqueIds) } }),
     );
 
     return contentTypes.map((contentType) => ({
@@ -84,10 +74,7 @@ export class ContentTypeTransferAdapter extends WorkflowTransferResourceAdapter 
       ctx.getResources<
         WorkflowExportBundle['resources']['contentTypes'][number]
       >('contentTypes');
-    const idMap: Record<string, string> = {};
-    const resources: WorkflowImportResourceResult[] = [];
-    const postCreateEvents: WorkflowTransferImportAdapterResult['postCreateEvents'] =
-      [];
+    const results = new WorkflowTransferImportResults(this.kind);
 
     for (const contentType of contentTypes) {
       const existing = await ctx.manager.findOne(ContentTypeOrmEntity, {
@@ -101,16 +88,7 @@ export class ContentTypeTransferAdapter extends WorkflowTransferResourceAdapter 
           );
         }
 
-        idMap[contentType.exportId] = existing.id;
-        resources.push(
-          buildResourceResult({
-            kind: 'contentType',
-            exportId: contentType.exportId,
-            localId: existing.id,
-            name: contentType.name,
-            action: 'reused',
-          }),
-        );
+        results.reused(contentType, existing.id);
         continue;
       }
 
@@ -125,27 +103,10 @@ export class ContentTypeTransferAdapter extends WorkflowTransferResourceAdapter 
         ctx.manager.create(ContentTypeOrmEntity, payload),
       );
 
-      idMap[contentType.exportId] = created.id;
-      resources.push(
-        buildResourceResult({
-          kind: 'contentType',
-          exportId: contentType.exportId,
-          localId: created.id,
-          name: contentType.name,
-          action: 'created',
-        }),
-      );
-      postCreateEvents.push(
-        buildPostCreateEvent('contentType', created, payload),
-      );
+      results.created(contentType, created, payload);
     }
 
-    return {
-      idMap,
-      resources,
-      warnings: [],
-      postCreateEvents,
-    };
+    return results.toResult();
   }
 
   private isEquivalentContentType(

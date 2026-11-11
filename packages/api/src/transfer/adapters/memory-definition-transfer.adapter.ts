@@ -9,7 +9,6 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   type WorkflowExportBundle,
   type WorkflowExportBundleMemoryDefinition,
-  type WorkflowImportResourceResult,
 } from '@hexabot-ai/types';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { In } from 'typeorm';
@@ -21,13 +20,11 @@ import {
   WorkflowTransferAdapter,
   WorkflowTransferExportContext,
   WorkflowTransferImportContext,
+  WorkflowTransferImportResults,
   WorkflowTransferResourceAdapter,
 } from '../workflow-transfer-resource-adapter';
 import {
-  assertFoundAll,
-  buildPostCreateEvent,
-  buildResourceResult,
-  uniqueResourceIds,
+  findAllForExport,
   type WorkflowTransferImportAdapterResult,
 } from '../workflow-transfer.types';
 
@@ -57,18 +54,11 @@ export class MemoryDefinitionTransferAdapter extends WorkflowTransferResourceAda
   private async buildMemoryDefinitionExportResources(
     ids: string[],
   ): Promise<WorkflowExportBundleMemoryDefinition[]> {
-    const uniqueIds = uniqueResourceIds(ids);
-    if (uniqueIds.length === 0) {
-      return [];
-    }
-
-    const definitions = await this.memoryDefinitionService.find({
-      where: { id: In(uniqueIds) },
-    });
-    assertFoundAll(
+    const definitions = await findAllForExport(
       'memory definition',
-      uniqueIds,
-      definitions.map((definition) => definition.id),
+      ids,
+      (uniqueIds) =>
+        this.memoryDefinitionService.find({ where: { id: In(uniqueIds) } }),
     );
 
     return definitions.map((definition) => ({
@@ -88,10 +78,7 @@ export class MemoryDefinitionTransferAdapter extends WorkflowTransferResourceAda
       ctx.getResources<
         WorkflowExportBundle['resources']['memoryDefinitions'][number]
       >('memoryDefinitions');
-    const idMap: Record<string, string> = {};
-    const resources: WorkflowImportResourceResult[] = [];
-    const postCreateEvents: WorkflowTransferImportAdapterResult['postCreateEvents'] =
-      [];
+    const results = new WorkflowTransferImportResults(this.kind);
 
     for (const definition of definitions) {
       const existing = await ctx.manager.findOne(MemoryDefinitionOrmEntity, {
@@ -105,16 +92,7 @@ export class MemoryDefinitionTransferAdapter extends WorkflowTransferResourceAda
           );
         }
 
-        idMap[definition.exportId] = existing.id;
-        resources.push(
-          buildResourceResult({
-            kind: 'memoryDefinition',
-            exportId: definition.exportId,
-            localId: existing.id,
-            name: definition.name,
-            action: 'reused',
-          }),
-        );
+        results.reused(definition, existing.id);
         continue;
       }
 
@@ -130,27 +108,10 @@ export class MemoryDefinitionTransferAdapter extends WorkflowTransferResourceAda
         ctx.manager.create(MemoryDefinitionOrmEntity, payload),
       );
 
-      idMap[definition.exportId] = created.id;
-      resources.push(
-        buildResourceResult({
-          kind: 'memoryDefinition',
-          exportId: definition.exportId,
-          localId: created.id,
-          name: definition.name,
-          action: 'created',
-        }),
-      );
-      postCreateEvents.push(
-        buildPostCreateEvent('memoryDefinition', created, payload),
-      );
+      results.created(definition, created, payload);
     }
 
-    return {
-      idMap,
-      resources,
-      warnings: [],
-      postCreateEvents,
-    };
+    return results.toResult();
   }
 
   private isEquivalentMemoryDefinition(

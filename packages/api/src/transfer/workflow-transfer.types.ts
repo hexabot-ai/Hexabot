@@ -81,6 +81,34 @@ export const assertFoundAll = (
   }
 };
 
+/**
+ * Loads the resources an export references, each once.
+ *
+ * @param resourceLabel - Name of the resource kind in the error message.
+ * @param ids - Ids of the referenced resources, possibly repeated.
+ * @param findByIds - Loads the resources of the given unique ids.
+ * @throws BadRequestException when one of them no longer exists.
+ */
+export const findAllForExport = async <Resource extends { id: string }>(
+  resourceLabel: string,
+  ids: string[],
+  findByIds: (uniqueIds: string[]) => Promise<Resource[]>,
+): Promise<Resource[]> => {
+  const uniqueIds = uniqueResourceIds(ids);
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const resources = await findByIds(uniqueIds);
+  assertFoundAll(
+    resourceLabel,
+    uniqueIds,
+    resources.map(({ id }) => id),
+  );
+
+  return resources;
+};
+
 export const buildResourceResult = (
   input: ResourceActionInput,
 ): WorkflowImportResourceResult => {
