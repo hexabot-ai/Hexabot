@@ -6,39 +6,20 @@
 
 import { MenuStub, Menu } from '@hexabot-ai/types';
 
-import { MenuType } from '../entities/menu.entity';
+import {
+  NestedMenuAttrs,
+  PostbackMenuAttrs,
+  WebUrlMenuAttrs,
+  WithMenuAttrs,
+} from './menu';
 
-interface MenuAttrs {
-  type: MenuType;
-  payload?: unknown;
-  url?: unknown;
-}
+export type NestedMenuDtoAttrs = NestedMenuAttrs;
 
-export interface NestedMenuDtoAttrs {
-  type: MenuType.nested;
-  payload?: never;
-  url?: never;
-}
+export type PostbackMenuDtoAttrs = PostbackMenuAttrs;
 
-export interface PostbackMenuDtoAttrs {
-  type: MenuType.postback;
-  payload: string;
-  url?: never;
-}
+export type WebUrlMenuDtoAttrs = WebUrlMenuAttrs;
 
-export interface WebUrlMenuDtoAttrs {
-  type: MenuType.web_url;
-  payload?: never;
-  url: string;
-}
-
-type AnyMenuAttrs =
-  | NestedMenuDtoAttrs
-  | PostbackMenuDtoAttrs
-  | WebUrlMenuDtoAttrs;
-
-export type AnyMenuDto<T extends MenuStub = Menu> = Omit<T, keyof MenuAttrs> &
-  AnyMenuAttrs;
+export type AnyMenuDto<T extends MenuStub = Menu> = WithMenuAttrs<T>;
 
 export type MenuTreeDto = (AnyMenuDto<Menu> & {
   call_to_actions?: MenuTreeDto;

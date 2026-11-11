@@ -32,11 +32,10 @@ export interface WebUrlMenuAttrs {
 
 type AnyMenuAttrs = NestedMenuAttrs | PostbackMenuAttrs | WebUrlMenuAttrs;
 
-export type AnyMenu<T extends MenuOrmEntity = MenuOrmEntity> = Omit<
-  T,
-  keyof MenuAttrs
-> &
-  AnyMenuAttrs;
+/** `T` with the attributes its menu `type` requires. */
+export type WithMenuAttrs<T> = Omit<T, keyof MenuAttrs> & AnyMenuAttrs;
+
+export type AnyMenu<T extends MenuOrmEntity = MenuOrmEntity> = WithMenuAttrs<T>;
 
 export type MenuTree = (AnyMenu<MenuOrmEntity> & {
   call_to_actions?: MenuTree;
