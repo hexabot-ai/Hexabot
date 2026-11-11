@@ -167,6 +167,53 @@ export const mapNodesToGroup = (
 
   return nodeToGroup;
 };
+/** Ids of the groups nested in `group` that have a member among `memberIds`. */
+export const findNestedGroupIds = (
+  group: GroupMeta,
+  groups: Map<string, GroupMeta>,
+  memberIds: ReadonlySet<string>,
+): string[] => {
+  const nestedGroupIds: string[] = [];
+
+  groups.forEach((candidate, candidateId) => {
+    if (
+      candidateId !== group.id &&
+      candidate.level > group.level &&
+      [...candidate.memberNodeIds].some((memberId) => memberIds.has(memberId))
+    ) {
+      nestedGroupIds.push(candidateId);
+    }
+  });
+
+  return nestedGroupIds;
+};
+/**
+ * Every node that moves with `group`: its members (which already include the
+ * members of nested groups) with their attachment descendants, its own
+ * overlay and the overlays of nested groups.
+ */
+export const collectGroupSubtreeIds = (
+  group: GroupMeta,
+  groups: Map<string, GroupMeta>,
+  attachmentChildrenByParent: Map<string, string[]>,
+  nodesById: Map<string, GraphNode>,
+): Set<string> => {
+  const ids = collectNodeIdsWithAttachmentDescendants(
+    group.memberNodeIds,
+    attachmentChildrenByParent,
+    nodesById,
+  );
+
+  [group.id, ...findNestedGroupIds(group, groups, group.memberNodeIds)].forEach(
+    (groupId) => {
+      if (nodesById.has(groupId)) {
+        ids.add(groupId);
+      }
+    },
+  );
+
+  return ids;
+};
 export const getGroupOperatorNode = (
   group: GroupMeta,
   nodesById: Map<string, GraphNode>,
@@ -219,17 +266,9 @@ export const collectBranchNodeIds = ({
     nodesById,
   );
 
-  groups.forEach((candidateGroup, candidateGroupId) => {
-    if (candidateGroupId === group.id || candidateGroup.level <= group.level) {
-      return;
-    }
-
-    const isBranchGroup = [...candidateGroup.memberNodeIds].some((nodeId) =>
-      mainFlowNodeIds.has(nodeId),
-    );
-
-    if (isBranchGroup && nodesById.has(candidateGroupId)) {
-      allNodeIds.add(candidateGroupId);
+  findNestedGroupIds(group, groups, mainFlowNodeIds).forEach((groupId) => {
+    if (nodesById.has(groupId)) {
+      allNodeIds.add(groupId);
     }
   });
 

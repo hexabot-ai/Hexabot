@@ -9,6 +9,7 @@ import {
   type GraphNode,
   type INodeConfig,
 } from "../../types/workflow-node.types";
+import type { GroupMeta } from "../graph-builder/types";
 import { getWorkflowNodeDimensions } from "../node-metrics.utils";
 
 export type LayoutContext = {
@@ -17,6 +18,11 @@ export type LayoutContext = {
 
 export const isHorizontalDirection = (ctx: LayoutContext) =>
   (ctx.config?.direction ?? "horizontal") === "horizontal";
+/** Padding around a group's content, inside its overlay. */
+export const getGroupPadding = (
+  group: Pick<GroupMeta, "operatorType">,
+  ctx: LayoutContext,
+): number => ctx.config?.highlights?.[group.operatorType]?.padding ?? 0;
 
 export type NodeDimensions = {
   width: number;

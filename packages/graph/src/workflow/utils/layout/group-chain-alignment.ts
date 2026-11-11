@@ -12,17 +12,16 @@ import type { GroupMeta } from "../graph-builder/types";
 import { FLOW_LAYER_GAP } from "./constants";
 import {
   appendMapValue,
-  getPositionedNodeAxisBounds,
-  isHorizontalDirection,
+  getGroupPadding,
   type LayoutContext,
-  translateFlow,
-  translateSpread,
 } from "./geometry";
 import {
   buildAttachmentMaps,
+  collectGroupSubtreeIds,
   collectNodeIdsWithAttachmentDescendants,
   isAttachmentEdge,
 } from "./graph-maps";
+import { createPositionTracker } from "./position-tracker";
 
 /**
  * A single branch can hold a *sequence* of operator groups, possibly with
@@ -46,9 +45,8 @@ export const alignGroupChainAxes = (
   groups: Map<string, GroupMeta>,
   ctx: LayoutContext,
 ): GraphNode[] => {
-  const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const positions = new Map(nodes.map((node) => [node.id, node.position]));
+  const tracker = createPositionTracker(nodes, ctx);
+  const { nodesById } = tracker;
   const { childrenByParent: attachmentChildrenByParent } = buildAttachmentMaps(
     edges,
     nodesById,
@@ -83,49 +81,14 @@ export const alignGroupChainAxes = (
     appendMapValue(overlaySuccessors, edge.source, edge.target);
     appendMapValue(overlayPredecessors, edge.target, edge.source);
   });
-  // Every node that moves when this group moves: its members (which already
-  // include nested groups' members) plus their attachment descendants, its own
-  // overlay box, and any nested group overlays.
-  const collectSubtreeIds = (group: GroupMeta): Set<string> => {
-    const ids = collectNodeIdsWithAttachmentDescendants(
-      group.memberNodeIds,
+  const collectSubtreeIds = (group: GroupMeta) =>
+    collectGroupSubtreeIds(
+      group,
+      groups,
       attachmentChildrenByParent,
       nodesById,
     );
-
-    if (nodesById.has(group.id)) {
-      ids.add(group.id);
-    }
-
-    groups.forEach((candidate, candidateId) => {
-      if (
-        candidateId === group.id ||
-        candidate.level <= group.level ||
-        !nodesById.has(candidateId)
-      ) {
-        return;
-      }
-
-      const isNested = [...candidate.memberNodeIds].some((memberId) =>
-        group.memberNodeIds.has(memberId),
-      );
-
-      if (isNested) {
-        ids.add(candidateId);
-      }
-    });
-
-    return ids;
-  };
-  const getBounds = (nodeId: string, axis: "flow" | "spread") =>
-    getPositionedNodeAxisBounds(
-      nodeId,
-      positions,
-      nodesById,
-      ctx,
-      isVertical,
-      axis,
-    );
+  const getBounds = tracker.getBounds;
   const getGroupFlowBounds = (group: GroupMeta) => {
     const memberBounds = [...collectSubtreeIds(group)]
       .filter((id) => id !== group.id)
@@ -139,7 +102,7 @@ export const alignGroupChainAxes = (
       return getBounds(group.id, "flow");
     }
 
-    const padding = ctx.config?.highlights?.[group.operatorType]?.padding ?? 0;
+    const padding = getGroupPadding(group, ctx);
 
     return {
       leading:
@@ -161,22 +124,8 @@ export const alignGroupChainAxes = (
           2
       : undefined;
   };
-  const moveNodeSpread = (nodeId: string, delta: number) => {
-    const node = nodesById.get(nodeId);
-
-    if (!node) {
-      return;
-    }
-
-    positions.set(
-      nodeId,
-      translateSpread(
-        positions.get(nodeId) ?? node.position,
-        isVertical,
-        delta,
-      ),
-    );
-  };
+  const moveNodeSpread = (nodeId: string, delta: number) =>
+    tracker.move(nodeId, "spread", delta);
   const moveGroup = (group: GroupMeta, delta: number) => {
     collectSubtreeIds(group).forEach((id) => moveNodeSpread(id, delta));
   };
@@ -306,13 +255,7 @@ export const alignGroupChainAxes = (
             : sourceTrailing + FLOW_LAYER_GAP - targetLeading;
 
         if (flowDelta < -0.5) {
-          targetIds.forEach((id) => {
-            const position = positions.get(id);
-
-            if (position) {
-              positions.set(id, translateFlow(position, isVertical, flowDelta));
-            }
-          });
+          targetIds.forEach((id) => tracker.move(id, "flow", flowDelta));
         }
       }
 
@@ -360,8 +303,5 @@ export const alignGroupChainAxes = (
     }
   });
 
-  return nodes.map((node) => ({
-    ...node,
-    position: positions.get(node.id) ?? node.position,
-  }));
+  return tracker.apply();
 };

@@ -15,6 +15,7 @@ import {
   appendMapValue,
   getFlowCoordinate,
   getFlowSize,
+  getGroupPadding,
   getSpreadCoordinate,
   getSpreadSize,
   isHorizontalDirection,
@@ -95,7 +96,7 @@ export const tightenTrailingPlaceholders = (
     }
 
     const bounds = getNodesBounds(memberNodes);
-    const padding = ctx.config?.highlights?.[group.operatorType]?.padding ?? 0;
+    const padding = getGroupPadding(group, ctx);
 
     return (
       (isVertical ? bounds.y + bounds.height : bounds.x + bounds.width) +

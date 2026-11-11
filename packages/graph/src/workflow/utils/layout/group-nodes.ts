@@ -16,10 +16,11 @@ import { withAlpha } from "../color.utils";
 import type { GroupMeta } from "../graph-builder/types";
 
 import { getGroupBackgroundAlpha } from "./constants";
-import { getGraphNodeDimensions } from "./geometry";
+import { getGraphNodeDimensions, getGroupPadding } from "./geometry";
 import {
   buildAttachmentMaps,
   collectAttachmentDescendants,
+  findNestedGroupIds,
 } from "./graph-maps";
 
 const getBounds = (nodes: GraphNode[], config: INodeConfig) => {
@@ -84,22 +85,19 @@ export const getGroupNodes = (
         ),
       ),
     ];
-    const nestedGroupNodes = groupsByDepth
-      .filter(
-        (candidate) =>
-          candidate.id !== group.id &&
-          candidate.level > group.level &&
-          [...candidate.memberNodeIds].some((memberId) =>
-            group.memberNodeIds.has(memberId),
-          ),
-      )
-      .map((candidate) => groupNodesById.get(candidate.id))
+    // Deeper groups are built first, so nested overlays are already sized.
+    const nestedGroupNodes = findNestedGroupIds(
+      group,
+      groups,
+      group.memberNodeIds,
+    )
+      .map((groupId) => groupNodesById.get(groupId))
       .filter((node): node is GraphNode<ENodeType.GROUP> => Boolean(node));
     const boundsMembers = boundsMemberIds
       .map((nodeId) => nodesById.get(nodeId))
       .filter((node): node is GraphNode => Boolean(node));
     const color = config.highlights?.[group.operatorType]?.color;
-    const padding = config.highlights?.[group.operatorType]?.padding ?? 0;
+    const padding = getGroupPadding(group, { config });
     const radius = config.highlights?.[group.operatorType]?.radius;
     const backgroundAlpha = getGroupBackgroundAlpha(group.level);
     const bounds = getBounds([...boundsMembers, ...nestedGroupNodes], config);
