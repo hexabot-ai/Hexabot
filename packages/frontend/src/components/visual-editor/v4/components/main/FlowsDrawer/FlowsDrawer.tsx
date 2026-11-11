@@ -4,8 +4,6 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { Workflow } from "@hexabot-ai/types";
-import { WorkflowType } from "@hexabot-ai/types";
 import {
   Box,
   Button,
@@ -33,10 +31,7 @@ import {
   isLicenseQuotaReached,
 } from "@/components/license/license-quotas";
 import LicenseGate from "@/components/license/LicenseGate";
-import {
-  WORKFLOW_TYPES,
-  WORKFLOW_TYPE_ORDER,
-} from "@/constants/workflow.constants";
+import { WORKFLOW_TYPES } from "@/constants/workflow.constants";
 import { useFind } from "@/hooks/crud/useFind";
 import { useAuth } from "@/hooks/useAuth";
 import { useCronFormatter } from "@/hooks/useCronFormatter";
@@ -65,8 +60,11 @@ import type { FlowMatch, FlowTypeGroup, FlowsDrawerProps } from "./types";
 import {
   fuzzyMatchIndices,
   getErrorCount,
+  getFlowTypeMeta,
+  groupFlowMatchesByType,
   isDraftWorkflow,
   normalizeQuery,
+  reconcileOpenTypeKeys,
 } from "./utils";
 import { WorkflowVersions } from "./WorkflowVersions";
 
@@ -217,32 +215,10 @@ export const FlowsDrawer = ({
       : 0;
   const matches = useMemo<FlowMatch[]>(() => {
     const list = workflowsList ?? [];
-    const getTypeMeta = (flow: Workflow, typeKey: string) => {
-      if (typeKey === WorkflowType.conversational) {
-        return {
-          secondaryText: flow.description?.trim() ?? "",
-        };
-      }
-
-      if (typeKey === WorkflowType.scheduled) {
-        const schedule = flow.schedule?.trim();
-
-        return {
-          secondaryText: schedule
-            ? formatCron(schedule)
-            : t("visual_editor.flows_drawer.meta.no_schedule"),
-        };
-      }
-
-      if (typeKey === WorkflowType.manual) {
-        return {};
-      }
-
-      return {
-        secondaryText:
-          flow.description?.trim() ||
-          t("visual_editor.flows_drawer.meta.no_details"),
-      };
+    const typeMetaFormatters = {
+      formatCron,
+      noScheduleLabel: t("visual_editor.flows_drawer.meta.no_schedule"),
+      noDetailsLabel: t("visual_editor.flows_drawer.meta.no_details"),
     };
 
     return list.map((flow) => {
@@ -262,7 +238,7 @@ export const FlowsDrawer = ({
         nameMatch,
         descriptionMatch,
         typeInfo,
-        typeMeta: getTypeMeta(flow, typeInfo.key),
+        typeMeta: getFlowTypeMeta(flow, typeInfo.key, typeMetaFormatters),
         statusLabel: isDraft
           ? t("visual_editor.flows_drawer.status.draft")
           : t("visual_editor.flows_drawer.status.published"),
@@ -284,89 +260,18 @@ export const FlowsDrawer = ({
 
     return selectedFlow ? WORKFLOW_TYPES[selectedFlow.type].key : null;
   }, [selectedFlowId, workflows]);
-  const typeGroups = useMemo<FlowTypeGroup[]>(() => {
-    const grouped = new Map<string, FlowTypeGroup>();
-
-    Object.values(WORKFLOW_TYPES).forEach((info) => {
-      grouped.set(info.key, { info, label: t(info.labelKey), items: [] });
-    });
-
-    matches.forEach((match) => {
-      const key = match.typeInfo.key;
-
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          info: match.typeInfo,
-          label: t(match.typeInfo.labelKey),
-          items: [],
-        });
-      }
-      grouped.get(key)?.items.push(match);
-    });
-
-    const sorted = Array.from(grouped.values()).sort((a, b) => {
-      const orderA = WORKFLOW_TYPE_ORDER[a.info.key as WorkflowType] ?? 99;
-      const orderB = WORKFLOW_TYPE_ORDER[b.info.key as WorkflowType] ?? 99;
-
-      if (orderA !== orderB) return orderA - orderB;
-
-      return a.label.localeCompare(b.label);
-    });
-
-    sorted.forEach((group) => {
-      group.items.sort((a, b) =>
-        a.workflow.name.localeCompare(b.workflow.name),
-      );
-    });
-
-    return sorted;
-  }, [matches, t]);
+  const typeGroups = useMemo<FlowTypeGroup[]>(
+    () => groupFlowMatchesByType(matches, (info) => t(info.labelKey)),
+    [matches, t],
+  );
 
   useEffect(() => {
-    if (!typeGroups.length) {
-      setOpenTypeKeys((prev) => (prev.length ? [] : prev));
-
-      return;
-    }
-
-    setOpenTypeKeys((prev) => {
-      const groupsByKey = new Map(
-        typeGroups.map((group) => [group.info.key, group]),
-      );
-      const next = prev.filter((key) => groupsByKey.has(key));
-      const openSet = new Set(next);
-      const firstGroupWithItems = typeGroups.find(
-        (group) => group.items.length > 0,
-      )?.info.key;
-      const fallbackKey = firstGroupWithItems ?? typeGroups[0]?.info.key;
-
-      if (isSearching) {
-        const hasOpenWithItems = next.some(
-          (key) => (groupsByKey.get(key)?.items.length ?? 0) > 0,
-        );
-
-        if (!hasOpenWithItems && fallbackKey) {
-          openSet.add(fallbackKey);
-        }
-      } else if (selectedFlowTypeKey) {
-        if (groupsByKey.has(selectedFlowTypeKey)) {
-          openSet.add(selectedFlowTypeKey);
-        }
-      } else if (!openSet.size && fallbackKey) {
-        openSet.add(fallbackKey);
-      }
-
-      const nextKeys = Array.from(openSet);
-
-      if (
-        nextKeys.length === prev.length &&
-        nextKeys.every((key, index) => key === prev[index])
-      ) {
-        return prev;
-      }
-
-      return nextKeys;
-    });
+    setOpenTypeKeys((prev) =>
+      reconcileOpenTypeKeys(prev, typeGroups, {
+        isSearching,
+        selectedFlowTypeKey,
+      }),
+    );
   }, [isSearching, selectedFlowTypeKey, typeGroups]);
 
   const handleToggleYaml = () => {
