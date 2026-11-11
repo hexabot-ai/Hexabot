@@ -50,8 +50,7 @@ const getBounds = (nodes: GraphNode[], config: INodeConfig) => {
     height: bounds.bottom - bounds.top,
   };
 };
-
-export const getGroupNodes = (
+const getGroupNodes = (
   nodes: GraphNode[],
   groups: Map<string, GroupMeta>,
   config: INodeConfig,
@@ -129,6 +128,7 @@ export const getGroupNodes = (
     (a, b) => (groups.get(a.id)?.level ?? 0) - (groups.get(b.id)?.level ?? 0),
   );
 };
+
 export const withFreshGroupNodes = (
   nodes: GraphNode[],
   groups: Map<string, GroupMeta>,
