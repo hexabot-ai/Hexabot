@@ -24,16 +24,10 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import {
-  formatLicenseQuotaUsage,
-  getLicenseQuotaResource,
-  getQuotaUpgradeTargetPlan,
-  isLicenseQuotaReached,
-} from "@/components/license/license-quotas";
 import LicenseGate from "@/components/license/LicenseGate";
+import { useLicenseQuota } from "@/components/license/useLicenseQuota";
 import { WORKFLOW_TYPES } from "@/constants/workflow.constants";
 import { useFind } from "@/hooks/crud/useFind";
-import { useAuth } from "@/hooks/useAuth";
 import { useCronFormatter } from "@/hooks/useCronFormatter";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useTranslate } from "@/hooks/useTranslate";
@@ -86,7 +80,6 @@ export const FlowsDrawer = ({
 }: FlowsDrawerProps) => {
   const { t } = useTranslate();
   const formatCron = useCronFormatter();
-  const { user } = useAuth();
   const {
     workflows,
     selectedFlowId,
@@ -164,14 +157,11 @@ export const FlowsDrawer = ({
     },
     { enabled: isSearching },
   );
-  const workflowQuota = getLicenseQuotaResource(user?.license, "workflows");
-  const workflowQuotaReached = isLicenseQuotaReached(
-    user?.license,
-    "workflows",
-  );
-  const workflowUpgradeTargetPlan = workflowQuotaReached
-    ? getQuotaUpgradeTargetPlan(user?.license, "workflows")
-    : null;
+  const {
+    isReached: workflowQuotaReached,
+    upgradeTargetPlan: workflowUpgradeTargetPlan,
+    usage: workflowQuotaUsage,
+  } = useLicenseQuota("workflows");
   const shouldShowWorkflowUpgradeGate = Boolean(
     onNew && workflowQuotaReached && workflowUpgradeTargetPlan,
   );
@@ -182,9 +172,7 @@ export const FlowsDrawer = ({
   const importWorkflowLabel = t("visual_editor.flows_drawer.import_workflow");
   const newWorkflowTooltip = workflowQuotaReached
     ? t("message.workflows_quota_reached")
-    : t("label.workflows_quota_usage", {
-        0: formatLicenseQuotaUsage(workflowQuota, t("label.unlimited")),
-      });
+    : t("label.workflows_quota_usage", { 0: workflowQuotaUsage });
   const canCreateWorkflow = Boolean(onNew) && !workflowQuotaReached;
   const workflowsList = isSearching ? searchedWorkflows : workflows;
   const yamlToggleLabel = showYaml
