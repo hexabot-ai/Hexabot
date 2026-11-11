@@ -346,6 +346,115 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
     );
   });
 
+  describe('credentials', () => {
+    const activate = (
+      webhookTrigger: Record<string, unknown>,
+      headers: Record<string, unknown> = {},
+    ) => {
+      const id = randomUUID();
+      jest.spyOn(workflowService, 'findOne').mockResolvedValueOnce({
+        id,
+        type: WorkflowType.manual,
+        webhookTrigger: { enabled: true, ...webhookTrigger },
+      } as any);
+
+      return guard.canActivate(buildContext(id, headers));
+    };
+    const basic = (credentials: string, scheme = 'Basic') =>
+      `${scheme} ${Buffer.from(credentials).toString('base64')}`;
+    const basicTrigger = {
+      authType: WebhookAuthType.basic,
+      username: 'webhook-user',
+      passwordCredentialId: 'cred-basic-password',
+    };
+    const headerTrigger = {
+      authType: WebhookAuthType.header,
+      headerName: 'X-Webhook-Token',
+      headerValueCredentialId: 'cred-header-value',
+    };
+    const jwtTrigger = {
+      authType: WebhookAuthType.jwt,
+      jwtSecretCredentialId: 'cred-jwt-secret',
+    };
+
+    it('reads basic credentials whatever the case of the scheme', async () => {
+      await expect(
+        activate(basicTrigger, {
+          authorization: basic('webhook-user:webhook-pass', 'basic'),
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it.each([
+      ['no authorization header', {}],
+      [
+        'another scheme',
+        { authorization: basic('webhook-user:webhook-pass', 'Bearer') },
+      ],
+      [
+        'credentials without password',
+        { authorization: basic('webhook-user') },
+      ],
+      [
+        'a wrong username',
+        { authorization: basic('someone-else:webhook-pass') },
+      ],
+    ])('rejects basic auth with %s', async (_case, headers) => {
+      await expect(activate(basicTrigger, headers)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('reads the first value of a repeated auth header', async () => {
+      await expect(
+        activate(headerTrigger, {
+          'x-webhook-token': ['super-secret', 'other'],
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it.each([
+      ['no auth header', headerTrigger, {}],
+      [
+        'no configured header name',
+        { ...headerTrigger, headerName: null },
+        { 'x-webhook-token': 'super-secret' },
+      ],
+    ])('rejects header auth with %s', async (_case, trigger, headers) => {
+      await expect(activate(trigger, headers)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('verifies a JWT with the configured algorithm', async () => {
+      const token = (algorithm: 'HS256' | 'HS512') =>
+        `Bearer ${jwtService.sign({}, { secret: 'jwt-shared-secret', algorithm })}`;
+      const trigger = { ...jwtTrigger, jwtAlgorithm: 'HS512' };
+
+      await expect(
+        activate(trigger, { authorization: token('HS512') }),
+      ).resolves.toBe(true);
+      await expect(
+        activate(trigger, { authorization: token('HS256') }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it.each([
+      ['no authorization header', {}],
+      ['another scheme', { authorization: basic('webhook-user:pass') }],
+    ])('rejects JWT auth with %s', async (_case, headers) => {
+      await expect(activate(jwtTrigger, headers)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('rejects an unknown auth type', async () => {
+      await expect(
+        activate({ authType: 'oauth' }, { authorization: 'Bearer token' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
   it('returns not found for an unknown workflow', async () => {
     const context = buildContext(randomUUID());
 
