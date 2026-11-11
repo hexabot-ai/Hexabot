@@ -13,7 +13,7 @@ import { LoggerService } from '@/logger/logger.service';
 import { toDraft07JsonSchema } from '@/utils/helpers/zod';
 import { WorkflowType } from '@/workflow/types';
 
-import { BaseAction } from './base-action';
+import type { BaseAction } from './base-action';
 import { ActionName, ActionRegistry } from './types';
 
 @Injectable()

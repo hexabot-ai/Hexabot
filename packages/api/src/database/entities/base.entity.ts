@@ -10,7 +10,7 @@ import { BeforeInsert, BeforeUpdate, PrimaryColumn } from 'typeorm';
 import type { ZodTypeAny } from 'zod';
 
 import { DatetimeColumn } from '@/database/decorators/datetime-column.decorator';
-import { InferTransformDto, TDto } from '@/utils';
+import type { InferTransformDto, TDto } from '@/utils/types/dto.types';
 
 type TransformerField = 'plainCls' | 'fullCls';
 

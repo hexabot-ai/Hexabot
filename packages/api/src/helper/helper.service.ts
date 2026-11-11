@@ -11,7 +11,7 @@ import { LoggerService } from '@/logger/logger.service';
 import { RuntimeSettingsService } from '@/setting/services/runtime-settings.service';
 import { SettingService } from '@/setting/services/setting.service';
 
-import BaseHelper from './lib/base-helper';
+import type BaseHelper from './lib/base-helper';
 import { HelperName, HelperRegistry, HelperType, TypeOfHelper } from './types';
 
 @Injectable()
