@@ -221,9 +221,13 @@ describe('AiAgentAction', () => {
     ]);
     expect(stepCountIsMock).toHaveBeenCalledWith(3);
     await (agentOptions.tools as any).search.execute({ query: 'hello' });
-    expect(toolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
-      scope: 'web',
-    });
+    expect(toolRun).toHaveBeenCalledWith(
+      { query: 'hello' },
+      context,
+      { scope: 'web' },
+      undefined,
+      undefined,
+    );
     expect(toolLoopAgentGenerateMock).toHaveBeenCalledWith({
       prompt: 'Hello there',
     });
@@ -508,9 +512,13 @@ describe('AiAgentAction', () => {
     ]);
     expect(stepCountIsMock).toHaveBeenCalledWith(3);
     await agentOptions.tools.search.execute({ query: 'hello' });
-    expect(actionToolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
-      locale: 'en',
-    });
+    expect(actionToolRun).toHaveBeenCalledWith(
+      { query: 'hello' },
+      context,
+      { locale: 'en' },
+      undefined,
+      undefined,
+    );
     await agentOptions.tools.planner__lookup.execute({ query: 'hello' });
     expect(mcpToolRun).toHaveBeenCalledWith({ query: 'hello' });
   });

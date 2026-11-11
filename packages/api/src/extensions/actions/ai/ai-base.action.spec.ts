@@ -155,12 +155,14 @@ class TestAiBaseAction extends AiBaseAction<
     toolBindings?: RuntimeBindings['tools'],
     mcpToolBindings?: RuntimeBindings['mcp'],
     selectedMemorySlugs: string[] = [],
+    signal?: AbortSignal,
   ) {
     return this.buildTools(
       context as any,
       toolBindings,
       mcpToolBindings as any,
       selectedMemorySlugs,
+      signal,
     );
   }
 
@@ -914,9 +916,13 @@ describe('AiBaseAction', () => {
         },
       });
       await (tools as Record<string, any>).search.execute({ query: 'hello' });
-      expect(actionToolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
-        scope: 'web',
-      });
+      expect(actionToolRun).toHaveBeenCalledWith(
+        { query: 'hello' },
+        context,
+        { scope: 'web' },
+        undefined,
+        undefined,
+      );
       await (tools as Record<string, any>).planner__search.execute({
         query: 'hello',
       });
@@ -927,6 +933,9 @@ describe('AiBaseAction', () => {
       expect(updateMemoryRun).toHaveBeenCalledWith(
         { user_profile: {} },
         context,
+        undefined,
+        undefined,
+        undefined,
       );
     });
 
@@ -1025,7 +1034,59 @@ describe('AiBaseAction', () => {
         context,
         { scope: 'child' },
         nestedBindings,
+        undefined,
       );
+    });
+
+    it('forwards the abort signal of the tool call, or the one of the action', async () => {
+      const actionToolRun = jest.fn().mockResolvedValue({ ok: true });
+      const updateMemoryRun = jest.fn().mockResolvedValue({ updated: true });
+      const context = {
+        services: {
+          actions: {
+            get: jest.fn((actionName: string) => ({
+              description: actionName,
+              inputSchema: {},
+              outputSchema: {},
+              run:
+                actionName === 'update_memory'
+                  ? updateMemoryRun
+                  : actionToolRun,
+            })),
+          },
+        },
+        memoryStore: {
+          buildUpdateMemorySchema: jest.fn().mockReturnValue({
+            type: 'object',
+            properties: {},
+          }),
+        },
+      } as unknown as WorkflowRuntimeContext;
+      const actionSignal = new AbortController().signal;
+      const callSignal = new AbortController().signal;
+      const tools = (await action.buildToolsPublic(
+        context,
+        {
+          search: { action: 'search_action', settings: {} },
+        } as RuntimeBindings['tools'],
+        undefined,
+        ['user_profile'],
+        actionSignal,
+      )) as Record<string, any>;
+
+      await tools.search.execute({ q: 1 }, { abortSignal: callSignal });
+      await tools.search.execute({ q: 2 });
+      await tools.update_memory.execute({}, { abortSignal: callSignal });
+      await tools.update_memory.execute({});
+
+      expect(actionToolRun.mock.calls.map((call) => call[4])).toEqual([
+        callSignal,
+        actionSignal,
+      ]);
+      expect(updateMemoryRun.mock.calls.map((call) => call[4])).toEqual([
+        callSignal,
+        actionSignal,
+      ]);
     });
 
     it('logs a warning and keeps first tool when action and MCP tools resolve the same name', async () => {
@@ -1090,6 +1151,29 @@ describe('AiBaseAction', () => {
   describe('normalizeUsage', () => {
     it('returns undefined when usage is missing', () => {
       expect(action.normalizeUsagePublic()).toBeUndefined();
+    });
+
+    it('leaves out the token details the provider does not report', () => {
+      expect(
+        action.normalizeUsagePublic({
+          inputTokens: 10,
+          inputTokenDetails: { noCacheTokens: undefined },
+          outputTokens: 20,
+          totalTokens: 30,
+          reasoningTokens: 4,
+          cachedInputTokens: 2,
+          raw: undefined,
+        } as unknown as LanguageModelUsage),
+      ).toEqual({
+        input_tokens: 10,
+        output_tokens: 20,
+        total_tokens: 30,
+        reasoning_tokens: 4,
+        cached_input_tokens: 2,
+        input_token_details: undefined,
+        output_token_details: undefined,
+        raw: undefined,
+      });
     });
 
     it('normalizes usage fields to snake_case', () => {
