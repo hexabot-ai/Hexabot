@@ -25,6 +25,39 @@ import { CredentialService } from '@/user/services/credential.service';
 import { WorkflowService } from '../services/workflow.service';
 import { WorkflowType } from '../types';
 
+// One message for every refusal, so it does not tell what was wrong.
+const invalidCredentials = () =>
+  new UnauthorizedException('Invalid webhook credentials');
+
+type WebhookAuth<T extends WebhookAuthType> = Extract<
+  WebhookTriggerConfig,
+  { authType: T }
+>;
+
+const AUTHORIZATION_PATTERNS = {
+  Basic: /^Basic\s+(\S+)$/i,
+  Bearer: /^Bearer\s+(\S+)$/i,
+};
+/**
+ * Reads the credentials of the `Authorization` header sent with `scheme`
+ * (case-insensitive).
+ *
+ * @throws UnauthorizedException when the header is missing or uses another scheme.
+ */
+const readAuthorization = (
+  req: Request,
+  scheme: keyof typeof AUTHORIZATION_PATTERNS,
+) => {
+  const match = (req.headers.authorization ?? '').match(
+    AUTHORIZATION_PATTERNS[scheme],
+  );
+  if (!match) {
+    throw invalidCredentials();
+  }
+
+  return match[1];
+};
+
 /**
  * Guards the public webhook trigger endpoint. It resolves the target workflow,
  * enforces that it is a manual workflow with an enabled webhook, and verifies
@@ -82,7 +115,7 @@ export class WebhookTriggerGuard implements CanActivate {
     credentialId: string | null | undefined,
   ): Promise<string> {
     if (!credentialId) {
-      throw new UnauthorizedException('Invalid webhook credentials');
+      throw invalidCredentials();
     }
 
     const value = await this.credentialService.findOneValue(credentialId);
@@ -90,7 +123,7 @@ export class WebhookTriggerGuard implements CanActivate {
       this.logger.warn(
         `Webhook trigger references a missing credential (${credentialId})`,
       );
-      throw new UnauthorizedException('Invalid webhook credentials');
+      throw invalidCredentials();
     }
 
     return value;
@@ -107,74 +140,75 @@ export class WebhookTriggerGuard implements CanActivate {
     switch (webhook.authType) {
       case WebhookAuthType.none:
         return;
-
-      case WebhookAuthType.basic: {
-        // A missing expected secret must never authenticate empty credentials.
-        if (!webhook.username) {
-          throw new UnauthorizedException('Invalid webhook credentials');
-        }
-        const expectedPassword = await this.resolveSecret(
-          webhook.passwordCredentialId,
-        );
-        const header = req.headers.authorization ?? '';
-        const match = header.match(/^Basic\s+(\S+)$/i);
-        if (!match) {
-          throw new UnauthorizedException('Invalid webhook credentials');
-        }
-        const decoded = Buffer.from(match[1], 'base64').toString('utf8');
-        const separator = decoded.indexOf(':');
-        const username =
-          separator === -1 ? decoded : decoded.slice(0, separator);
-        const password = separator === -1 ? '' : decoded.slice(separator + 1);
-        if (
-          !this.safeEqual(username, webhook.username) ||
-          !this.safeEqual(password, expectedPassword)
-        ) {
-          throw new UnauthorizedException('Invalid webhook credentials');
-        }
-
-        return;
-      }
-
-      case WebhookAuthType.header: {
-        const headerName = (webhook.headerName ?? '').toLowerCase();
-        // A missing expected secret must never authenticate empty credentials.
-        if (!headerName) {
-          throw new UnauthorizedException('Invalid webhook credentials');
-        }
-        const expectedValue = await this.resolveSecret(
-          webhook.headerValueCredentialId,
-        );
-        const provided = req.headers[headerName];
-        const value = Array.isArray(provided) ? provided[0] : (provided ?? '');
-        if (!this.safeEqual(value, expectedValue)) {
-          throw new UnauthorizedException('Invalid webhook credentials');
-        }
-
-        return;
-      }
-
-      case WebhookAuthType.jwt: {
-        const secret = await this.resolveSecret(webhook.jwtSecretCredentialId);
-        const header = req.headers.authorization ?? '';
-        const match = header.match(/^Bearer\s+(\S+)$/i);
-        if (!match) {
-          throw new UnauthorizedException('Invalid webhook credentials');
-        }
-        try {
-          this.jwtService.verify(match[1], {
-            secret,
-            algorithms: [webhook.jwtAlgorithm ?? 'HS256'],
-          });
-        } catch {
-          throw new UnauthorizedException('Invalid webhook credentials');
-        }
-
-        return;
-      }
-
+      case WebhookAuthType.basic:
+        return await this.verifyBasicAuth(webhook, req);
+      case WebhookAuthType.header:
+        return await this.verifyHeaderAuth(webhook, req);
+      case WebhookAuthType.jwt:
+        return await this.verifyJwtAuth(webhook, req);
       default:
-        throw new UnauthorizedException('Invalid webhook credentials');
+        throw invalidCredentials();
+    }
+  }
+
+  private async verifyBasicAuth(
+    webhook: WebhookAuth<WebhookAuthType.basic>,
+    req: Request,
+  ): Promise<void> {
+    // A missing expected secret must never authenticate empty credentials.
+    if (!webhook.username) {
+      throw invalidCredentials();
+    }
+    const expectedPassword = await this.resolveSecret(
+      webhook.passwordCredentialId,
+    );
+    const decoded = Buffer.from(
+      readAuthorization(req, 'Basic'),
+      'base64',
+    ).toString('utf8');
+    const separator = decoded.indexOf(':');
+    const username = separator === -1 ? decoded : decoded.slice(0, separator);
+    const password = separator === -1 ? '' : decoded.slice(separator + 1);
+    if (
+      !this.safeEqual(username, webhook.username) ||
+      !this.safeEqual(password, expectedPassword)
+    ) {
+      throw invalidCredentials();
+    }
+  }
+
+  private async verifyHeaderAuth(
+    webhook: WebhookAuth<WebhookAuthType.header>,
+    req: Request,
+  ): Promise<void> {
+    const headerName = (webhook.headerName ?? '').toLowerCase();
+    // A missing expected secret must never authenticate empty credentials.
+    if (!headerName) {
+      throw invalidCredentials();
+    }
+    const expectedValue = await this.resolveSecret(
+      webhook.headerValueCredentialId,
+    );
+    const provided = req.headers[headerName];
+    const value = Array.isArray(provided) ? provided[0] : (provided ?? '');
+    if (!this.safeEqual(value, expectedValue)) {
+      throw invalidCredentials();
+    }
+  }
+
+  private async verifyJwtAuth(
+    webhook: WebhookAuth<WebhookAuthType.jwt>,
+    req: Request,
+  ): Promise<void> {
+    const secret = await this.resolveSecret(webhook.jwtSecretCredentialId);
+    const token = readAuthorization(req, 'Bearer');
+    try {
+      this.jwtService.verify(token, {
+        secret,
+        algorithms: [webhook.jwtAlgorithm ?? 'HS256'],
+      });
+    } catch {
+      throw invalidCredentials();
     }
   }
 
