@@ -201,6 +201,17 @@ describe('TypeOrmSearchFilterPipe', () => {
       ]);
     });
 
+    it('does not change the query it reads', async () => {
+      const query = { name: 'John', or: [{ email: 'john@example.com' }] };
+
+      await where(query);
+
+      expect(query).toEqual({
+        name: 'John',
+        or: [{ email: 'john@example.com' }],
+      });
+    });
+
     it('normalizes equality values', async () => {
       expect(await where({ name: ' John ' })).toEqual({ name: 'John' });
       expect(await where({ name: 'NULL' })).toEqual({ name: IsNull() });
