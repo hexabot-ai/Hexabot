@@ -42,3 +42,88 @@ export const isMeaningfulWorkflowViewport = (viewport: Viewport): boolean => {
     !isSameViewport(viewport, DEFAULT_WORKFLOW_VIEWPORT)
   );
 };
+
+/** A viewport as the host persists it: any coordinate may be missing or a string. */
+export type ViewportState = {
+  id?: string | null;
+  x?: number | string | null;
+  y?: number | string | null;
+  zoom?: number | string | null;
+};
+
+const parseViewportNumber = (
+  value: number | string | null | undefined,
+): number =>
+  value === null || value === undefined || value === ""
+    ? Number.NaN
+    : Number(value);
+
+/**
+ * The viewport to open a workflow with: the persisted one when it is
+ * meaningful (finite, zoom within bounds, not the {0,0,1} default),
+ * otherwise its finite coordinates with defaults filling the gaps.
+ */
+export const resolveWorkflowDefaultViewport = (
+  viewport: Omit<ViewportState, "id">,
+): { defaultViewport: Viewport; hasPersistedViewport: boolean } => {
+  const parsedViewport = {
+    x: parseViewportNumber(viewport.x),
+    y: parseViewportNumber(viewport.y),
+    zoom: parseViewportNumber(viewport.zoom),
+  };
+
+  if (isMeaningfulWorkflowViewport(parsedViewport)) {
+    return { defaultViewport: parsedViewport, hasPersistedViewport: true };
+  }
+
+  return {
+    defaultViewport: {
+      x: Number.isFinite(parsedViewport.x)
+        ? parsedViewport.x
+        : DEFAULT_WORKFLOW_VIEWPORT.x,
+      y: Number.isFinite(parsedViewport.y)
+        ? parsedViewport.y
+        : DEFAULT_WORKFLOW_VIEWPORT.y,
+      zoom: normalizeWorkflowViewportZoom(parsedViewport.zoom),
+    },
+    hasPersistedViewport: false,
+  };
+};
+
+/**
+ * The step to bring into view after the workflow's steps changed: the added
+ * step on an insertion, otherwise the nearest step still present before the
+ * last removed one (or the first step). The step count tells an insertion
+ * from a deletion — step ids are index-based, so a deletion shifts the
+ * following ids and makes them look new.
+ */
+export const resolveFocusedStepIdAfterChange = (
+  prevStepIds: readonly string[],
+  stepIds: readonly string[],
+): string | undefined => {
+  if (stepIds.length > prevStepIds.length) {
+    const prevStepIdSet = new Set(prevStepIds);
+    const addedStepId = stepIds.find((id) => !prevStepIdSet.has(id));
+
+    if (addedStepId !== undefined) {
+      return addedStepId;
+    }
+  }
+
+  const stepIdSet = new Set(stepIds);
+  const lastRemovedIndex = prevStepIds.reduce(
+    (last, id, index) => (stepIdSet.has(id) ? last : index),
+    -1,
+  );
+
+  if (lastRemovedIndex === -1) {
+    return undefined;
+  }
+
+  return (
+    prevStepIds
+      .slice(0, lastRemovedIndex)
+      .reverse()
+      .find((id) => stepIdSet.has(id)) ?? stepIds[0]
+  );
+};

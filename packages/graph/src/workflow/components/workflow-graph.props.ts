@@ -10,7 +10,6 @@ import type { ResizeControlDirection } from "@xyflow/system";
 import type { PropsWithChildren } from "react";
 
 import type { WorkflowGraphTranslate } from "../contexts/workflow-graph-host.context";
-import type { ViewportState } from "../hooks/useWorkflowViewport";
 import type {
   WorkflowAction,
   WorkflowBindingAddPayload,
@@ -24,6 +23,7 @@ import type {
 } from "../types/workflow-path.types";
 import type { WorkflowSelectionSnapshot } from "../types/workflow-selection.types";
 import { areArraysEqual } from "../utils/array.utils";
+import type { ViewportState } from "../utils/workflow-graph.utils";
 
 /**
  * A single reason the workflow could not be compiled. `line` is the 1-based

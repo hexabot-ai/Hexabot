@@ -92,6 +92,8 @@ export const WORKFLOW_INSERT_MENU_ITEMS: WorkflowInsertMenuItem[] = [
 ];
 
 export const VIEWPORT_EPSILON = 0.01;
+/** Viewport id used while the host provides no persisted viewport. */
+export const EMPTY_WORKFLOW_VIEWPORT_KEY = "__workflow-empty__";
 export const DEFAULT_WORKFLOW_VIEWPORT = { x: 0, y: 0, zoom: 1 } as const;
 export const WORKFLOW_VIEWPORT_MIN_ZOOM = 0.05;
 export const WORKFLOW_VIEWPORT_MAX_ZOOM = 4;

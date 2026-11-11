@@ -23,6 +23,7 @@ import {
 } from "react";
 
 import {
+  EMPTY_WORKFLOW_VIEWPORT_KEY,
   WORKFLOW_VIEWPORT_MAX_ZOOM,
   WORKFLOW_VIEWPORT_MIN_ZOOM,
 } from "../constants/workflow.constants";
@@ -324,7 +325,7 @@ WorkflowGraphCanvas.displayName = "WorkflowGraphCanvas";
 
 const WorkflowGraphRoot = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
   (props, ref) => {
-    const flowKey = props.viewport.value?.id ?? "__workflow-empty__";
+    const flowKey = props.viewport.value?.id ?? EMPTY_WORKFLOW_VIEWPORT_KEY;
 
     return (
       <ReactFlowProvider key={flowKey}>

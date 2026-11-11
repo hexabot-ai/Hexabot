@@ -15,36 +15,26 @@ import {
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
-  DEFAULT_WORKFLOW_VIEWPORT,
+  EMPTY_WORKFLOW_VIEWPORT_KEY,
   WORKFLOW_VIEWPORT_FIT_PADDING,
   WORKFLOW_VIEWPORT_FOCUS_DURATION,
   WORKFLOW_VIEWPORT_MIN_ZOOM,
 } from "../constants/workflow.constants";
 import { ENodeType } from "../types/workflow-node.types";
 import {
-  isMeaningfulWorkflowViewport,
   normalizeWorkflowViewportZoom,
+  resolveFocusedStepIdAfterChange,
+  resolveWorkflowDefaultViewport,
+  type ViewportState,
 } from "../utils/workflow-graph.utils";
 
-const EMPTY_WORKFLOW_SYNC_KEY = "__workflow-empty__";
+export type { ViewportState };
+
 /** IDs of semantic workflow step nodes (TASK / OPERATOR) in graph order. */
 const getStepNodeIds = (nodes: Node[]): string[] =>
   nodes
     .filter((n) => n.type === ENodeType.TASK || n.type === ENodeType.OPERATOR)
     .map((n) => n.id);
-const parseViewportNumber = (
-  value: number | string | null | undefined,
-): number =>
-  value === null || value === undefined || value === ""
-    ? Number.NaN
-    : Number(value);
-
-export type ViewportState = {
-  id?: string | null;
-  x?: number | string | null;
-  y?: number | string | null;
-  zoom?: number | string | null;
-};
 
 type UseWorkflowViewportProps<TNode extends Node = Node> = {
   viewport?: ViewportState | null;
@@ -64,7 +54,7 @@ export const useWorkflowViewport = <TNode extends Node = Node>({
   const workflowHeight = useStore(
     (state) => state.height ?? state.domNode?.clientHeight ?? 0,
   );
-  const viewportSyncKey = viewport?.id ?? EMPTY_WORKFLOW_SYNC_KEY;
+  const viewportSyncKey = viewport?.id ?? EMPTY_WORKFLOW_VIEWPORT_KEY;
   // Per-flow bookkeeping, keyed by viewportSyncKey so switching workflows
   // implicitly resets it — no dedicated reset effects needed.
   const viewportInitializedForFlowRef = useRef<string | null>(null);
@@ -83,29 +73,15 @@ export const useWorkflowViewport = <TNode extends Node = Node>({
     () => getStepNodeIds(graphNodes).join("|"),
     [graphNodes],
   );
-  const { defaultViewport, hasPersistedViewport } = useMemo(() => {
-    const parsedViewport = {
-      x: parseViewportNumber(viewport?.x),
-      y: parseViewportNumber(viewport?.y),
-      zoom: parseViewportNumber(viewport?.zoom),
-    };
-
-    // Meaningful ⇔ finite, zoom within bounds, not the {0,0,1} default
-    return isMeaningfulWorkflowViewport(parsedViewport)
-      ? { defaultViewport: parsedViewport, hasPersistedViewport: true }
-      : {
-          defaultViewport: {
-            x: Number.isFinite(parsedViewport.x)
-              ? parsedViewport.x
-              : DEFAULT_WORKFLOW_VIEWPORT.x,
-            y: Number.isFinite(parsedViewport.y)
-              ? parsedViewport.y
-              : DEFAULT_WORKFLOW_VIEWPORT.y,
-            zoom: normalizeWorkflowViewportZoom(parsedViewport.zoom),
-          },
-          hasPersistedViewport: false,
-        };
-  }, [viewport?.x, viewport?.y, viewport?.zoom]);
+  const { defaultViewport, hasPersistedViewport } = useMemo(
+    () =>
+      resolveWorkflowDefaultViewport({
+        x: viewport?.x,
+        y: viewport?.y,
+        zoom: viewport?.zoom,
+      }),
+    [viewport?.x, viewport?.y, viewport?.zoom],
+  );
   const initialViewport = useMemo(
     () =>
       isEmptyWorkflow && !hasPersistedViewport
@@ -207,26 +183,7 @@ export const useWorkflowViewport = <TNode extends Node = Node>({
       return;
     }
 
-    const prevStepIdSet = new Set(prevStepIds);
-    const stepIdSet = new Set(stepIds);
-    // Use count change to distinguish insertion from deletion — step IDs are
-    // index-based, so a deletion shifts subsequent IDs and makes them look new.
-    const isInsertion = stepIds.length > prevStepIds.length;
-    const addedStepId = isInsertion
-      ? stepIds.find((id) => !prevStepIdSet.has(id))
-      : undefined;
-    const lastRemovedIndex = prevStepIds.reduce(
-      (last, id, index) => (stepIdSet.has(id) ? last : index),
-      -1,
-    );
-    const targetStepId =
-      addedStepId ??
-      (lastRemovedIndex === -1
-        ? undefined
-        : (prevStepIds
-            .slice(0, lastRemovedIndex)
-            .reverse()
-            .find((id) => stepIdSet.has(id)) ?? stepIds[0]));
+    const targetStepId = resolveFocusedStepIdAfterChange(prevStepIds, stepIds);
     const targetNode = nodes.find((n) => n.id === targetStepId);
 
     if (targetNode) {
