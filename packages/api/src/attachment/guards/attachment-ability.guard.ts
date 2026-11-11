@@ -4,8 +4,6 @@
  * Full terms: see LICENSE.md.
  */
 
-import { Url } from 'url';
-
 import type { User } from '@hexabot-ai/types';
 import {
   BadRequestException,
@@ -218,40 +216,35 @@ export class AttachmentGuard implements CanActivate {
    * @returns Returns `true` if the user is authorized, otherwise throws an exception.
    */
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const { query, _parsedUrl, method, user, params } = ctx
+    const { query, method, user, params } = ctx
       .switchToHttp()
-      .getRequest<Request & { user: User; _parsedUrl: Url }>();
+      .getRequest<Request & { user: User }>();
 
     switch (method) {
       // count(), find() and findOne() endpoints
       case 'GET': {
-        if (params && 'id' in params && this.isValidId(params.id)) {
-          const attachment = await this.attachmentService.findOne(params.id);
-
-          if (!attachment) {
-            throw new NotFoundException('Attachment not found!');
-          }
-
-          return await this.isAuthorized(
+        if (this.isValidId(params?.id)) {
+          return await this.isAuthorizedOn(
+            params.id,
             Action.READ,
             user,
-            attachment.resourceRef,
+            'Attachment not found!',
           );
-        } else if (query.where) {
-          const { resourceRef = [] } = query.where as qs.ParsedQs;
-
-          if (!isAttachmentResourceRefArray(resourceRef)) {
-            throw new BadRequestException('Invalid resource ref');
-          }
-
-          return (
-            await Promise.all(
-              resourceRef.map((c) => this.isAuthorized(Action.READ, user, c)),
-            )
-          ).every(Boolean);
-        } else {
+        }
+        if (!query.where) {
           throw new BadRequestException('Invalid params');
         }
+
+        const { resourceRef = [] } = query.where as qs.ParsedQs;
+        if (!isAttachmentResourceRefArray(resourceRef)) {
+          throw new BadRequestException('Invalid resource ref');
+        }
+
+        return (
+          await Promise.all(
+            resourceRef.map((c) => this.isAuthorized(Action.READ, user, c)),
+          )
+        ).every(Boolean);
       }
       // upload() endpoint
       case 'POST': {
@@ -264,24 +257,39 @@ export class AttachmentGuard implements CanActivate {
       }
       // deleteOne() endpoint
       case 'DELETE': {
-        if (params && 'id' in params && this.isValidId(params.id)) {
-          const attachment = await this.attachmentService.findOne(params.id);
-
-          if (!attachment) {
-            throw new NotFoundException('Invalid attachment ID');
-          }
-
-          return await this.isAuthorized(
-            Action.DELETE,
-            user,
-            attachment.resourceRef,
-          );
-        } else {
+        if (!this.isValidId(params?.id)) {
           throw new BadRequestException('Invalid params');
         }
+
+        return await this.isAuthorizedOn(
+          params.id,
+          Action.DELETE,
+          user,
+          'Invalid attachment ID',
+        );
       }
       default:
         throw new BadRequestException('Invalid operation');
     }
+  }
+
+  /**
+   * Checks if the user is authorized to perform a given action on the
+   * attachment of the given id.
+   *
+   * @throws NotFoundException with `notFoundMessage` when the attachment does not exist.
+   */
+  private async isAuthorizedOn(
+    id: string,
+    action: Action,
+    user: Express.User & User,
+    notFoundMessage: string,
+  ): Promise<boolean> {
+    const attachment = await this.attachmentService.findOne(id);
+    if (!attachment) {
+      throw new NotFoundException(notFoundMessage);
+    }
+
+    return await this.isAuthorized(action, user, attachment.resourceRef);
   }
 }
