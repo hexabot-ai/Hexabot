@@ -6,6 +6,7 @@
 
 import { Badge, Chip, SxProps, Tooltip } from "@mui/material";
 
+import { PRICING_URL } from "@/components/license/LicenseGate";
 import { useTranslate } from "@/hooks/useTranslate";
 import { ILicense } from "@/types/user.types";
 
@@ -42,7 +43,7 @@ const LicenseBadge = ({ license, className, sx }: LicenseBadgeProps) => {
   return (
     <Tooltip enterDelay={300} title={title}>
       <a
-        href="https://hexabot.ai/pricing/#pricing"
+        href={PRICING_URL}
         target="_blank"
         rel="noopener noreferrer"
         style={{ textDecoration: "none" }}

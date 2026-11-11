@@ -11,6 +11,7 @@ import { z } from "zod";
 import {
   applyWorkflowDefinitionStateUpdate,
   commitWorkflowDefinitionUpdate,
+  getWorkflowDefinitionState,
   type UpdateWorkflowDefinitionStateOptions,
 } from "./workflow-definition-state.utils";
 
@@ -159,5 +160,79 @@ describe("workflow definition state persistence", () => {
 
     expect(committed).toBe(false);
     expect(commitVersion).not.toHaveBeenCalled();
+  });
+});
+
+describe("getWorkflowDefinitionState", () => {
+  const compileActions = {
+    noop: { name: "noop", parseSettings: (payload: unknown) => payload },
+  } as unknown as Parameters<
+    typeof getWorkflowDefinitionState
+  >[0]["compileActions"];
+  const getState = (
+    args: Partial<Parameters<typeof getWorkflowDefinitionState>[0]> = {},
+  ) =>
+    getWorkflowDefinitionState({
+      yaml: NEXT_YAML,
+      hasCatalogError: false,
+      isLoading: false,
+      compileActions,
+      ...args,
+    });
+
+  it("reports a catalog error before anything else", () => {
+    expect(getState({ hasCatalogError: true, isLoading: true })).toEqual({
+      status: "invalid",
+      issues: [
+        {
+          code: "catalog_error",
+          message: "Failed to load the workflow catalogs from the server.",
+        },
+      ],
+    });
+  });
+
+  it("waits for the catalogs and the version", () => {
+    expect(getState({ isLoading: true, yaml: "defs: [" })).toEqual({
+      status: "loading",
+      issues: [],
+    });
+  });
+
+  it("reports an empty workflow without steps", () => {
+    expect(getState({ yaml: "" })).toEqual({
+      status: "empty",
+      flow: [],
+      issues: [],
+    });
+  });
+
+  it("returns the validation issues of invalid YAML", () => {
+    const state = getState({ yaml: "defs: [" });
+
+    expect(state.status).toBe("invalid");
+    expect(state.issues.length).toBeGreaterThan(0);
+    expect(state.definition).toBeUndefined();
+  });
+
+  it("compiles valid YAML", () => {
+    const state = getState();
+
+    expect(state.status).toBe("ready");
+    expect(state.issues).toEqual([]);
+    expect(Object.keys(state.definition?.defs ?? {})).toEqual(["next_task"]);
+    expect(state.flow).toHaveLength(1);
+  });
+
+  it("reports a compile error when compilation fails", () => {
+    expect(getState({ compileActions: {} })).toEqual({
+      status: "invalid",
+      issues: [
+        {
+          code: "compile_error",
+          message: expect.stringContaining('"noop"'),
+        },
+      ],
+    });
   });
 });

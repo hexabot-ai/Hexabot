@@ -13,13 +13,10 @@ import {
   useRef,
 } from "react";
 
-export enum EBCEvent {
-  LOGIN = "login",
-  LOGOUT = "logout",
-}
+export type BroadcastChannelEvent = "login" | "logout";
 
 export type BroadcastChannelMessage = {
-  event: `${EBCEvent}`;
+  event: BroadcastChannelEvent;
   data?: string | number | boolean | Record<string, unknown> | undefined | null;
 };
 
@@ -30,7 +27,7 @@ interface IBroadcastChannelProps {
 
 interface IBroadcastChannelContext {
   subscribe: (
-    event: `${EBCEvent}`,
+    event: BroadcastChannelEvent,
     callback: (message: BroadcastChannelMessage) => void,
   ) => () => void;
   postMessage: (message: BroadcastChannelMessage) => void;

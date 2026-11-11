@@ -29,7 +29,7 @@ import { TFilterStringFields } from "@/types/search.types";
 import { generateId } from "@/utils/generateId";
 
 import { WithEntityButton } from "../buttons/entities/WithEntityButton";
-import { BASE_ADD_DIALOG_MAP } from "../dialogs/dialog.constants";
+import type { BASE_ADD_DIALOG_MAP } from "../dialogs/dialog.constants";
 
 import { buildAutoCompleteEntityWhere } from "./auto-complete-entity-select.utils";
 import AutoCompleteSelect from "./AutoCompleteSelect";

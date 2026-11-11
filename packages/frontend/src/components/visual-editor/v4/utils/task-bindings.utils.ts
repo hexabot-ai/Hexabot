@@ -4,7 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { DefDefinition } from "@hexabot-ai/agentic";
+import type { DefDefinition, WorkflowDefinition } from "@hexabot-ai/agentic";
 
 export const toBindingRefs = (value: unknown, multiple: boolean): string[] => {
   if (multiple) {
@@ -33,7 +33,7 @@ export const toBindingRefs = (value: unknown, multiple: boolean): string[] => {
     .filter(Boolean);
 };
 
-const withDefBindingRefs = <TDefDefinition extends DefDefinition>(
+const setDefBindingRefs = <TDefDefinition extends DefDefinition>(
   defDefinition: TDefDefinition,
   bindingKind: string,
   refs: string[],
@@ -60,14 +60,6 @@ const withDefBindingRefs = <TDefDefinition extends DefDefinition>(
     bindings: nextBindings,
   } as TDefDefinition;
 };
-
-export const setDefBindingRefs = <TDefDefinition extends DefDefinition>(
-  defDefinition: TDefDefinition,
-  bindingKind: string,
-  refs: string[],
-  multiple: boolean,
-): TDefDefinition =>
-  withDefBindingRefs(defDefinition, bindingKind, refs, multiple);
 
 export const mountDefBindingRef = <TDefDefinition extends DefDefinition>(
   defDefinition: TDefDefinition,
@@ -119,6 +111,39 @@ export const unmountDefBindingRef = <TDefDefinition extends DefDefinition>(
 
   return setDefBindingRefs(defDefinition, bindingKind, nextRefs, multiple);
 };
+
+/**
+ * Point every `bindingKind` reference to `currentRef` at `nextRef`, keeping one
+ * reference per definition when it already referenced `nextRef`.
+ */
+export const renameDefBindingRefs = (
+  defs: WorkflowDefinition["defs"],
+  bindingKind: string,
+  currentRef: string,
+  nextRef: string,
+  multiple: boolean,
+): WorkflowDefinition["defs"] =>
+  Object.fromEntries(
+    Object.entries(defs).map(([defName, defDefinition]) => {
+      const refs = toBindingRefs(
+        defDefinition.bindings?.[bindingKind],
+        multiple,
+      );
+
+      if (!refs.includes(currentRef)) {
+        return [defName, defDefinition];
+      }
+
+      const renamedRefs = Array.from(
+        new Set(refs.map((ref) => (ref === currentRef ? nextRef : ref))),
+      );
+
+      return [
+        defName,
+        setDefBindingRefs(defDefinition, bindingKind, renamedRefs, multiple),
+      ];
+    }),
+  ) as WorkflowDefinition["defs"];
 
 // Deprecated aliases kept to avoid broad call-site churn.
 export const mountTaskBindingRef = mountDefBindingRef;

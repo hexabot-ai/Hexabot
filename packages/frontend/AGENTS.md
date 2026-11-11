@@ -26,7 +26,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot admi
 - Static rebuild (watch): `pnpm --filter @hexabot-ai/frontend dev:static`.
 
 ## Runtime architecture
-- `main.tsx` composes providers in order: `BrowserRouter` -> `ConfigProvider` -> `AppTheme` -> `CssBaseline` -> `SnackbarProvider` -> `QueryClientProvider` -> `ApiClientProvider` -> `BroadcastChannelProvider` -> `AuthProvider` -> `PermissionProvider` -> `SettingsProvider` -> `DialogsProvider` -> `SocketProvider` -> `App` (with `ReactQueryDevtools` under the same `QueryClientProvider`).
+- `main.tsx` composes providers in order: `BrowserRouter` -> `ConfigProvider` -> `AppTheme` -> `CssBaseline` -> `SnackbarProvider` -> `QueryClientProvider` -> `BroadcastChannelProvider` -> `ApiClientProvider` -> `AuthProvider` -> `PermissionProvider` -> `SettingsProvider` -> `EntityDialogsProvider` -> `DialogsProvider` -> `SocketProvider` -> `App` (with `ReactQueryDevtools` under the same `QueryClientProvider`).
 - `App.tsx` resolves routes via `useRoutes(routes)` and passes `match.route.handle` into `Layout`.
 - `Layout` swaps between `AnonymousLayout` and `AuthenticatedLayout`. Authenticated layout renders `DashboardHeader` + `DashboardSidebar` and gates route access with `requiredPermissions`.
 
@@ -89,5 +89,6 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot admi
 - Avoid `console.*`; ESLint forbids it.
 - Use `Format.FULL` + `POPULATE_BY_TYPE` when you need nested relations; do not hand-roll populate params.
 - Chat rendering contract: branch by discriminators from `@hexabot-ai/types`.
+- Entity add dialogs are registered in `BASE_ADD_DIALOG_MAP` (`app-components/dialogs/dialog.constants.ts`) and reach the shared entity buttons through `EntityDialogsProvider`; read them with `useEntityDialogs` / `useEntityDialogMap`, never import the map at runtime from `app-components/*` (the form dialogs render those buttons, so the import closes a cycle).
 - When adding a new entity type, update: `packages/frontend/src/services/types.ts`, `packages/frontend/src/services/entities.ts`, and `packages/frontend/src/types/base.types.ts`.
 - When adding a new route, update `packages/frontend/src/routes/routeConfig.tsx` and (if needed) menu configuration in `packages/frontend/src/utils/menu.util.ts`.

@@ -12,7 +12,7 @@ import { useContext, useMemo } from "react";
 import { ApiClientContext } from "@/contexts/apiClient.context";
 import { useBroadcastChannel } from "@/contexts/broadcast-channel.context";
 import { useTranslate } from "@/hooks/useTranslate";
-import { ApiClient, EntityApiClient } from "@/services/api.class";
+import type { ApiClient, EntityApiClient } from "@/services/api.class";
 import { QueryType, TMutationOptions } from "@/services/types";
 import { THook } from "@/types/base.types";
 import { isLoginPath } from "@/utils/URL";

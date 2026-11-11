@@ -27,6 +27,7 @@ import { DialogsProvider } from "./contexts/dialogs.context";
 import AppTheme from "./layout/theme/AppTheme";
 import { ApiClientProvider } from "./providers/ApiClientProvider";
 import { AuthProvider } from "./providers/AuthProvider";
+import { EntityDialogsProvider } from "./providers/EntityDialogsProvider";
 import { PermissionProvider } from "./providers/PermissionProvider";
 
 import "@/components/visual-editor/v4/components/yaml-editor/styles/yaml-editor.css";
@@ -75,11 +76,13 @@ ReactDOM.createRoot(rootElement).render(
                 <AuthProvider>
                   <PermissionProvider>
                     <SettingsProvider>
-                      <DialogsProvider>
-                        <SocketProvider>
-                          <App />
-                        </SocketProvider>
-                      </DialogsProvider>
+                      <EntityDialogsProvider>
+                        <DialogsProvider>
+                          <SocketProvider>
+                            <App />
+                          </SocketProvider>
+                        </DialogsProvider>
+                      </EntityDialogsProvider>
                     </SettingsProvider>
                   </PermissionProvider>
                 </AuthProvider>

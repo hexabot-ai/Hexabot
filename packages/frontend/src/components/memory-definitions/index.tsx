@@ -9,11 +9,11 @@ import type { MemoryDefinition } from "@hexabot-ai/types";
 import { GridColDef } from "@mui/x-data-grid";
 import { BrainCircuit, Plus } from "lucide-react";
 
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useDeleteAction } from "@/app-components/tables/columns/useDeleteAction";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -40,6 +40,9 @@ export const MemoryDefinitions = () => {
       },
     },
   );
+  const deleteAction = useDeleteAction<MemoryDefinition>(
+    deleteMemoryDefinition,
+  );
   const actionColumns = useActionColumns<MemoryDefinition>(
     EntityType.MEMORY_DEFINITION,
     [
@@ -54,17 +57,7 @@ export const MemoryDefinitions = () => {
         },
         requires: [Action.UPDATE],
       },
-      {
-        action: ColumnActionType.Delete,
-        onClick: async ({ id }) => {
-          const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
-
-          if (isConfirmed) {
-            deleteMemoryDefinition(id);
-          }
-        },
-        requires: [Action.DELETE],
-      },
+      deleteAction,
     ],
     t("label.operations"),
   );

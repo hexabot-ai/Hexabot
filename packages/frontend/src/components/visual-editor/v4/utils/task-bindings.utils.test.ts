@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   mountDefBindingRef,
   mountTaskBindingRef,
+  renameDefBindingRefs,
   toBindingRefs,
   unmountDefBindingRef,
   unmountTaskBindingRef,
@@ -100,5 +101,48 @@ describe("task-bindings.utils", () => {
 
     expect(mounted.bindings?.memory).toEqual(["profile", "session"]);
     expect(unmounted.bindings?.memory).toEqual(["session"]);
+  });
+
+  it("renames the refs of every def that points at the renamed binding", () => {
+    const untouched = createTaskDefinition({ memory: ["session"] });
+    const defs = renameDefBindingRefs(
+      {
+        agent: createTaskDefinition({ memory: ["profile", "session"] }),
+        router: createNonTaskDefinition({ memory: ["profile"] }),
+        other: untouched,
+      },
+      "memory",
+      "profile",
+      "user_profile",
+      true,
+    );
+
+    expect(defs.agent.bindings?.memory).toEqual(["user_profile", "session"]);
+    expect(defs.router.bindings?.memory).toEqual(["user_profile"]);
+    expect(defs.other).toBe(untouched);
+  });
+
+  it("keeps one ref when the def already pointed at the new name", () => {
+    const defs = renameDefBindingRefs(
+      { agent: createTaskDefinition({ memory: ["profile", "session"] }) },
+      "memory",
+      "profile",
+      "session",
+      true,
+    );
+
+    expect(defs.agent.bindings?.memory).toEqual(["session"]);
+  });
+
+  it("renames single refs as a string", () => {
+    const defs = renameDefBindingRefs(
+      { agent: createTaskDefinition({ model: "openai" }) },
+      "model",
+      "openai",
+      "anthropic",
+      false,
+    );
+
+    expect(defs.agent.bindings?.model).toBe("anthropic");
   });
 });

@@ -11,12 +11,12 @@ import { GridColDef } from "@mui/x-data-grid";
 import { BookOpen } from "lucide-react";
 
 import { BackButton } from "@/app-components/buttons/BackButton";
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import FileUploadButton from "@/app-components/inputs/FileInput";
 import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useDeleteAction } from "@/app-components/tables/columns/useDeleteAction";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { isSameEntity } from "@/hooks/crud/helpers";
@@ -55,6 +55,7 @@ export const Contents = () => {
       toast.success(t("message.item_delete_success"));
     },
   });
+  const deleteAction = useDeleteAction<Content>(deleteContent);
   const getEntityFromCache = useGetFromCache(EntityType.CONTENT_TYPE);
   const actionColumns = useActionColumns<Content>(
     EntityType.CONTENT,
@@ -69,17 +70,7 @@ export const Contents = () => {
         },
         requires: [Action.UPDATE],
       },
-      {
-        action: ColumnActionType.Delete,
-        onClick: async ({ id }) => {
-          const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
-
-          if (isConfirmed) {
-            deleteContent(id);
-          }
-        },
-        requires: [Action.DELETE],
-      },
+      deleteAction,
     ],
     t("label.operations"),
   );

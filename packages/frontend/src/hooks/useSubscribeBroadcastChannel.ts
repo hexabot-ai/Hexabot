@@ -7,13 +7,13 @@
 import { useEffect } from "react";
 
 import {
+  BroadcastChannelEvent,
   BroadcastChannelMessage,
-  EBCEvent,
   useBroadcastChannel,
 } from "@/contexts/broadcast-channel.context";
 
 export const useSubscribeBroadcastChannel = (
-  event: `${EBCEvent}`,
+  event: BroadcastChannelEvent,
   callback: (message: BroadcastChannelMessage) => void,
 ) => {
   const { subscribe } = useBroadcastChannel();

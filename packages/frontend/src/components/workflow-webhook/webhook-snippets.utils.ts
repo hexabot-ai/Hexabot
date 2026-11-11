@@ -70,27 +70,30 @@ export const toSnippetAuth = (
 
 const singleQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 const toJson = (body: Record<string, unknown>) => JSON.stringify(body, null, 2);
+/** The header a header or JWT authentication sends, as a name/value pair. */
+const getAuthHeader = (
+  auth: WebhookSnippetAuth,
+): [name: string, value: string] | undefined => {
+  switch (auth.type) {
+    case "header":
+      return [auth.headerName, auth.headerValue];
+    case "jwt":
+      return ["Authorization", `Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`];
+    default:
+      return undefined;
+  }
+};
 const generateCurl = ({ url, auth, body }: WebhookSnippetConfig): string => {
   const lines = [`curl -X POST ${singleQuote(url)}`];
 
   lines.push(`  -H 'Content-Type: application/json'`);
 
-  switch (auth.type) {
-    case "basic":
-      lines.push(`  -u ${singleQuote(`${auth.username}:${auth.password}`)}`);
-      break;
-    case "header":
-      lines.push(
-        `  -H ${singleQuote(`${auth.headerName}: ${auth.headerValue}`)}`,
-      );
-      break;
-    case "jwt":
-      lines.push(
-        `  -H ${singleQuote(
-          `Authorization: Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`,
-        )}`,
-      );
-      break;
+  const authHeader = getAuthHeader(auth);
+
+  if (auth.type === "basic") {
+    lines.push(`  -u ${singleQuote(`${auth.username}:${auth.password}`)}`);
+  } else if (authHeader) {
+    lines.push(`  -H ${singleQuote(`${authHeader[0]}: ${authHeader[1]}`)}`);
   }
 
   lines.push(`  -d ${singleQuote(toJson(body))}`);
@@ -102,26 +105,18 @@ const generateWget = ({ url, auth, body }: WebhookSnippetConfig): string => {
 
   lines.push(`  --header='Content-Type: application/json'`);
 
-  switch (auth.type) {
-    case "basic":
-      lines.push(
-        `  --user=${singleQuote(auth.username)} --password=${singleQuote(
-          auth.password,
-        )}`,
-      );
-      break;
-    case "header":
-      lines.push(
-        `  --header=${singleQuote(`${auth.headerName}: ${auth.headerValue}`)}`,
-      );
-      break;
-    case "jwt":
-      lines.push(
-        `  --header=${singleQuote(
-          `Authorization: Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`,
-        )}`,
-      );
-      break;
+  const authHeader = getAuthHeader(auth);
+
+  if (auth.type === "basic") {
+    lines.push(
+      `  --user=${singleQuote(auth.username)} --password=${singleQuote(
+        auth.password,
+      )}`,
+    );
+  } else if (authHeader) {
+    lines.push(
+      `  --header=${singleQuote(`${authHeader[0]}: ${authHeader[1]}`)}`,
+    );
   }
 
   lines.push(`  --body-data=${singleQuote(toJson(body))}`);
@@ -129,24 +124,15 @@ const generateWget = ({ url, auth, body }: WebhookSnippetConfig): string => {
 
   return lines.join(" \\\n");
 };
+/** Header entries of a JavaScript object or Python dict literal. */
 const buildHeaderEntries = (auth: WebhookSnippetAuth): string[] => {
   const entries = [`"Content-Type": "application/json"`];
+  const authHeader = getAuthHeader(auth);
 
-  switch (auth.type) {
-    case "header":
-      entries.push(
-        `${JSON.stringify(auth.headerName)}: ${JSON.stringify(
-          auth.headerValue,
-        )}`,
-      );
-      break;
-    case "jwt":
-      entries.push(
-        `"Authorization": ${JSON.stringify(
-          `Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`,
-        )}`,
-      );
-      break;
+  if (authHeader) {
+    entries.push(
+      `${JSON.stringify(authHeader[0])}: ${JSON.stringify(authHeader[1])}`,
+    );
   }
 
   return entries;
@@ -209,31 +195,15 @@ const generateAxios = ({ url, auth, body }: WebhookSnippetConfig): string => {
   ].join("\n");
 };
 const generatePython = ({ url, auth, body }: WebhookSnippetConfig): string => {
-  const headers = [`"Content-Type": "application/json"`];
+  const headers = buildHeaderEntries(auth);
   const requestArgs = ["url", "headers=headers", "json=payload"];
 
-  switch (auth.type) {
-    case "basic":
-      requestArgs.push(
-        `auth=(${JSON.stringify(auth.username)}, ${JSON.stringify(
-          auth.password,
-        )})`,
-      );
-      break;
-    case "header":
-      headers.push(
-        `${JSON.stringify(auth.headerName)}: ${JSON.stringify(
-          auth.headerValue,
-        )}`,
-      );
-      break;
-    case "jwt":
-      headers.push(
-        `"Authorization": ${JSON.stringify(
-          `Bearer ${auth.token ?? JWT_TOKEN_PLACEHOLDER}`,
-        )}`,
-      );
-      break;
+  if (auth.type === "basic") {
+    requestArgs.push(
+      `auth=(${JSON.stringify(auth.username)}, ${JSON.stringify(
+        auth.password,
+      )})`,
+    );
   }
 
   return [

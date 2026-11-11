@@ -10,11 +10,11 @@ import { Switch } from "@mui/material";
 import { GridColDef } from "@mui/x-data-grid";
 import { Flag, Plus } from "lucide-react";
 
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useDeleteAction } from "@/app-components/tables/columns/useDeleteAction";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { isSameEntity } from "@/hooks/crud/helpers";
@@ -51,6 +51,10 @@ export const Languages = () => {
       toast.success(t("message.item_delete_success"));
     },
   });
+  const deleteAction = useDeleteAction<Language>(
+    deleteLanguage,
+    (row) => row.isDefault,
+  );
   const queryClient = useTanstackQueryClient();
   const toggleDefault = (row: Language) => {
     if (!row.isDefault) {
@@ -85,18 +89,7 @@ export const Languages = () => {
         },
         requires: [Action.UPDATE],
       },
-      {
-        action: ColumnActionType.Delete,
-        onClick: async ({ id }) => {
-          const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
-
-          if (isConfirmed) {
-            deleteLanguage(id);
-          }
-        },
-        requires: [Action.DELETE],
-        isDisabled: (row) => row.isDefault,
-      },
+      deleteAction,
     ],
     t("label.operations"),
   );

@@ -46,6 +46,7 @@
     "dayjs": "^1.11.13",
     "dompurify": "^3.4.17",
     "fast-json-stable-stringify": "^2.1.0",
+    "i18next": "^26.3.3",
     "i18next-http-backend": "^4.0.7",
     "jsonata": "^2.2.1",
     "jsonschema": "^1.5.0",
@@ -80,6 +81,7 @@
     "@types/react-dom": "^19.2.4",
     "@typescript-eslint/eslint-plugin": "^8.46.0",
     "@typescript-eslint/parser": "^8.46.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "@xyflow/system": "^0.0.74",
     "eslint": "^9.37.0",
     "eslint-plugin-header": "^3.1.1",
@@ -89,7 +91,9 @@
     "globals": "^14.0.0",
     "lint-staged": "^15.3.0",
     "rimraf": "^6.0.1",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": "^24.22.1"

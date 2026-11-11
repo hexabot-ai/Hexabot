@@ -13,15 +13,15 @@ import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import Paper from "@mui/material/Paper";
-import { type Theme, SxProps, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import type {} from "@mui/material/themeCssVarsAugmentation";
 import Tooltip from "@mui/material/Tooltip";
 import * as React from "react";
-import { Link } from "react-router";
 
 import { useDashboardSidebar } from "./hooks/useDashboardSidebar";
 import { ICON_WIDTH } from "./measurements.constansts";
 import { DashboardSidebarProvider } from "./providers/DashboardSidebarProvider";
+import { getChevronSx, getItemLinkProps } from "./sidebar.utils";
 import { DashboardSidebarPageItemProps } from "./types/sidebar.types";
 
 export const DashboardSidebarPageItem = ({
@@ -43,50 +43,23 @@ export const DashboardSidebarPageItem = ({
     useDashboardSidebar();
   const [isHovered, setIsHovered] = React.useState(false);
   const hasSub = !!nestedNavigation;
+  // The mini sidebar shows nested items in a flyout next to the item.
+  const hasFlyout = hasSub && mini;
   const submenuAnchorName = `--dashboard-sidebar-item-${React.useId().replaceAll(
     ":",
     "",
   )}`;
-  const isExternal = href?.startsWith("http");
   const handleClick = () => onPageItemClick?.(id, hasSub);
-  const linkProps = !hasSub
-    ? isExternal
-      ? {
-          component: "a" as const,
-          href,
-          target: "_blank",
-          rel: "noopener",
-        }
-      : {
-          component: Link,
-          to: href,
-        }
-    : {};
+  const linkProps = getItemLinkProps(href, hasSub);
   const tooltipTitle = mini && title ? title : "";
   const selectedColor = selected ? theme.palette.primary.main : "currentColor";
-  const arrowSx: SxProps<Theme> =
-    mini && fullyCollapsed
-      ? {
-          position: "absolute",
-          top: "41.5%",
-          right: 0,
-          transform: "translateY(-25%) rotate(-90deg)",
-          fontSize: 18,
-          color: selectedColor,
-          fill: "currentColor",
-          "&&": { color: selectedColor },
-        }
-      : !mini && fullyExpanded
-        ? {
-            ml: 0.5,
-            fontSize: 20,
-            transform: `rotate(${expanded ? 0 : -90}deg)`,
-            transition: "transform 0.1s",
-            color: selectedColor,
-            fill: "currentColor",
-            "&&": { color: selectedColor },
-          }
-        : { display: "none" };
+  const arrowSx = getChevronSx({
+    mini,
+    fullyCollapsed,
+    fullyExpanded,
+    expanded,
+    color: selectedColor,
+  });
   const itemButton = (
     <ListItemButton
       selected={selected}
@@ -156,13 +129,12 @@ export const DashboardSidebarPageItem = ({
           anchorName: mini ? submenuAnchorName : undefined,
         }}
         disablePadding
-        onMouseEnter={() => hasSub && mini && setIsHovered(true)}
-        onMouseLeave={() => hasSub && mini && setIsHovered(false)}
-        onFocus={() => hasSub && mini && setIsHovered(true)}
+        onMouseEnter={() => hasFlyout && setIsHovered(true)}
+        onMouseLeave={() => hasFlyout && setIsHovered(false)}
+        onFocus={() => hasFlyout && setIsHovered(true)}
         onBlur={(event) => {
           if (
-            hasSub &&
-            mini &&
+            hasFlyout &&
             !event.currentTarget.contains(event.relatedTarget as Node | null)
           ) {
             setIsHovered(false);
@@ -191,7 +163,7 @@ export const DashboardSidebarPageItem = ({
           itemButton
         )}
 
-        {hasSub && mini && (
+        {hasFlyout && (
           <Grow in={isHovered}>
             <Box
               sx={{

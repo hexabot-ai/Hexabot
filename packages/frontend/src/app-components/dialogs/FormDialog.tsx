@@ -6,10 +6,11 @@
 
 import { Dialog, DialogActions, DialogContent } from "@mui/material";
 
-import { DialogTitle } from "@/app-components/dialogs";
 import { FormDialogProps } from "@/types/common/dialogs.types";
 
 import { DialogFormButtons } from "../buttons/FormButtons";
+
+import { DialogTitle } from "./DialogTitle";
 
 export const FormDialog = ({
   title,

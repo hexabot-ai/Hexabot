@@ -17,17 +17,12 @@ import {
 } from "@/app-components/tables/columns/getColumns";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
-import {
-  formatLicenseQuotaUsage,
-  getLicenseQuotaResource,
-  getQuotaUpgradeTargetPlan,
-  isLicenseQuotaReached,
-} from "@/components/license/license-quotas";
 import LicenseGate, {
   hasLicensePlanAccess,
   LockedFeatureLabel,
   PaidPlan,
 } from "@/components/license/LicenseGate";
+import { useLicenseQuota } from "@/components/license/useLicenseQuota";
 import { useFind } from "@/hooks/crud/useFind";
 import { useUpdate } from "@/hooks/crud/useUpdate";
 import { useAppRouter } from "@/hooks/useAppRouter";
@@ -45,13 +40,6 @@ import { CreateUserFormDialog } from "./CreateUserFormDialog";
 import { EditUserFormDialog } from "./EditUserFormDialog";
 
 const REQUIRED_PLAN: PaidPlan = "pro";
-const openPricing = () => {
-  window.open(
-    "https://hexabot.ai/pricing/#pricing",
-    "_blank",
-    "noopener,noreferrer",
-  );
-};
 const UsersLockedView = () => {
   const { t } = useTranslate();
   const router = useAppRouter();
@@ -79,7 +67,7 @@ const UsersLockedView = () => {
             spacing={1.25}
             sx={{ flexWrap: "wrap", alignItems: "center" }}
           >
-            <LicenseGate requiredPlan={REQUIRED_PLAN} onUpgrade={openPricing}>
+            <LicenseGate requiredPlan={REQUIRED_PLAN}>
               <Button variant="outlined">
                 {t("button.manage_users")}
                 <LockedFeatureLabel requiredPlan={REQUIRED_PLAN} />
@@ -104,14 +92,12 @@ const UsersDataGrid = () => {
   const dialogs = useDialogs();
   const { user } = useAuth();
   const timestampColumns = useTimestampColumns<User>();
-  const usersQuota = getLicenseQuotaResource(user?.license, "users");
-  const usersQuotaReached = isLicenseQuotaReached(user?.license, "users");
-  const usersUpgradeTargetPlan = usersQuotaReached
-    ? getQuotaUpgradeTargetPlan(user?.license, "users")
-    : null;
-  const usersQuotaUsage = t("label.users_quota_usage", {
-    0: formatLicenseQuotaUsage(usersQuota, t("label.unlimited")),
-  });
+  const {
+    isReached: usersQuotaReached,
+    upgradeTargetPlan: usersUpgradeTargetPlan,
+    usage,
+  } = useLicenseQuota("users");
+  const usersQuotaUsage = t("label.users_quota_usage", { 0: usage });
   const openCreateUserDialog = () => {
     dialogs.open(CreateUserFormDialog, {
       defaultValues: null,
@@ -122,7 +108,6 @@ const UsersDataGrid = () => {
       <LicenseGate
         requiredPlan={usersUpgradeTargetPlan}
         reasonText={t("message.users_quota_reached")}
-        onUpgrade={openPricing}
         disableChildWhenBlocked={false}
       >
         <Button

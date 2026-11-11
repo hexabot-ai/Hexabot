@@ -7,6 +7,7 @@
 import { Action } from "@hexabot-ai/types";
 import { ButtonProps } from "@mui/material";
 
+import { useEntityDialogMap } from "@/hooks/useEntityDialogs";
 import { useHasPermission } from "@/hooks/useHasPermission";
 import { THook } from "@/types/base.types";
 import {
@@ -14,7 +15,7 @@ import {
   OpenDialogOptions,
 } from "@/types/common/dialogs.types";
 
-import { BASE_ADD_DIALOG_MAP } from "../../dialogs/dialog.constants";
+import type { BASE_ADD_DIALOG_MAP } from "../../dialogs/dialog.constants";
 
 import { CreateEntityButton } from "./CreateEntityButton";
 
@@ -37,12 +38,13 @@ export const EntityButtonWrapper = <
   onEntityCreated?: (created: THook<{ entity: TE }>["basic"]) => void;
 }) => {
   const hasPermission = useHasPermission();
+  const dialogMap = useEntityDialogMap();
 
   if (!hasPermission(entity, permissionAction)) {
     return null;
   }
 
-  const dialogComponent = BASE_ADD_DIALOG_MAP[entity]?.["dialog"];
+  const dialogComponent = dialogMap[entity]?.["dialog"];
 
   if (!dialogComponent) return null;
 

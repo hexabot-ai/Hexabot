@@ -10,7 +10,7 @@ import { FC, type ReactElement } from "react";
 
 import { SXStyleOptions } from "@/utils/SXStyleOptions";
 
-import { IContentPaddingProps } from "..";
+import type { IContentPaddingProps } from "..";
 
 const StyledBox = styled(Box, {
   shouldForwardProp: (prop) => prop !== "hasNoPadding",

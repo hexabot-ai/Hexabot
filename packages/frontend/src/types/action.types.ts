@@ -7,7 +7,7 @@
 import type { IconName } from "lucide-react/dynamic";
 import type { JSONSchema } from "monaco-yaml";
 
-import { Format } from "@/services/types";
+import type { Format } from "@/services/types";
 
 import type { IBaseSchema, IFormat } from "./base.types";
 

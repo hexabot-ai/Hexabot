@@ -12,7 +12,7 @@ import { useTranslate } from "@/hooks/useTranslate";
 import { THook } from "@/types/base.types";
 import { OpenDialogOptions } from "@/types/common/dialogs.types";
 
-import { BASE_ADD_DIALOG_MAP } from "../../dialogs/dialog.constants";
+import type { BASE_ADD_DIALOG_MAP } from "../../dialogs/dialog.constants";
 
 export const CreateEntityButton = <
   TE extends keyof typeof BASE_ADD_DIALOG_MAP,

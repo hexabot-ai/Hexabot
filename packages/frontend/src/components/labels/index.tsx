@@ -14,6 +14,7 @@ import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useDeleteAction } from "@/app-components/tables/columns/useDeleteAction";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -40,6 +41,7 @@ export const Labels = () => {
     },
   };
   const { mutate: deleteLabel } = useDelete(EntityType.LABEL, options);
+  const deleteAction = useDeleteAction<Label>(deleteLabel);
   const { mutate: deleteLabels } = useDeleteMany(EntityType.LABEL, options);
   const actionColumns = useActionColumns<Label>(
     EntityType.LABEL,
@@ -53,17 +55,7 @@ export const Labels = () => {
         },
         requires: [Action.UPDATE],
       },
-      {
-        action: ColumnActionType.Delete,
-        onClick: async ({ id }) => {
-          const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
-
-          if (isConfirmed) {
-            deleteLabel(id);
-          }
-        },
-        requires: [Action.DELETE],
-      },
+      deleteAction,
     ],
     t("label.operations"),
   );

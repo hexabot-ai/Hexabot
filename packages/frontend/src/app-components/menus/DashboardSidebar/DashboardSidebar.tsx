@@ -24,6 +24,11 @@ import {
   getDrawerWidthTransitionMixin,
 } from "./mixins";
 import { DashboardSidebarProvider } from "./providers/DashboardSidebarProvider";
+import {
+  getActiveParentItemIds,
+  getMenuLinks,
+  isMenuLinkSelected,
+} from "./sidebar.utils";
 import { DashboardSidebarProps } from "./types/sidebar.types";
 
 export const DashboardSidebar = ({
@@ -99,37 +104,14 @@ export const DashboardSidebar = ({
     }),
     [handlePageItemClick, mini, transitionState, hasDrawerTransitions],
   );
-  const links = React.useMemo(
-    () =>
-      menu
-        .flatMap((m) => m.submenuItems || m)
-        .filter((m) => m.href)
-        .map((m) => m.href),
-    [menu],
-  );
+  const links = React.useMemo(() => getMenuLinks(menu), [menu]);
   const isSelected = React.useCallback(
-    (href: string) => {
-      if (href === location.pathname) {
-        return true;
-      } else if (
-        !links.includes(location.pathname) &&
-        location.pathname.startsWith(href) &&
-        href !== "/"
-      ) {
-        return true;
-      }
-
-      return false;
-    },
+    (href: string) => isMenuLinkSelected(href, location.pathname, links),
     [links, location.pathname],
   );
 
   React.useEffect(() => {
-    const activeParentItemIds = menu
-      .filter((item) =>
-        item.submenuItems?.some((sub) => sub.href && isSelected(sub.href)),
-      )
-      .map((item) => item.text);
+    const activeParentItemIds = getActiveParentItemIds(menu, isSelected);
 
     if (activeParentItemIds.length === 0) {
       return;

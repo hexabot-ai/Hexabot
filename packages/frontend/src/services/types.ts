@@ -5,9 +5,9 @@
  */
 
 import type { IEntityMapTypes } from "@/types/base.types";
-import { UseMutationOptions } from "@/types/tanstack.types";
+import type { UseMutationOptions } from "@/types/tanstack.types";
 
-import { RouteParams } from "./api.class";
+import type { RouteParams } from "./api.class";
 
 export enum EntityType {
   SUBSCRIBER = "Subscriber",

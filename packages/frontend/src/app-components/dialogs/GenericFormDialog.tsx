@@ -6,7 +6,6 @@
 
 import React from "react";
 
-import { FormDialog as Wrapper } from "@/app-components/dialogs";
 import { useTranslate } from "@/hooks/useTranslate";
 import { TTranslationKeys } from "@/i18n/i18n.types";
 import {
@@ -15,6 +14,8 @@ import {
   FormButtonsProps,
   TPayload,
 } from "@/types/common/dialogs.types";
+
+import { FormDialog as Wrapper } from "./FormDialog";
 
 type GenericFormDialogProps<T extends (arg: { data: any }) => unknown> =
   FormButtonsProps &

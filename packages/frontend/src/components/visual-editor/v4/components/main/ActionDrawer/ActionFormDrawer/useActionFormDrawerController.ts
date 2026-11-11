@@ -4,17 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import {
-  BaseSettingsSchema,
-  DEFAULT_RETRY_SETTINGS,
-  DEFAULT_TIMEOUT_MS,
-  JsonValue,
-  Settings,
-  TaskDefinition,
-  Workflow as WorkflowHelper,
-  mergeSettings,
-  type WorkflowDefinition,
-} from "@hexabot-ai/agentic";
+import { JsonValue, Settings } from "@hexabot-ai/agentic";
 import type { FlowStepPath } from "@hexabot-ai/graph";
 import type { RJSFSchema } from "@rjsf/utils";
 import { useEffect, useMemo, useState } from "react";
@@ -34,6 +24,13 @@ import { isDefinitionNameAvailable } from "../../../../utils/definition-name.uti
 import { createBaseDefinition } from "../../../../utils/workflow-definition.utils";
 import { useStepDrawerClose } from "../../StepDrawer/withStepDrawerLayout";
 
+import {
+  applyTaskEdits,
+  buildNewTask,
+  getTaskSettingsFormState,
+  getWorkflowExecutionDefaults,
+  type TaskFormValues,
+} from "./action-form-drawer.utils";
 import type { ActionFormDrawerFooterProps } from "./ActionFormDrawerFooter";
 import type { ActionFormDrawerHeaderProps } from "./ActionFormDrawerHeader";
 import { useTaskIdentityController } from "./useTaskIdentityController";
@@ -75,17 +72,6 @@ type UseActionFormDrawerControllerParams = {
   onBack?: () => void;
 };
 
-type SplitTaskSettingsResult = {
-  actionSettings: Record<string, JsonValue>;
-  executionSettings: Partial<Settings>;
-  hasExecutionOverride: boolean;
-};
-
-const EXECUTION_SETTING_KEYS = new Set(Object.keys(BaseSettingsSchema.shape));
-const DEFAULT_WORKFLOW_EXECUTION_SETTINGS: Partial<Settings> = {
-  timeout_ms: DEFAULT_TIMEOUT_MS,
-  retries: { ...DEFAULT_RETRY_SETTINGS },
-};
 const hasSchemaValidationErrors = (
   schema: unknown,
   data: Record<string, unknown>,
@@ -94,35 +80,6 @@ const hasSchemaValidationErrors = (
     Boolean(schema) &&
     !validator.isValid(schema as RJSFSchema, data, schema as RJSFSchema)
   );
-};
-const splitTaskSettings = (
-  settings: Record<string, unknown> | undefined,
-): SplitTaskSettingsResult => {
-  const actionSettings: Record<string, JsonValue> = {};
-  const executionSettings: Partial<Settings> = {};
-
-  if (!settings) {
-    return {
-      actionSettings,
-      executionSettings,
-      hasExecutionOverride: false,
-    };
-  }
-
-  for (const [key, value] of Object.entries(settings)) {
-    if (EXECUTION_SETTING_KEYS.has(key)) {
-      executionSettings[key as keyof Settings] = value as JsonValue;
-      continue;
-    }
-
-    actionSettings[key] = value as JsonValue;
-  }
-
-  return {
-    actionSettings,
-    executionSettings,
-    hasExecutionOverride: Object.keys(executionSettings).length > 0,
-  };
 };
 
 export const useActionFormDrawerController = ({
@@ -180,16 +137,13 @@ export const useActionFormDrawerController = ({
     () => hasSchemaProperties(actionSchema?.settingSchema),
     [actionSchema?.settingSchema],
   );
-  const workflowExecutionSettingsDefaults = useMemo<Partial<Settings>>(() => {
-    const { executionSettings } = splitTaskSettings(
-      definition?.defaults?.settings as Record<string, unknown> | undefined,
-    );
-
-    return mergeSettings(
-      DEFAULT_WORKFLOW_EXECUTION_SETTINGS,
-      executionSettings,
-    ) as Partial<Settings>;
-  }, [definition?.defaults?.settings]);
+  const workflowExecutionSettingsDefaults = useMemo<Partial<Settings>>(
+    () =>
+      getWorkflowExecutionDefaults(
+        definition?.defaults?.settings as Record<string, unknown> | undefined,
+      ),
+    [definition?.defaults?.settings],
+  );
   const {
     taskNameValue,
     taskDescriptionValue,
@@ -212,68 +166,51 @@ export const useActionFormDrawerController = ({
   });
 
   useEffect(() => {
-    if (!open) {
-      setInputData({});
-      setActionSettingsData({});
-      setExecutionSettingsData({});
-      setValidateActionSchemas(false);
+    const hydrate = (
+      inputs: Record<string, unknown>,
+      settings: Record<string, unknown> | undefined,
+    ) => {
+      const formState = getTaskSettingsFormState(
+        settings,
+        workflowExecutionSettingsDefaults,
+      );
 
-      return;
-    }
-
-    if (isCreateMode && target) {
-      const inputDefaults = (getSchemaDefaults<Record<string, JsonValue>>(
-        target.action.inputSchema,
-      ) ?? {}) as Record<string, unknown>;
-      const { actionSettings, executionSettings, hasExecutionOverride } =
-        splitTaskSettings(
-          getSchemaDefaults<Record<string, JsonValue>>(
-            target.action.settingSchema,
-          ) as Record<string, unknown> | undefined,
-        );
-      const resolvedExecutionSettings = hasExecutionOverride
-        ? (mergeSettings(
-            workflowExecutionSettingsDefaults,
-            executionSettings,
-          ) as Record<string, unknown>)
-        : (workflowExecutionSettingsDefaults as Record<string, unknown>);
-
-      setInputData(inputDefaults);
-      setActionSettingsData(actionSettings);
-      setExecutionSettingsData(resolvedExecutionSettings);
-      setIsUsingWorkflowExecutionDefaults(!hasExecutionOverride);
+      setInputData(inputs);
+      setActionSettingsData(formState.actionSettings);
+      setExecutionSettingsData(formState.executionSettings);
+      setIsUsingWorkflowExecutionDefaults(
+        formState.usesWorkflowExecutionDefaults,
+      );
       setValidateActionSchemas(false);
       setHasExecutionSettingsVisibleErrors(false);
+    };
 
-      return;
-    }
-
-    if (!taskDefinition) {
-      setInputData({});
-      setActionSettingsData({});
-      setExecutionSettingsData({});
-      setValidateActionSchemas(false);
-
-      return;
-    }
-
-    const { actionSettings, executionSettings, hasExecutionOverride } =
-      splitTaskSettings(
-        taskDefinition?.settings as Record<string, unknown> | undefined,
+    if (open && target) {
+      hydrate(
+        (getSchemaDefaults<Record<string, JsonValue>>(
+          target.action.inputSchema,
+        ) ?? {}) as Record<string, unknown>,
+        getSchemaDefaults<Record<string, JsonValue>>(
+          target.action.settingSchema,
+        ) as Record<string, unknown> | undefined,
       );
-    const resolvedExecutionSettings = hasExecutionOverride
-      ? (mergeSettings(
-          workflowExecutionSettingsDefaults,
-          executionSettings,
-        ) as Record<string, unknown>)
-      : (workflowExecutionSettingsDefaults as Record<string, unknown>);
 
-    setInputData((taskDefinition?.inputs as Record<string, unknown>) ?? {});
-    setActionSettingsData(actionSettings);
-    setExecutionSettingsData(resolvedExecutionSettings);
-    setIsUsingWorkflowExecutionDefaults(!hasExecutionOverride);
+      return;
+    }
+
+    if (open && taskDefinition) {
+      hydrate(
+        (taskDefinition.inputs as Record<string, unknown>) ?? {},
+        taskDefinition.settings as Record<string, unknown> | undefined,
+      );
+
+      return;
+    }
+
+    setInputData({});
+    setActionSettingsData({});
+    setExecutionSettingsData({});
     setValidateActionSchemas(false);
-    setHasExecutionSettingsVisibleErrors(false);
     // Hydrate only when opening the drawer or selecting a different node.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCreateMode, open, target]);
@@ -335,6 +272,13 @@ export const useActionFormDrawerController = ({
     setValidateActionSchemas(true);
     setActionSettingsData(data);
   };
+  const hasVisibleErrors =
+    hasInputVisibleErrors ||
+    hasActionSettingsVisibleErrors ||
+    hasExecutionSettingsVisibleErrors;
+  const hasActionDataErrors = (action: IAction) =>
+    hasSchemaValidationErrors(action.inputSchema, inputData) ||
+    hasSchemaValidationErrors(action.settingSchema, actionSettingsData);
   const handleSave = () => {
     const currentDefinition =
       definition ?? (isCreateMode && workflow ? createBaseDefinition() : null);
@@ -345,16 +289,7 @@ export const useActionFormDrawerController = ({
 
     setValidateActionSchemas(true);
 
-    if (
-      hasSchemaValidationErrors(actionSchema.inputSchema, inputData) ||
-      hasSchemaValidationErrors(
-        actionSchema.settingSchema,
-        actionSettingsData,
-      ) ||
-      hasInputVisibleErrors ||
-      hasActionSettingsVisibleErrors ||
-      hasExecutionSettingsVisibleErrors
-    ) {
+    if (hasActionDataErrors(actionSchema) || hasVisibleErrors) {
       return;
     }
 
@@ -364,108 +299,60 @@ export const useActionFormDrawerController = ({
       return;
     }
 
-    const normalizedDescription = taskDescriptionValue.trim();
-    const hasInputValues = Object.keys(inputData).length > 0;
-    const nextSettingsData: Record<string, JsonValue> = {
-      ...(actionSettingsData as Record<string, JsonValue>),
-      ...(isUsingWorkflowExecutionDefaults
-        ? {}
-        : (executionSettingsData as Record<string, JsonValue>)),
+    const values: TaskFormValues = {
+      description: taskDescriptionValue.trim(),
+      inputs: inputData,
+      settings: {
+        ...actionSettingsData,
+        ...(isUsingWorkflowExecutionDefaults ? {} : executionSettingsData),
+      },
     };
-    const hasSettingValues = Object.keys(nextSettingsData).length > 0;
 
     if (isCreateMode && target) {
       if (!isDefinitionNameAvailable(nextTaskName, currentDefinition.defs)) {
         return;
       }
 
-      const nextTask: TaskDefinition = {
-        kind: "task",
-        action: actionSchema.name,
-        ...(normalizedDescription
-          ? { description: normalizedDescription }
-          : {}),
-        ...(hasInputValues
-          ? { inputs: inputData as Record<string, JsonValue> }
-          : {}),
-        ...(hasSettingValues
-          ? { settings: nextSettingsData as TaskDefinition["settings"] }
-          : {}),
-      };
-
-      addActionStep(nextTaskName, nextTask, target.insertPath);
+      addActionStep(
+        nextTaskName,
+        buildNewTask(actionSchema.name, values),
+        target.insertPath,
+      );
       handleSaveClose();
 
       return;
     }
 
+    const currentTask = taskDefinitions[taskName];
+
     if (
-      !isDefinitionNameAvailable(nextTaskName, currentDefinition.defs, taskName)
+      !isDefinitionNameAvailable(
+        nextTaskName,
+        currentDefinition.defs,
+        taskName,
+      ) ||
+      !currentTask
     ) {
       return;
     }
 
-    const currentTask = taskName ? taskDefinitions[taskName] : undefined;
-
-    if (!currentTask) {
-      return;
-    }
-
-    const shouldIncludeInputs =
-      hasInputValues || currentTask.inputs !== undefined;
-    const shouldIncludeSettings =
-      hasSettingValues || currentTask.settings !== undefined;
-    const nextTask: TaskDefinition = {
-      ...currentTask,
-      ...(normalizedDescription ? { description: normalizedDescription } : {}),
-      ...(shouldIncludeInputs
-        ? { inputs: inputData as Record<string, JsonValue> }
-        : {}),
-      ...(shouldIncludeSettings
-        ? { settings: nextSettingsData as TaskDefinition["settings"] }
-        : {}),
-    };
-    let nextDefinition: WorkflowDefinition = {
-      ...currentDefinition,
-      defs: {
-        ...(currentDefinition.defs ?? {}),
-        [taskName]: nextTask,
-      },
-    };
-
-    if (!normalizedDescription) {
-      const nextTaskDefinition = nextDefinition.defs[taskName];
-
-      if (nextTaskDefinition?.kind === "task") {
-        delete nextTaskDefinition.description;
-      }
-    }
-
-    if (nextTaskName !== taskName) {
-      nextDefinition = WorkflowHelper.safeRenameTaskInDefinition(
-        nextDefinition,
+    updateDefinitionState(
+      applyTaskEdits(
+        currentDefinition,
         taskName,
         nextTaskName,
-      );
-    }
-
-    updateDefinitionState(nextDefinition);
+        currentTask,
+        values,
+      ),
+    );
     handleSaveClose();
   };
   const canSaveDefinition = Boolean(definition || (isCreateMode && workflow));
-  const hasActionSchemaValidationErrors =
-    actionSchema && validateActionSchemas
-      ? hasSchemaValidationErrors(actionSchema.inputSchema, inputData) ||
-        hasSchemaValidationErrors(
-          actionSchema.settingSchema,
-          actionSettingsData,
-        )
-      : false;
   const saveDisabled =
-    hasActionSchemaValidationErrors ||
-    hasInputVisibleErrors ||
-    hasActionSettingsVisibleErrors ||
-    hasExecutionSettingsVisibleErrors ||
+    (actionSchema && validateActionSchemas
+      ? hasActionDataErrors(actionSchema)
+      : false) ||
+    hasVisibleErrors ||
     !canSaveDefinition ||
     !taskName ||
     !actionSchema ||

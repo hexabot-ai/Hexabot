@@ -7,7 +7,7 @@
 import { ListItemIcon, ListItemText, Menu, MenuItem } from "@mui/material";
 import { Download, Trash2 } from "lucide-react";
 
-type WorkflowMenuProps = {
+export type WorkflowMenuProps = {
   anchorEl: HTMLElement | null;
   open: boolean;
   onClose: () => void;
