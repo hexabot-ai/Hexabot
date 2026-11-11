@@ -4,14 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { Role } from "@hexabot-ai/types";
-import { Button, Link, TextField } from "@mui/material";
-import Grid from "@mui/material/Grid";
+import { TextField } from "@mui/material";
 import { FC, Fragment } from "react";
-import { Controller, RegisterOptions, useForm } from "react-hook-form";
+import { RegisterOptions, useForm } from "react-hook-form";
 
 import { ContentContainer, ContentItem } from "@/app-components/dialogs";
-import AutoCompleteEntitySelect from "@/app-components/inputs/AutoCompleteEntitySelect";
 import { PasswordInput } from "@/app-components/inputs/PasswordInput";
 import { PasswordStrengthInput } from "@/app-components/inputs/PasswordStrengthInput";
 import { useCreate } from "@/hooks/crud/useCreate";
@@ -19,8 +16,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { useTranslate } from "@/hooks/useTranslate";
 import { useValidationRules } from "@/hooks/useValidationRules";
-import { EntityType, Format } from "@/services/types";
+import { EntityType } from "@/services/types";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
+
+import { UserRolesField } from "./UserRolesField";
 
 type CreateUserFormData = {
   firstName: string;
@@ -180,43 +179,11 @@ export const CreateUserForm: FC<ComponentFormProps<undefined>> = ({
             />
           </ContentItem>
           <ContentItem>
-            <Grid container gap={3}>
-              <Grid size="grow">
-                <Controller
-                  name="roles"
-                  rules={validationRules.roles}
-                  control={control}
-                  render={({ field }) => {
-                    const { onChange, ...rest } = field;
-
-                    return (
-                      <AutoCompleteEntitySelect<Role>
-                        searchFields={["name"]}
-                        entity={EntityType.ROLE}
-                        format={Format.BASIC}
-                        labelKey="name"
-                        label={t("label.roles")}
-                        multiple={true}
-                        {...field}
-                        error={!!errors.roles}
-                        helperText={errors.roles ? errors.roles.message : null}
-                        onChange={(_event, selected) =>
-                          onChange(selected.map(({ id }) => id))
-                        }
-                        {...rest}
-                      />
-                    );
-                  }}
-                />
-              </Grid>
-              <Grid size="auto" alignContent="end">
-                <Link href="/roles">
-                  <Button variant="contained" size="small">
-                    {t("button.manage")}
-                  </Button>
-                </Link>
-              </Grid>
-            </Grid>
+            <UserRolesField
+              control={control}
+              rules={validationRules.roles}
+              error={errors.roles}
+            />
           </ContentItem>
         </ContentContainer>
       </form>
