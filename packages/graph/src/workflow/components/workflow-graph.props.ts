@@ -10,6 +10,7 @@ import type { ResizeControlDirection } from "@xyflow/system";
 import type { PropsWithChildren } from "react";
 
 import type { WorkflowGraphTranslate } from "../contexts/workflow-graph-host.context";
+import type { WorkflowGraphColorMode } from "../hooks/useResolvedColorMode";
 import type {
   WorkflowAction,
   WorkflowBindingAddPayload,
@@ -79,7 +80,7 @@ export type WorkflowGraphCallbacks = {
   onOpenYamlEditor?: (line?: number) => void;
 };
 
-export type WorkflowGraphColorMode = "light" | "dark" | "system";
+export type { WorkflowGraphColorMode };
 
 export type WorkflowGraphProps = PropsWithChildren<{
   t: WorkflowGraphTranslate;
