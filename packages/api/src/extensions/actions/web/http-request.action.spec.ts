@@ -249,4 +249,94 @@ describe('HttpRequestAction', () => {
       error: 'network down',
     });
   });
+
+  describe('response body', () => {
+    const respondWith = async (data: unknown, contentType?: string) => {
+      getRequestMock().mockResolvedValueOnce({
+        status: 200,
+        statusText: 'OK',
+        headers: contentType ? { 'content-type': contentType } : {},
+        data,
+      });
+
+      return await action.execute({
+        input: { url: 'https://example.com/body' },
+        context,
+        settings: {} as any,
+        bindings: {} as any,
+      });
+    };
+
+    it('is empty when the response has no data', async () => {
+      expect((await respondWith(null, 'application/json')).body).toBe('');
+      expect((await respondWith(undefined)).body).toBe('');
+    });
+
+    it('keeps text as received unless the response is JSON', async () => {
+      expect((await respondWith('{"a":1}', 'text/plain')).body).toBe('{"a":1}');
+      expect((await respondWith('{"a":1}')).body).toBe('{"a":1}');
+      expect((await respondWith('  ', 'application/json')).body).toBe('  ');
+      expect(
+        (await respondWith(' {"a":1} ', 'application/problem+json')).body,
+      ).toEqual({ a: 1 });
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('reads binary data as UTF-8 text', async () => {
+      const bytes = new TextEncoder().encode('héllo');
+
+      expect((await respondWith(bytes)).body).toBe('héllo');
+      expect((await respondWith(bytes.buffer)).body).toBe('héllo');
+    });
+
+    it('returns structured data as received', async () => {
+      expect((await respondWith([1, { a: 2 }])).body).toEqual([1, { a: 2 }]);
+    });
+  });
+
+  it('sends a POST body that is not a JSON object or array as text', async () => {
+    const requestMock = getRequestMock();
+    requestMock.mockResolvedValue({ status: 204, statusText: '', data: '' });
+
+    for (const body of ['42', '  ']) {
+      await action.execute({
+        input: { url: 'https://example.com/post', body },
+        context,
+        settings: { method: 'POST' } as any,
+        bindings: {} as any,
+      });
+    }
+
+    expect(requestMock.mock.calls.map(([config]) => config.data)).toEqual([
+      '42',
+      '  ',
+    ]);
+  });
+
+  it('rethrows a cancelled request', async () => {
+    const requestMock = getRequestMock();
+    const controller = new AbortController();
+    const aborted = new Error('aborted');
+    const canceled = Object.assign(new Error('canceled'), {
+      code: 'ERR_CANCELED',
+    });
+    requestMock
+      .mockImplementationOnce(async () => {
+        controller.abort();
+        throw aborted;
+      })
+      .mockRejectedValueOnce(canceled);
+    const run = (signal?: AbortSignal) =>
+      action.execute({
+        input: { url: 'https://example.com/slow' },
+        context,
+        settings: {} as any,
+        bindings: {} as any,
+        signal,
+      });
+
+    await expect(run(controller.signal)).rejects.toBe(aborted);
+    await expect(run()).rejects.toBe(canceled);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
 });
