@@ -34,28 +34,25 @@ export class Ability implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const roles = this.reflector.get<TRole[]>('roles', context.getHandler());
-    const { _parsedUrl } = context
-      .switchToHttp()
-      .getRequest<Request & { _parsedUrl: Url }>();
-    const pathname = _parsedUrl.pathname?.replace(`/api`, '');
-
-    if (config.mcp.enabled && pathname && pathname === '/mcp') {
-      return true;
-    }
-
-    if (roles?.includes('public')) {
-      return true;
-    }
-
-    const { user, method, session } = context
+    const request = context
       .switchToHttp()
       .getRequest<Request & { user: User; _parsedUrl: Url }>();
+    const pathname = request._parsedUrl.pathname?.replace(`/api`, '');
+
+    if (
+      (config.mcp.enabled && pathname === '/mcp') ||
+      roles?.includes('public')
+    ) {
+      return true;
+    }
+
+    const { user, method, session } = request;
     if (!user) {
       throw new UnauthorizedException();
     }
     if (
       !session.cookie ||
-      (session.cookie?.expires && session.cookie?.expires < new Date())
+      (session.cookie.expires && session.cookie.expires < new Date())
     ) {
       throw new UnauthorizedException('Session expired');
     }
@@ -65,47 +62,51 @@ export class Ability implements CanActivate {
     }
 
     const roleIds = Array.isArray(user.roles) ? user.roles : [];
-
-    if (roleIds.length) {
-      if (
-        pathname &&
-        [
-          // Allow access to all routes available for authenticated users
-          '/auth/logout',
-          '/logout',
-          '/auth/me',
-          '/channel',
-          '/action',
-          // Allow to update own profile
-          `/user/edit/${user.id}`,
-          // Allow access to own avatar
-          `/user/${user.id}/profile_pic`,
-        ].includes(pathname)
-      ) {
-        return true;
-      }
-      const modelFromPathname = pathname?.split('/')[1].toLowerCase() as
-        | TModel
-        | undefined;
-      const permissions = await this.permissionService.getPermissions();
-
-      if (permissions) {
-        if (
-          modelFromPathname &&
-          rolesCanPerform(
-            permissions,
-            roleIds,
-            modelFromPathname,
-            MethodToAction[method],
-          )
-        ) {
-          return true;
-        }
-      } else {
-        throw new NotFoundException('Failed to load permissions');
-      }
+    if (!roleIds.length) {
+      return false;
     }
 
-    return false;
+    if (pathname && this.getSelfServiceRoutes(user).includes(pathname)) {
+      return true;
+    }
+
+    return await this.canPerform(roleIds, method, pathname);
+  }
+
+  /** Routes every user with a role may call. */
+  private getSelfServiceRoutes(user: User): string[] {
+    return [
+      // Allow access to all routes available for authenticated users
+      '/auth/logout',
+      '/logout',
+      '/auth/me',
+      '/channel',
+      '/action',
+      // Allow to update own profile
+      `/user/edit/${user.id}`,
+      // Allow access to own avatar
+      `/user/${user.id}/profile_pic`,
+    ];
+  }
+
+  /**
+   * Tells whether one of the roles may perform the action the HTTP method
+   * maps to on the model the path starts with.
+   */
+  private async canPerform(
+    roleIds: string[],
+    method: string,
+    pathname?: string,
+  ): Promise<boolean> {
+    const model = pathname?.split('/')[1].toLowerCase() as TModel | undefined;
+    const permissions = await this.permissionService.getPermissions();
+    if (!permissions) {
+      throw new NotFoundException('Failed to load permissions');
+    }
+
+    return (
+      !!model &&
+      rolesCanPerform(permissions, roleIds, model, MethodToAction[method])
+    );
   }
 }
