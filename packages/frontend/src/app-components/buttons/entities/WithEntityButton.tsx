@@ -11,7 +11,7 @@ import { PropsWithChildren } from "react";
 import { THook } from "@/types/base.types";
 import { TPayload } from "@/types/common/dialogs.types";
 
-import { BASE_ADD_DIALOG_MAP } from "../../dialogs/dialog.constants";
+import type { BASE_ADD_DIALOG_MAP } from "../../dialogs/dialog.constants";
 
 import { EntityButtonWrapper } from "./EntityButtonWrapper";
 

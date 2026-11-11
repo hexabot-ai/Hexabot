@@ -4,8 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
+import { useContext } from "react";
+
 import { ConfirmDialogBody } from "@/app-components/dialogs";
-import { BASE_ADD_DIALOG_MAP } from "@/app-components/dialogs/dialog.constants";
+import type { BASE_ADD_DIALOG_MAP } from "@/app-components/dialogs/dialog.constants";
+import { EntityDialogsContext } from "@/contexts/entity-dialogs.context";
 import { THook } from "@/types/base.types";
 import {
   ConfirmOptions,
@@ -16,6 +19,18 @@ import {
 
 import { useDialogs } from "./useDialogs";
 
+export const useEntityDialogMap = () => {
+  const dialogMap = useContext(EntityDialogsContext);
+
+  if (!dialogMap) {
+    throw new Error(
+      "useEntityDialogMap must be used within an EntityDialogsProvider",
+    );
+  }
+
+  return dialogMap;
+};
+
 export const useEntityDialogs = <
   T extends typeof BASE_ADD_DIALOG_MAP,
   TE extends keyof typeof BASE_ADD_DIALOG_MAP,
@@ -25,13 +40,14 @@ export const useEntityDialogs = <
   entity: TE,
 ) => {
   const dialogs = useDialogs();
-  const EntityDialogComponent = BASE_ADD_DIALOG_MAP[entity][
+  const dialogMap = useEntityDialogMap();
+  const EntityDialogComponent = dialogMap[entity][
     "dialog"
   ] as unknown as DialogComponent<TP, TD | boolean>;
   const open = (payload: TP, options?: OpenDialogOptions<TD | boolean>) => {
     if (EntityDialogComponent) {
       return dialogs.open(EntityDialogComponent, payload, {
-        ...BASE_ADD_DIALOG_MAP[entity]?.["options"],
+        ...dialogMap[entity]?.["options"],
         ...options,
       });
     }
