@@ -5,12 +5,20 @@
  */
 
 import {
+  compileWorkflow,
+  type CompiledStep,
   Workflow as WorkflowHelper,
   type ValidateWorkflowOptions,
+  type WorkflowCompileOptions,
   type WorkflowDefinition,
   validateWorkflow,
 } from "@hexabot-ai/agentic";
 import { WorkflowVersionAction } from "@hexabot-ai/types";
+
+import type {
+  RawWorkflowIssue,
+  WorkflowDefinitionStatus,
+} from "../types/workflow.types";
 
 type WorkflowDefinitionPersistMode = "debounced" | "immediate";
 
@@ -108,5 +116,80 @@ export const applyWorkflowDefinitionStateUpdate = ({
 
   if (savedDefinitionYml !== nextSignature) {
     commitImmediately(nextSignature);
+  }
+};
+
+export type WorkflowDefinitionComputedState = {
+  status: WorkflowDefinitionStatus;
+  definition?: WorkflowDefinition;
+  flow?: CompiledStep[];
+  issues: RawWorkflowIssue[];
+};
+
+type GetWorkflowDefinitionStateArgs = ValidateWorkflowOptions & {
+  yaml: string;
+  /** The action or binding catalog failed to load. */
+  hasCatalogError: boolean;
+  /** The catalogs or the version YAML are still loading. */
+  isLoading: boolean;
+  compileActions: WorkflowCompileOptions["actions"];
+};
+
+/**
+ * Validate the workflow YAML, then compile it when it is valid. `status`
+ * tells "still loading" from "broken", so the graph shows a spinner rather
+ * than spurious errors while the catalogs load.
+ */
+export const getWorkflowDefinitionState = ({
+  yaml,
+  hasCatalogError,
+  isLoading,
+  actions,
+  bindingKinds,
+  compileActions,
+}: GetWorkflowDefinitionStateArgs): WorkflowDefinitionComputedState => {
+  if (hasCatalogError) {
+    return {
+      status: "invalid",
+      issues: [
+        {
+          code: "catalog_error",
+          message: "Failed to load the workflow catalogs from the server.",
+        },
+      ],
+    };
+  }
+  if (isLoading) {
+    return { status: "loading", issues: [] };
+  }
+  if (!yaml) {
+    // The catalogs are ready but the workflow has no steps yet.
+    return { status: "empty", flow: [] as CompiledStep[], issues: [] };
+  }
+
+  const validation = validateWorkflow(yaml, { bindingKinds, actions });
+
+  if (!validation.success) {
+    return { status: "invalid", issues: validation.issues };
+  }
+
+  try {
+    const { flow, definition } = compileWorkflow(validation.data, {
+      actions: compileActions,
+      bindingKinds,
+    });
+
+    return { status: "ready", definition, flow, issues: [] };
+  } catch (error) {
+    // Defensive: validation passed but compilation still threw.
+    return {
+      status: "invalid",
+      issues: [
+        {
+          code: "compile_error",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ],
+    };
   }
 };
