@@ -8,21 +8,18 @@ import type { Edge } from "@xyflow/react";
 
 import { ENodeType, type GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
-import { isAttachmentSourceHandle } from "../port-rules";
+import {
+  getConditionalOperatorOutHandleMeta,
+  isAttachmentSourceHandle,
+} from "../port-rules";
 
 import { appendMapValue } from "./geometry";
 
 export const isAttachmentEdge = (edge: Edge) =>
   isAttachmentSourceHandle(edge.sourceHandle);
-export const parseConditionalBranchIndex = (handle?: string | null): number => {
-  if (!handle) {
-    return -1;
-  }
-
-  const match = handle.match(/operatorOut-(\d+)-\d+/);
-
-  return match ? parseInt(match[1], 10) : -1;
-};
+export const parseConditionalBranchIndex = (handle?: string | null): number =>
+  (handle ? getConditionalOperatorOutHandleMeta(handle)?.index : undefined) ??
+  -1;
 
 export type BranchTraversal = {
   mainFlowNodeIds: Set<string>;

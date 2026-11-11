@@ -8,12 +8,34 @@ import { Position } from "@xyflow/react";
 import type { ResizeControlDirection } from "@xyflow/system";
 import type { CSSProperties } from "react";
 
-import { ELinkType, type WorkflowPort } from "../types/workflow-node.types";
+import {
+  ELinkType,
+  type BindingOutPort,
+  type ConditionalOperatorOutPort,
+  type WorkflowPort,
+} from "../types/workflow-node.types";
 
 type HandleType = "target" | "source";
 
-const CONDITIONAL_OPERATOR_OUT_PATTERN = /^operatorOut-(\d+)-(\d+)$/;
-const BINDING_OUT_PATTERN = /^bindingOut-(\d+)-(\d+)-(.+)$/;
+// Indexed out ports are named "<base>-<index>-<total>[-<encoded binding kind>]".
+export const buildConditionalOperatorOutPort = (
+  branchIndex: number,
+  branchesCount: number,
+): ConditionalOperatorOutPort =>
+  `${ELinkType.OPERATOR_OUT}-${branchIndex}-${branchesCount}`;
+export const buildBindingOutPort = (
+  bindingKind: string,
+  index: number,
+  total: number,
+): BindingOutPort =>
+  `${ELinkType.BINDING_OUT}-${index}-${total}-${encodeURIComponent(bindingKind)}`;
+
+const CONDITIONAL_OPERATOR_OUT_PATTERN = new RegExp(
+  `^${ELinkType.OPERATOR_OUT}-(\\d+)-(\\d+)$`,
+);
+const BINDING_OUT_PATTERN = new RegExp(
+  `^${ELinkType.BINDING_OUT}-(\\d+)-(\\d+)-(.+)$`,
+);
 // Parses an "<index>-<total>" indexed handle id and validates 0 <= index < total.
 const parseIndexedHandle = (id: WorkflowPort | string, pattern: RegExp) => {
   const match = String(id).match(pattern);

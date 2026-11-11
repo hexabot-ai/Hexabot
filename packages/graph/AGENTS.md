@@ -67,6 +67,7 @@ Related runtime hooks:
 - Path alias `@/*` maps to `packages/graph/src/*` (`tsconfig.json`).
 - `no-console` is enforced; keep logging out of production paths. Current layout error logging in `useWorkflowGraphLayout.ts` is an explicit lint-disabled exception.
 - Keep `resolveWorkflowPortRule` (`port-rules.ts`) and `getHandleConfig` (`handle.utils.ts`) aligned; update corresponding tests when changing handle behavior.
+- Indexed out port ids (`operatorOut-<index>-<total>`, `bindingOut-<index>-<total>-<kind>`) are built and parsed only in `port-rules.ts`; use its helpers instead of formatting or matching them inline.
 - Group overlay edges are derived from semantic edges in `decorate.ts`; attachment source handles (`AGENT_MODEL`, `AGENT_MEMORY`, `AGENT_TOOL`) intentionally bypass overlay grouping logic.
 - Preserve CSS export compatibility in `package.json`:
   - `"./workflow.css": "./src/workflow/styles/index.css"`

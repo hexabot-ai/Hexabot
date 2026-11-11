@@ -10,7 +10,10 @@ import { describe, expect, it } from "vitest";
 import { ELinkType } from "../types/workflow-node.types";
 
 import { getHandleConfig } from "./handle.utils";
+import { parseConditionalBranchIndex } from "./layout/graph-maps";
 import {
+  buildBindingOutPort,
+  buildConditionalOperatorOutPort,
   getBindingOutHandleMeta,
   getConditionalOperatorOutHandleMeta,
   resolveWorkflowPortRule,
@@ -44,6 +47,36 @@ describe("handle.utils", () => {
       bindingKind: "tools",
     });
     expect(getBindingOutHandleMeta("bindingOut-x-y-tools")).toBeUndefined();
+  });
+
+  it("parses the indexed out ports it builds", () => {
+    const bindingPort = buildBindingOutPort("my tools/v2", 0, 2);
+
+    expect(buildConditionalOperatorOutPort(2, 3)).toBe("operatorOut-2-3");
+    expect(
+      getConditionalOperatorOutHandleMeta(
+        buildConditionalOperatorOutPort(2, 3),
+      ),
+    ).toEqual({ index: 2, total: 3 });
+    expect(bindingPort).toBe("bindingOut-0-2-my%20tools%2Fv2");
+    expect(getBindingOutHandleMeta(bindingPort)).toEqual({
+      baseId: ELinkType.BINDING_OUT,
+      index: 0,
+      total: 2,
+      bindingKind: "my tools/v2",
+    });
+  });
+
+  it("reads branch indexes from conditional operator out handles only", () => {
+    expect(
+      parseConditionalBranchIndex(buildConditionalOperatorOutPort(1, 2)),
+    ).toBe(1);
+    expect(parseConditionalBranchIndex(ELinkType.OPERATOR_OUT)).toBe(-1);
+    expect(parseConditionalBranchIndex(undefined)).toBe(-1);
+    expect(parseConditionalBranchIndex(null)).toBe(-1);
+    expect(
+      parseConditionalBranchIndex(buildBindingOutPort("operatorOut-1-2", 0, 1)),
+    ).toBe(-1);
   });
 
   it("resolves handle config for conditional out handles", () => {

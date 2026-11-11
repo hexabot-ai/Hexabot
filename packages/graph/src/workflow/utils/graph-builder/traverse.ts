@@ -18,8 +18,6 @@ import {
   EIndicatorType,
   ELinkType,
   ENodeType,
-  type BindingOutPort,
-  type ConditionalOperatorOutPort,
   type EOperatorType,
   type INodeConfig,
   type WorkflowAction,
@@ -28,6 +26,10 @@ import {
   type WorkflowNodePort,
 } from "../../types/workflow-node.types";
 import type { FlowStepPath } from "../../types/workflow-path.types";
+import {
+  buildBindingOutPort,
+  buildConditionalOperatorOutPort,
+} from "../port-rules";
 import { getTaskAction, getTaskDescription } from "../workflow-task.utils";
 
 import {
@@ -111,12 +113,6 @@ const BINDING_PORT_LABELS: Record<string, string> = {
 };
 const getBindingPortLabel = (kind: string): string =>
   BINDING_PORT_LABELS[kind] ?? humanizeBindingKind(kind);
-const buildBindingOutPort = (
-  bindingKind: string,
-  index: number,
-  total: number,
-): BindingOutPort =>
-  `${ELinkType.BINDING_OUT}-${index}-${total}-${encodeURIComponent(bindingKind)}`;
 const buildBindingPorts = <
   TNodeType extends
     | ENodeType.TASK
@@ -217,11 +213,6 @@ const resolveEffectiveBindingKindsForDef = (
     bindingCatalog,
   );
 };
-const buildConditionalOperatorOutPort = (
-  branchIndex: number,
-  branchesCount: number,
-): ConditionalOperatorOutPort =>
-  `${ELinkType.OPERATOR_OUT}-${branchIndex}-${branchesCount}`;
 const getConditionalBranchLabel = (
   branch: CompiledConditionalStep["branches"][number],
 ): string => {
