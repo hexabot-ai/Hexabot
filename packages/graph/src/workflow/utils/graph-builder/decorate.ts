@@ -5,6 +5,7 @@
  */
 
 import { ENodeType } from "../../types/workflow-node.types";
+import { areArraysEqual } from "../array.utils";
 import { isAttachmentSourceHandle } from "../port-rules";
 
 import { createEdgeId } from "./id-factory";
@@ -23,18 +24,11 @@ const isPrefixPath = (prefix: string[], value: string[]): boolean => {
 
   return prefix.every((part, index) => value[index] === part);
 };
-const isSamePath = (left: string[], right: string[]): boolean => {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((part, index) => part === right[index]);
-};
 const resolveGroupEdgeEndpoints = (
   source: { id: string; groupPath: string[] },
   target: { id: string; groupPath: string[] },
 ): { source: string; target: string } | undefined => {
-  if (isSamePath(source.groupPath, target.groupPath)) {
+  if (areArraysEqual(source.groupPath, target.groupPath)) {
     return;
   }
 

@@ -61,6 +61,7 @@ import type {
   FlowStepPath,
 } from "../types/workflow-path.types";
 import type { WorkflowSelectionSnapshot } from "../types/workflow-selection.types";
+import { areArraysEqual } from "../utils/array.utils";
 import { isSameViewport } from "../utils/workflow-graph.utils";
 import {
   isLargeWorkflowGraph,
@@ -197,38 +198,10 @@ const useResolvedColorMode = (
 
   return resolved;
 };
-const areStringArraysEqual = (
-  left: readonly string[] | undefined,
-  right: readonly string[] | undefined,
-): boolean => {
-  if (left === right) {
-    return true;
-  }
-
-  if (!left || !right || left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((value, index) => value === right[index]);
-};
-const areWorkflowIssuesEqual = (
-  left: readonly WorkflowGraphIssue[] | undefined,
-  right: readonly WorkflowGraphIssue[] | undefined,
-): boolean => {
-  if (left === right) {
-    return true;
-  }
-
-  if (!left || !right || left.length !== right.length) {
-    return false;
-  }
-
-  return left.every(
-    (issue, index) =>
-      issue.message === right[index].message &&
-      issue.line === right[index].line,
-  );
-};
+const isSameWorkflowIssue = (
+  left: WorkflowGraphIssue,
+  right: WorkflowGraphIssue,
+): boolean => left.message === right.message && left.line === right.line;
 const isSameViewportState = (
   left: ViewportState | null | undefined,
   right: ViewportState | null | undefined,
@@ -262,12 +235,16 @@ const areWorkflowGraphPropsEqual = (
   previous.model.executionStates === next.model.executionStates &&
   previous.model.layoutDirection === next.model.layoutDirection &&
   previous.model.activeCodeDefName === next.model.activeCodeDefName &&
-  areWorkflowIssuesEqual(previous.model.issues, next.model.issues) &&
-  areStringArraysEqual(
+  areArraysEqual(
+    previous.model.issues,
+    next.model.issues,
+    isSameWorkflowIssue,
+  ) &&
+  areArraysEqual(
     previous.selection.selectedNodeIds,
     next.selection.selectedNodeIds,
   ) &&
-  areStringArraysEqual(
+  areArraysEqual(
     previous.selection.focusNodeIds,
     next.selection.focusNodeIds,
   ) &&
