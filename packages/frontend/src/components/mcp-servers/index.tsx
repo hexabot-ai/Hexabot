@@ -10,12 +10,12 @@ import { GridColDef } from "@mui/x-data-grid";
 import { PlugZap, Plus } from "lucide-react";
 import { useState } from "react";
 
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import { ChipEntity } from "@/app-components/displays/ChipEntity";
 import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useDeleteAction } from "@/app-components/tables/columns/useDeleteAction";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -75,6 +75,7 @@ export const McpServers = () => {
       toast.success(t("message.item_delete_success"));
     },
   });
+  const deleteAction = useDeleteAction<McpServer>(deleteMcpServer);
   const { mutateAsync: testMcpServer } = useApiClientMutation("testMcpServer");
   const {
     data: tools = [],
@@ -179,17 +180,7 @@ export const McpServers = () => {
         },
         requires: [Action.UPDATE],
       },
-      {
-        action: ColumnActionType.Delete,
-        onClick: async ({ id }) => {
-          const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
-
-          if (isConfirmed) {
-            deleteMcpServer(id);
-          }
-        },
-        requires: [Action.DELETE],
-      },
+      deleteAction,
     ],
     t("label.operations"),
   );

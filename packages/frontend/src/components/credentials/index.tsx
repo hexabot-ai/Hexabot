@@ -8,12 +8,12 @@ import { Action, Credential } from "@hexabot-ai/types";
 import { GridColDef } from "@mui/x-data-grid";
 import { KeyRound, Plus } from "lucide-react";
 
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import { ChipEntity } from "@/app-components/displays/ChipEntity";
 import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useDeleteAction } from "@/app-components/tables/columns/useDeleteAction";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -37,6 +37,7 @@ export const Credentials = () => {
       toast.success(t("message.item_delete_success"));
     },
   });
+  const deleteAction = useDeleteAction<Credential>(deleteCredential);
   const actionColumns = useActionColumns<Credential>(
     EntityType.CREDENTIAL,
     [
@@ -47,17 +48,7 @@ export const Credentials = () => {
         },
         requires: [Action.UPDATE],
       },
-      {
-        action: ColumnActionType.Delete,
-        onClick: async ({ id }) => {
-          const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
-
-          if (isConfirmed) {
-            deleteCredential(id);
-          }
-        },
-        requires: [Action.DELETE],
-      },
+      deleteAction,
     ],
     t("label.operations"),
   );

@@ -10,11 +10,11 @@ import { Chip, Stack } from "@mui/material";
 import { GridColDef } from "@mui/x-data-grid";
 import { Languages, RefreshCw } from "lucide-react";
 
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useDeleteAction } from "@/app-components/tables/columns/useDeleteAction";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -46,6 +46,7 @@ export const Translations = () => {
       toast.success(t("message.item_delete_success"));
     },
   });
+  const deleteAction = useDeleteAction<Translation>(deleteTranslation);
   const { mutateAsync: checkRefreshTranslations, isPending } =
     useApiClientMutation("refreshTranslations", {
       onError: () => {
@@ -65,17 +66,7 @@ export const Translations = () => {
         },
         requires: [Action.UPDATE],
       },
-      {
-        action: ColumnActionType.Delete,
-        onClick: async ({ id }) => {
-          const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
-
-          if (isConfirmed) {
-            deleteTranslation(id);
-          }
-        },
-        requires: [Action.DELETE],
-      },
+      deleteAction,
     ],
     t("label.operations"),
   );

@@ -9,11 +9,11 @@ import type { ContentType } from "@hexabot-ai/types";
 import { GridColDef } from "@mui/x-data-grid";
 import { BookOpen } from "lucide-react";
 
-import { ConfirmDialogBody } from "@/app-components/dialogs";
 import {
   ColumnActionType,
   useActionColumns,
 } from "@/app-components/tables/columns/getColumns";
+import { useDeleteAction } from "@/app-components/tables/columns/useDeleteAction";
 import { useTimestampColumns } from "@/app-components/tables/columns/useTimestampColumns";
 import { GenericDataGrid } from "@/app-components/tables/GenericDataGrid";
 import { useDelete } from "@/hooks/crud/useDelete";
@@ -43,6 +43,7 @@ export const ContentTypes = () => {
     EntityType.CONTENT_TYPE,
     options,
   );
+  const deleteAction = useDeleteAction<ContentType>(deleteContentType);
   const actionColumns = useActionColumns<ContentType>(
     EntityType.CONTENT_TYPE,
     [
@@ -57,17 +58,7 @@ export const ContentTypes = () => {
         },
         requires: [Action.UPDATE],
       },
-      {
-        action: ColumnActionType.Delete,
-        onClick: async ({ id }) => {
-          const isConfirmed = await dialogs.confirm(ConfirmDialogBody);
-
-          if (isConfirmed) {
-            deleteContentType(id);
-          }
-        },
-        requires: [Action.DELETE],
-      },
+      deleteAction,
     ],
     t("label.operations"),
   );
