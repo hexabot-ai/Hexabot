@@ -31,7 +31,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot work
 
 ## Public APIs and contracts
 - This package is documentation-only in this guide; do not change runtime contracts unless explicitly requested.
-- Core public component and prop contracts are defined in `packages/graph/src/workflow/components/WorkflowGraph.tsx`.
+- Core public component is `packages/graph/src/workflow/components/WorkflowGraph.tsx`; its prop contracts and memo comparator (`areWorkflowGraphPropsEqual`) are in `packages/graph/src/workflow/components/workflow-graph.props.ts`. A new prop needs a comparator entry there (type checking enforces it).
 - Public exports are defined by `packages/graph/src/workflow/index.ts` and re-exported from `packages/graph/src/index.ts`.
 - Shared node/edge enums and graph types are in `packages/graph/src/workflow/types/workflow-node.types.ts`.
 

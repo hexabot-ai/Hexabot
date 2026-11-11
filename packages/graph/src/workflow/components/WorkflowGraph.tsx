@@ -4,21 +4,16 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { CompiledStep, WorkflowDefinition } from "@hexabot-ai/agentic";
 import {
   Background,
-  type Node,
-  type NodeMouseHandler,
   type OnMove,
   ReactFlow,
   ReactFlowProvider,
   type Viewport,
 } from "@xyflow/react";
-import type { ResizeControlDirection } from "@xyflow/system";
 import {
   forwardRef,
   memo,
-  type PropsWithChildren,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -31,11 +26,10 @@ import {
   WORKFLOW_VIEWPORT_MAX_ZOOM,
   WORKFLOW_VIEWPORT_MIN_ZOOM,
 } from "../constants/workflow.constants";
-import type {
-  WorkflowGraphHostContextValue,
-  WorkflowGraphTranslate,
+import {
+  WorkflowGraphHostContext,
+  type WorkflowGraphHostContextValue,
 } from "../contexts/workflow-graph-host.context";
-import { WorkflowGraphHostContext } from "../contexts/workflow-graph-host.context";
 import {
   WorkflowInsertMenuContext,
   type WorkflowInsertMenuContextValue,
@@ -44,24 +38,8 @@ import { useFocusNode } from "../hooks/useFocusNode";
 import { useInsertMenuBindings } from "../hooks/useInsertMenuBindings";
 import { useWorkflowGraphLayout } from "../hooks/useWorkflowGraphLayout";
 import { useWorkflowSelectionController } from "../hooks/useWorkflowSelectionController";
-import {
-  useWorkflowViewport,
-  type ViewportState,
-} from "../hooks/useWorkflowViewport";
+import { useWorkflowViewport } from "../hooks/useWorkflowViewport";
 import "../styles/index.css";
-import type {
-  WorkflowAction,
-  WorkflowBindingAddPayload,
-  WorkflowBindingCatalog,
-  WorkflowBindingRemovePayload,
-  WorkflowExecutionStateMap,
-} from "../types/workflow-node.types";
-import type {
-  EdgeInsertType,
-  FlowStepPath,
-} from "../types/workflow-path.types";
-import type { WorkflowSelectionSnapshot } from "../types/workflow-selection.types";
-import { areArraysEqual } from "../utils/array.utils";
 import { isSameViewport } from "../utils/workflow-graph.utils";
 import {
   isLargeWorkflowGraph,
@@ -69,84 +47,18 @@ import {
 } from "../utils/workflow-rendering.utils";
 import { applyWorkflowExecutionStatesToNodes } from "../utils/workflow-runtime-node.utils";
 
+import {
+  areWorkflowGraphPropsEqual,
+  type WorkflowGraphColorMode,
+  type WorkflowGraphHandle,
+  type WorkflowGraphProps,
+} from "./workflow-graph.props";
 import { EDGE_TYPES, NODE_TYPES } from "./workflow-graph.registry";
 import { WorkflowControls } from "./WorkflowControls";
 import { WorkflowEmptyState } from "./WorkflowEmptyState";
 import { WorkflowErrorState } from "./WorkflowErrorState";
 import { WorkflowInsertContextMenu } from "./WorkflowInsertContextMenu";
 import { WorkflowLoadingState } from "./WorkflowLoadingState";
-
-/**
- * A single reason the workflow could not be compiled. `line` is the 1-based
- * YAML line the issue maps to, when the host can resolve one, enabling a
- * jump-to-line link in the error panel.
- */
-export type WorkflowGraphIssue = {
-  message: string;
-  line?: number;
-};
-
-export type WorkflowGraphModel = {
-  definition?: WorkflowDefinition;
-  compiledFlow?: CompiledStep[];
-  actionCatalog: ReadonlyMap<string, WorkflowAction>;
-  bindingCatalog: WorkflowBindingCatalog;
-  executionStates: WorkflowExecutionStateMap;
-  layoutDirection?: ResizeControlDirection;
-  activeCodeDefName?: string;
-  /**
-   * Reasons why the workflow could not be compiled (missing actions, validation
-   * errors, …). When set, a blocking error panel is overlaid on the canvas —
-   * over the last-good graph when the host keeps providing one via
-   * `compiledFlow`, or over the empty canvas otherwise.
-   */
-  issues?: WorkflowGraphIssue[];
-};
-
-export type WorkflowGraphSelection = {
-  selectedNodeIds: string[];
-  focusNodeIds?: string[];
-  onChange?: (selection: WorkflowSelectionSnapshot) => void;
-  onFocusComplete?: () => void;
-};
-
-export type WorkflowGraphInsertion = {
-  onInsertAtPath?: (insertType: EdgeInsertType, path: FlowStepPath) => void;
-  onInsertAtRoot?: (insertType: EdgeInsertType) => void;
-};
-
-export type WorkflowGraphViewport = {
-  value?: ViewportState | null;
-  onChange: ({ zoom, x, y }: Viewport) => void;
-};
-
-export type WorkflowGraphCallbacks = {
-  onNodeClick?: NodeMouseHandler<Node>;
-  onRemoveStep: (stepPath: FlowStepPath, nodeId?: string) => void;
-  onAddBinding?: (payload: WorkflowBindingAddPayload) => void;
-  onRemoveBinding?: (payload: WorkflowBindingRemovePayload) => void;
-  onRotate: (nextDirection: "horizontal" | "vertical") => Promise<boolean>;
-  onViewNodeCode?: (defName: string) => void;
-  onOpenYamlEditor?: (line?: number) => void;
-};
-
-export type WorkflowGraphColorMode = "light" | "dark" | "system";
-
-export type WorkflowGraphProps = PropsWithChildren<{
-  t: WorkflowGraphTranslate;
-  model: WorkflowGraphModel;
-  selection: WorkflowGraphSelection;
-  insertion?: WorkflowGraphInsertion;
-  viewport: WorkflowGraphViewport;
-  callbacks: WorkflowGraphCallbacks;
-  colorMode?: WorkflowGraphColorMode;
-}>;
-
-export type WorkflowGraphHandle = {
-  animateFocus: (nodeIds?: string[]) => Promise<void>;
-  requestCenterAfterFirstInsert: () => void;
-  clearCenterAfterFirstInsert: () => void;
-};
 
 const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
 const resolveSystemColorMode = (): "light" | "dark" => {
@@ -198,69 +110,6 @@ const useResolvedColorMode = (
 
   return resolved;
 };
-const isSameWorkflowIssue = (
-  left: WorkflowGraphIssue,
-  right: WorkflowGraphIssue,
-): boolean => left.message === right.message && left.line === right.line;
-const isSameViewportState = (
-  left: ViewportState | null | undefined,
-  right: ViewportState | null | undefined,
-): boolean => {
-  if (left === right) {
-    return true;
-  }
-
-  if (!left || !right) {
-    return !left && !right;
-  }
-
-  return (
-    left.id === right.id &&
-    left.x === right.x &&
-    left.y === right.y &&
-    left.zoom === right.zoom
-  );
-};
-const areWorkflowGraphPropsEqual = (
-  previous: WorkflowGraphProps,
-  next: WorkflowGraphProps,
-): boolean =>
-  previous.children === next.children &&
-  previous.colorMode === next.colorMode &&
-  previous.t === next.t &&
-  previous.model.definition?.defs === next.model.definition?.defs &&
-  previous.model.compiledFlow === next.model.compiledFlow &&
-  previous.model.actionCatalog === next.model.actionCatalog &&
-  previous.model.bindingCatalog === next.model.bindingCatalog &&
-  previous.model.executionStates === next.model.executionStates &&
-  previous.model.layoutDirection === next.model.layoutDirection &&
-  previous.model.activeCodeDefName === next.model.activeCodeDefName &&
-  areArraysEqual(
-    previous.model.issues,
-    next.model.issues,
-    isSameWorkflowIssue,
-  ) &&
-  areArraysEqual(
-    previous.selection.selectedNodeIds,
-    next.selection.selectedNodeIds,
-  ) &&
-  areArraysEqual(
-    previous.selection.focusNodeIds,
-    next.selection.focusNodeIds,
-  ) &&
-  previous.selection.onChange === next.selection.onChange &&
-  previous.selection.onFocusComplete === next.selection.onFocusComplete &&
-  previous.insertion?.onInsertAtPath === next.insertion?.onInsertAtPath &&
-  previous.insertion?.onInsertAtRoot === next.insertion?.onInsertAtRoot &&
-  isSameViewportState(previous.viewport.value, next.viewport.value) &&
-  previous.viewport.onChange === next.viewport.onChange &&
-  previous.callbacks.onNodeClick === next.callbacks.onNodeClick &&
-  previous.callbacks.onRemoveStep === next.callbacks.onRemoveStep &&
-  previous.callbacks.onAddBinding === next.callbacks.onAddBinding &&
-  previous.callbacks.onRemoveBinding === next.callbacks.onRemoveBinding &&
-  previous.callbacks.onRotate === next.callbacks.onRotate &&
-  previous.callbacks.onViewNodeCode === next.callbacks.onViewNodeCode &&
-  previous.callbacks.onOpenYamlEditor === next.callbacks.onOpenYamlEditor;
 const WorkflowGraphCanvas = forwardRef<WorkflowGraphHandle, WorkflowGraphProps>(
   (
     {
