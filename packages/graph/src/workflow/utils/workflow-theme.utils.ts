@@ -28,10 +28,12 @@ type WorkflowThemeInput = {
 
 export type ResolvedWorkflowTheme = WorkflowNodeTheme & { Icon: WorkflowIcon };
 
-const DEFAULT_NODE_TEXT_COLOR = "#51627a";
-const DEFAULT_DARK_NODE_TEXT_COLOR = "#ffffff";
-const DEFAULT_LIGHT_MIX_TARGET = "#ffffff";
-const DEFAULT_DARK_MIX_TARGET = "#000000";
+// Per color mode: the default text color, and how a node's background is
+// tinted from its border color toward the canvas color.
+const MODE_PALETTES = {
+  light: { textColor: "#51627a", mixTarget: "#ffffff", mixWeight: "95%" },
+  dark: { textColor: "#ffffff", mixTarget: "#000000", mixWeight: "85%" },
+} as const;
 const appendClassName = (className: string | undefined, name: string) => {
   return className ? `${className} ${name}` : name;
 };
@@ -73,39 +75,48 @@ export const getWorkflowStateConfig = (
   return color ? { icon, color } : { icon };
 };
 
-export const resolveWorkflowStepTheme = ({
+const getNamedIcon = (
+  iconName: string | undefined,
+): WorkflowIcon | undefined =>
+  iconName && iconName in Icons
+    ? (Icons[iconName as keyof typeof Icons] as WorkflowIcon)
+    : undefined;
+const resolveThemeIcon = ({
   baseTheme,
   action,
   status,
-  mode,
-}: WorkflowThemeInput): ResolvedWorkflowTheme => {
-  const isDarkMode = mode === "dark";
-  const stateConfig = getWorkflowStateConfig(status);
-  const stateColorOverride = status
+}: WorkflowThemeInput): WorkflowIcon =>
+  getWorkflowStateConfig(status)?.icon ??
+  getNamedIcon(baseTheme?.icon ?? action?.icon) ??
+  baseTheme?.Icon ??
+  Icons.Zap;
+const tintBackground = (
+  color: string | undefined,
+  palette: (typeof MODE_PALETTES)[keyof typeof MODE_PALETTES],
+): string | undefined =>
+  color
+    ? `color-mix(in srgb, ${color}, ${palette.mixTarget} ${palette.mixWeight})`
+    : undefined;
+
+/**
+ * A step node's visuals: the execution state's icon and color win over the
+ * node's own theme, which wins over its action's metadata.
+ */
+export const resolveWorkflowStepTheme = (
+  input: WorkflowThemeInput,
+): ResolvedWorkflowTheme => {
+  const { baseTheme, action, status, mode } = input;
+  const palette = MODE_PALETTES[mode === "dark" ? "dark" : "light"];
+  const stateColor = status
     ? WORKFLOW_STATE_COLOR_OVERRIDES[status]
     : undefined;
-  const borderColor =
-    stateColorOverride ?? baseTheme?.borderColor ?? action?.color;
-  const iconName = baseTheme?.icon ?? action?.icon;
-  const namedIcon =
-    iconName && iconName in Icons
-      ? (Icons[iconName as keyof typeof Icons] as WorkflowIcon)
-      : undefined;
-  const Icon = stateConfig?.icon ?? namedIcon ?? baseTheme?.Icon ?? Icons.Zap;
+  const borderColor = stateColor ?? baseTheme?.borderColor ?? action?.color;
 
   return {
-    Icon,
-    color:
-      baseTheme?.color ??
-      (isDarkMode ? DEFAULT_DARK_NODE_TEXT_COLOR : DEFAULT_NODE_TEXT_COLOR),
-    bgColor:
-      baseTheme?.bgColor ??
-      (borderColor
-        ? `color-mix(in srgb, ${borderColor}, ${
-            isDarkMode ? DEFAULT_DARK_MIX_TARGET : DEFAULT_LIGHT_MIX_TARGET
-          } ${isDarkMode ? "85%" : "95%"})`
-        : undefined),
-    iconColor: stateColorOverride ?? baseTheme?.iconColor ?? borderColor,
+    Icon: resolveThemeIcon(input),
+    color: baseTheme?.color ?? palette.textColor,
+    bgColor: baseTheme?.bgColor ?? tintBackground(borderColor, palette),
+    iconColor: stateColor ?? baseTheme?.iconColor ?? borderColor,
     borderColor,
   };
 };
