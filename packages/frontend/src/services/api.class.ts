@@ -14,11 +14,11 @@ import {
 } from "@hexabot-ai/types";
 import { AxiosInstance, AxiosResponse } from "axios";
 
-import { WorkflowBindingsCatalog } from "@/contexts/workflow-bindings.context";
-import { IAction } from "@/types/action.types";
+import type { WorkflowBindingsCatalog } from "@/contexts/workflow-bindings.context";
+import type { IAction } from "@/types/action.types";
 import { ILoginAttributes } from "@/types/auth/login.types";
-import { IUserPermissions } from "@/types/auth/permission.types";
-import { THook } from "@/types/base.types";
+import type { IUserPermissions } from "@/types/auth/permission.types";
+import type { THook } from "@/types/base.types";
 import { ICsrf } from "@/types/csrf.types";
 import {
   IMcpServerDiagnostics,

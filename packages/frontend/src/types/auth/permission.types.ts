@@ -6,7 +6,7 @@
 
 import type { Action, Role } from "@hexabot-ai/types";
 
-import { EntityType } from "@/services/types";
+import type { EntityType } from "@/services/types";
 
 export interface IUserPermissions {
   roles: Role[];

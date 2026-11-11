@@ -19,7 +19,7 @@ import { usePendingWorkflowRunsSync } from "@/hooks/usePendingWorkflowRunsSync";
 import { getMenuItems } from "@/utils/menu.util";
 import { WorkflowEventProvider } from "@/websocket/workflow-event-hooks";
 
-import { LayoutProps } from ".";
+import type { LayoutProps } from ".";
 
 import { theme } from "./theme";
 

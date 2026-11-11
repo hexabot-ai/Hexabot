@@ -10,7 +10,7 @@ import { useEffect } from "react";
 import { useAuthRedirection } from "@/hooks/auth/useAuthRedirection";
 import { useAppRouter } from "@/hooks/useAppRouter";
 
-import { LayoutProps } from ".";
+import type { LayoutProps } from ".";
 
 import { Content } from "./content";
 import { Header } from "./Header";
