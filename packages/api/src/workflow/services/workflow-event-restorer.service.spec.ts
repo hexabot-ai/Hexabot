@@ -207,6 +207,83 @@ describe('WorkflowEventRestorer', () => {
 
       await expectUnavailable(buildRun(WorkflowType.conversational), code);
     });
+
+    it('refuses a run without thread before looking it up', async () => {
+      await expectUnavailable(
+        buildRun(WorkflowType.conversational, { thread: null }),
+        'thread_unavailable',
+      );
+      expect(threadService.findOneAndPopulate).not.toHaveBeenCalled();
+    });
+
+    it('refuses a subscriber without channel before looking it up', async () => {
+      subscriberService.findOne.mockResolvedValue({
+        ...subscriber,
+        channel: undefined,
+      });
+
+      await expectUnavailable(
+        buildRun(WorkflowType.conversational),
+        'channel_unavailable',
+      );
+      expect(channelRegistry.findChannel).not.toHaveBeenCalled();
+    });
+
+    it('follows parent links given as ids up to the last run found', async () => {
+      workflowRunService.findOne.mockImplementation(async (id: string) =>
+        id === 'run-0'
+          ? {
+              id: 'run-0',
+              parentRun: 'run-gone',
+              input: {
+                message: rootMessage,
+                text: 'Hi',
+                thread_id: 'thread-1',
+              },
+            }
+          : null,
+      );
+      const event = (await restorer.restore(
+        buildRun(WorkflowType.conversational, { parentRun: 'run-0' }),
+      )) as SyntheticMessageInboundEvent;
+
+      expect(workflowRunService.findOne.mock.calls).toEqual([
+        ['run-0'],
+        ['run-gone'],
+      ]);
+      expect(event.toStdIncomingMessage()).toEqual(rootMessage);
+    });
+  });
+
+  it('ignores run metadata that is not text', async () => {
+    const manual = await restorer.restore(
+      buildRun(WorkflowType.manual, {
+        input: null,
+        metadata: { initiated_by: 42 },
+      }),
+    );
+    const scheduled = await restorer.restore(
+      buildRun(WorkflowType.scheduled, {
+        metadata: { schedule: { cron: '* * * * *' }, triggered_at: 0 },
+      }),
+    );
+
+    expect(manual.buildInput()).toEqual({});
+    expect(manual.getMetadata()).toEqual({
+      trigger: WorkflowType.manual,
+      initiated_by: null,
+    });
+    expect(scheduled.buildInput()).toEqual({
+      schedule: null,
+      triggered_at: null,
+    });
+  });
+
+  it('refuses runs of an unsupported workflow type', async () => {
+    await expectUnavailable(
+      buildRun('mystery' as WorkflowType),
+      'unsupported_trigger',
+    );
   });
 
   it('rebuilds a manual event from the run input and initiator', async () => {
