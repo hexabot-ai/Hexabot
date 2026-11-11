@@ -9,7 +9,9 @@ import { randomUUID } from 'crypto';
 import {
   IncomingMessageType,
   StdIncomingMessage,
+  Subscriber,
   Thread,
+  ThreadFull,
   WorkflowRun,
   WorkflowRunFull,
   WorkflowType,
@@ -63,6 +65,15 @@ export class WorkflowTriggerUnavailableError extends Error {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+/** Read a text entry of the metadata of a run; undefined when not text. */
+const textMetadata = (
+  run: WorkflowRun | WorkflowRunFull,
+  key: string,
+): string | undefined => {
+  const value = run.metadata?.[key];
+
+  return typeof value === 'string' ? value : undefined;
+};
 
 /**
  * Rebuilds the trigger event of a persisted run, for resumes that no inbound
@@ -116,22 +127,14 @@ export class WorkflowEventRestorer {
       case WorkflowType.manual:
         event = new ManualEventWrapper(
           root.input ?? {},
-          typeof root.metadata?.initiated_by === 'string'
-            ? root.metadata.initiated_by
-            : null,
+          textMetadata(root, 'initiated_by') ?? null,
         );
         event.setInitiator(await this.findUser(initiatorId));
         break;
       case WorkflowType.scheduled:
         event = new ScheduledEventWrapper({
-          schedule:
-            typeof root.metadata?.schedule === 'string'
-              ? root.metadata.schedule
-              : null,
-          triggeredAt:
-            typeof root.metadata?.triggered_at === 'string'
-              ? root.metadata.triggered_at
-              : undefined,
+          schedule: textMetadata(root, 'schedule') ?? null,
+          triggeredAt: textMetadata(root, 'triggered_at'),
         });
         event.setInitiator(await this.findUser(initiatorId));
         break;
@@ -157,31 +160,8 @@ export class WorkflowEventRestorer {
     root: WorkflowRun | WorkflowRunFull,
     initiatorId: string,
   ): Promise<TriggerEventWrapper> {
-    const threadId = run.thread?.id;
-    const thread = threadId
-      ? await this.threadService.findOneAndPopulate(threadId)
-      : null;
-    if (!thread) {
-      throw new WorkflowTriggerUnavailableError(
-        'thread_unavailable',
-        'The conversation of the run is unavailable',
-      );
-    }
-    if (thread.status === 'closed') {
-      throw new WorkflowTriggerUnavailableError(
-        'thread_closed',
-        'The conversation of the run is closed',
-      );
-    }
-
-    const subscriber = await this.subscriberService.findOne(initiatorId);
-    if (!subscriber?.foreignId || thread.subscriber?.id !== subscriber.id) {
-      throw new WorkflowTriggerUnavailableError(
-        'initiator_unavailable',
-        'The subscriber of the run is unavailable',
-      );
-    }
-
+    const thread = await this.findOpenThread(run.thread?.id);
+    const subscriber = await this.findThreadSubscriber(thread, initiatorId);
     const channelName = subscriber.channel?.name as ChannelName | null;
     const handler = channelName
       ? this.channelRegistry.findChannel(channelName)
@@ -235,6 +215,42 @@ export class WorkflowEventRestorer {
     event.setInitiator(subscriber);
 
     return event;
+  }
+
+  private async findOpenThread(threadId?: string): Promise<ThreadFull> {
+    const thread = threadId
+      ? await this.threadService.findOneAndPopulate(threadId)
+      : null;
+    if (!thread) {
+      throw new WorkflowTriggerUnavailableError(
+        'thread_unavailable',
+        'The conversation of the run is unavailable',
+      );
+    }
+    if (thread.status === 'closed') {
+      throw new WorkflowTriggerUnavailableError(
+        'thread_closed',
+        'The conversation of the run is closed',
+      );
+    }
+
+    return thread;
+  }
+
+  /** Find the subscriber of the thread, who must have started the run. */
+  private async findThreadSubscriber(
+    thread: ThreadFull,
+    initiatorId: string,
+  ): Promise<Subscriber & { foreignId: string }> {
+    const subscriber = await this.subscriberService.findOne(initiatorId);
+    if (!subscriber?.foreignId || thread.subscriber?.id !== subscriber.id) {
+      throw new WorkflowTriggerUnavailableError(
+        'initiator_unavailable',
+        'The subscriber of the run is unavailable',
+      );
+    }
+
+    return subscriber as Subscriber & { foreignId: string };
   }
 
   /**
