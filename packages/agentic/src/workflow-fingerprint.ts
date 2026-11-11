@@ -10,6 +10,7 @@ import type {
   CompiledStep,
   CompiledValue,
   CompiledWorkflow,
+  LoopStep,
 } from './workflow-types';
 
 /** Separator between fingerprint parts; never produced by the parts themselves. */
@@ -79,23 +80,33 @@ const collectSteps = (
         }
         break;
       case StepType.Loop:
-        parts.push(step.loopType, step.name ?? '');
-        parts.push(
-          step.accumulate
-            ? `${step.accumulate.as}=${stringify(step.accumulate.initial)}:${describeValue(step.accumulate.merge)}`
-            : '',
-        );
-        if (step.loopType === 'for_each') {
-          parts.push(step.forEach.item, describeValue(step.forEach.in));
-          parts.push(describeValue(step.until));
-        } else {
-          parts.push(describeValue(step.while));
-        }
+        parts.push(...describeLoop(step));
         collectSteps(compiled, step.steps, parts);
         break;
     }
   }
 };
+/**
+ * Describe what drives a loop: its kind, name, accumulator, and items or
+ * condition.
+ *
+ * @param step The loop step.
+ * @returns The description fragments, in a fixed order.
+ */
+const describeLoop = (step: LoopStep): string[] => [
+  step.loopType,
+  step.name ?? '',
+  step.accumulate
+    ? `${step.accumulate.as}=${stringify(step.accumulate.initial)}:${describeValue(step.accumulate.merge)}`
+    : '',
+  ...(step.loopType === 'for_each'
+    ? [
+        step.forEach.item,
+        describeValue(step.forEach.in),
+        describeValue(step.until),
+      ]
+    : [describeValue(step.while)]),
+];
 /**
  * Describe a compiled mapping in a key-stable order.
  *

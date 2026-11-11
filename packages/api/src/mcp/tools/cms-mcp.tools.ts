@@ -10,7 +10,7 @@ import {
   contentTypeJsonSchema,
 } from '@hexabot-ai/types';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Tool, ToolGuards } from '@rekog/mcp-nest';
+import { Tool } from '@rekog/mcp-nest';
 import { z } from 'zod';
 
 import { ContentTypeOrmEntity } from '@/cms/entities/content-type.entity';
@@ -19,7 +19,6 @@ import { ContentTypeService } from '@/cms/services/content-type.service';
 import { ContentService } from '@/cms/services/content.service';
 
 import { McpPermission } from '../decorators/mcp-permission.decorator';
-import { McpPermissionGuard } from '../guards/mcp-permission.guard';
 
 import { HexabotMcpToolBase } from './hexabot-mcp-tool.base';
 import {
@@ -43,7 +42,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('contenttype', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_type_search',
     description: 'Search CMS content types.',
@@ -62,7 +60,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('contenttype', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_type_get',
     description: 'Read one CMS content type.',
@@ -80,7 +77,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('contenttype', Action.CREATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_type_create',
     description: `Create a CMS content type. \`schema.properties\` maps each field key to { type, title?, description? }, where \`type\` is a Hexabot field type (${CONTENT_FIELD_TYPES.join(', ')}), not a JSON Schema type or \`format\`: use {"type":"uri"} for a URL, not {"type":"string","format":"uri"}. Keep the built-in \`title\` (string) and \`status\` (boolean) fields, and list the keys of mandatory fields in \`schema.required\`.`,
@@ -97,7 +93,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('contenttype', Action.UPDATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_type_update',
     description:
@@ -115,7 +110,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('content', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_search',
     description: 'Search CMS content records.',
@@ -159,7 +153,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('content', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_get',
     description: 'Read one CMS content record.',
@@ -177,7 +170,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('content', Action.CREATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_create',
     description: 'Create a CMS content record.',
@@ -198,7 +190,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('content', Action.UPDATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_content_update',
     description: 'Update a CMS content record.',
@@ -217,7 +208,6 @@ export class HexabotCmsMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('content', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_rag_content_search',
     description:

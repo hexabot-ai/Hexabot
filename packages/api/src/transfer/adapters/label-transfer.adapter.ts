@@ -8,7 +8,6 @@ import {
   type WorkflowExportBundle,
   type WorkflowExportBundleLabel,
   type WorkflowExportBundleLabelGroup,
-  type WorkflowImportResourceResult,
 } from '@hexabot-ai/types';
 import {
   BadRequestException,
@@ -25,13 +24,11 @@ import {
   WorkflowTransferAdapter,
   WorkflowTransferExportContext,
   WorkflowTransferImportContext,
+  WorkflowTransferImportResults,
   WorkflowTransferResourceAdapter,
 } from '../workflow-transfer-resource-adapter';
 import {
-  assertFoundAll,
-  buildPostCreateEvent,
-  buildResourceResult,
-  uniqueResourceIds,
+  findAllForExport,
   type WorkflowTransferImportAdapterResult,
 } from '../workflow-transfer.types';
 
@@ -60,20 +57,9 @@ export class LabelTransferAdapter extends WorkflowTransferResourceAdapter {
   private async buildLabelExportResources(
     ids: string[],
   ): Promise<LabelExportResources> {
-    const uniqueIds = uniqueResourceIds(ids);
-    if (uniqueIds.length === 0) {
-      return { labelGroups: [], labels: [] };
-    }
-
-    const labels = await this.labelService.findAndPopulate({
-      where: { id: In(uniqueIds) },
-    });
-    assertFoundAll(
-      'label',
-      uniqueIds,
-      labels.map((label) => label.id),
+    const labels = await findAllForExport('label', ids, (uniqueIds) =>
+      this.labelService.findAndPopulate({ where: { id: In(uniqueIds) } }),
     );
-
     const groupsById = new Map<string, WorkflowExportBundleLabelGroup>();
     for (const label of labels) {
       if (label.group?.id) {
@@ -129,10 +115,7 @@ export class LabelTransferAdapter extends WorkflowTransferResourceAdapter {
     manager: EntityManager,
     labelGroups: WorkflowExportBundle['resources']['labelGroups'],
   ): Promise<WorkflowTransferImportAdapterResult> {
-    const idMap: Record<string, string> = {};
-    const resources: WorkflowImportResourceResult[] = [];
-    const postCreateEvents: WorkflowTransferImportAdapterResult['postCreateEvents'] =
-      [];
+    const results = new WorkflowTransferImportResults('labelGroup');
 
     for (const labelGroup of labelGroups) {
       const existing = await manager.findOne(LabelGroupOrmEntity, {
@@ -140,16 +123,7 @@ export class LabelTransferAdapter extends WorkflowTransferResourceAdapter {
       });
 
       if (existing) {
-        idMap[labelGroup.exportId] = existing.id;
-        resources.push(
-          buildResourceResult({
-            kind: 'labelGroup',
-            exportId: labelGroup.exportId,
-            localId: existing.id,
-            name: labelGroup.name,
-            action: 'reused',
-          }),
-        );
+        results.reused(labelGroup, existing.id);
         continue;
       }
 
@@ -161,27 +135,10 @@ export class LabelTransferAdapter extends WorkflowTransferResourceAdapter {
         manager.create(LabelGroupOrmEntity, payload),
       );
 
-      idMap[labelGroup.exportId] = created.id;
-      resources.push(
-        buildResourceResult({
-          kind: 'labelGroup',
-          exportId: labelGroup.exportId,
-          localId: created.id,
-          name: labelGroup.name,
-          action: 'created',
-        }),
-      );
-      postCreateEvents.push(
-        buildPostCreateEvent('labelGroup', created, payload),
-      );
+      results.created(labelGroup, created, payload);
     }
 
-    return {
-      idMap,
-      resources,
-      warnings: [],
-      postCreateEvents,
-    };
+    return results.toResult();
   }
 
   private async importLabels(
@@ -189,10 +146,7 @@ export class LabelTransferAdapter extends WorkflowTransferResourceAdapter {
     labels: WorkflowExportBundle['resources']['labels'],
     labelGroupIdMap: Record<string, string>,
   ): Promise<WorkflowTransferImportAdapterResult> {
-    const idMap: Record<string, string> = {};
-    const resources: WorkflowImportResourceResult[] = [];
-    const postCreateEvents: WorkflowTransferImportAdapterResult['postCreateEvents'] =
-      [];
+    const results = new WorkflowTransferImportResults(this.kind);
 
     for (const label of labels) {
       const groupId = label.groupExportId
@@ -217,16 +171,7 @@ export class LabelTransferAdapter extends WorkflowTransferResourceAdapter {
           );
         }
 
-        idMap[label.exportId] = existingByName.id;
-        resources.push(
-          buildResourceResult({
-            kind: 'label',
-            exportId: label.exportId,
-            localId: existingByName.id,
-            name: label.name,
-            action: 'reused',
-          }),
-        );
+        results.reused(label, existingByName.id);
         continue;
       }
 
@@ -251,25 +196,10 @@ export class LabelTransferAdapter extends WorkflowTransferResourceAdapter {
         manager.create(LabelOrmEntity, payload),
       );
 
-      idMap[label.exportId] = created.id;
-      resources.push(
-        buildResourceResult({
-          kind: 'label',
-          exportId: label.exportId,
-          localId: created.id,
-          name: label.name,
-          action: 'created',
-        }),
-      );
-      postCreateEvents.push(buildPostCreateEvent('label', created, payload));
+      results.created(label, created, payload);
     }
 
-    return {
-      idMap,
-      resources,
-      warnings: [],
-      postCreateEvents,
-    };
+    return results.toResult();
   }
 
   private isEquivalentLabel(

@@ -9,7 +9,6 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   type WorkflowExportBundle,
   type WorkflowExportBundleMcpServer,
-  type WorkflowImportResourceResult,
 } from '@hexabot-ai/types';
 import {
   BadRequestException,
@@ -27,13 +26,11 @@ import {
   WorkflowTransferAdapter,
   WorkflowTransferExportContext,
   WorkflowTransferImportContext,
+  WorkflowTransferImportResults,
   WorkflowTransferResourceAdapter,
 } from '../workflow-transfer-resource-adapter';
 import {
-  assertFoundAll,
-  buildPostCreateEvent,
-  buildResourceResult,
-  uniqueResourceIds,
+  findAllForExport,
   type WorkflowTransferImportAdapterResult,
 } from '../workflow-transfer.types';
 
@@ -71,18 +68,8 @@ export class McpServerTransferAdapter extends WorkflowTransferResourceAdapter {
   private async buildMcpServerExportResources(
     ids: string[],
   ): Promise<McpServerExportResources> {
-    const uniqueIds = uniqueResourceIds(ids);
-    if (uniqueIds.length === 0) {
-      return { credentialIds: [], mcpServers: [] };
-    }
-
-    const servers = await this.mcpServerService.findAndPopulate({
-      where: { id: In(uniqueIds) },
-    });
-    assertFoundAll(
-      'MCP server',
-      uniqueIds,
-      servers.map((server) => server.id),
+    const servers = await findAllForExport('MCP server', ids, (uniqueIds) =>
+      this.mcpServerService.findAndPopulate({ where: { id: In(uniqueIds) } }),
     );
 
     return {
@@ -113,11 +100,7 @@ export class McpServerTransferAdapter extends WorkflowTransferResourceAdapter {
     const credentialIdMap = ctx.getIdMap('credential');
     const placeholderCredentialExportIds =
       this.getPlaceholderCredentialExportIds(ctx);
-    const idMap: Record<string, string> = {};
-    const resources: WorkflowImportResourceResult[] = [];
-    const warnings: string[] = [];
-    const postCreateEvents: WorkflowTransferImportAdapterResult['postCreateEvents'] =
-      [];
+    const results = new WorkflowTransferImportResults(this.kind);
 
     for (const server of servers) {
       const credentialId = server.credentialExportId
@@ -128,11 +111,6 @@ export class McpServerTransferAdapter extends WorkflowTransferResourceAdapter {
             where: { id: credentialId },
           })
         : null;
-      const importedCredential = server.credentialExportId
-        ? credentialId
-          ? credential
-          : null
-        : null;
       const shouldDisable =
         Boolean(server.credentialExportId) &&
         placeholderCredentialExportIds.has(server.credentialExportId!);
@@ -142,22 +120,13 @@ export class McpServerTransferAdapter extends WorkflowTransferResourceAdapter {
       });
 
       if (existing) {
-        if (!this.isEquivalentMcpServer(existing, server, importedCredential)) {
+        if (!this.isEquivalentMcpServer(existing, server, credential)) {
           throw new ConflictException(
             `MCP server "${server.name}" already exists with different configuration`,
           );
         }
 
-        idMap[server.exportId] = existing.id;
-        resources.push(
-          buildResourceResult({
-            kind: 'mcpServer',
-            exportId: server.exportId,
-            localId: existing.id,
-            name: server.name,
-            action: 'reused',
-          }),
-        );
+        results.reused(server, existing.id);
         continue;
       }
 
@@ -185,33 +154,16 @@ export class McpServerTransferAdapter extends WorkflowTransferResourceAdapter {
         ctx.manager.create(McpServerOrmEntity, payload),
       );
 
-      idMap[server.exportId] = created.id;
-      resources.push(
-        buildResourceResult({
-          kind: 'mcpServer',
-          exportId: server.exportId,
-          localId: created.id,
-          name: server.name,
-          action: 'created',
-        }),
-      );
-      postCreateEvents.push(
-        buildPostCreateEvent('mcpServer', created, payload),
-      );
+      results.created(server, created, payload);
 
       if (shouldDisable) {
-        warnings.push(
+        results.warn(
           `MCP server "${server.name}" was disabled because it depends on an imported placeholder credential.`,
         );
       }
     }
 
-    return {
-      idMap,
-      resources,
-      warnings,
-      postCreateEvents,
-    };
+    return results.toResult();
   }
 
   private getPlaceholderCredentialExportIds(

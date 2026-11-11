@@ -48,7 +48,6 @@ type TypeOrmQuery<T> = TSearchFilterValue<T> & PageQueryParams;
 type TypeOrmOperator = 'eq' | 'contains' | 'neq' | 'in';
 
 type TypeOrmFilterToken = {
-  context: 'and' | 'or';
   field: string;
   operator: TypeOrmOperator;
   value: unknown;
@@ -98,59 +97,16 @@ export class TypeOrmSearchFilterPipe<T>
   private buildWhereClause(
     value: TypeOrmQuery<T>,
   ): FindOptionsWhere<T> | FindOptionsWhere<T>[] | undefined {
-    const whereParams = (value['where'] ?? {}) as Record<string, unknown>;
-    const filters: TypeOrmFilterToken[] = [];
-    const orParams = whereParams?.['or'];
-    if (orParams) {
-      const orValues = Array.isArray(orParams)
-        ? orParams
-        : Object.values(orParams as Record<string, unknown>);
-
-      for (const clause of orValues) {
-        if (!clause) continue;
-        const entries = Object.entries(clause as Record<string, unknown>);
-        if (!entries.length) continue;
-
-        const [field, clauseValue] = entries[0];
-        if (!this.isAllowedField(field)) continue;
-
-        const token = this.transformFieldToToken(field, clauseValue);
-        if (token) {
-          filters.push({ context: 'or', ...token });
-        }
-      }
-    }
-
-    if (orParams) {
-      delete (whereParams as Record<string, unknown>)['or'];
-    }
-
-    for (const [field, val] of Object.entries(whereParams)) {
-      if (!this.isAllowedField(field)) continue;
-      const token = this.transformFieldToToken(field, val);
-      if (token) {
-        filters.push({ context: 'and', ...token });
-      }
-    }
-
-    if (!filters.length) {
-      return undefined;
-    }
-
-    let baseWhere: FindOptionsWhere<T> = {} as FindOptionsWhere<T>;
-    const orClauses: FindOptionsWhere<T>[] = [];
-
-    for (const filter of filters) {
-      const clause = this.buildTypeOrmClause(filter);
-      if (!clause) continue;
-
-      if (filter.context === 'or') {
-        orClauses.push(clause);
-      } else {
-        baseWhere = this.mergeWhereObjects(baseWhere, clause);
-      }
-    }
-
+    const { or: orParams, ...andParams } = (value['where'] ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const orClauses = this.buildClauses(this.getOrEntries(orParams));
+    const andClauses = this.buildClauses(Object.entries(andParams));
+    const baseWhere = andClauses.reduce(
+      (merged, clause) => this.mergeWhereObjects(merged, clause),
+      {} as FindOptionsWhere<T>,
+    );
     const hasBase = this.hasWhereEntries(baseWhere);
 
     if (!orClauses.length) {
@@ -162,6 +118,41 @@ export class TypeOrmSearchFilterPipe<T>
     }
 
     return orClauses.map((clause) => this.mergeWhereObjects(baseWhere, clause));
+  }
+
+  /** Reads the field of each `or` clause, given as an array or an object. */
+  private getOrEntries(orParams: unknown): [string, unknown][] {
+    if (!orParams) {
+      return [];
+    }
+
+    const clauses = Array.isArray(orParams)
+      ? orParams
+      : Object.values(orParams as Record<string, unknown>);
+
+    return clauses.flatMap((clause) => {
+      // Only the first field of a clause is read.
+      const [entry] = clause
+        ? Object.entries(clause as Record<string, unknown>)
+        : [];
+
+      return entry ? [entry] : [];
+    });
+  }
+
+  /** Builds the clause of each allowed field that has a value. */
+  private buildClauses(entries: [string, unknown][]): FindOptionsWhere<T>[] {
+    return entries.flatMap(([field, value]) => {
+      if (!this.isAllowedField(field)) {
+        return [];
+      }
+
+      const clause = this.buildTypeOrmClause(
+        this.transformFieldToToken(field, value),
+      );
+
+      return clause ? [clause] : [];
+    });
   }
 
   private parseNumber(
@@ -235,11 +226,7 @@ export class TypeOrmSearchFilterPipe<T>
   private transformFieldToToken(
     field: string,
     val?: unknown,
-  ): {
-    field: string;
-    operator: TypeOrmOperator;
-    value: unknown;
-  } | null {
+  ): TypeOrmFilterToken {
     if (val && typeof val === 'object') {
       const record = val as Record<string, unknown>;
 

@@ -4,102 +4,40 @@
  * Full terms: see LICENSE.md.
  */
 
-import { SocketEventMetadataStorage } from '../storage/socket-event-metadata.storage';
+import {
+  SocketEventMetadataStorage,
+  type SocketEventMethod,
+} from '../storage/socket-event-metadata.storage';
 
-export const SocketGet = (path: string): MethodDecorator => {
-  return (
+/**
+ * Builds the decorator that routes socket requests of `socketMethod` on a
+ * path to the decorated method.
+ */
+const socketMethodDecorator =
+  (socketMethod: SocketEventMethod) =>
+  (path: string): MethodDecorator =>
+  (
     target: object,
     propertyKey: string | symbol,
     descriptor: PropertyDescriptor,
   ) => {
     SocketEventMetadataStorage.addEventMetadata(target, propertyKey, {
-      socketMethod: 'get',
+      socketMethod,
       path,
       method: descriptor.value,
     });
   };
-};
 
-export const SocketPost = (path: string): MethodDecorator => {
-  return (
-    target: object,
-    propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
-    SocketEventMetadataStorage.addEventMetadata(target, propertyKey, {
-      socketMethod: 'post',
-      path,
-      method: descriptor.value,
-    });
-  };
-};
+export const SocketGet = socketMethodDecorator('get');
 
-export const SocketPut = (path: string): MethodDecorator => {
-  return (
-    target: object,
-    propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
-    SocketEventMetadataStorage.addEventMetadata(target, propertyKey, {
-      socketMethod: 'put',
-      path,
-      method: descriptor.value,
-    });
-  };
-};
+export const SocketPost = socketMethodDecorator('post');
 
-export const SocketPatch = (path: string): MethodDecorator => {
-  return (
-    target: object,
-    propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
-    SocketEventMetadataStorage.addEventMetadata(target, propertyKey, {
-      socketMethod: 'patch',
-      path,
-      method: descriptor.value,
-    });
-  };
-};
+export const SocketPut = socketMethodDecorator('put');
 
-export const SocketDelete = (path: string): MethodDecorator => {
-  return (
-    target: object,
-    propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
-    SocketEventMetadataStorage.addEventMetadata(target, propertyKey, {
-      socketMethod: 'delete',
-      path,
-      method: descriptor.value,
-    });
-  };
-};
+export const SocketPatch = socketMethodDecorator('patch');
 
-export const SocketOptions = (path: string): MethodDecorator => {
-  return (
-    target: object,
-    propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
-    SocketEventMetadataStorage.addEventMetadata(target, propertyKey, {
-      socketMethod: 'options',
-      path,
-      method: descriptor.value,
-    });
-  };
-};
+export const SocketDelete = socketMethodDecorator('delete');
 
-export const SocketHead = (path: string): MethodDecorator => {
-  return (
-    target: object,
-    propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
-    SocketEventMetadataStorage.addEventMetadata(target, propertyKey, {
-      socketMethod: 'head',
-      path,
-      method: descriptor.value,
-    });
-  };
-};
+export const SocketOptions = socketMethodDecorator('options');
+
+export const SocketHead = socketMethodDecorator('head');

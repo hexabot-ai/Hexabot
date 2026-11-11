@@ -8,7 +8,7 @@ import { FindOneOptions } from 'typeorm';
 
 import { BaseOrmEntity } from '@/database';
 
-import { EHook } from '../generics/base-orm.repository';
+import type { EHook } from '../generics/base-orm.repository';
 
 import { InferCreateDto, InferUpdateDto, TEntityDto } from './dto.types';
 

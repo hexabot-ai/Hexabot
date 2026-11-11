@@ -300,5 +300,134 @@ describe('AttachmentGuard', () => {
         BadRequestException,
       );
     });
+
+    describe('refusals', () => {
+      const user = { roles: ['admin-id'] } as any;
+      const readRefs = (resourceRef: unknown, requestUser = user) =>
+        guard.canActivate(
+          buildContext({
+            query: { where: { resourceRef } } as any,
+            method: 'GET',
+            user: requestUser,
+          }),
+        );
+
+      it('refuses a user without role without looking anything up', async () => {
+        const modelFindOne = jest.spyOn(modelService, 'findOne');
+
+        await expect(
+          readRefs([AttachmentResourceRef.UserAvatar], { roles: [] }),
+        ).resolves.toBe(false);
+        expect(modelFindOne).not.toHaveBeenCalled();
+      });
+
+      it('refuses when the model or the permission is unknown', async () => {
+        jest.spyOn(modelService, 'findOne').mockResolvedValueOnce(null);
+
+        await expect(
+          readRefs([AttachmentResourceRef.UserAvatar]),
+        ).resolves.toBe(false);
+
+        mockModelFindOne();
+        jest.spyOn(permissionService, 'findOne').mockResolvedValue(null);
+
+        await expect(
+          readRefs([AttachmentResourceRef.UserAvatar]),
+        ).resolves.toBe(false);
+      });
+
+      it('requires every permission of the resource ref', async () => {
+        mockModelFindOne();
+        jest
+          .spyOn(permissionService, 'findOne')
+          .mockImplementation(async ({ where }: any) =>
+            where.model.id === modelIdByIdentity.message
+              ? ({} as Permission)
+              : null,
+          );
+
+        await expect(
+          readRefs([AttachmentResourceRef.MessageAttachment]),
+        ).resolves.toBe(false);
+      });
+
+      it('requires the permissions of every resource ref read', async () => {
+        mockModelFindOne();
+        jest
+          .spyOn(permissionService, 'findOne')
+          .mockImplementation(async ({ where }: any) =>
+            where.model.id === modelIdByIdentity.user
+              ? ({} as Permission)
+              : null,
+          );
+
+        await expect(
+          readRefs([
+            AttachmentResourceRef.UserAvatar,
+            AttachmentResourceRef.SubscriberAvatar,
+          ]),
+        ).resolves.toBe(false);
+      });
+
+      it('refuses uploads that no permission allows', async () => {
+        const modelFindOne = jest.spyOn(modelService, 'findOne');
+
+        await expect(
+          guard.canActivate(
+            buildContext({
+              query: { resourceRef: AttachmentResourceRef.UserAvatar },
+              method: 'POST',
+              user,
+            }),
+          ),
+        ).resolves.toBe(false);
+        expect(modelFindOne).not.toHaveBeenCalled();
+      });
+
+      it('refuses an upload with an invalid resource ref', async () => {
+        await expect(
+          guard.canActivate(buildContext({ query: {}, method: 'POST', user })),
+        ).rejects.toThrow(new BadRequestException('Invalid resource ref'));
+      });
+
+      it.each([
+        ['GET', 'Attachment not found!'],
+        ['DELETE', 'Invalid attachment ID'],
+      ])('refuses to %s an unknown attachment', async (method, message) => {
+        jest.spyOn(attachmentService, 'findOne').mockResolvedValue(null);
+
+        await expect(
+          guard.canActivate(
+            buildContext({
+              params: { id: 'a'.repeat(24) },
+              query: {},
+              method,
+              user,
+            }),
+          ),
+        ).rejects.toThrow(new NotFoundException(message));
+        expect(attachmentService.findOne).toHaveBeenCalledWith('a'.repeat(24));
+      });
+
+      it.each(['GET', 'DELETE'])(
+        'refuses to %s without a valid attachment id',
+        async (method) => {
+          const invalidParams: Record<string, string>[] = [
+            { id: 'not-an-id' },
+            { id: '  ' },
+            {},
+          ];
+
+          for (const params of invalidParams) {
+            await expect(
+              guard.canActivate(
+                buildContext({ params, query: {}, method, user }),
+              ),
+            ).rejects.toThrow(new BadRequestException('Invalid params'));
+          }
+          expect(attachmentService.findOne).not.toHaveBeenCalled();
+        },
+      );
+    });
   });
 });

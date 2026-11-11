@@ -1773,4 +1773,175 @@ describe('WorkflowRunner', () => {
     expect(record?.context?.before).not.toHaveProperty('secret');
     expect(record?.context?.after).not.toHaveProperty('secret');
   });
+  it('parses a start without input data as an empty input', async () => {
+    const action = defineAction({
+      name: 'echo_action',
+      execute: async () => ({ ok: true }),
+    });
+    const compiled = compileWorkflow(
+      {
+        inputs: { schema: { name: { type: 'string' } } },
+        defs: createTaskDefs({ echo: { action: 'echo_action' } }),
+        flow: [{ do: 'echo' }],
+        outputs: { input: '=$input' },
+      },
+      { actions: { echo_action: action } },
+    );
+    const runner = new WorkflowRunner(compiled);
+    const result = await runner.start({
+      inputData: undefined,
+      context: new TestContext({}),
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({ status: 'finished', output: { input: {} } }),
+    );
+    expect(runner.getState()).toEqual({
+      input: {},
+      output: { echo: { ok: true } },
+      iterationStack: [],
+    });
+  });
+
+  it('hands out copies of its step records', async () => {
+    const action = defineAction({
+      name: 'echo_action',
+      execute: async () => ({ ok: true }),
+    });
+    const compiled = compileWorkflow(
+      {
+        defs: createTaskDefs({ echo: { action: 'echo_action' } }),
+        flow: [{ do: 'echo' }],
+        outputs: {},
+      },
+      { actions: { echo_action: action } },
+    );
+    const runner = new WorkflowRunner(compiled);
+    const events: Array<WorkflowEventMap['hook:step:success']> = [];
+    const context = new TestContext({ count: 1 });
+    context.eventEmitter.on('hook:step:success', (payload) =>
+      events.push(payload),
+    );
+
+    await runner.start({ inputData: {}, context });
+
+    // The copies are shallow: their own record, context and error objects.
+    const record = runner.getStepLog()['0:echo'];
+    record.status = 'failed';
+    record.context!.after = { count: 2 };
+    events[0].stepExecution!.context!.before = { count: 3 };
+
+    expect(runner.getStepLog()['0:echo']).toEqual(
+      expect.objectContaining({
+        status: 'completed',
+        context: { before: { count: 1 }, after: { count: 1 } },
+      }),
+    );
+  });
+  it('keeps the error of a failed step in its step record', async () => {
+    const action = defineAction({
+      name: 'boom_action',
+      execute: async () => {
+        throw new Error('boom');
+      },
+    });
+    const compiled = compileWorkflow(
+      {
+        defs: createTaskDefs({ boom: { action: 'boom_action' } }),
+        flow: [{ do: 'boom' }],
+        outputs: {},
+      },
+      { actions: { boom_action: action } },
+    );
+    const runner = new WorkflowRunner(compiled);
+
+    await expect(
+      runner.start({ inputData: {}, context: new TestContext({}) }),
+    ).resolves.toEqual(expect.objectContaining({ status: 'failed' }));
+
+    const record = runner.getStepLog()['0:boom'];
+    expect(record).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error: { message: 'boom', stack: expect.any(String) },
+      }),
+    );
+    record.error!.message = 'changed';
+    expect(runner.getStepLog()['0:boom'].error?.message).toBe('boom');
+  });
+
+  it('leaves the error of a step record unset when the step did not fail', async () => {
+    const action = defineAction({
+      name: 'echo_action',
+      execute: async () => ({ ok: true }),
+    });
+    const compiled = compileWorkflow(
+      {
+        defs: createTaskDefs({ echo: { action: 'echo_action' } }),
+        flow: [{ do: 'echo' }],
+        outputs: {},
+      },
+      { actions: { echo_action: action } },
+    );
+    const runner = new WorkflowRunner(compiled);
+
+    await runner.start({ inputData: {}, context: new TestContext({}) });
+
+    expect(runner.getStepLog()['0:echo']).toHaveProperty('error', undefined);
+  });
+  it('records the cancelled loser of a restored wait_any run without context', async () => {
+    const ask = defineAction<{ label: string }, unknown, TestContext, Settings>(
+      {
+        name: 'ask',
+        inputSchema: z.object({ label: z.string() }),
+        execute: async ({ context }) =>
+          context.workflow.suspend({ reason: 'reply' }),
+      },
+    );
+    const compiled = compileWorkflow(
+      {
+        defs: createTaskDefs({
+          ask_a: { action: 'ask', inputs: { label: 'a' } },
+          ask_b: { action: 'ask', inputs: { label: 'b' } },
+        }),
+        flow: [
+          {
+            parallel: {
+              strategy: 'wait_any',
+              steps: [{ do: 'ask_a' }, { do: 'ask_b' }],
+            },
+          },
+        ],
+        outputs: {},
+      },
+      { actions: { ask } },
+    );
+    const started = await new WorkflowRunner(compiled).start({
+      inputData: {},
+      context: new TestContext({}),
+    });
+    if (started.status !== 'suspended') {
+      throw new Error('Expected the run to suspend');
+    }
+
+    // A restored runner starts without the step records of the first pass.
+    const restored = WorkflowRunner.fromCheckpoint(compiled, {
+      checkpoint: persist(started.checkpoint),
+      context: new TestContext({}),
+    });
+    const resumed = await restored.resume({
+      waitId: started.waits[1].waitId,
+      resumeData: 'b',
+    });
+
+    expect(resumed.status).toBe('finished');
+    const loser = restored.getStepLog()['0.parallel.0:ask_a'];
+    expect(loser).toEqual(
+      expect.objectContaining({
+        status: 'cancelled',
+        error: expect.any(Object),
+      }),
+    );
+    expect(loser).toHaveProperty('context', undefined);
+  });
 });

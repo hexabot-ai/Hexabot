@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   api:
     pull_policy: never

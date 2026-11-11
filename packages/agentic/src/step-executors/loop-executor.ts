@@ -14,9 +14,8 @@ import type {
 } from '../workflow-types';
 import { evaluateValue } from '../workflow-values';
 
+import { buildEvaluationScope } from './scope';
 import type { StepExecutorEnv } from './types';
-
-type LoopScope = EvaluationScope;
 
 /**
  * Execute a loop step by iterating over input items and executing child steps.
@@ -85,12 +84,10 @@ async function executeForEachLoop(
       };
     }
 
-    const postScope = buildScope(
-      env,
-      iterationState,
-      { item, index },
+    const postScope = buildEvaluationScope(env, iterationState, {
+      iteration: { item, index },
       accumulator,
-    );
+    });
 
     accumulator = await updateAccumulator(step, postScope, accumulator);
 
@@ -124,12 +121,10 @@ async function executeWhileLoop(
 
     // The guard of a resumed iteration already passed before it suspended.
     if (!resumedChild) {
-      const conditionScope = buildScope(
-        env,
-        state,
-        { item: undefined, index },
+      const conditionScope = buildEvaluationScope(env, state, {
+        iteration: { item: undefined, index },
         accumulator,
-      );
+      });
       const shouldContinue = await evaluateValue(step.while, conditionScope);
       if (!Boolean(shouldContinue)) {
         break;
@@ -153,12 +148,10 @@ async function executeWhileLoop(
       return { kind: 'loop', stepId: step.id, index, accumulator, child };
     }
 
-    const postScope = buildScope(
-      env,
-      iterationState,
-      { item: undefined, index },
+    const postScope = buildEvaluationScope(env, iterationState, {
+      iteration: { item: undefined, index },
       accumulator,
-    );
+    });
 
     accumulator = await updateAccumulator(step, postScope, accumulator);
     state.output = iterationState.output;
@@ -174,13 +167,10 @@ async function resolveItems(
   step: ForEachLoopStep,
   state: ExecutionState,
 ): Promise<unknown[]> {
-  const items = await evaluateValue(step.forEach.in, {
-    input: state.input,
-    context: env.context.state,
-    output: state.output,
-    iteration: state.iteration,
-    accumulator: state.accumulator,
-  });
+  const items = await evaluateValue(
+    step.forEach.in,
+    buildEvaluationScope(env, state),
+  );
 
   return Array.isArray(items) ? items : [];
 }
@@ -209,7 +199,7 @@ function finalizeAccumulatorState(
  */
 export async function updateAccumulator(
   step: LoopStep,
-  scope: LoopScope,
+  scope: EvaluationScope,
   previous: unknown,
 ): Promise<unknown> {
   if (!step.accumulate) {
@@ -231,7 +221,7 @@ export async function updateAccumulator(
  */
 export async function shouldStopLoop(
   step: LoopStep,
-  scope: LoopScope,
+  scope: EvaluationScope,
 ): Promise<boolean> {
   if (step.loopType !== 'for_each' || !step.until) {
     return false;
@@ -240,28 +230,4 @@ export async function shouldStopLoop(
   const result = await evaluateValue(step.until, scope);
 
   return Boolean(result);
-}
-
-/**
- * Build the evaluation scope for loop iteration and accumulator updates.
- *
- * @param env Executor environment with workflow context.
- * @param state Execution state for the current iteration.
- * @param iteration The current iteration item and index.
- * @param accumulator Accumulator value to expose to expressions.
- * @returns An evaluation scope object.
- */
-function buildScope(
-  env: StepExecutorEnv,
-  state: ExecutionState,
-  iteration: { item: unknown; index: number },
-  accumulator: unknown,
-): LoopScope {
-  return {
-    input: state.input,
-    context: env.context.state,
-    output: state.output,
-    iteration,
-    accumulator,
-  };
 }

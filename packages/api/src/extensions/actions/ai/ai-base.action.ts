@@ -53,6 +53,14 @@ export type LanguageModelProvider =
   | ProviderV3
   | ProviderV2;
 
+/** Returns `values`, or undefined when none of them is defined. */
+const unlessAllUndefined = <T extends Record<string, unknown>>(
+  values: T,
+): T | undefined =>
+  Object.values(values).some((value) => value !== undefined)
+    ? values
+    : undefined;
+
 export abstract class AiBaseAction<
   I,
   O,
@@ -534,73 +542,34 @@ export abstract class AiBaseAction<
     }
 
     const tools: ToolSet = {};
-    const mountedTools = (toolBindings ?? {}) as NonNullable<
-      RuntimeBindings['tools']
-    >;
-
-    for (const [toolName, toolDefinition] of Object.entries(mountedTools)) {
-      const normalizedToolName = toolName.trim();
-      if (normalizedToolName.length === 0) {
-        continue;
-      }
-      const actionNameRaw = toolDefinition.action;
-      if (typeof actionNameRaw !== 'string' || actionNameRaw.trim() === '') {
-        throw new Error(
-          `Invalid tool action in bindings.tools.${normalizedToolName}.action`,
-        );
-      }
-      const actionName = actionNameRaw.trim() as ActionName;
-      const action = actionService.get(actionName);
-      if (normalizedToolName in tools) {
-        logger?.warn(
-          `Skipping duplicate tool name "${normalizedToolName}" from bindings.tools`,
-        );
+    // The first tool mounted under a name keeps it.
+    const mount = (name: string, tool: ToolSet[string], source: string) => {
+      if (name in tools) {
+        logger?.warn(`Skipping duplicate tool name "${name}" from ${source}`);
       } else {
-        const nestedBindings = toolDefinition.bindings;
-        tools[normalizedToolName] = {
-          // The def description tells the model what this particular tool
-          // instance covers; the action description is the generic fallback.
-          description: toolDefinition.description?.trim() || action.description,
-          inputSchema: action.inputSchema,
-          outputSchema: action.outputSchema,
-          execute: async (input, options) => {
-            const toolSignal = options?.abortSignal ?? signal;
+        tools[name] = tool;
+      }
+    };
 
-            if (nestedBindings) {
-              return toolSignal
-                ? action.run(
-                    input,
-                    context,
-                    toolDefinition.settings as any,
-                    nestedBindings as RuntimeBindings,
-                    toolSignal,
-                  )
-                : action.run(
-                    input,
-                    context,
-                    toolDefinition.settings as any,
-                    nestedBindings as RuntimeBindings,
-                  );
-            }
-
-            return toolSignal
-              ? action.run(
-                  input,
-                  context,
-                  toolDefinition.settings as any,
-                  undefined,
-                  toolSignal,
-                )
-              : action.run(input, context, toolDefinition.settings as any);
-          },
-        } as ToolSet[string];
+    for (const [toolName, toolDefinition] of Object.entries(
+      toolBindings ?? {},
+    )) {
+      const normalizedToolName = toolName.trim();
+      if (normalizedToolName.length > 0) {
+        mount(
+          normalizedToolName,
+          this.buildActionTool(
+            context,
+            normalizedToolName,
+            toolDefinition,
+            signal,
+          ),
+          'bindings.tools',
+        );
       }
     }
 
-    const mountedMcpTools = (mcpToolBindings ?? {}) as NonNullable<
-      RuntimeBindings['mcp']
-    >;
-    if (Object.keys(mountedMcpTools).length > 0) {
+    if (Object.keys(mcpToolBindings ?? {}).length > 0) {
       const mcpClientPool = context.services.mcp;
       if (!mcpClientPool) {
         throw new Error(
@@ -609,16 +578,10 @@ export abstract class AiBaseAction<
       }
 
       const mcpTools = await mcpClientPool.buildToolSet(
-        mountedMcpTools as McpToolBindingDefinitions,
+        mcpToolBindings as McpToolBindingDefinitions,
       );
       for (const [toolName, toolDefinition] of Object.entries(mcpTools)) {
-        if (toolName in tools) {
-          logger?.warn(
-            `Skipping duplicate tool name "${toolName}" from bindings.mcp`,
-          );
-        } else {
-          tools[toolName] = toolDefinition as ToolSet[string];
-        }
+        mount(toolName, toolDefinition as ToolSet[string], 'bindings.mcp');
       }
     }
 
@@ -626,37 +589,63 @@ export abstract class AiBaseAction<
       const updateMemoryAction = actionService.get('update_memory');
       const memorySchema =
         context.memoryStore.buildUpdateMemorySchema(selectedMemorySlugs);
-      if (!memorySchema) {
-        return Object.keys(tools).length > 0 ? tools : undefined;
-      }
-
-      if ('update_memory' in tools) {
-        logger?.warn(
-          'Skipping duplicate tool name "update_memory" from memory',
+      if (memorySchema) {
+        mount(
+          'update_memory',
+          {
+            description: updateMemoryAction.description,
+            inputSchema: memorySchema,
+            outputSchema: memorySchema,
+            execute: async (input, options) =>
+              updateMemoryAction.run(
+                input,
+                context,
+                undefined,
+                undefined,
+                options?.abortSignal ?? signal,
+              ),
+          } as ToolSet[string],
+          'memory',
         );
-      } else {
-        tools['update_memory'] = {
-          description: updateMemoryAction.description,
-          inputSchema: memorySchema,
-          outputSchema: memorySchema,
-          execute: async (input, options) => {
-            const toolSignal = options?.abortSignal ?? signal;
-
-            return toolSignal
-              ? updateMemoryAction.run(
-                  input,
-                  context,
-                  undefined,
-                  undefined,
-                  toolSignal,
-                )
-              : updateMemoryAction.run(input, context);
-          },
-        } as ToolSet[string];
       }
     }
 
     return Object.keys(tools).length > 0 ? tools : undefined;
+  }
+
+  /** Builds the tool that runs the action bound as `bindings.tools.<name>`. */
+  private buildActionTool(
+    context: C,
+    toolName: string,
+    toolDefinition: NonNullable<RuntimeBindings['tools']>[string],
+    signal?: AbortSignal,
+  ): ToolSet[string] {
+    const actionName = toolDefinition.action;
+    if (typeof actionName !== 'string' || actionName.trim() === '') {
+      throw new Error(
+        `Invalid tool action in bindings.tools.${toolName}.action`,
+      );
+    }
+
+    const action = context.services.actions.get(
+      actionName.trim() as ActionName,
+    );
+
+    return {
+      // The def description tells the model what this particular tool
+      // instance covers; the action description is the generic fallback.
+      description: toolDefinition.description?.trim() || action.description,
+      inputSchema: action.inputSchema,
+      outputSchema: action.outputSchema,
+      execute: async (input, options) =>
+        action.run(
+          input,
+          context,
+          toolDefinition.settings as any,
+          toolDefinition.bindings as RuntimeBindings | undefined,
+          options?.abortSignal ?? signal,
+        ),
+    } as ToolSet[string];
   }
 
   protected normalizeUsage(usage?: LanguageModelUsage) {
@@ -664,35 +653,25 @@ export abstract class AiBaseAction<
       return undefined;
     }
 
-    const hasInputDetails =
-      usage.inputTokenDetails?.noCacheTokens !== undefined ||
-      usage.inputTokenDetails?.cacheReadTokens !== undefined ||
-      usage.inputTokenDetails?.cacheWriteTokens !== undefined;
-    const hasOutputDetails =
-      usage.outputTokenDetails?.textTokens !== undefined ||
-      usage.outputTokenDetails?.reasoningTokens !== undefined;
+    const inputDetails = usage.inputTokenDetails;
+    const outputDetails = usage.outputTokenDetails;
 
     return {
       input_tokens: usage.inputTokens,
       output_tokens: usage.outputTokens,
       total_tokens: usage.totalTokens,
-      reasoning_tokens:
-        usage.reasoningTokens ?? usage.outputTokenDetails?.reasoningTokens,
+      reasoning_tokens: usage.reasoningTokens ?? outputDetails?.reasoningTokens,
       cached_input_tokens:
-        usage.cachedInputTokens ?? usage.inputTokenDetails?.cacheReadTokens,
-      input_token_details: hasInputDetails
-        ? {
-            no_cache_tokens: usage.inputTokenDetails?.noCacheTokens,
-            cache_read_tokens: usage.inputTokenDetails?.cacheReadTokens,
-            cache_write_tokens: usage.inputTokenDetails?.cacheWriteTokens,
-          }
-        : undefined,
-      output_token_details: hasOutputDetails
-        ? {
-            text_tokens: usage.outputTokenDetails?.textTokens,
-            reasoning_tokens: usage.outputTokenDetails?.reasoningTokens,
-          }
-        : undefined,
+        usage.cachedInputTokens ?? inputDetails?.cacheReadTokens,
+      input_token_details: unlessAllUndefined({
+        no_cache_tokens: inputDetails?.noCacheTokens,
+        cache_read_tokens: inputDetails?.cacheReadTokens,
+        cache_write_tokens: inputDetails?.cacheWriteTokens,
+      }),
+      output_token_details: unlessAllUndefined({
+        text_tokens: outputDetails?.textTokens,
+        reasoning_tokens: outputDetails?.reasoningTokens,
+      }),
       raw: usage.raw,
     };
   }

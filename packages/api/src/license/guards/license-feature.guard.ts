@@ -12,12 +12,13 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import { LICENSE_FEATURE_METADATA_KEY } from '../decorators/requires-license-feature.decorator';
 import { LicenseService } from '../services/license.service';
 import {
   LICENSE_FEATURE_LABELS,
   LicenseFeature,
 } from '../types/license-feature.enum';
+
+export const LICENSE_FEATURE_METADATA_KEY = 'license:features';
 
 @Injectable()
 export class LicenseFeatureGuard implements CanActivate {

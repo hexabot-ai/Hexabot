@@ -8,6 +8,7 @@ import type { ConditionalFrame } from '../checkpoint';
 import type { ConditionalStep, ExecutionState } from '../workflow-types';
 import { evaluateValue } from '../workflow-values';
 
+import { buildEvaluationScope } from './scope';
 import { markStepsSkipped } from './skip-helpers';
 import type { StepExecutorEnv } from './types';
 
@@ -67,15 +68,10 @@ const chooseBranch = async (
   step: ConditionalStep,
   state: ExecutionState,
 ): Promise<number | undefined> => {
+  const scope = buildEvaluationScope(env, state);
+
   for (let index = 0; index < step.branches.length; index += 1) {
     const branch = step.branches[index];
-    const scope = {
-      input: state.input,
-      context: env.context.state,
-      output: state.output,
-      iteration: state.iteration,
-      accumulator: state.accumulator,
-    };
     const conditionResult =
       branch.condition !== undefined
         ? await evaluateValue(branch.condition, scope)

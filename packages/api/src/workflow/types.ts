@@ -29,7 +29,7 @@ import {
 import type { WorkflowRuntimeContext } from './contexts/workflow-runtime.context';
 import type { WorkflowRunOrmEntity } from './entities/workflow-run.entity';
 import type { RunLease } from './lib/run-lease';
-import { TriggerEventWrapper } from './lib/trigger-event-wrapper';
+import type { TriggerEventWrapper } from './lib/trigger-event-wrapper';
 import { SchemaInstance } from './utils/schema-instance';
 
 export {

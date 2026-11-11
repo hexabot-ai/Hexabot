@@ -6,7 +6,7 @@
 
 import { Action } from '@hexabot-ai/types';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Tool, ToolGuards } from '@rekog/mcp-nest';
+import { Tool } from '@rekog/mcp-nest';
 import { z } from 'zod';
 
 import { McpServerOrmEntity } from '@/workflow/entities/mcp-server.entity';
@@ -14,7 +14,6 @@ import { McpServerService } from '@/workflow/services/mcp-server.service';
 import { McpServerTransport } from '@/workflow/types';
 
 import { McpPermission } from '../decorators/mcp-permission.decorator';
-import { McpPermissionGuard } from '../guards/mcp-permission.guard';
 
 import { HexabotMcpToolBase } from './hexabot-mcp-tool.base';
 import {
@@ -31,7 +30,6 @@ export class HexabotMcpServerTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('mcpserver', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_mcp_server_search',
     description: 'Search configured MCP servers.',
@@ -71,7 +69,6 @@ export class HexabotMcpServerTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('mcpserver', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_mcp_server_get',
     description: 'Read one configured MCP server.',
@@ -89,7 +86,6 @@ export class HexabotMcpServerTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('mcpserver', Action.CREATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_mcp_server_create',
     description: 'Create an MCP server configuration.',
@@ -116,7 +112,6 @@ export class HexabotMcpServerTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('mcpserver', Action.UPDATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_mcp_server_update',
     description: 'Update an MCP server configuration.',

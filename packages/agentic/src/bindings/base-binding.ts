@@ -4,9 +4,12 @@
  * Full terms: see LICENSE.md.
  */
 
-import { z, type ZodIssue } from 'zod';
+import { z } from 'zod';
 
-import { type WorkflowValidationIssue } from '../validation-issue';
+import {
+  toValidationIssues,
+  type WorkflowValidationIssue,
+} from '../validation-issue';
 
 const TASK_KIND = 'task';
 
@@ -90,6 +93,8 @@ export type ValidateAndResolveBindingsOptions = {
   actions?: Record<string, BindingValidationActionMetadata>;
 };
 
+type ActionCatalog = NonNullable<ValidateAndResolveBindingsOptions['actions']>;
+
 type BindingValidationResult = {
   issues: WorkflowValidationIssue[];
   resolvedDefs: ResolvedBindingDefs;
@@ -121,26 +126,14 @@ const hasBindingsConfigured = (workflow: BindingAwareWorkflowLike): boolean => {
   return hasNonTaskDefs || hasNestedBindings;
 };
 const toBindingSettingsIssues = (
-  zodIssues: ZodIssue[],
+  schemaIssues: z.core.$ZodIssue[],
   defName: string,
 ): WorkflowValidationIssue[] =>
-  zodIssues.map((issue) => {
-    const path = issue.path.join('.') || '<root>';
-
-    return {
-      code: 'binding_settings',
-      message: `defs.${defName}.settings.${path}: ${issue.message}`,
-      path: [
-        'defs',
-        defName,
-        'settings',
-        ...issue.path.filter(
-          (segment): segment is string | number =>
-            typeof segment === 'string' || typeof segment === 'number',
-        ),
-      ],
-    };
-  });
+  toValidationIssues('binding_settings', schemaIssues, [
+    'defs',
+    defName,
+    'settings',
+  ]);
 const collectDuplicateReferences = (refs: string[]): string[] => {
   const seen = new Set<string>();
   const duplicates = new Set<string>();
@@ -240,26 +233,131 @@ const missingActionIssue = (
   path: ['defs', defName, 'action'],
   actionName,
 });
+/** Look an action up in the catalog; inherited object members are not actions. */
+const findAction = (
+  actions: ActionCatalog | undefined,
+  actionName: string,
+): BindingValidationActionMetadata | undefined =>
+  actions && Object.prototype.hasOwnProperty.call(actions, actionName)
+    ? actions[actionName]
+    : undefined;
+/**
+ * Whether a def names an action the catalog does not hold. A task always runs
+ * its action, so an empty name is missing as well; other defs may leave it
+ * empty.
+ */
+const isMissingAction = (
+  definition: DefLike,
+  actions: ActionCatalog | undefined,
+): definition is DefLike & { action: string } => {
+  if (!actions || typeof definition.action !== 'string') {
+    return false;
+  }
+
+  if (definition.action === '' && definition.kind !== TASK_KIND) {
+    return false;
+  }
+
+  return !findAction(actions, definition.action);
+};
+const actionPolicyIssues = (
+  defName: string,
+  definition: DefLike,
+  { actionPolicy = 'optional' }: BindingKindDescriptor,
+): WorkflowValidationIssue[] => {
+  const issue = (
+    code: 'action_required' | 'action_forbidden',
+    message: string,
+  ): WorkflowValidationIssue[] => [
+    {
+      code,
+      message: `defs.${defName}.action: Binding kind "${definition.kind}" ${message}`,
+      path: ['defs', defName, 'action'],
+      bindingKind: definition.kind,
+    },
+  ];
+
+  if (actionPolicy === 'required' && !definition.action) {
+    return issue('action_required', 'requires an action.');
+  }
+
+  if (actionPolicy === 'forbidden' && definition.action) {
+    return issue('action_forbidden', 'does not allow action declarations.');
+  }
+
+  return [];
+};
+/**
+ * Check the kind, action and settings of one def. Settings that match the
+ * kind's schema are recorded in `parsedSettings`, for mounting.
+ */
+const validateDef = (
+  defName: string,
+  definition: DefLike,
+  kinds: BindingKindSchemas,
+  actions: ActionCatalog | undefined,
+  parsedSettings: Map<string, unknown>,
+): WorkflowValidationIssue[] => {
+  const missingAction = isMissingAction(definition, actions)
+    ? [missingActionIssue(defName, definition.action)]
+    : [];
+
+  if (definition.kind === TASK_KIND) {
+    return missingAction;
+  }
+
+  const kindDefinition = kinds[definition.kind];
+  if (!kindDefinition) {
+    return [
+      {
+        code: 'unknown_binding_kind',
+        message: `defs.${defName}.kind: Unknown binding kind "${definition.kind}".`,
+        path: ['defs', defName, 'kind'],
+        bindingKind: definition.kind,
+      },
+      ...missingAction,
+    ];
+  }
+
+  const issues = [
+    ...actionPolicyIssues(defName, definition, kindDefinition),
+    ...missingAction,
+  ];
+  const parsed = kindDefinition.schema.safeParse(definition.settings);
+  if (!parsed.success) {
+    return [
+      ...issues,
+      ...toBindingSettingsIssues(parsed.error.issues, defName),
+    ];
+  }
+
+  parsedSettings.set(defName, parsed.data);
+
+  // `?.` on `safeParse` too: hosts may pass serialized schemas.
+  const actionParsed = definition.action
+    ? findAction(actions, definition.action)?.settingSchema?.safeParse?.(
+        definition.settings,
+      )
+    : undefined;
+  if (actionParsed && !actionParsed.success) {
+    issues.push(...toBindingSettingsIssues(actionParsed.error.issues, defName));
+  }
+
+  return issues;
+};
+/**
+ * List the binding kinds a def may mount, or null when they cannot be known:
+ * no action catalog was given, or the def's action is missing from it.
+ */
 const resolveSupportedBindingKinds = (
   definition: DefLike,
-  defName: string,
   kinds: BindingKindSchemas,
-  actions: Record<string, BindingValidationActionMetadata> | undefined,
-  issues: WorkflowValidationIssue[],
+  actions: ActionCatalog | undefined,
 ): readonly string[] | null => {
   if (definition.action) {
-    if (!actions) {
-      return null;
-    }
+    const action = findAction(actions, definition.action);
 
-    const action = actions[definition.action];
-    if (!action) {
-      issues.push(missingActionIssue(defName, definition.action));
-
-      return [];
-    }
-
-    return action.supportedBindings ?? [];
+    return action ? (action.supportedBindings ?? []) : null;
   }
 
   if (definition.kind === TASK_KIND) {
@@ -268,217 +366,159 @@ const resolveSupportedBindingKinds = (
 
   return kinds[definition.kind]?.supportedBindings ?? [];
 };
+/**
+ * Check one `bindings.<kind>` entry of a def: the kind exists, the reference
+ * cardinality matches it, the def may mount it, and every reference names a
+ * def of that kind.
+ */
+const validateBindingEntry = (
+  defName: string,
+  definition: DefLike,
+  bindingKind: string,
+  bindingRefs: string | string[],
+  context: {
+    defs: Record<string, DefLike>;
+    kinds: BindingKindSchemas;
+    supportedKinds: readonly string[] | null;
+  },
+): WorkflowValidationIssue[] => {
+  const issue = (
+    code: 'unknown_binding_kind' | 'binding_ref' | 'binding_unsupported',
+    message: string,
+  ): WorkflowValidationIssue => ({
+    code,
+    message: `defs.${defName}.bindings.${bindingKind}: ${message}`,
+    path: ['defs', defName, 'bindings', bindingKind],
+    bindingKind,
+  });
+  const kindDefinition = context.kinds[bindingKind];
 
-export const validateAndResolveBindings = (
-  workflow: BindingAwareWorkflowLike,
-  options?: BindingKindSchemas | ValidateAndResolveBindingsOptions,
-): BindingValidationResult => {
+  if (!kindDefinition) {
+    return [
+      issue('unknown_binding_kind', `Unknown binding kind "${bindingKind}".`),
+    ];
+  }
+
+  const { multiple } = kindDefinition;
+  if (
+    multiple ? !Array.isArray(bindingRefs) : typeof bindingRefs !== 'string'
+  ) {
+    const expected = multiple
+      ? 'an array of def references'
+      : 'a single def reference string';
+
+    return [
+      issue(
+        'binding_ref',
+        `Expected ${expected} for binding kind "${bindingKind}".`,
+      ),
+    ];
+  }
+
   const issues: WorkflowValidationIssue[] = [];
-  const resolvedDefs: ResolvedBindingDefs = {};
-  const defs = workflow.defs ?? {};
-  const resolvedOptions = resolveValidationOptions(options);
-  const kinds = resolvedOptions.bindingKinds ?? {};
-  const actions = resolvedOptions.actions;
-  const kindNames = Object.keys(kinds);
-  const hasBindingUsage = hasBindingsConfigured(workflow);
-  const parsedSettingsByDefName = new Map<string, unknown>();
-
-  if (hasBindingUsage && kindNames.length === 0) {
-    issues.push({
-      code: 'binding_registry_required',
-      message:
-        'Workflows that declare non-task defs or nested bindings require a non-empty "bindingKinds" registry.',
-    });
-  }
-
-  for (const [defName, defDefinition] of Object.entries(defs)) {
-    if (defDefinition.kind === TASK_KIND) {
-      if (defDefinition.action && actions && !actions[defDefinition.action]) {
-        issues.push(missingActionIssue(defName, defDefinition.action));
-      }
-      continue;
-    }
-
-    const kindDefinition = kinds[defDefinition.kind];
-
-    if (!kindDefinition) {
-      issues.push({
-        code: 'unknown_binding_kind',
-        message: `defs.${defName}.kind: Unknown binding kind "${defDefinition.kind}".`,
-        path: ['defs', defName, 'kind'],
-        bindingKind: defDefinition.kind,
-      });
-      continue;
-    }
-
-    const actionPolicy = kindDefinition.actionPolicy ?? 'optional';
-    if (actionPolicy === 'required' && !defDefinition.action) {
-      issues.push({
-        code: 'action_required',
-        message: `defs.${defName}.action: Binding kind "${defDefinition.kind}" requires an action.`,
-        path: ['defs', defName, 'action'],
-        bindingKind: defDefinition.kind,
-      });
-    }
-    if (actionPolicy === 'forbidden' && defDefinition.action) {
-      issues.push({
-        code: 'action_forbidden',
-        message: `defs.${defName}.action: Binding kind "${defDefinition.kind}" does not allow action declarations.`,
-        path: ['defs', defName, 'action'],
-        bindingKind: defDefinition.kind,
-      });
-    }
-    if (defDefinition.action && actions && !actions[defDefinition.action]) {
-      issues.push(missingActionIssue(defName, defDefinition.action));
-    }
-
-    const { schema } = kindDefinition;
-    const parsedPayload = schema.safeParse(defDefinition.settings);
-
-    if (!parsedPayload.success) {
-      issues.push(
-        ...toBindingSettingsIssues(parsedPayload.error.issues, defName),
-      );
-      continue;
-    }
-
-    parsedSettingsByDefName.set(defName, parsedPayload.data);
-
-    const actionSchema = defDefinition.action
-      ? actions?.[defDefinition.action]?.settingSchema
-      : undefined;
-    const actionParsed = actionSchema?.safeParse?.(defDefinition.settings);
-
-    if (actionParsed && !actionParsed.success) {
-      issues.push(
-        ...toBindingSettingsIssues(actionParsed.error.issues, defName),
-      );
-    }
-  }
-
-  for (const [defName, defDefinition] of Object.entries(defs)) {
-    const defBindings = defDefinition.bindings;
-
-    if (!defBindings) {
-      continue;
-    }
-
-    const supportedKinds = resolveSupportedBindingKinds(
-      defDefinition,
-      defName,
-      kinds,
-      actions,
-      issues,
+  const { supportedKinds } = context;
+  if (supportedKinds && !supportedKinds.includes(bindingKind)) {
+    const supportedKindsLabel =
+      supportedKinds.length > 0 ? supportedKinds.join(', ') : '<none>';
+    issues.push(
+      issue(
+        'binding_unsupported',
+        `"${definition.action ?? definition.kind}" does not support binding kind "${bindingKind}". Supported binding kinds: ${supportedKindsLabel}.`,
+      ),
     );
-    const shouldValidateSupportedKinds = Array.isArray(supportedKinds);
+  }
 
-    for (const [bindingKind, bindingRefs] of Object.entries(defBindings)) {
-      const bindingPath = ['defs', defName, 'bindings', bindingKind];
-      const kindDefinition = kinds[bindingKind];
+  const refProblems = describeReferenceProblems(
+    toBindingRefs(bindingRefs),
+    bindingKind,
+    context.defs,
+  );
 
-      if (!kindDefinition) {
-        issues.push({
-          code: 'unknown_binding_kind',
-          message: `defs.${defName}.bindings.${bindingKind}: Unknown binding kind "${bindingKind}".`,
-          path: bindingPath,
-          bindingKind,
-        });
-        continue;
-      }
+  return [
+    ...issues,
+    ...refProblems.map((message) => issue('binding_ref', message)),
+  ];
+};
+/** Duplicate references, and references that do not name a def of `bindingKind`. */
+const describeReferenceProblems = (
+  refs: string[],
+  bindingKind: string,
+  defs: Record<string, DefLike>,
+): string[] => {
+  const problems: string[] = [];
+  const duplicateRefs = collectDuplicateReferences(refs);
+  if (duplicateRefs.length > 0) {
+    problems.push(`Duplicate def reference(s): ${duplicateRefs.join(', ')}`);
+  }
 
-      const { multiple } = kindDefinition;
-      if (multiple && !Array.isArray(bindingRefs)) {
-        issues.push({
-          code: 'binding_ref',
-          message: `defs.${defName}.bindings.${bindingKind}: Expected an array of def references for binding kind "${bindingKind}".`,
-          path: bindingPath,
-          bindingKind,
-        });
-        continue;
-      }
-      if (!multiple && typeof bindingRefs !== 'string') {
-        issues.push({
-          code: 'binding_ref',
-          message: `defs.${defName}.bindings.${bindingKind}: Expected a single def reference string for binding kind "${bindingKind}".`,
-          path: bindingPath,
-          bindingKind,
-        });
-        continue;
-      }
+  for (const ref of refs) {
+    const target = defs[ref];
 
-      if (
-        shouldValidateSupportedKinds &&
-        supportedKinds &&
-        !supportedKinds.includes(bindingKind)
-      ) {
-        const supportedKindsLabel =
-          supportedKinds.length > 0 ? supportedKinds.join(', ') : '<none>';
-        issues.push({
-          code: 'binding_unsupported',
-          message: `defs.${defName}.bindings.${bindingKind}: "${defDefinition.action ?? defDefinition.kind}" does not support binding kind "${bindingKind}". Supported binding kinds: ${supportedKindsLabel}.`,
-          path: bindingPath,
-          bindingKind,
-        });
-      }
-
-      const refs = toBindingRefs(bindingRefs);
-      const duplicateRefs = collectDuplicateReferences(refs);
-      if (duplicateRefs.length > 0) {
-        issues.push({
-          code: 'binding_ref',
-          message: `defs.${defName}.bindings.${bindingKind}: Duplicate def reference(s): ${duplicateRefs.join(', ')}`,
-          path: bindingPath,
-          bindingKind,
-        });
-      }
-
-      for (const ref of refs) {
-        const definition = defs[ref];
-
-        if (!definition) {
-          issues.push({
-            code: 'binding_ref',
-            message: `defs.${defName}.bindings.${bindingKind}: Unknown def reference "${ref}".`,
-            path: bindingPath,
-            bindingKind,
-          });
-          continue;
-        }
-
-        if (definition.kind !== bindingKind) {
-          issues.push({
-            code: 'binding_ref',
-            message: `defs.${defName}.bindings.${bindingKind}: Def "${ref}" has kind "${definition.kind}" and cannot be mounted as "${bindingKind}".`,
-            path: bindingPath,
-            bindingKind,
-          });
-        }
-      }
+    if (!target) {
+      problems.push(`Unknown def reference "${ref}".`);
+    } else if (target.kind !== bindingKind) {
+      problems.push(
+        `Def "${ref}" has kind "${target.kind}" and cannot be mounted as "${bindingKind}".`,
+      );
     }
   }
 
-  issues.push(...detectBindingCycles(defs));
+  return problems;
+};
+const validateDefBindings = (
+  defName: string,
+  definition: DefLike,
+  defs: Record<string, DefLike>,
+  kinds: BindingKindSchemas,
+  actions: ActionCatalog | undefined,
+): WorkflowValidationIssue[] => {
+  if (!definition.bindings) {
+    return [];
+  }
 
+  const context = {
+    defs,
+    kinds,
+    supportedKinds: resolveSupportedBindingKinds(definition, kinds, actions),
+  };
+
+  return Object.entries(definition.bindings).flatMap(
+    ([bindingKind, bindingRefs]) =>
+      validateBindingEntry(
+        defName,
+        definition,
+        bindingKind,
+        bindingRefs,
+        context,
+      ),
+  );
+};
+/**
+ * Mount every non-task def whose settings parsed, with its nested bindings.
+ * A def reached again while it is being mounted, through a cycle, is left
+ * out of the def that reached it.
+ */
+const resolveBindingDefs = (
+  defs: Record<string, DefLike>,
+  kinds: BindingKindSchemas,
+  parsedSettings: Map<string, unknown>,
+): ResolvedBindingDefs => {
+  const resolvedDefs: ResolvedBindingDefs = {};
   const inProgress = new Set<string>();
-  const mountResolvedDef = (
-    defName: string,
-  ): MountedBindingPayload | undefined => {
+  const mountDef = (defName: string): MountedBindingPayload | undefined => {
     const existing = resolvedDefs[defName];
     if (existing) {
       return existing.payload;
     }
 
     const definition = defs[defName];
-    if (!definition || definition.kind === TASK_KIND) {
-      return undefined;
-    }
-
-    const parsedSettings = parsedSettingsByDefName.get(defName);
-    if (parsedSettings === undefined) {
-      return undefined;
-    }
-
-    if (inProgress.has(defName)) {
+    const settings = parsedSettings.get(defName);
+    if (
+      !definition ||
+      definition.kind === TASK_KIND ||
+      settings === undefined ||
+      inProgress.has(defName)
+    ) {
       return undefined;
     }
 
@@ -487,10 +527,10 @@ export const validateAndResolveBindings = (
       definition.bindings,
       resolvedDefs,
       kinds,
-      mountResolvedDef,
+      mountDef,
     );
     const payload: MountedBindingPayload = {
-      settings: parsedSettings,
+      settings,
       ...(definition.action ? { action: definition.action } : {}),
       ...(definition.description
         ? { description: definition.description }
@@ -500,77 +540,110 @@ export const validateAndResolveBindings = (
         : {}),
     };
 
-    resolvedDefs[defName] = {
-      kind: definition.kind,
-      payload,
-    };
+    resolvedDefs[defName] = { kind: definition.kind, payload };
     inProgress.delete(defName);
 
     return payload;
   };
 
   for (const [defName, definition] of Object.entries(defs)) {
-    if (definition.kind === TASK_KIND) {
-      continue;
+    if (definition.kind !== TASK_KIND) {
+      mountDef(defName);
     }
-
-    mountResolvedDef(defName);
   }
 
-  return { issues, resolvedDefs };
+  return resolvedDefs;
 };
 
+/**
+ * Validate the defs and bindings of a workflow, and mount every valid
+ * non-task def so tasks can be handed their bindings.
+ */
+export const validateAndResolveBindings = (
+  workflow: BindingAwareWorkflowLike,
+  options?: BindingKindSchemas | ValidateAndResolveBindingsOptions,
+): BindingValidationResult => {
+  const defs = workflow.defs ?? {};
+  const { bindingKinds: kinds = {}, actions } =
+    resolveValidationOptions(options);
+  const issues: WorkflowValidationIssue[] = [];
+  const parsedSettings = new Map<string, unknown>();
+
+  if (hasBindingsConfigured(workflow) && Object.keys(kinds).length === 0) {
+    issues.push({
+      code: 'binding_registry_required',
+      message:
+        'Workflows that declare non-task defs or nested bindings require a non-empty "bindingKinds" registry.',
+    });
+  }
+
+  for (const [defName, definition] of Object.entries(defs)) {
+    issues.push(
+      ...validateDef(defName, definition, kinds, actions, parsedSettings),
+    );
+  }
+
+  for (const [defName, definition] of Object.entries(defs)) {
+    issues.push(
+      ...validateDefBindings(defName, definition, defs, kinds, actions),
+    );
+  }
+
+  issues.push(...detectBindingCycles(defs));
+
+  return {
+    issues,
+    resolvedDefs: resolveBindingDefs(defs, kinds, parsedSettings),
+  };
+};
+
+/** Payloads of the references that resolve, keyed by def name; none gives undefined. */
+const resolveEach = (
+  refs: string[],
+  resolve: (ref: string) => MountedBindingPayload | undefined,
+): Record<string, MountedBindingPayload> | undefined => {
+  const payloads: Record<string, MountedBindingPayload> = {};
+  for (const ref of refs) {
+    const payload = resolve(ref);
+    if (payload) {
+      payloads[ref] = payload;
+    }
+  }
+
+  return Object.keys(payloads).length > 0 ? payloads : undefined;
+};
+
+/**
+ * Mount the defs a task (or def) references in `bindings`, by binding kind:
+ * one payload for a single-ref kind, payloads keyed by def name otherwise.
+ * References that resolve to nothing are left out.
+ */
 export const mountTaskBindings = (
   taskBindings: TaskBindingReferences | undefined,
   resolvedDefs: ResolvedBindingDefs,
-  bindingKinds?: BindingKindSchemas,
+  bindingKinds: BindingKindSchemas = {},
   resolveDef?: (defName: string) => MountedBindingPayload | undefined,
 ): CompiledTaskBindings => {
   if (!taskBindings) {
     return {};
   }
 
+  const resolve = (ref: string) =>
+    resolvedDefs[ref]?.payload ?? resolveDef?.(ref);
   const mounted: CompiledTaskBindings = {};
-  const kinds = bindingKinds ?? {};
 
   for (const [bindingKind, bindingRefs] of Object.entries(taskBindings)) {
     const refs = toBindingRefs(bindingRefs);
     const isMultiple =
-      kinds[bindingKind]?.multiple ?? Array.isArray(bindingRefs);
+      bindingKinds[bindingKind]?.multiple ?? Array.isArray(bindingRefs);
+    const payload = isMultiple
+      ? resolveEach(refs, resolve)
+      : refs[0]
+        ? resolve(refs[0])
+        : undefined;
 
-    if (!isMultiple) {
-      const ref = refs[0];
-
-      if (!ref) {
-        continue;
-      }
-
-      const resolvedDefPayload =
-        resolvedDefs[ref]?.payload ?? resolveDef?.(ref) ?? undefined;
-
-      if (!resolvedDefPayload) {
-        continue;
-      }
-
-      mounted[bindingKind] = resolvedDefPayload;
-      continue;
-    }
-
-    const mountedKindDefs: Record<string, MountedBindingPayload> = {};
-
-    for (const ref of refs) {
-      const resolvedDefPayload =
-        resolvedDefs[ref]?.payload ?? resolveDef?.(ref) ?? undefined;
-
-      if (!resolvedDefPayload) {
-        continue;
-      }
-
-      mountedKindDefs[ref] = resolvedDefPayload;
-    }
-
-    if (Object.keys(mountedKindDefs).length > 0) {
-      mounted[bindingKind] = mountedKindDefs;
+    if (payload) {
+      mounted[bindingKind] = payload;
     }
   }
 

@@ -23,7 +23,7 @@
     "esModuleInterop": true,
     "types": ["node", "jest"],
     "paths": {
-      "@/*": ["src/*", "src/extra/*"],
+      "@/*": ["src/*"],
       "hexabot/src/*": ["src/*"]
     }
   },

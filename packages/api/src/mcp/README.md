@@ -186,16 +186,16 @@ version checksum and total byte length so clients can verify reconstruction.
 
 ### Workflow versions and runs
 
-| Tool                               | Permission               | Purpose                                                                                         |
-| ---------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
-| `hexabot_workflow_version_search`  | `workflowversion:read`   | List compact version metadata for a workflow.                                                   |
-| `hexabot_workflow_version_get`     | `workflowversion:read`   | Read compact version metadata.                                                                  |
-| `hexabot_workflow_version_update`  | `workflowversion:update` | Update workflow version metadata.                                                               |
-| `hexabot_workflow_rollback`        | `workflowversion:create` | Restore a previous version by creating a new snapshot.                                          |
-| `hexabot_workflow_run_search`      | `workflowrun:read`       | Search workflow runs by workflow and status.                                                    |
-| `hexabot_workflow_run_pending`     | `workflowrun:read`       | List suspended runs waiting on an admin (`await_approval`, `suspend_workflow`) with their waits. |
-| `hexabot_workflow_run_get`         | `workflowrun:read`       | Read one workflow run with populated workflow metadata but no nested YAML body.                 |
-| `hexabot_workflow_run_debug`       | `workflowrun:read`       | Inspect one workflow run with execution state and parent/child run context for troubleshooting. |
+| Tool                              | Permission               | Purpose                                                                                          |
+| --------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `hexabot_workflow_version_search` | `workflowversion:read`   | List compact version metadata for a workflow.                                                    |
+| `hexabot_workflow_version_get`    | `workflowversion:read`   | Read compact version metadata.                                                                   |
+| `hexabot_workflow_version_update` | `workflowversion:update` | Update workflow version metadata.                                                                |
+| `hexabot_workflow_rollback`       | `workflowversion:create` | Restore a previous version by creating a new snapshot.                                           |
+| `hexabot_workflow_run_search`     | `workflowrun:read`       | Search workflow runs by workflow and status.                                                     |
+| `hexabot_workflow_run_pending`    | `workflowrun:read`       | List suspended runs waiting on an admin (`await_approval`, `suspend_workflow`) with their waits. |
+| `hexabot_workflow_run_get`        | `workflowrun:read`       | Read one workflow run with populated workflow metadata but no nested YAML body.                  |
+| `hexabot_workflow_run_debug`      | `workflowrun:read`       | Inspect one workflow run with execution state and parent/child run context for troubleshooting.  |
 
 Workflow run, search, get and pending responses strip nested `definitionYml`
 fields from populated workflow-version relations, and the resume checkpoint.
@@ -375,11 +375,14 @@ and register new providers through `tools/index.ts`.
 Each tool should:
 
 1. Use `@Tool()` with a stable `hexabot_*` name and a Zod parameter schema.
-2. Use `@ToolGuards([McpPermissionGuard])`.
-3. Use `@McpPermission(model, action)` with existing Hexabot permission models.
-4. Return plain JSON-serializable data.
-5. Avoid exposing secrets, tokens, connection strings, or raw credential values.
-6. Reduce populated user relations with `toUserRef` (`tools/hexabot-mcp.utils.ts`)
+2. Use `@McpPermission(model, action)` with existing Hexabot permission models.
+   It also applies `McpPermissionGuard` (`@ToolGuards`), so do not add the
+   guard yourself. `@ToolGuards` replaces the guards set before it: a tool that
+   needs another guard lists it with `McpPermissionGuard` in a `@ToolGuards`
+   placed above `@McpPermission`.
+3. Return plain JSON-serializable data.
+4. Avoid exposing secrets, tokens, connection strings, or raw credential values.
+5. Reduce populated user relations with `toUserRef` (`tools/hexabot-mcp.utils.ts`)
    instead of returning the user record.
 
 If a tool changes API behavior or a public contract, update this README and the

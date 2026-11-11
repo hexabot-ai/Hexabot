@@ -36,7 +36,6 @@ import { CmsModule } from './cms/cms.module';
 import { config } from './config';
 import { TypeormConfigService } from './database/typeorm-config.service';
 import { ExtensionModule } from './extension/extension.module';
-import extraModules from './extra';
 import { HealthService } from './health/health.service';
 import { HelperModule } from './helper/helper.module';
 import { I18nModule } from './i18n/i18n.module';
@@ -162,7 +161,6 @@ export const HEXABOT_MODULE_IMPORTS: ModuleImports = [
   }),
   MigrationModule,
   ExtensionModule,
-  ...extraModules,
 ];
 
 export const HEXABOT_MODULE_CONTROLLERS: ModuleControllers = [AppController];

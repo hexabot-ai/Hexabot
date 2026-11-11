@@ -4,12 +4,20 @@
  * Full terms: see LICENSE.md.
  */
 
-import { WorkflowExportBundle } from '@hexabot-ai/types';
+import {
+  WorkflowExportBundle,
+  type WorkflowImportResourceResult,
+} from '@hexabot-ai/types';
 import { SetMetadata } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 
+import type { BaseOrmEntity } from '@/database/entities/base.entity';
+
 import {
+  buildPostCreateEvent,
+  buildResourceResult,
   type WorkflowTransferImportAdapterResult,
+  type WorkflowTransferPostCreateEvent,
   type WorkflowTransferResourceIdMaps,
 } from './workflow-transfer.types';
 
@@ -115,6 +123,78 @@ export class WorkflowTransferImportContext {
 
       return result ? [result] : [];
     });
+  }
+}
+
+type ImportedResource = Pick<WorkflowImportResourceResult, 'exportId' | 'name'>;
+
+/**
+ * Collects what an adapter imports for one resource kind: the local id of
+ * each exported resource, the result reported for it, the post-create event
+ * of each resource created, and the warnings.
+ */
+export class WorkflowTransferImportResults {
+  private readonly idMap: Record<string, string> = {};
+
+  private readonly resources: WorkflowImportResourceResult[] = [];
+
+  private readonly warnings: string[] = [];
+
+  private readonly postCreateEvents: WorkflowTransferPostCreateEvent[] = [];
+
+  constructor(private readonly kind: WorkflowImportResourceResult['kind']) {}
+
+  /** Maps an exported resource to the existing local one it matches. */
+  reused(resource: ImportedResource, localId: string): void {
+    this.add(resource, localId, 'reused');
+  }
+
+  /** Maps an exported resource to the local entity created from `payload`. */
+  created(
+    resource: ImportedResource,
+    entity: BaseOrmEntity<any>,
+    payload: unknown,
+    action: Exclude<
+      WorkflowImportResourceResult['action'],
+      'reused'
+    > = 'created',
+  ): void {
+    this.add(resource, entity.id, action);
+    this.postCreateEvents.push(
+      buildPostCreateEvent(this.kind, entity, payload),
+    );
+  }
+
+  warn(warning: string): void {
+    this.warnings.push(warning);
+  }
+
+  toResult(
+    metadata?: WorkflowTransferImportAdapterResult['metadata'],
+  ): WorkflowTransferImportAdapterResult {
+    return {
+      idMap: this.idMap,
+      resources: this.resources,
+      warnings: this.warnings,
+      postCreateEvents: this.postCreateEvents,
+      ...(metadata ? { metadata } : {}),
+    };
+  }
+
+  private add(
+    resource: ImportedResource,
+    localId: string,
+    action: WorkflowImportResourceResult['action'],
+  ): void {
+    const result = buildResourceResult({
+      kind: this.kind,
+      exportId: resource.exportId,
+      localId,
+      name: resource.name,
+      action,
+    });
+    this.idMap[resource.exportId] = localId;
+    this.resources.push(result);
   }
 }
 

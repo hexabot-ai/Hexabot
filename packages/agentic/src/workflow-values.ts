@@ -8,6 +8,7 @@ import type { Expression } from 'jsonata';
 import jsonata from 'jsonata';
 
 import type { JsonValue, Settings } from './dsl.types';
+import { isRecord } from './utils/clone';
 import type {
   CompiledMapping,
   CompiledValue,
@@ -25,16 +26,17 @@ export type CompileValueOptions = {
   jsonataFunctions?: JsonataFunctionRegistry;
 };
 
-/** Basic object guard that rejects arrays and null. */
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+/** Strings starting with `=` are JSONata expressions; anything else is a literal. */
+export const isExpressionString = (value: unknown): value is string =>
+  typeof value === 'string' && value.startsWith('=');
+
 const resolveNestedExpressions = async (
   value: unknown,
   scope: EvaluationScope,
   jsonataFunctions?: JsonataFunctionRegistry,
   seen: WeakSet<object> = new WeakSet(),
 ): Promise<unknown> => {
-  if (typeof value === 'string' && value.startsWith('=')) {
+  if (isExpressionString(value)) {
     return evaluateValue(compileValue(value, { jsonataFunctions }), scope);
   }
 
@@ -51,7 +53,7 @@ const resolveNestedExpressions = async (
     );
   }
 
-  if (isPlainObject(value)) {
+  if (isRecord(value)) {
     if (seen.has(value)) {
       return value;
     }
@@ -106,7 +108,7 @@ export const compileValue = (
 ): CompiledValue => {
   const jsonataFunctions = options?.jsonataFunctions;
 
-  if (typeof value === 'string' && value.startsWith('=')) {
+  if (isExpressionString(value)) {
     const expression = jsonata(value.slice(1));
     registerJsonataFunctions(expression, jsonataFunctions);
 
@@ -187,7 +189,7 @@ export const mergeSettings = (
     const value = override[key];
     const previous = merged[key];
 
-    if (isPlainObject(previous) && isPlainObject(value)) {
+    if (isRecord(previous) && isRecord(value)) {
       merged[key] = mergeSettings(
         previous as Partial<Settings>,
         value as Partial<Settings>,

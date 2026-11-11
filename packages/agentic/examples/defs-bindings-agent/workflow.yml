@@ -2,7 +2,7 @@
 defs:
   calculate:
     kind: tools
-    action: caculate_score
+    action: calculate_score
     description: "LLM Tool to calculate the score"
     settings:
       multiplier: 2
@@ -11,7 +11,7 @@ defs:
     kind: task
     action: ai_agent
     inputs:
-      prompt: "Caculate the score for x=10"
+      prompt: "Calculate the score for x=10"
       system: "You are a helpful assistant"
     settings:
       provider: "openai"

@@ -371,9 +371,13 @@ describe('AiGenerateTextAction', () => {
     expect(stopWhen({ steps: [{}, {}, {}] })).toBe(true);
     expect(stopWhen({ steps: [{}, {}] })).toBe(false);
     await callArgs.tools.search.execute({ query: 'hello' });
-    expect(toolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
-      locale: 'en',
-    });
+    expect(toolRun).toHaveBeenCalledWith(
+      { query: 'hello' },
+      context,
+      { locale: 'en' },
+      undefined,
+      undefined,
+    );
     expect(result.text).toBe('Generated text');
   });
 
@@ -520,9 +524,13 @@ describe('AiGenerateTextAction', () => {
     expect(Object.keys(callArgs.tools)).toEqual(['search', 'planner__lookup']);
     expect(stepCountIsMock).toHaveBeenCalledWith(3);
     await callArgs.tools.search.execute({ query: 'hello' });
-    expect(actionToolRun).toHaveBeenCalledWith({ query: 'hello' }, context, {
-      locale: 'en',
-    });
+    expect(actionToolRun).toHaveBeenCalledWith(
+      { query: 'hello' },
+      context,
+      { locale: 'en' },
+      undefined,
+      undefined,
+    );
     await callArgs.tools.planner__lookup.execute({ query: 'hello' });
     expect(mcpToolRun).toHaveBeenCalledWith({ query: 'hello' });
   });

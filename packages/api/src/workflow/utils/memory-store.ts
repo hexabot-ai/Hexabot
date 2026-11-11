@@ -11,7 +11,7 @@ import { cloneObject } from '@/utils/helpers/clone';
 import { deepFreeze } from '@/utils/helpers/freeze';
 import { deepMerge } from '@/utils/helpers/object';
 
-import { WorkflowRuntimeContext } from '../contexts/workflow-runtime.context';
+import type { WorkflowRuntimeContext } from '../contexts/workflow-runtime.context';
 import {
   MemoryScope,
   MemoryStoreBatchUpdater,

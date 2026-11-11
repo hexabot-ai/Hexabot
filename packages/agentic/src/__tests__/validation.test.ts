@@ -531,6 +531,104 @@ describe('validateWorkflow', () => {
     }
   });
 
+  it('reports each binding cycle once, on the def it starts from', () => {
+    const workflow = {
+      defs: mergeTaskDefs(
+        { agent_step: { action: 'understand_request_action' } },
+        {
+          alpha: {
+            kind: 'toolset',
+            settings: { name: 'alpha' },
+            bindings: { toolset: ['beta'] },
+          },
+          beta: {
+            kind: 'toolset',
+            settings: { name: 'beta' },
+            bindings: { toolset: ['alpha'] },
+          },
+          gamma: {
+            kind: 'toolset',
+            settings: { name: 'gamma' },
+            bindings: { toolset: ['gamma'] },
+          },
+        },
+      ),
+      flow: [{ do: 'agent_step' }],
+      outputs: { result: '=$output.agent_step' },
+    };
+    const result = validateWorkflow(workflow, {
+      bindingKinds: {
+        toolset: { ...bindingKinds.toolset, supportedBindings: ['toolset'] },
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.issues).toEqual([
+        {
+          code: 'binding_cycle',
+          message:
+            'defs.alpha.bindings: Circular binding reference detected (alpha -> beta -> alpha).',
+          path: ['defs', 'alpha', 'bindings'],
+        },
+        {
+          code: 'binding_cycle',
+          message:
+            'defs.gamma.bindings: Circular binding reference detected (gamma -> gamma).',
+          path: ['defs', 'gamma', 'bindings'],
+        },
+      ]);
+    }
+  });
+
+  it('enforces the action policy of binding kinds', () => {
+    const workflow = {
+      defs: mergeTaskDefs(
+        { agent_step: { action: 'understand_request_action' } },
+        {
+          lookup: { kind: 'tools', settings: {} },
+          catalog: {
+            kind: 'catalog',
+            action: 'list_products',
+            settings: {},
+          },
+        },
+      ),
+      flow: [{ do: 'agent_step' }],
+      outputs: { result: '=$output.agent_step' },
+    };
+    const result = validateWorkflow(workflow, {
+      bindingKinds: {
+        tools: bindingKinds.tools,
+        catalog: {
+          schema: z.record(z.string(), z.unknown()),
+          multiple: false,
+          actionPolicy: 'forbidden' as const,
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.issues).toEqual([
+        {
+          code: 'action_required',
+          message:
+            'defs.lookup.action: Binding kind "tools" requires an action.',
+          path: ['defs', 'lookup', 'action'],
+          bindingKind: 'tools',
+        },
+        {
+          code: 'action_forbidden',
+          message:
+            'defs.catalog.action: Binding kind "catalog" does not allow action declarations.',
+          path: ['defs', 'catalog', 'action'],
+          bindingKind: 'catalog',
+        },
+      ]);
+    }
+  });
+
   describe('structured issues', () => {
     it('reports missing required action inputs and settings', () => {
       const workflow = {
@@ -717,6 +815,124 @@ describe('validateWorkflow', () => {
             actionName: 'not_installed_action',
           },
         ]);
+      }
+    });
+
+    it('reports a missing action once, without judging the bindings it would support', () => {
+      const workflow = {
+        defs: mergeTaskDefs(
+          {
+            agent_step: {
+              action: 'not_installed_action',
+              bindings: { toolset: ['support_tools'] },
+            },
+          },
+          {
+            support_tools: { kind: 'toolset', settings: { name: 'support' } },
+          },
+        ),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {},
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues).toEqual([
+          {
+            code: 'missing_action',
+            message:
+              'defs.agent_step.action: No action implementation provided for "not_installed_action".',
+            path: ['defs', 'agent_step', 'action'],
+            actionName: 'not_installed_action',
+          },
+        ]);
+      }
+    });
+
+    it('does not take inherited object members for installed actions', () => {
+      const workflow = {
+        defs: mergeTaskDefs({ agent_step: { action: 'constructor' } }),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {},
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues.map(({ code, path }) => ({ code, path }))).toEqual(
+          [{ code: 'missing_action', path: ['defs', 'agent_step', 'action'] }],
+        );
+      }
+    });
+
+    it('reports an empty task action as missing', () => {
+      const workflow = {
+        defs: mergeTaskDefs({ agent_step: { action: '' } }),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: {},
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues).toEqual([
+          {
+            code: 'missing_action',
+            message:
+              'defs.agent_step.action: No action implementation provided for "".',
+            path: ['defs', 'agent_step', 'action'],
+            actionName: '',
+          },
+        ]);
+      }
+    });
+
+    it('reports the missing action of a def whose kind is unknown', () => {
+      const workflow = {
+        defs: mergeTaskDefs(
+          { agent_step: { action: 'understand_request_action' } },
+          {
+            remote_server: {
+              kind: 'mcp_server',
+              action: 'not_installed_action',
+              settings: {},
+              bindings: { toolset: ['support_tools'] },
+            },
+            support_tools: { kind: 'toolset', settings: { name: 'support' } },
+          },
+        ),
+        flow: [{ do: 'agent_step' }],
+        outputs: { result: '=$output.agent_step' },
+      };
+      const result = validateWorkflow(workflow, {
+        bindingKinds,
+        actions: { understand_request_action: {} },
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues.map(({ code, path }) => ({ code, path }))).toEqual(
+          [
+            {
+              code: 'unknown_binding_kind',
+              path: ['defs', 'remote_server', 'kind'],
+            },
+            {
+              code: 'missing_action',
+              path: ['defs', 'remote_server', 'action'],
+            },
+          ],
+        );
       }
     });
 

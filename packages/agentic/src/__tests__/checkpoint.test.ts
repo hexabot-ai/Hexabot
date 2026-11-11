@@ -727,7 +727,12 @@ describe('checkpoint validation', () => {
     const error = expectRejected(broken, WorkflowCheckpointInvalidError);
 
     expect(error.code).toBe('malformed');
-    expect(error.issues?.length).toBeGreaterThan(0);
+    expect(error.issues).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^root\.index: /)]),
+    );
+    expect(error.message).toContain(
+      'Checkpoint does not match the expected shape: ',
+    );
   });
 
   it('reports frames that do not line up with the flow', async () => {

@@ -180,4 +180,96 @@ describe('AbstractAction timing and retries', () => {
     expect(randomSpy).toHaveBeenCalled();
     expect(attemptTimestamps[1] - attemptTimestamps[0]).toBe(150);
   });
+  it('runs once without a retries block', async () => {
+    const execute = jest.fn().mockRejectedValue(new Error('Boom'));
+    const action = new HarnessedAction(execute);
+
+    await expect(action.run({ value: 1 }, new TestContext())).rejects.toThrow(
+      'Boom',
+    );
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs once when retries are disabled, whatever max_attempts says', async () => {
+    const execute = jest.fn().mockRejectedValue(new Error('Boom'));
+    const action = new HarnessedAction(execute);
+
+    await expect(
+      action.run({ value: 1 }, new TestContext(), {
+        retries: { enabled: false, max_attempts: 3, backoff_ms: 0 },
+      } as Partial<Settings>),
+    ).rejects.toThrow('Boom');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries when a retries block leaves enabled out', async () => {
+    const execute = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Boom'))
+      .mockRejectedValueOnce(new Error('Boom'))
+      .mockResolvedValue({ result: 3 });
+    const action = new HarnessedAction(execute);
+
+    await expect(
+      action.run({ value: 1 }, new TestContext(), {
+        retries: { max_attempts: 3, backoff_ms: 0 },
+      } as Partial<Settings>),
+    ).resolves.toEqual({ result: 3 });
+    expect(execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('gives up after max_attempts and throws the last error', async () => {
+    const execute = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('First'))
+      .mockRejectedValueOnce(new Error('Last'));
+    const action = new HarnessedAction(execute);
+
+    await expect(
+      action.run({ value: 1 }, new TestContext(), {
+        retries: { max_attempts: 2, backoff_ms: 0 },
+      } as Partial<Settings>),
+    ).rejects.toThrow('Last');
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries right away when the jittered delay rounds to zero', async () => {
+    jest.useFakeTimers();
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const execute = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Boom'))
+      .mockResolvedValue({ result: 2 });
+    const action = new HarnessedAction(execute);
+
+    // A jitter of 1 with Math.random() at 0 scales the delay by 0.
+    await expect(
+      action.run({ value: 1 }, new TestContext(), {
+        retries: { max_attempts: 2, backoff_ms: 100, jitter: 1 },
+      } as Partial<Settings>),
+    ).resolves.toEqual({ result: 2 });
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops retrying once the signal is aborted', async () => {
+    jest.useFakeTimers();
+    const controller = new AbortController();
+    const execute = jest.fn().mockRejectedValue(new Error('Boom'));
+    const action = new HarnessedAction(execute);
+    const runPromise = action.run(
+      { value: 1 },
+      new TestContext(),
+      {
+        retries: { max_attempts: 3, backoff_ms: 100 },
+      } as Partial<Settings>,
+      undefined,
+      controller.signal,
+    );
+    const outcome = expect(runPromise).rejects.toThrow('stopped');
+
+    await jest.advanceTimersByTimeAsync(50);
+    controller.abort(new Error('stopped'));
+    await outcome;
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
 });

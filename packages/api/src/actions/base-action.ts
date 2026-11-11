@@ -9,7 +9,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { z, type ZodType } from 'zod';
 
 import { RuntimeBindings } from '@/bindings/runtime-bindings';
-import { ConversationalWorkflowContext } from '@/workflow/contexts/conversational-workflow.context';
+import type { ConversationalWorkflowContext } from '@/workflow/contexts/conversational-workflow.context';
 import { WorkflowType } from '@/workflow/types';
 
 import { ActionService } from './actions.service';

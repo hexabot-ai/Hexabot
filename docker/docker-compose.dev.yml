@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   api:
     image: hexastack/hexabot-api:dev
@@ -13,7 +11,6 @@ services:
       - 9229:9229 # vscode debug port
     volumes:
       - ../packages/api/src:/app/packages/api/src
-      - ../packages/api/migrations:/app/packages/api/migrations
       #- ../packages/api/node_modules:/app/packages/api/node_modules
 
   postgres:

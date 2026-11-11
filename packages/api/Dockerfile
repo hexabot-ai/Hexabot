@@ -78,7 +78,6 @@ COPY --from=build /app/packages/api/dist ./packages/api/dist
 COPY --from=build /app/packages/types/dist ./packages/types/dist
 COPY --from=build /app/packages/agentic/dist ./packages/agentic/dist
 COPY packages/api/assets ./packages/api/assets
-COPY packages/api/documentation ./packages/api/documentation
 
 EXPOSE 3000
 

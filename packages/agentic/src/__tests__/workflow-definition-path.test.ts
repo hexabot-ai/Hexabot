@@ -192,6 +192,8 @@ describe('workflow definition path helpers', () => {
         Workflow.removeStepAtPath(definition, ['defs', 'task_one', 0]),
       ).toBeNull();
       expect(Workflow.removeStepAtPath(definition, ['flow', 99])).toBeNull();
+      expect(Workflow.removeStepAtPath(definition, ['flow', 3])).toBeNull();
+      expect(Workflow.removeStepAtPath(definition, ['flow', -1])).toBeNull();
     });
   });
 

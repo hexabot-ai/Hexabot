@@ -142,16 +142,7 @@ export class RunnerRuntimeControl implements WorkflowRuntimeControl {
     }
 
     if (options?.key) {
-      // A reused key would resolve from the first call's answer on resume,
-      // so the second call could never suspend.
-      if (active.usedKeys.has(options.key)) {
-        throw new Error(
-          `workflow.suspend() key "${options.key}" is used more than once ` +
-            `in step "${active.step.id}"; keys must be unique within an action body.`,
-        );
-      }
-
-      active.usedKeys.add(options.key);
+      claimSuspendKey(active, options.key);
     }
 
     active.cursor += 1;
@@ -163,25 +154,10 @@ export class RunnerRuntimeControl implements WorkflowRuntimeControl {
       return resolveRecordedResult(active, suspendKey, options?.accepts);
     }
 
-    const request: RuntimeSuspensionRequest = {
-      suspendKey,
-      reason: options?.reason,
-      data: options?.data,
-      awaitResults: Object.fromEntries(active.awaitResults),
-    };
-    if (options?.accepts) {
-      request.accepts = describeResumePayload(options.accepts);
-      if (isPayloadOptional(options.accepts)) {
-        request.payloadOptional = true;
-      }
-    }
-    const waiter = active.waiter;
-    if (waiter) {
-      active.waiter = undefined;
-      waiter(request);
-    } else {
-      active.pending.push(request);
-    }
+    deliverSuspension(
+      active,
+      buildSuspensionRequest(active, suspendKey, options),
+    );
 
     // Never settles: the step executor aborts this body, and resuming re-runs
     // it so that this call resolves from `awaitResults` instead.
@@ -260,6 +236,53 @@ export class RunnerRuntimeControl implements WorkflowRuntimeControl {
   }
 }
 
+/**
+ * Reserve a user key for the running attempt. A reused key would resolve from
+ * the first call's answer on resume, so the second call could never suspend.
+ */
+const claimSuspendKey = (active: ActiveStep, key: string): void => {
+  if (active.usedKeys.has(key)) {
+    throw new Error(
+      `workflow.suspend() key "${key}" is used more than once ` +
+        `in step "${active.step.id}"; keys must be unique within an action body.`,
+    );
+  }
+
+  active.usedKeys.add(key);
+};
+const buildSuspensionRequest = <T>(
+  active: ActiveStep,
+  suspendKey: string,
+  options?: SuspensionOptions<T>,
+): RuntimeSuspensionRequest => {
+  const request: RuntimeSuspensionRequest = {
+    suspendKey,
+    reason: options?.reason,
+    data: options?.data,
+    awaitResults: Object.fromEntries(active.awaitResults),
+  };
+  if (options?.accepts) {
+    request.accepts = describeResumePayload(options.accepts);
+    if (isPayloadOptional(options.accepts)) {
+      request.payloadOptional = true;
+    }
+  }
+
+  return request;
+};
+/** Hand a request to the executor waiting for one, or queue it until it waits. */
+const deliverSuspension = (
+  active: ActiveStep,
+  request: RuntimeSuspensionRequest,
+): void => {
+  const waiter = active.waiter;
+  if (waiter) {
+    active.waiter = undefined;
+    waiter(request);
+  } else {
+    active.pending.push(request);
+  }
+};
 /**
  * Refuse an `accepts` schema that no JSON payload can match: the wait it
  * opens could never be resumed, since payloads are read back as JSON.

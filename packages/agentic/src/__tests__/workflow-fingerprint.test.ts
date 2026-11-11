@@ -162,4 +162,69 @@ describe('fingerprintWorkflow', () => {
 
     expect(fingerprint(next)).not.toBe(fingerprint(createDefinition()));
   });
+  it('keeps the fingerprint of every step kind stable across releases', () => {
+    // Persisted checkpoints carry this value: any change to it fails every
+    // suspended run with WorkflowDefinitionDriftError on resume.
+    const definition: WorkflowDefinition = {
+      defs: createTaskDefs({
+        ask: { action: 'first', inputs: { label: 'x', count: '=$input.n' } },
+        note: { action: 'second' },
+      }),
+      flow: [
+        { do: 'ask' },
+        {
+          parallel: {
+            strategy: 'wait_any',
+            description: 'race',
+            steps: [
+              { do: 'note' },
+              {
+                conditional: {
+                  when: [
+                    { condition: '=$output.ask.ok', steps: [{ do: 'ask' }] },
+                    {
+                      else: true,
+                      steps: [
+                        {
+                          loop: {
+                            type: 'while',
+                            while: '=$iteration.index < 2',
+                            steps: [{ do: 'note' }],
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        {
+          loop: {
+            type: 'for_each',
+            name: 'collect',
+            for_each: { item: 'entry', in: '=[1, 2, 3]' },
+            until: '=$accumulator > 3',
+            accumulate: {
+              as: 'sum',
+              initial: 0,
+              merge: '=$accumulator + $iteration.item',
+            },
+            steps: [{ do: 'ask' }, { parallel: { steps: [{ do: 'note' }] } }],
+          },
+        },
+        {
+          loop: {
+            type: 'for_each',
+            for_each: { item: 'x', in: '=[]' },
+            steps: [],
+          },
+        },
+      ],
+      outputs: { result: '=$output.ask', total: '=$output.collect.sum' },
+    };
+
+    expect(fingerprint(definition)).toBe('5bfb3ba54027417e');
+  });
 });

@@ -11,13 +11,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Tool, ToolGuards } from '@rekog/mcp-nest';
+import { Tool } from '@rekog/mcp-nest';
 import { z } from 'zod';
 
 import { CredentialService } from '@/user/services/credential.service';
 
 import { McpPermission } from '../decorators/mcp-permission.decorator';
-import { McpPermissionGuard } from '../guards/mcp-permission.guard';
 import { HexabotMcpRequest } from '../types';
 
 import { HexabotMcpToolBase } from './hexabot-mcp-tool.base';
@@ -35,7 +34,6 @@ export class HexabotCredentialMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('credential', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_credential_search',
     description:
@@ -67,7 +65,6 @@ export class HexabotCredentialMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('credential', Action.READ)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_credential_get',
     description:
@@ -86,7 +83,6 @@ export class HexabotCredentialMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('credential', Action.CREATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_credential_create',
     description:
@@ -112,7 +108,6 @@ export class HexabotCredentialMcpTools extends HexabotMcpToolBase {
   }
 
   @McpPermission('credential', Action.UPDATE)
-  @ToolGuards([McpPermissionGuard])
   @Tool({
     name: 'hexabot_credential_update',
     description:

@@ -36,3 +36,30 @@ export type WorkflowValidationIssue = {
 
 export const issueMessages = (issues: WorkflowValidationIssue[]): string[] =>
   issues.map((issue) => issue.message);
+
+/** The fields of a schema (zod) issue that validation issues are built from. */
+type SchemaIssue = { path: readonly PropertyKey[]; message: string };
+
+/** Keep the segments of a schema issue path that can locate a YAML node. */
+export const toIssuePath = (
+  path: readonly PropertyKey[],
+): Array<string | number> =>
+  path.filter(
+    (segment): segment is string | number =>
+      typeof segment === 'string' || typeof segment === 'number',
+  );
+
+/**
+ * Turn schema issues into validation issues located under `basePath`, the
+ * path of the value the schema checked.
+ */
+export const toValidationIssues = (
+  code: WorkflowValidationIssueCode,
+  schemaIssues: readonly SchemaIssue[],
+  basePath: Array<string | number> = [],
+): WorkflowValidationIssue[] =>
+  schemaIssues.map((issue) => ({
+    code,
+    message: `${[...basePath, issue.path.join('.') || '<root>'].join('.')}: ${issue.message}`,
+    path: [...basePath, ...toIssuePath(issue.path)],
+  }));

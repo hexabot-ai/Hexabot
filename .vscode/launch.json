@@ -10,8 +10,7 @@
       "restart": true,
       "sourceMaps": true,
       "localRoot": "${workspaceFolder}",
-      "remoteRoot": "/usr/src/app",
-      "protocol": "inspector"
+      "remoteRoot": "/app"
     }
   ]
 }

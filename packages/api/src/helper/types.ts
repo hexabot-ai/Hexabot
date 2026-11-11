@@ -6,9 +6,9 @@
 
 import { AnySetting, ExtensionSetting } from '@/setting/types';
 
-import BaseHelper from './lib/base-helper';
-import { BaseRagHelper } from './lib/base-rag-helper';
-import { BaseStorageHelper } from './lib/base-storage-helper';
+import type BaseHelper from './lib/base-helper';
+import type { BaseRagHelper } from './lib/base-rag-helper';
+import type { BaseStorageHelper } from './lib/base-storage-helper';
 
 export enum HelperType {
   STORAGE = 'storage',

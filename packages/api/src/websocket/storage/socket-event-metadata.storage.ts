@@ -8,18 +8,20 @@ import { Socket } from 'socket.io-client';
 
 import { IOIncomingMessage } from '../pipes/io-message.pipe';
 
+export type SocketEventMethod =
+  | 'get'
+  | 'post'
+  | 'put'
+  | 'patch'
+  | 'delete'
+  | 'options'
+  | 'head';
+
 type SocketEventMetadata = {
   path: string;
   method: (payload: IOIncomingMessage, client: Socket) => Promise<any>;
   propertyKey: string | symbol;
-  socketMethod:
-    | 'get'
-    | 'post'
-    | 'put'
-    | 'patch'
-    | 'delete'
-    | 'options'
-    | 'head';
+  socketMethod: SocketEventMethod;
 };
 
 export class SocketEventMetadataStorage {

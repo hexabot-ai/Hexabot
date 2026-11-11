@@ -14,7 +14,7 @@ import { EnumColumn } from '@/database/decorators/enum-column.decorator';
 import { BaseOrmEntity } from '@/database/entities/base.entity';
 import { AsRelation } from '@/utils/decorators/relation-ref.decorator';
 
-import { ThreadDto } from '../dto/thread.dto';
+import type { ThreadDto } from '../dto/thread.dto';
 
 import { SubscriberOrmEntity } from './subscriber.entity';
 

@@ -169,6 +169,53 @@ function parseRequestBody(
   return body;
 }
 
+/** Parses a JSON text body; a body that is not valid JSON is kept as text. */
+function parseJsonBody(
+  text: string,
+  onInvalidJson: (message: string) => void,
+): HttpRequestOutput['body'] {
+  try {
+    return JSON.parse(text.trim()) as HttpRequestOutput['body'];
+  } catch (error) {
+    onInvalidJson(
+      error instanceof Error ? error.message : 'Invalid JSON response',
+    );
+
+    return text;
+  }
+}
+
+/**
+ * Reads a response body: the text of a JSON response is parsed, binary data
+ * is read as UTF-8, and anything else is returned as received.
+ */
+function readResponseBody(
+  data: unknown,
+  contentType: string | undefined,
+  onInvalidJson: (message: string) => void,
+): HttpRequestOutput['body'] {
+  if (data === undefined || data === null) {
+    return '';
+  }
+
+  if (typeof data === 'string') {
+    return isJsonContentType(contentType) && data.trim()
+      ? parseJsonBody(data, onInvalidJson)
+      : data;
+  }
+
+  // Buffer is a Uint8Array.
+  if (data instanceof Uint8Array) {
+    return Buffer.from(data).toString('utf8');
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data).toString('utf8');
+  }
+
+  return data as HttpRequestOutput['body'];
+}
+
 export const HttpRequestAction = createAction<
   HttpRequestInput,
   HttpRequestOutput,
@@ -210,36 +257,6 @@ export const HttpRequestAction = createAction<
       const contentType = normalizeHeaderValue(
         response.headers?.['content-type'],
       );
-      const responseData = response.data;
-      let body: HttpRequestOutput['body'] = '';
-
-      if (responseData === undefined || responseData === null) {
-        body = '';
-      } else if (typeof responseData === 'string') {
-        const trimmed = responseData.trim();
-        if (isJsonContentType(contentType) && trimmed) {
-          try {
-            body = JSON.parse(trimmed) as HttpRequestOutput['body'];
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : 'Invalid JSON response';
-            logger.warn(`http_request JSON parse failed for ${input.url}`, {
-              error: message,
-            });
-            body = responseData;
-          }
-        } else {
-          body = responseData;
-        }
-      } else if (Buffer.isBuffer(responseData)) {
-        body = responseData.toString('utf8');
-      } else if (responseData instanceof ArrayBuffer) {
-        body = Buffer.from(responseData).toString('utf8');
-      } else if (responseData instanceof Uint8Array) {
-        body = Buffer.from(responseData).toString('utf8');
-      } else {
-        body = responseData as HttpRequestOutput['body'];
-      }
 
       return {
         ok: response.status >= 200 && response.status < 300,
@@ -247,8 +264,12 @@ export const HttpRequestAction = createAction<
         status_text: response.statusText ?? '',
         url: input.url,
         final_url: resolveFinalUrl(response) ?? input.url,
-        body,
-        content_type: contentType ?? undefined,
+        body: readResponseBody(response.data, contentType, (error) =>
+          logger.warn(`http_request JSON parse failed for ${input.url}`, {
+            error,
+          }),
+        ),
+        content_type: contentType,
         truncated: false,
       };
     } catch (error) {
@@ -266,7 +287,6 @@ export const HttpRequestAction = createAction<
         status: 0,
         status_text: 'network_error',
         url: input.url,
-        headers: {},
         body: '',
         truncated: false,
         error: message,

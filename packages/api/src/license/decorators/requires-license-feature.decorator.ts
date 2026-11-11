@@ -6,10 +6,11 @@
 
 import { SetMetadata, UseGuards, applyDecorators } from '@nestjs/common';
 
-import { LicenseFeatureGuard } from '../guards/license-feature.guard';
+import {
+  LICENSE_FEATURE_METADATA_KEY,
+  LicenseFeatureGuard,
+} from '../guards/license-feature.guard';
 import { LicenseFeature } from '../types/license-feature.enum';
-
-export const LICENSE_FEATURE_METADATA_KEY = 'license:features';
 
 export const RequiresLicenseFeature = (...features: LicenseFeature[]) =>
   applyDecorators(

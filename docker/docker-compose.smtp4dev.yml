@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   smtp4dev:
     image: rnwood/smtp4dev:v3

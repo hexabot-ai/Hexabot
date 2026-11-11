@@ -80,6 +80,18 @@ type WebSocketData = Socket['data'] & {
   webMessageQueue?: Promise<void>;
 };
 
+type WebInboundEvent<N extends ChannelName> =
+  | BaseWebInboundEvent<N>
+  | WebMessageInboundEvent<N, Web.InboundMessage>;
+
+/** Answer that ends a request before all its events are handled. */
+type WebEventRejection = { status: number; err: string };
+
+const BAD_REQUEST: WebEventRejection = {
+  status: 400,
+  err: 'Web Channel Handler : Bad Request!',
+};
+
 /**
  * Base handler for the Socket.IO-backed "web" channel.
  *
@@ -457,23 +469,11 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
   ): Promise<void> {
     if (!req.body) {
       this.logger.debug('Empty body');
-      res.status(400).json({ err: 'Web Channel Handler : Bad Request!' });
 
-      return;
+      return this.reject(res, BAD_REQUEST);
     }
 
-    if (
-      typeof req.body === 'object' &&
-      req.body !== null &&
-      'data' in req.body
-    ) {
-      const payload = req.body as { data?: unknown };
-      payload.data =
-        typeof payload.data === 'string'
-          ? JSON.parse(payload.data)
-          : payload.data;
-    }
-
+    this.parseEventData(req.body);
     const profile = await this.sessionService.validateSession(
       req,
       res,
@@ -481,29 +481,9 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
     );
     if (!profile) return;
 
-    const channelAttrs = this.getChannelAttributes(req);
-    let events: Array<
-      BaseWebInboundEvent<N> | WebMessageInboundEvent<N, Web.InboundMessage>
-    >;
-    try {
-      events = this.inboundEventDecoder.createEvents(
-        req.body,
-        channelAttrs,
-      ) as Array<
-        BaseWebInboundEvent<N> | WebMessageInboundEvent<N, Web.InboundMessage>
-      >;
-    } catch (err) {
-      this.logger.warn('Invalid event payload', err);
-
-      return void res
-        .status(400)
-        .json({ err: 'Web Channel Handler : Bad Request!' });
-    }
-
+    const events = this.decodeEvents(req);
     if (!events.length) {
-      return void res
-        .status(400)
-        .json({ err: 'Web Channel Handler : Bad Request!' });
+      return this.reject(res, BAD_REQUEST);
     }
 
     const explicitThreadId =
@@ -519,97 +499,175 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
       event.setInitiator(profile);
       event.setWorkflowId(workflowId);
 
-      if (event.getEventType() === StdEventType.message) {
-        const messageEvent = event as WebMessageInboundEvent<
-          N,
-          Web.InboundMessage
-        >;
-
-        if (messageEvent instanceof AttachmentMessageInboundEvent) {
-          try {
-            const attachment = await this.handleWsUpload(req);
-            if (attachment) {
-              messageEvent.setUploadedAttachment(attachment);
-              messageEvent.setUploadedRawData(
-                AttachmentOrmEntity.getTypeByMime(attachment.type),
-                await this.channelAttachmentService.getPublicUrl(
-                  source.id,
-                  attachment,
-                ),
-              );
-            }
-          } catch (err) {
-            this.logger.warn('Unable to upload file ', err);
-
-            return void res
-              .status(403)
-              .json({ err: 'Web Channel Handler : File upload failed!' });
-          }
-        }
-
-        if (messageEvent.isSyncFromChatbot()) {
-          const thread = await this.sessionService.resolveThreadForHistory(
-            req,
-            profile.id,
-          );
-          if (!thread) {
-            return void res.status(409).json({
-              err: 'Web Channel Handler : No thread available before first user message',
-            });
-          }
-          messageEvent.setThreadId(thread.id);
-          if (req.session.web) req.session.web.threadId = thread.id;
-
-          const sentMessage: MessageCreateDto = {
-            mid: messageEvent.getId(),
-            message: {
-              type: OutgoingMessageType.text,
-              data: { text: messageEvent.getText() },
-            },
-            recipient: profile.id,
-            thread: thread.id,
-            read: true,
-            delivery: true,
-          };
-          this.channelEventBus.emitSent(sentMessage);
-          continue;
-        }
-
-        messageEvent.setMessageId(this.generateId());
-        if (profile.foreignId) {
-          messageEvent.setAuthorForeignId(profile.foreignId);
-        }
-        messageEvent.setCreatedAt(new Date());
-        // Resolve the thread before acknowledging the socket request so the
-        // client receives a stable thread_id, then dispatch chatbot work later.
-        const thread = await this.sessionService.resolveThreadForIncoming(
-          req,
-          profile.id,
-          {
-            explicitThreadId: messageEvent.getThreadId(),
-            inactivityHours: this.sessionService.resolveInactivityHours(
-              source.settings,
-            ),
-            sourceId: source.id,
-          },
-        );
-        messageEvent.setThreadId(thread.id);
-        messageEvent.setThreadIdOnRaw(thread.id);
-
-        this.broadcast(profile, StdEventType.message, messageEvent.getRaw());
-        this.enqueueMessageDispatch(req, messageEvent);
-
+      if (event.getEventType() !== StdEventType.message) {
+        this.broadcastStatusEvent(event, profile);
         continue;
       }
 
-      const type = event.getEventType();
-      const threadId = event.getThreadId();
-      if (threadId) event.setThreadIdOnRaw(threadId);
-      this.broadcast(profile, type, event.getRaw());
-      this.channelEventBus.emitStatusEvent(event);
+      if (event instanceof AttachmentMessageInboundEvent) {
+        const rejection = await this.attachUploadedFile(req, event, source);
+        if (rejection) return this.reject(res, rejection);
+      }
+
+      const messageEvent = event as WebMessageInboundEvent<
+        N,
+        Web.InboundMessage
+      >;
+
+      if (messageEvent.isSyncFromChatbot()) {
+        const rejection = await this.syncChatbotMessage(
+          req,
+          messageEvent,
+          profile,
+        );
+        if (rejection) return this.reject(res, rejection);
+        continue;
+      }
+
+      await this.receiveMessage(req, messageEvent, source, profile);
+      // Queued right before the request is acknowledged, so the chatbot
+      // starts on it only once the client has its answer.
+      this.enqueueMessageDispatch(req, messageEvent);
     }
 
     res.status(200).json(responseBody);
+  }
+
+  private reject(
+    res: Response | SocketResponse,
+    { status, err }: WebEventRejection,
+  ): void {
+    res.status(status).json({ err });
+  }
+
+  /** Parses the event data sent as a JSON string. */
+  private parseEventData(body: unknown): void {
+    if (typeof body === 'object' && body !== null && 'data' in body) {
+      const payload = body as { data?: unknown };
+      payload.data =
+        typeof payload.data === 'string'
+          ? JSON.parse(payload.data)
+          : payload.data;
+    }
+  }
+
+  /** @returns The events of the request, none when its payload is invalid. */
+  private decodeEvents(req: SocketRequest): WebInboundEvent<N>[] {
+    const channelAttrs = this.getChannelAttributes(req);
+    try {
+      return this.inboundEventDecoder.createEvents(
+        req.body,
+        channelAttrs,
+      ) as WebInboundEvent<N>[];
+    } catch (err) {
+      this.logger.warn('Invalid event payload', err);
+
+      return [];
+    }
+  }
+
+  private broadcastStatusEvent(
+    event: WebInboundEvent<N>,
+    profile: Subscriber,
+  ): void {
+    const threadId = event.getThreadId();
+    if (threadId) event.setThreadIdOnRaw(threadId);
+    this.broadcast(profile, event.getEventType(), event.getRaw());
+    this.channelEventBus.emitStatusEvent(event);
+  }
+
+  private async attachUploadedFile(
+    req: SocketRequest,
+    event: AttachmentMessageInboundEvent<N>,
+    source: Source,
+  ): Promise<WebEventRejection | undefined> {
+    try {
+      const attachment = await this.handleWsUpload(req);
+      if (attachment) {
+        event.setUploadedAttachment(attachment);
+        event.setUploadedRawData(
+          AttachmentOrmEntity.getTypeByMime(attachment.type),
+          await this.channelAttachmentService.getPublicUrl(
+            source.id,
+            attachment,
+          ),
+        );
+      }
+    } catch (err) {
+      this.logger.warn('Unable to upload file ', err);
+
+      return { status: 403, err: 'Web Channel Handler : File upload failed!' };
+    }
+  }
+
+  /**
+   * Records a message the chatbot sent, synced back by the widget, in the
+   * thread of the conversation.
+   */
+  private async syncChatbotMessage(
+    req: SocketRequest,
+    event: WebMessageInboundEvent<N, Web.InboundMessage>,
+    profile: Subscriber,
+  ): Promise<WebEventRejection | undefined> {
+    const thread = await this.sessionService.resolveThreadForHistory(
+      req,
+      profile.id,
+    );
+    if (!thread) {
+      return {
+        status: 409,
+        err: 'Web Channel Handler : No thread available before first user message',
+      };
+    }
+    event.setThreadId(thread.id);
+    if (req.session.web) req.session.web.threadId = thread.id;
+
+    const sentMessage: MessageCreateDto = {
+      mid: event.getId(),
+      message: {
+        type: OutgoingMessageType.text,
+        data: { text: event.getText() },
+      },
+      recipient: profile.id,
+      thread: thread.id,
+      read: true,
+      delivery: true,
+    };
+    this.channelEventBus.emitSent(sentMessage);
+  }
+
+  /**
+   * Places a message of the subscriber in its thread and broadcasts it to the
+   * subscriber's sockets.
+   */
+  private async receiveMessage(
+    req: SocketRequest,
+    event: WebMessageInboundEvent<N, Web.InboundMessage>,
+    source: Source,
+    profile: Subscriber,
+  ): Promise<void> {
+    event.setMessageId(this.generateId());
+    if (profile.foreignId) {
+      event.setAuthorForeignId(profile.foreignId);
+    }
+    event.setCreatedAt(new Date());
+    // Resolve the thread before acknowledging the socket request so the
+    // client receives a stable thread_id, then dispatch chatbot work later.
+    const thread = await this.sessionService.resolveThreadForIncoming(
+      req,
+      profile.id,
+      {
+        explicitThreadId: event.getThreadId(),
+        inactivityHours: this.sessionService.resolveInactivityHours(
+          source.settings,
+        ),
+        sourceId: source.id,
+      },
+    );
+    event.setThreadId(thread.id);
+    event.setThreadIdOnRaw(thread.id);
+
+    this.broadcast(profile, StdEventType.message, event.getRaw());
   }
 
   protected async processSocketGet(

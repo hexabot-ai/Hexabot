@@ -16,7 +16,7 @@ import {
   RuntimeBindingKind,
   RuntimeBindings,
 } from '@/bindings/runtime-bindings';
-import { ConversationalWorkflowContext } from '@/workflow/contexts/conversational-workflow.context';
+import type { ConversationalWorkflowContext } from '@/workflow/contexts/conversational-workflow.context';
 import { WorkflowType } from '@/workflow/types';
 
 export type ActionName = `${string}_${string}`;
