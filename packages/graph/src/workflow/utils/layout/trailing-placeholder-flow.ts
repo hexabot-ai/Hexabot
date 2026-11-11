@@ -22,6 +22,7 @@ import {
   withFlowCoordinate,
   withSpreadCoordinate,
   type LayoutContext,
+  type NodePosition,
 } from "./geometry";
 import { buildAttachmentMaps, isAttachmentEdge } from "./graph-maps";
 
@@ -67,18 +68,17 @@ export const tightenTrailingPlaceholders = (
     }
   });
 
+  const getDimensions = (node: GraphNode) =>
+    getWorkflowNodeDimensions(node.type, ctx.config);
+  const getCardFlowEnd = (node: GraphNode, position = node.position) =>
+    getFlowCoordinate(position, isVertical) +
+    getFlowSize(getDimensions(node), isVertical);
   // Use the source's far edge, or the future group overlay's padded far edge.
   const sourceFlowEnd = (sourceId: string): number | undefined => {
     const sourceNode = nodesById.get(sourceId);
 
     if (sourceNode) {
-      return (
-        getFlowCoordinate(sourceNode.position, isVertical) +
-        getFlowSize(
-          getWorkflowNodeDimensions(sourceNode.type, ctx.config),
-          isVertical,
-        )
-      );
+      return getCardFlowEnd(sourceNode);
     }
 
     const group = groups.get(sourceId);
@@ -96,79 +96,90 @@ export const tightenTrailingPlaceholders = (
     }
 
     const bounds = getNodesBounds(memberNodes);
-    const padding = getGroupPadding(group, ctx);
 
     return (
       (isVertical ? bounds.y + bounds.height : bounds.x + bounds.width) +
-      padding / 2
+      getGroupPadding(group, ctx) / 2
     );
   };
-  const tightenedPositions = new Map<string, GraphNode["position"]>();
+  // Centers `node` on the spread axis of `card`.
+  const centerOnCard = (
+    position: NodePosition,
+    node: GraphNode,
+    card: GraphNode,
+  ): NodePosition =>
+    withSpreadCoordinate(
+      position,
+      isVertical,
+      getSpreadCoordinate(card.position, isVertical) +
+        (getSpreadSize(getDimensions(card), isVertical) -
+          getSpreadSize(getDimensions(node), isVertical)) /
+          2,
+    );
+  // The single step or group feeding a trailing placeholder. Join
+  // placeholders (several visible sources) keep their ELK position, and
+  // empty-branch placeholders (fed by their operator) are placed by
+  // alignEmptyBranchPlaceholders.
+  const getTrailingSourceId = (placeholder: GraphNode): string | undefined => {
+    const sources = visibleSourcesByTarget.get(placeholder.id) ?? [];
 
-  nodes.forEach((node) => {
-    if (node.type !== ENodeType.BRANCH_PLACEHOLDER) {
+    return sources.length === 1 &&
+      nodesById.get(sources[0])?.type !== ENodeType.OPERATOR
+      ? sources[0]
+      : undefined;
+  };
+  const getTaskWithAttachments = (nodeId: string): GraphNode | undefined => {
+    const node = nodesById.get(nodeId);
+
+    return node?.type === ENodeType.TASK &&
+      attachmentChildrenByParent.has(nodeId)
+      ? node
+      : undefined;
+  };
+  // A trailing placeholder sits FLOW_LAYER_GAP after its source; after a task
+  // with attachments it is also centered on the task card, not on the
+  // attachment bundle.
+  const getTightenedPlaceholderPosition = (
+    placeholder: GraphNode,
+  ): NodePosition | undefined => {
+    const sourceId = getTrailingSourceId(placeholder);
+
+    if (sourceId === undefined) {
       return;
     }
 
-    const sources = visibleSourcesByTarget.get(node.id) ?? [];
-
-    if (
-      sources.length !== 1 ||
-      nodesById.get(sources[0])?.type === ENodeType.OPERATOR
-    ) {
-      return;
-    }
-
-    const flowEnd = sourceFlowEnd(sources[0]);
+    const flowEnd = sourceFlowEnd(sourceId);
 
     if (flowEnd === undefined) {
       return;
     }
 
     const targetFlow = flowEnd + FLOW_LAYER_GAP;
-    const currentFlow = getFlowCoordinate(node.position, isVertical);
-    const sourceNode = nodesById.get(sources[0]);
-    const shouldAlignSpread =
-      sourceNode?.type === ENodeType.TASK &&
-      attachmentChildrenByParent.has(sources[0]);
+    const card = getTaskWithAttachments(sourceId);
+    const isAtTargetFlow =
+      Math.abs(
+        getFlowCoordinate(placeholder.position, isVertical) - targetFlow,
+      ) < 0.5;
 
-    if (Math.abs(currentFlow - targetFlow) < 0.5 && !shouldAlignSpread) {
+    if (isAtTargetFlow && !card) {
       return;
     }
 
-    let position =
-      Math.abs(currentFlow - targetFlow) < 0.5
-        ? node.position
-        : withFlowCoordinate(node.position, isVertical, targetFlow);
+    const position = isAtTargetFlow
+      ? placeholder.position
+      : withFlowCoordinate(placeholder.position, isVertical, targetFlow);
 
-    if (shouldAlignSpread) {
-      const sourceSize = getSpreadSize(
-        getWorkflowNodeDimensions(sourceNode.type, ctx.config),
-        isVertical,
-      );
-      const placeholderSize = getSpreadSize(
-        getWorkflowNodeDimensions(node.type, ctx.config),
-        isVertical,
-      );
-
-      position = withSpreadCoordinate(
-        position,
-        isVertical,
-        getSpreadCoordinate(sourceNode.position, isVertical) +
-          (sourceSize - placeholderSize) / 2,
-      );
-    }
-
-    tightenedPositions.set(node.id, position);
-  });
-
-  nodes.forEach((node) => {
-    if (node.type !== ENodeType.INDICATOR) {
-      return;
-    }
-
-    const sources = (directSourcesByTarget.get(node.id) ?? []).filter((id) =>
-      nodesById.has(id),
+    return card ? centerOnCard(position, placeholder, card) : position;
+  };
+  // Stop is pulled back to FLOW_LAYER_GAP after the furthest of its sources,
+  // at their tightened positions; alignBranchFlowOrigins handles pushing it
+  // further.
+  const getPulledIndicatorPosition = (
+    indicator: GraphNode,
+    tightenedPositions: Map<string, NodePosition>,
+  ): NodePosition | undefined => {
+    const sources = (directSourcesByTarget.get(indicator.id) ?? []).filter(
+      (id) => nodesById.has(id),
     );
 
     if (!sources.length) {
@@ -176,22 +187,12 @@ export const tightenTrailingPlaceholders = (
     }
 
     const maxSourceEnd = sources.reduce((max, sourceId) => {
-      const pos =
-        tightenedPositions.get(sourceId) ?? nodesById.get(sourceId)?.position;
-      const srcNode = nodesById.get(sourceId);
+      const sourceNode = nodesById.get(sourceId);
+      const position = tightenedPositions.get(sourceId) ?? sourceNode?.position;
 
-      if (!pos || !srcNode) {
-        return max;
-      }
-
-      return Math.max(
-        max,
-        getFlowCoordinate(pos, isVertical) +
-          getFlowSize(
-            getWorkflowNodeDimensions(srcNode.type, ctx.config),
-            isVertical,
-          ),
-      );
+      return position && sourceNode
+        ? Math.max(max, getCardFlowEnd(sourceNode, position))
+        : max;
     }, -Infinity);
 
     if (!isFinite(maxSourceEnd)) {
@@ -199,14 +200,33 @@ export const tightenTrailingPlaceholders = (
     }
 
     const targetFlow = maxSourceEnd + FLOW_LAYER_GAP;
-    const currentFlow = getFlowCoordinate(node.position, isVertical);
 
-    // Only pull Stop left; alignBranchFlowOrigins handles rightward pushes.
-    if (targetFlow < currentFlow - 0.5) {
-      tightenedPositions.set(
-        node.id,
-        withFlowCoordinate(node.position, isVertical, targetFlow),
-      );
+    return targetFlow < getFlowCoordinate(indicator.position, isVertical) - 0.5
+      ? withFlowCoordinate(indicator.position, isVertical, targetFlow)
+      : undefined;
+  };
+  const tightenedPositions = new Map<string, NodePosition>();
+
+  nodes.forEach((node) => {
+    if (node.type !== ENodeType.BRANCH_PLACEHOLDER) {
+      return;
+    }
+
+    const position = getTightenedPlaceholderPosition(node);
+
+    if (position) {
+      tightenedPositions.set(node.id, position);
+    }
+  });
+  nodes.forEach((node) => {
+    if (node.type !== ENodeType.INDICATOR) {
+      return;
+    }
+
+    const position = getPulledIndicatorPosition(node, tightenedPositions);
+
+    if (position) {
+      tightenedPositions.set(node.id, position);
     }
   });
 
