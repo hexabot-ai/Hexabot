@@ -71,9 +71,12 @@ Related runtime hooks:
   - `"./workflow.css": "./src/workflow/styles/index.css"`
 
 ## Testing workflows
-- Test runner: Vitest (`node`) configured in `packages/graph/vite.config.mts`.
+- Test runner: Vitest (`node`) configured in `packages/graph/vite.config.mts`; component tests opt into jsdom with a `// @vitest-environment jsdom` docblock.
 - Package tests command: `pnpm --filter @hexabot-ai/graph run test`.
+- Test helpers live in `packages/graph/src/test/` (left out of the build): `installXyflowDom` gives jsdom the layout APIs xyflow needs, `layout-fixtures.ts` holds the layout regression corpus.
 - High-value suites:
+  - `packages/graph/src/workflow/utils/workflow-layout.regression.test.ts` (snapshot of the builder and layout output for a corpus of workflows, both directions). It fails on any layout change: when the change is intended, run the tests with `-u` and review the snapshot diff.
+  - `packages/graph/src/workflow/components/WorkflowGraph.test.tsx` (rendered graph in jsdom: overlays, insert menus, delete/add/see-definition buttons and their payloads, color mode, viewport focus and persistence).
   - `packages/graph/src/workflow/utils/workflow-node.utils.test.ts` (graph-building and branch/group wiring behavior).
   - `packages/graph/src/workflow/utils/workflow-selection.utils.test.ts` (selection snapshot stability and equality checks).
   - `packages/graph/src/workflow/utils/handle.utils.test.ts` (port/handle rule parity and conditional/attachment handle metadata).
