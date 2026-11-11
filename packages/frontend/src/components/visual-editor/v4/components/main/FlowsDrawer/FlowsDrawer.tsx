@@ -75,13 +75,6 @@ const maxDrawerWidth = 920;
 const drawerWidthStorageKey = "hexabot.visual_editor.drawer_width";
 
 export const drawerIsOpenStorage = "hexabot.visual_editor.drawer_is_open";
-const openPricing = () => {
-  window.open(
-    "https://hexabot.ai/pricing/#pricing",
-    "_blank",
-    "noopener,noreferrer",
-  );
-};
 const flowActionButtonSx = { minWidth: 108 };
 
 export const FlowsDrawer = ({
@@ -449,7 +442,6 @@ export const FlowsDrawer = ({
                   <LicenseGate
                     requiredPlan={workflowUpgradeTargetPlan}
                     reasonText={t("message.workflows_quota_reached")}
-                    onUpgrade={openPricing}
                     disableChildWhenBlocked={false}
                   >
                     <Button
@@ -500,7 +492,6 @@ export const FlowsDrawer = ({
               <LicenseGate
                 requiredPlan={workflowUpgradeTargetPlan}
                 reasonText={t("message.workflows_quota_reached")}
-                onUpgrade={openPricing}
                 disableChildWhenBlocked={false}
               >
                 <IconButton size="small" onClick={onNew}>

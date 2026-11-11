@@ -33,7 +33,8 @@ import { ILicense, LicensePlan } from "@/types/user.types";
 export type PaidPlan = Exclude<LicensePlan, "unknown">;
 
 const PLAN_ORDER = ["unknown", "starter", "pro", "unlimited"] as const;
-const PRICING_URL = "https://hexabot.ai/pricing/#pricing";
+
+export const PRICING_URL = "https://hexabot.ai/pricing/#pricing";
 const DEFAULT_BENEFIT_KEYS: Record<PaidPlan, TTranslationKeys[]> = {
   starter: [
     "message.license_gate_benefits_starter_1",
@@ -116,7 +117,6 @@ export interface LicenseGateProps {
   requiredPlan: PaidPlan;
   children: ReactElement;
   reasonText?: string;
-  onUpgrade?: () => void;
   showInlineLabel?: boolean;
   disableChildWhenBlocked?: boolean;
 }
@@ -135,7 +135,6 @@ const LicenseGate = ({
   requiredPlan,
   children,
   reasonText,
-  onUpgrade,
   showInlineLabel = false,
   disableChildWhenBlocked = true,
 }: LicenseGateProps) => {
@@ -322,12 +321,6 @@ const LicenseGate = ({
               endIcon={<ArrowRight size={16} />}
               onClick={() => {
                 setOpen(false);
-                if (onUpgrade) {
-                  onUpgrade();
-
-                  return;
-                }
-
                 window.open(PRICING_URL, "_blank", "noopener,noreferrer");
               }}
             >

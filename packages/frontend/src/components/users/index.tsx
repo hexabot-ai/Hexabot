@@ -45,13 +45,6 @@ import { CreateUserFormDialog } from "./CreateUserFormDialog";
 import { EditUserFormDialog } from "./EditUserFormDialog";
 
 const REQUIRED_PLAN: PaidPlan = "pro";
-const openPricing = () => {
-  window.open(
-    "https://hexabot.ai/pricing/#pricing",
-    "_blank",
-    "noopener,noreferrer",
-  );
-};
 const UsersLockedView = () => {
   const { t } = useTranslate();
   const router = useAppRouter();
@@ -79,7 +72,7 @@ const UsersLockedView = () => {
             spacing={1.25}
             sx={{ flexWrap: "wrap", alignItems: "center" }}
           >
-            <LicenseGate requiredPlan={REQUIRED_PLAN} onUpgrade={openPricing}>
+            <LicenseGate requiredPlan={REQUIRED_PLAN}>
               <Button variant="outlined">
                 {t("button.manage_users")}
                 <LockedFeatureLabel requiredPlan={REQUIRED_PLAN} />
@@ -122,7 +115,6 @@ const UsersDataGrid = () => {
       <LicenseGate
         requiredPlan={usersUpgradeTargetPlan}
         reasonText={t("message.users_quota_reached")}
-        onUpgrade={openPricing}
         disableChildWhenBlocked={false}
       >
         <Button
