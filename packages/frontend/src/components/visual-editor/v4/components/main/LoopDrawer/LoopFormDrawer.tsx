@@ -4,12 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import {
-  StepType,
-  Workflow as WorkflowHelper,
-  type FlowStep,
-  type JsonValue,
-} from "@hexabot-ai/agentic";
+import { StepType, Workflow as WorkflowHelper } from "@hexabot-ai/agentic";
 import {
   Box,
   FormControlLabel,
@@ -33,92 +28,25 @@ import {
   withStepDrawerLayout,
 } from "../StepDrawer/withStepDrawerLayout";
 
-const DEFAULT_FOR_EACH_ITEM = "item";
-const DEFAULT_FOR_EACH_IN = "=[]";
-const DEFAULT_LOOP_TYPE = "for_each";
-const DEFAULT_WHILE_CONDITION = "=true";
-const DEFAULT_ACCUMULATE_AS = "items";
-const DEFAULT_ACCUMULATE_INITIAL = "[]";
-const DEFAULT_ACCUMULATE_MERGE = "=$append($accumulator, [$iteration.item])";
+import {
+  applyLoopFieldChange,
+  buildLoopStep,
+  getLoopFormErrors,
+  getLoopFormValues,
+  isLoopStep,
+  isLoopType,
+  type LoopDiscriminator,
+  type LoopFormErrorCode,
+  type LoopFormErrorField,
+  type LoopFormValues,
+} from "./loop-form.utils";
 
-type LoopStep = Extract<FlowStep, { loop: unknown }>;
-type LoopDiscriminator = "for_each" | "while";
 type LoopTypeOption = {
   description: string;
   label: string;
   value: LoopDiscriminator;
 };
-type LoopFormValues = {
-  loopType: LoopDiscriminator;
-  name: string;
-  description: string;
-  forEachItem: string;
-  forEachIn: string;
-  whileCondition: string;
-  maxConcurrency: string;
-  until: string;
-  accumulateEnabled: boolean;
-  accumulateAs: string;
-  accumulateInitial: string;
-  accumulateMerge: string;
-};
-type LoopFormErrors = {
-  forEachItem?: string;
-  forEachIn?: string;
-  whileCondition?: string;
-  maxConcurrency?: string;
-  until?: string;
-  accumulateAs?: string;
-  accumulateInitial?: string;
-  accumulateMerge?: string;
-};
-
-const isLoopStep = (step: unknown): step is LoopStep => {
-  if (!step || typeof step !== "object" || !("loop" in step)) {
-    return false;
-  }
-
-  const loop = (step as { loop?: { steps?: unknown } }).loop;
-
-  return Boolean(loop && Array.isArray(loop.steps));
-};
-const parseJsonValue = (value: string): JsonValue | undefined => {
-  try {
-    return JSON.parse(value) as JsonValue;
-  } catch {
-    return undefined;
-  }
-};
-const isLoopType = (value: string): value is LoopDiscriminator =>
-  value === "for_each" || value === "while";
-const getLoopFormValues = (step?: LoopStep): LoopFormValues => {
-  const loop = step?.loop;
-  const loopType = loop?.type ?? DEFAULT_LOOP_TYPE;
-  const forEach = loop?.type === "for_each" ? loop.for_each : undefined;
-  const whileCondition = loop?.type === "while" ? loop.while : undefined;
-  const until = loop?.type === "for_each" ? loop.until : undefined;
-  const maxConcurrency =
-    loop?.type === "for_each" ? loop.max_concurrency : undefined;
-  const accumulate = loop?.accumulate;
-
-  return {
-    loopType,
-    name: loop?.name ?? "",
-    description: loop?.description ?? "",
-    forEachItem: forEach?.item ?? DEFAULT_FOR_EACH_ITEM,
-    forEachIn: forEach?.in ?? DEFAULT_FOR_EACH_IN,
-    whileCondition: whileCondition ?? DEFAULT_WHILE_CONDITION,
-    maxConcurrency:
-      typeof maxConcurrency === "number" ? String(maxConcurrency) : "",
-    until: until ?? "",
-    accumulateEnabled: Boolean(accumulate),
-    accumulateAs: accumulate?.as ?? DEFAULT_ACCUMULATE_AS,
-    accumulateInitial: accumulate
-      ? JSON.stringify(accumulate.initial, null, 2)
-      : DEFAULT_ACCUMULATE_INITIAL,
-    accumulateMerge: accumulate?.merge ?? DEFAULT_ACCUMULATE_MERGE,
-  };
-};
+type LoopFormErrors = Partial<Record<LoopFormErrorField, string>>;
 
 type LoopFormDrawerContentProps = {
   isOpen: boolean;
@@ -357,118 +285,27 @@ export const LoopFormDrawer = () => {
     setFormValues(getLoopFormValues(selectedStep));
   }, [open, selectedStep, selectedNodeId]);
 
-  const normalizedValues = useMemo(
-    () => ({
-      loopType: formValues.loopType,
-      name: formValues.name.trim(),
-      description: formValues.description.trim(),
-      forEachItem: formValues.forEachItem.trim(),
-      forEachIn: formValues.forEachIn.trim(),
-      whileCondition: formValues.whileCondition.trim(),
-      maxConcurrency: formValues.maxConcurrency.trim(),
-      until: formValues.until.trim(),
-      accumulateAs: formValues.accumulateAs.trim(),
-      accumulateInitial: formValues.accumulateInitial.trim(),
-      accumulateMerge: formValues.accumulateMerge.trim(),
-    }),
-    [formValues],
-  );
-  const parsedMaxConcurrency = useMemo(() => {
-    if (!normalizedValues.maxConcurrency) {
-      return undefined;
-    }
-
-    return Number(normalizedValues.maxConcurrency);
-  }, [normalizedValues.maxConcurrency]);
-  const parsedAccumulateInitial = useMemo(() => {
-    if (!formValues.accumulateEnabled) {
-      return undefined;
-    }
-
-    return parseJsonValue(normalizedValues.accumulateInitial);
-  }, [formValues.accumulateEnabled, normalizedValues.accumulateInitial]);
+  const errorCodes = useMemo(() => getLoopFormErrors(formValues), [formValues]);
   const errors = useMemo<LoopFormErrors>(() => {
-    const requiredErrorLabel = t(
-      "visual_editor.loop_drawer.form.errors.required",
-    );
-    const jsonataRequiredErrorLabel = t(
-      "visual_editor.loop_drawer.form.errors.jsonata_required",
-    );
-    const jsonInvalidErrorLabel = t(
-      "visual_editor.loop_drawer.form.errors.json_invalid",
-    );
-    const maxConcurrencyErrorLabel = t(
-      "visual_editor.loop_drawer.form.errors.positive_integer",
-    );
-    const hasInvalidMaxConcurrency =
-      normalizedValues.loopType === "for_each" &&
-      normalizedValues.maxConcurrency !== "" &&
-      (parsedMaxConcurrency === undefined ||
-        !Number.isInteger(parsedMaxConcurrency) ||
-        parsedMaxConcurrency <= 0);
-    const hasInvalidUntil =
-      normalizedValues.loopType === "for_each" &&
-      Boolean(normalizedValues.until) &&
-      !normalizedValues.until.startsWith("=");
-    const hasInvalidWhileCondition =
-      normalizedValues.loopType === "while" &&
-      (!normalizedValues.whileCondition ||
-        !normalizedValues.whileCondition.startsWith("="));
-    const hasInvalidAccumulateMerge =
-      formValues.accumulateEnabled &&
-      (!normalizedValues.accumulateMerge ||
-        !normalizedValues.accumulateMerge.startsWith("="));
-    const hasInvalidAccumulateAs =
-      formValues.accumulateEnabled && !normalizedValues.accumulateAs;
-    const hasInvalidAccumulateInitial =
-      formValues.accumulateEnabled && parsedAccumulateInitial === undefined;
-
-    return {
-      forEachItem:
-        normalizedValues.loopType === "for_each" &&
-        !normalizedValues.forEachItem
-          ? requiredErrorLabel
-          : undefined,
-      forEachIn:
-        normalizedValues.loopType === "for_each"
-          ? !normalizedValues.forEachIn
-            ? requiredErrorLabel
-            : !normalizedValues.forEachIn.startsWith("=")
-              ? jsonataRequiredErrorLabel
-              : undefined
-          : undefined,
-      whileCondition: hasInvalidWhileCondition
-        ? !normalizedValues.whileCondition
-          ? requiredErrorLabel
-          : jsonataRequiredErrorLabel
-        : undefined,
-      maxConcurrency: hasInvalidMaxConcurrency
-        ? maxConcurrencyErrorLabel
-        : undefined,
-      until: hasInvalidUntil ? jsonataRequiredErrorLabel : undefined,
-      accumulateAs: hasInvalidAccumulateAs ? requiredErrorLabel : undefined,
-      accumulateInitial: hasInvalidAccumulateInitial
-        ? !normalizedValues.accumulateInitial
-          ? requiredErrorLabel
-          : jsonInvalidErrorLabel
-        : undefined,
-      accumulateMerge: hasInvalidAccumulateMerge
-        ? !normalizedValues.accumulateMerge
-          ? requiredErrorLabel
-          : jsonataRequiredErrorLabel
-        : undefined,
+    const labels: Record<LoopFormErrorCode, string> = {
+      required: t("visual_editor.loop_drawer.form.errors.required"),
+      jsonata_required: t(
+        "visual_editor.loop_drawer.form.errors.jsonata_required",
+      ),
+      json_invalid: t("visual_editor.loop_drawer.form.errors.json_invalid"),
+      positive_integer: t(
+        "visual_editor.loop_drawer.form.errors.positive_integer",
+      ),
     };
-  }, [
-    formValues.accumulateEnabled,
-    normalizedValues,
-    parsedAccumulateInitial,
-    parsedMaxConcurrency,
-    t,
-  ]);
-  const hasInvalidForm = useMemo(
-    () => Object.values(errors).some(Boolean),
-    [errors],
-  );
+
+    return Object.fromEntries(
+      Object.entries(errorCodes).map(([field, code]) => [
+        field,
+        code ? labels[code] : undefined,
+      ]),
+    );
+  }, [errorCodes, t]);
+  const hasInvalidForm = Object.values(errorCodes).some(Boolean);
   const loopTypeOptions: LoopTypeOption[] = useMemo(
     () => [
       {
@@ -490,104 +327,20 @@ export const LoopFormDrawer = () => {
     field: keyof LoopFormValues,
     value: string | boolean,
   ) => {
-    setFormValues((prev) => {
-      if (field === "loopType") {
-        const nextLoopType = String(value);
-
-        if (!isLoopType(nextLoopType)) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          loopType: nextLoopType,
-          whileCondition:
-            nextLoopType === "while" && !prev.whileCondition.trim()
-              ? DEFAULT_WHILE_CONDITION
-              : prev.whileCondition,
-        };
-      }
-
-      if (field === "accumulateEnabled") {
-        const enabled = Boolean(value);
-
-        if (!enabled) {
-          return { ...prev, accumulateEnabled: false };
-        }
-
-        return {
-          ...prev,
-          accumulateEnabled: true,
-          accumulateAs: prev.accumulateAs.trim()
-            ? prev.accumulateAs
-            : DEFAULT_ACCUMULATE_AS,
-          accumulateInitial: prev.accumulateInitial.trim()
-            ? prev.accumulateInitial
-            : DEFAULT_ACCUMULATE_INITIAL,
-          accumulateMerge: prev.accumulateMerge.trim()
-            ? prev.accumulateMerge
-            : DEFAULT_ACCUMULATE_MERGE,
-        };
-      }
-
-      return {
-        ...prev,
-        [field]: String(value),
-      };
-    });
+    setFormValues((prev) => applyLoopFieldChange(prev, field, value));
   };
   const handleClose = useStepDrawerClose();
   const handleSave = () => {
-    if (
-      !definition ||
-      !stepPath ||
-      !selectedStep ||
-      hasInvalidForm ||
-      (formValues.accumulateEnabled && parsedAccumulateInitial === undefined)
-    ) {
+    if (!definition || !stepPath || !selectedStep || hasInvalidForm) {
       return;
     }
-    const nextAccumulate =
-      formValues.accumulateEnabled && parsedAccumulateInitial !== undefined
-        ? {
-            as: normalizedValues.accumulateAs,
-            initial: parsedAccumulateInitial,
-            merge: normalizedValues.accumulateMerge,
-          }
-        : undefined;
-    const commonLoopFields = {
-      ...(normalizedValues.name ? { name: normalizedValues.name } : {}),
-      ...(normalizedValues.description
-        ? { description: normalizedValues.description }
-        : {}),
-      ...(nextAccumulate ? { accumulate: nextAccumulate } : {}),
-      steps: selectedStep.loop.steps ?? [],
-    };
-    const nextLoop =
-      normalizedValues.loopType === "while"
-        ? {
-            ...commonLoopFields,
-            type: "while" as const,
-            while: normalizedValues.whileCondition,
-          }
-        : {
-            ...commonLoopFields,
-            type: "for_each" as const,
-            for_each: {
-              item: normalizedValues.forEachItem,
-              in: normalizedValues.forEachIn,
-            },
-            ...(parsedMaxConcurrency !== undefined
-              ? { max_concurrency: parsedMaxConcurrency }
-              : {}),
-            ...(normalizedValues.until
-              ? { until: normalizedValues.until }
-              : {}),
-          };
-    const nextStep: LoopStep = {
-      ...selectedStep,
-      loop: nextLoop,
-    };
+
+    const nextStep = buildLoopStep(selectedStep, formValues);
+
+    if (!nextStep) {
+      return;
+    }
+
     const nextDefinition = WorkflowHelper.setValueAtPath(
       definition,
       stepPath,
