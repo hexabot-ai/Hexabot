@@ -4,7 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
-import { FindOperator } from 'typeorm';
+import { Logger } from '@nestjs/common';
+import { FindOperator, ILike, In, IsNull, Not } from 'typeorm';
 
 import { TypeOrmSearchFilterPipe } from './typeorm-search-filter.pipe';
 
@@ -119,6 +120,122 @@ describe('TypeOrmSearchFilterPipe', () => {
       { owner: { id: 'OWNER-1', country: 'United Kingdom' } },
       { owner: { id: 'OWNER-1', country: 'United States' } },
     ]);
+  });
+
+  describe('where clause', () => {
+    const where = async (query: Record<string, unknown>) =>
+      (await pipe.transform({ where: query } as any, {} as any)).where;
+
+    let warnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      warnSpy = jest.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('returns none without filters', async () => {
+      expect(await where({})).toBeUndefined();
+      expect(
+        (await pipe.transform({} as any, {} as any)).where,
+      ).toBeUndefined();
+    });
+
+    it('returns none when no filter has a value', async () => {
+      expect(await where({ name: '  ', email: [] })).toBeUndefined();
+    });
+
+    it('ignores and reports the fields that are not allowed', async () => {
+      expect(await where({ id: 'user-1', name: 'John' })).toEqual({
+        name: 'John',
+      });
+      expect(warnSpy).toHaveBeenCalledWith('Field id is not allowed');
+    });
+
+    it('reads `or` clauses given as an object', async () => {
+      expect(
+        await where({
+          or: { 0: { name: 'John' }, 1: { email: 'john@example.com' } },
+        }),
+      ).toEqual([{ name: 'John' }, { email: 'john@example.com' }]);
+    });
+
+    it('skips empty and refused `or` clauses', async () => {
+      expect(
+        await where({
+          or: [null, {}, { id: 'user-1' }, { name: 'John' }],
+        }),
+      ).toEqual([{ name: 'John' }]);
+      expect(warnSpy).toHaveBeenCalledWith('Field id is not allowed');
+    });
+
+    it('reads the first field of an `or` clause only', async () => {
+      expect(
+        await where({ or: [{ name: 'John', email: 'john@example.com' }] }),
+      ).toEqual([{ name: 'John' }]);
+    });
+
+    it('returns the `and` filters when no `or` clause has a value', async () => {
+      expect(
+        await where({ name: 'John', or: [{ email: { contains: '' } }] }),
+      ).toEqual({ name: 'John' });
+    });
+
+    it('merges the `and` filters into every `or` clause', async () => {
+      expect(
+        await where({
+          name: 'John',
+          or: [{ email: 'a@example.com' }, { email: 'b@example.com' }],
+        }),
+      ).toEqual([
+        { name: 'John', email: 'a@example.com' },
+        { name: 'John', email: 'b@example.com' },
+      ]);
+    });
+
+    it('lets an `or` clause override the `and` filter of the same field', async () => {
+      expect(await where({ name: 'John', or: [{ name: 'Jane' }] })).toEqual([
+        { name: 'Jane' },
+      ]);
+    });
+
+    it('normalizes equality values', async () => {
+      expect(await where({ name: ' John ' })).toEqual({ name: 'John' });
+      expect(await where({ name: 'NULL' })).toEqual({ name: IsNull() });
+      expect(await where({ name: 'true' })).toEqual({ name: true });
+      expect(await where({ name: 'False' })).toEqual({ name: false });
+      expect(await where({ name: ['John', ' ', 'null'] })).toEqual({
+        name: In(['John']),
+      });
+      expect(await where({ name: ['null', 'null'] })).toEqual({
+        name: IsNull(),
+      });
+    });
+
+    it('builds the `!=` and `$in` operators', async () => {
+      expect(await where({ name: { '!=': 'John' } })).toEqual({
+        name: Not('John'),
+      });
+      expect(await where({ name: { '!=': 'null' } })).toEqual({
+        name: Not(IsNull()),
+      });
+      expect(await where({ name: { '!=': ' ' } })).toBeUndefined();
+      expect(
+        await where({ name: { $in: ['John', ' Jane ', '', 'null'] } }),
+      ).toEqual({ name: In(['John', 'Jane']) });
+      expect(await where({ name: { $in: [] } })).toBeUndefined();
+    });
+
+    it('escapes the LIKE wildcards of `contains` values', async () => {
+      expect(await where({ name: { contains: '50%_off' } })).toEqual({
+        name: ILike('%50\\%\\_off%'),
+      });
+      expect(await where({ name: { name: { contains: 'Jo' } } })).toEqual({
+        name: ILike('%Jo%'),
+      });
+    });
   });
 
   describe('prototype pollution prevention', () => {
