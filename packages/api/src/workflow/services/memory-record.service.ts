@@ -150,23 +150,17 @@ export class MemoryRecordService extends BaseOrmService<MemoryRecordOrmEntity> {
       return;
     }
 
+    // A run record also keeps the workflow and thread of its run.
+    const isRun = definition.scope === MemoryScope.run;
+    const storesWorkflow = isRun || definition.scope === MemoryScope.workflow;
+    const storesThread = isRun || definition.scope === MemoryScope.thread;
+
     await this.create({
       definition: definition.id,
       owner: ownerId,
-      workflow:
-        definition.scope === MemoryScope.global
-          ? null
-          : definition.scope === MemoryScope.workflow ||
-              definition.scope === MemoryScope.run
-            ? (workflowId ?? null)
-            : null,
-      thread:
-        definition.scope === MemoryScope.thread
-          ? (threadId ?? null)
-          : definition.scope === MemoryScope.run
-            ? (threadId ?? null)
-            : null,
-      run: definition.scope === MemoryScope.run ? (runId ?? null) : null,
+      workflow: storesWorkflow ? (workflowId ?? null) : null,
+      thread: storesThread ? (threadId ?? null) : null,
+      run: isRun ? (runId ?? null) : null,
       value,
       ttlSeconds,
       expiresAt,
