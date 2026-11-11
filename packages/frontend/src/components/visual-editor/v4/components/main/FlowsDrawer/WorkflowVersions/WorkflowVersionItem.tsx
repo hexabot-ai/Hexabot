@@ -20,7 +20,7 @@ import { formatSmartDate, normalizeDate } from "@/utils/date";
 import { useWorkflowVersionActionMeta } from "./useWorkflowVersionActionMeta";
 import { WorkflowVersionMetaRow } from "./WorkflowVersionMetaRow";
 
-type WorkflowVersionItemProps = {
+export type WorkflowVersionItemProps = {
   version: WorkflowVersion;
   index: number;
   total: number;
