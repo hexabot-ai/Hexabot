@@ -629,7 +629,162 @@ describe('LicenseService', () => {
     });
   });
 
+  describe('refresh outcomes', () => {
+    const refreshWith = async (
+      source: 'bootstrap' | 'setting',
+      licenseKey: string | undefined,
+      validation?: LemonSqueezyValidationResponse | Error,
+      activation?: LemonSqueezyActivationResponse,
+    ) => {
+      const env = createEnv();
+      env.settingService.getSettings.mockResolvedValueOnce({
+        global_settings: { license_key: licenseKey },
+      });
+      if (validation instanceof Error) {
+        env.apiService.validate.mockRejectedValue(validation);
+      } else if (validation) {
+        env.apiService.validate.mockResolvedValue(validation);
+      }
+      if (activation) {
+        env.apiService.activate.mockResolvedValue(activation);
+      }
+
+      await env.service.refresh(source);
+
+      return env;
+    };
+    const inactiveKey = (activationUsage: number) =>
+      createValidationResponse({
+        license_key: {
+          ...defaultLicenseKey,
+          status: 'inactive',
+          activation_limit: 2,
+          activation_usage: activationUsage,
+        },
+        instance: null,
+      });
+
+    it('reports the refreshes of a setting update without the bootstrap mention', async () => {
+      const lastErrorOf = async (
+        ...args: Parameters<typeof refreshWith> extends [unknown, ...infer R]
+          ? R
+          : never
+      ) => (await refreshWith('setting', ...args)).service.getLastError();
+
+      await expect(lastErrorOf(undefined)).resolves.toBe('No license key set.');
+      await expect(
+        lastErrorOf(
+          'bad-key',
+          createValidationResponse({ valid: false, license_key: null }),
+        ),
+      ).resolves.toBe('Invalid license key.');
+      await expect(
+        lastErrorOf(
+          'expired-key',
+          createValidationResponse({
+            license_key: { ...defaultLicenseKey, status: 'disabled' },
+          }),
+        ),
+      ).resolves.toBe('License key disabled.');
+      await expect(lastErrorOf('full-key', inactiveKey(2))).resolves.toBe(
+        'Activation limit reached (usage=2/2).',
+      );
+      await expect(lastErrorOf('down-key', new Error('offline'))).resolves.toBe(
+        'Refresh failed: offline',
+      );
+    });
+
+    it('marks a license key whose status cannot be activated inactive', async () => {
+      const { service } = await refreshWith(
+        'bootstrap',
+        'paused-key',
+        createValidationResponse({
+          license_key: { ...defaultLicenseKey, status: 'paused' as any },
+        }),
+      );
+
+      expect(service.getStatus()).toBe('inactive');
+      expect(service.getPlan()).toBe('pro');
+      expect(service.getLastError()).toBe(
+        'License key status "paused" is not activatable.',
+      );
+    });
+
+    it('reports an activation the API refuses', async () => {
+      const refused = await refreshWith(
+        'bootstrap',
+        'refused-key',
+        inactiveKey(1),
+        createActivationResponse({ activated: false, error: 'Refused' }),
+      );
+      const unexplained = await refreshWith(
+        'setting',
+        'refused-key',
+        inactiveKey(1),
+        createActivationResponse({ activated: false, license_key: null }),
+      );
+
+      expect(refused.service.getStatus()).toBe('inactive');
+      expect(refused.service.getPlan()).toBe('pro');
+      expect(refused.service.getLastError()).toBe('Refused');
+      expect(unexplained.service.getLastError()).toBe(
+        'Unable to activate license (status=unknown).',
+      );
+      expect(refused.apiService.activate).toHaveBeenCalledWith(
+        defaultLicenseKey.key,
+      );
+    });
+  });
+
   describe('handleLicenseKeyUpdate', () => {
+    it('restores the previous key when activating the new one throws', async () => {
+      const { service, apiService } = createEnv();
+      jest.spyOn(service, 'deactivate').mockResolvedValue(true);
+      apiService.validate.mockResolvedValue(
+        createValidationResponse({
+          license_key: { ...defaultLicenseKey, key: 'new-key' },
+        }),
+      );
+      apiService.activate
+        .mockRejectedValueOnce(new Error('timeout'))
+        .mockResolvedValueOnce(createActivationResponse());
+
+      await expect(
+        service.handleLicenseKeyUpdate(
+          createSettingUpdateEvent({
+            oldValue: 'old-key',
+            newValue: 'new-key',
+          }),
+        ),
+      ).rejects.toThrow('Unable to activate the license key - timeout');
+
+      expect(apiService.activate).toHaveBeenNthCalledWith(1, 'new-key');
+      expect(apiService.activate).toHaveBeenNthCalledWith(2, 'old-key');
+      expect(service.getStatus()).toBe('active');
+    });
+
+    it('reports an unexpected validation failure of a first key', async () => {
+      const { service, apiService } = createEnv();
+      apiService.validate.mockRejectedValue(new Error('offline'));
+      apiService.extractAxiosError.mockImplementationOnce(() => {
+        throw new TypeError('unreadable error');
+      });
+
+      await expect(
+        service.handleLicenseKeyUpdate(
+          createSettingUpdateEvent({
+            oldValue: undefined,
+            newValue: 'new-key',
+          }),
+        ),
+      ).rejects.toThrow('unreadable error');
+
+      expect(service.getStatus()).toBe('error');
+      expect(service.getLastError()).toBe(
+        'Unable to validate the license key - unreadable error',
+      );
+    });
+
     it('ignores non-license settings', async () => {
       const { service, apiService } = createEnv();
 
