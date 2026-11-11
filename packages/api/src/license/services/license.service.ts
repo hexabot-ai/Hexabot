@@ -153,100 +153,95 @@ export class LicenseService implements OnApplicationBootstrap {
   }
 
   async refresh(source: RefreshSource = 'bootstrap'): Promise<void> {
+    const atBootstrap = source === 'bootstrap';
+    const describe = (message: string) =>
+      atBootstrap ? `${message} (bootstrap).` : `${message}.`;
+
     try {
       const key = await this.getLicenseKey();
       if (!key) {
-        this.applyInactiveState(
+        return this.applyInactiveState(
           'undefined',
           'unknown',
-          source === 'bootstrap'
-            ? 'No license key set (bootstrap).'
-            : 'No license key set.',
+          describe('No license key set'),
         );
-
-        return;
       }
 
       const instanceId = await this.getInstanceId();
       const validated = await this.apiService.validate(key, instanceId);
 
       if (!validated.valid || !validated.license_key) {
-        this.applyInactiveState(
+        return this.applyInactiveState(
           'invalid',
           'unknown',
-          source === 'bootstrap'
-            ? 'Invalid license key (bootstrap).'
-            : 'Invalid license key.',
+          describe('Invalid license key'),
         );
-
-        return;
       }
 
       const licenseKey = validated.license_key;
       const currentPlan = this.inferPlan(validated.meta);
 
       if (licenseKey.status === 'expired' || licenseKey.status === 'disabled') {
-        this.applyInactiveState(
+        return this.applyInactiveState(
           licenseKey.status,
           currentPlan,
-          source === 'bootstrap'
-            ? `License key ${licenseKey.status} (bootstrap).`
-            : `License key ${licenseKey.status}.`,
+          describe(`License key ${licenseKey.status}`),
         );
-
-        return;
       }
 
       if (licenseKey.status !== 'active' && licenseKey.status !== 'inactive') {
-        this.applyInactiveState(
+        return this.applyInactiveState(
           'inactive',
           currentPlan,
-          `License key status \"${licenseKey.status}\" is not activatable.`,
+          `License key status "${licenseKey.status}" is not activatable.`,
         );
-
-        return;
       }
 
       if (licenseKey.status === 'active' && validated.instance?.id) {
-        await this.applyActivatedState(validated, source);
-
-        return;
+        return await this.applyActivatedState(validated, source);
       }
 
       if (!this.hasAvailableActivationSlot(licenseKey)) {
-        this.applyInactiveState(
+        const usage = `usage=${licenseKey.activation_usage ?? 'n/a'}/${licenseKey.activation_limit ?? 'n/a'}`;
+
+        return this.applyInactiveState(
           'inactive',
           currentPlan,
-          source === 'bootstrap'
-            ? `Activation limit reached during bootstrap (usage=${licenseKey.activation_usage ?? 'n/a'}/${licenseKey.activation_limit ?? 'n/a'}).`
-            : `Activation limit reached (usage=${licenseKey.activation_usage ?? 'n/a'}/${licenseKey.activation_limit ?? 'n/a'}).`,
+          atBootstrap
+            ? `Activation limit reached during bootstrap (${usage}).`
+            : `Activation limit reached (${usage}).`,
         );
-
-        return;
       }
 
-      const activated = await this.apiService.activate(licenseKey.key);
-
-      if (!activated.activated) {
-        this.applyInactiveState(
-          'inactive',
-          currentPlan,
-          activated.error ||
-            `Unable to activate license (status=${activated.license_key?.status ?? 'unknown'}).`,
-        );
-
-        return;
-      }
-
-      await this.applyActivatedState(activated, source);
+      await this.activateInstance(licenseKey.key, currentPlan, source);
     } catch (err) {
       const msg = this.apiService.extractAxiosError(err);
       this.applyInactiveState(
         'error',
         'unknown',
-        `${source === 'bootstrap' ? 'Bootstrap' : 'Refresh'} failed: ${msg}`,
+        `${atBootstrap ? 'Bootstrap' : 'Refresh'} failed: ${msg}`,
       );
     }
+  }
+
+  /** Activates this instance with a license key that has a free slot. */
+  private async activateInstance(
+    key: string,
+    plan: LicensePlan,
+    source: RefreshSource,
+  ): Promise<void> {
+    const activated = await this.apiService.activate(key);
+
+    if (!activated.activated) {
+      return this.applyInactiveState(
+        'inactive',
+        plan,
+        activated.error ||
+          `Unable to activate license (status=${activated.license_key?.status ?? 'unknown'}).`,
+      );
+    }
+
+    await this.applyActivatedState(activated, source);
   }
 
   @OnEvent('hook:setting:preUpdate')
@@ -264,68 +259,73 @@ export class LicenseService implements OnApplicationBootstrap {
     const newKey = this.normalizeLicenseKey(next?.value);
 
     if (newKey === oldKey) {
-      await this.refresh('setting');
-
-      return;
+      return await this.refresh('setting');
     }
 
     if (!newKey) {
-      const isSuccess = oldKey
-        ? await this.deactivate(oldKey, 'License key removed.')
-        : true;
-
-      if (!isSuccess) {
-        throw new BadRequestException('Failed to remove existing license key.');
-      }
-
-      this.applyInactiveState('undefined', 'unknown', 'No license key set.');
-
-      return;
+      // The keys differ, so the previous one is set.
+      return await this.removeLicenseKey(oldKey!);
     }
 
-    let validLicense: LemonSqueezyValidationResponse;
+    const validLicense = await this.validateLicenseKeyUpdate(newKey, oldKey);
+    await this.rotateLicenseKey(validLicense.license_key!.key, oldKey);
+  }
 
+  private async removeLicenseKey(oldKey: string): Promise<void> {
+    if (!(await this.deactivate(oldKey, 'License key removed.'))) {
+      throw new BadRequestException('Failed to remove existing license key.');
+    }
+
+    this.applyInactiveState('undefined', 'unknown', 'No license key set.');
+  }
+
+  /**
+   * Validates the license key set in place of `oldKey`. When it is refused,
+   * the state reports why if no key was set, and is refreshed otherwise.
+   */
+  private async validateLicenseKeyUpdate(
+    newKey: string,
+    oldKey?: string,
+  ): Promise<LemonSqueezyValidationResponse> {
     try {
-      validLicense = await this.validateCandidateLicense(newKey);
+      return await this.validateCandidateLicense(newKey);
     } catch (err) {
       // When there is no previously stored key, reflect the validation failure
       // in runtime snapshot state so UI/guards don't keep stale bootstrap errors.
-      if (!oldKey) {
-        if (err instanceof BadRequestException) {
-          this.applyInactiveState(
-            'invalid',
-            'unknown',
-            this.extractBadRequestMessage(err, 'Invalid license key.'),
-          );
-        } else {
-          this.applyInactiveState(
-            'error',
-            'unknown',
-            `Unable to validate the license key - ${this.apiService.extractAxiosError(err)}`,
-          );
-        }
-      } else {
+      if (oldKey) {
         await this.refresh('setting');
+      } else if (err instanceof BadRequestException) {
+        this.applyInactiveState(
+          'invalid',
+          'unknown',
+          this.extractBadRequestMessage(err, 'Invalid license key.'),
+        );
+      } else {
+        this.applyInactiveState(
+          'error',
+          'unknown',
+          `Unable to validate the license key - ${this.apiService.extractAxiosError(err)}`,
+        );
       }
 
       throw err;
     }
+  }
 
-    const newLicenseKey = validLicense.license_key!;
-
-    if (oldKey) {
-      const deactivated = await this.deactivate(oldKey, 'License will rotate.');
-
-      if (!deactivated) {
-        throw new BadRequestException(
-          'Failed to deactivate existing license key before rotation.',
-        );
-      }
+  /**
+   * Activates `newKey` in place of `oldKey`, and activates `oldKey` again
+   * when the new key cannot be activated.
+   */
+  private async rotateLicenseKey(newKey: string, oldKey?: string) {
+    if (oldKey && !(await this.deactivate(oldKey, 'License will rotate.'))) {
+      throw new BadRequestException(
+        'Failed to deactivate existing license key before rotation.',
+      );
     }
 
     let activation: LemonSqueezyActivationResponse;
     try {
-      activation = await this.apiService.activate(newLicenseKey.key);
+      activation = await this.apiService.activate(newKey);
     } catch (err) {
       await this.restoreOldLicense(oldKey);
 
