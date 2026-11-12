@@ -172,6 +172,34 @@ const schema = createWorkflowFullSchema({ parseDefinition });
 const workflow = schema.parse(data);
 ```
 
+### Workflow input schema
+
+The JSON Schema of the input a workflow is run with is not stored. It follows from the workflow type and from the definition, and `resolveWorkflowInputSchema(type, definition)` is the one function that gives it:
+
+- a conversational or scheduled workflow is run with the input of its trigger (`conversationalWorkflowInputSchema`, `scheduledWorkflowInputSchema`), whatever its definition says;
+- a manual workflow is run with the input its definition declares under `inputs.schema` (a JSON Schema of type `object`), or with any object when it declares none.
+
+```ts
+import { resolveWorkflowInputSchema, WorkflowType } from "@hexabot-ai/types";
+
+resolveWorkflowInputSchema(WorkflowType.manual, definition);
+// => definition.inputs.schema, or { type: "object", properties: {}, additionalProperties: {} }
+```
+
+`inputSchema` on a workflow is this value, filled while a full workflow is parsed when `createWorkflowFullSchema` is given a resolver:
+
+```ts
+const schema = createWorkflowFullSchema({
+  parseDefinition,
+  // Called with the workflow type and the parsed current definition
+  // (undefined when the workflow has no version). Its result replaces any
+  // `inputSchema` the parsed value carries.
+  resolveInputSchema: resolveWorkflowInputSchema,
+});
+```
+
+Without a resolver, `inputSchema` is kept as received. Plain and stub workflows do not get it, since they do not carry a definition: derive it with `resolveWorkflowInputSchema` from the definition at hand.
+
 ## Workflow Transfer Bundles
 
 Workflow import/export contracts are exposed as zod schemas and inferred types:

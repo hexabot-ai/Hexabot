@@ -28,6 +28,7 @@ import {
   contentFullSchema,
   contentTypeJsonSchema,
   contentSchema,
+  conversationalWorkflowInputSchema,
   createWorkflowFullSchema,
   credentialFullSchema,
   credentialSchema,
@@ -56,6 +57,8 @@ import {
   permissionFullSchema,
   permissionSchema,
   resolveRunDurationMs,
+  resolveWorkflowInputSchema,
+  scheduledWorkflowInputSchema,
   settingSchema,
   statsSchema,
   subscriberFullSchema,
@@ -662,7 +665,6 @@ describe("@hexabot-ai/types schemas", () => {
       description: null,
       type: WorkflowType.conversational,
       schedule: null,
-      inputSchema: {},
       builtin: false,
       x: 0,
       y: 0,
@@ -813,7 +815,6 @@ describe("@hexabot-ai/types schemas", () => {
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         builtin: false,
         x: 0,
         y: 0,
@@ -1001,7 +1002,6 @@ describe("@hexabot-ai/types schemas", () => {
       description: null,
       type: WorkflowType.conversational,
       schedule: null,
-      inputSchema: {},
       builtin: false,
       x: 0,
       y: 0,
@@ -1059,6 +1059,214 @@ describe("@hexabot-ai/types schemas", () => {
       yml: "defs: {}\nflow: []\noutputs: {}",
     });
     expect(parser).toHaveBeenCalledTimes(1);
+  });
+
+  describe("workflow input schema", () => {
+    const record = {
+      id: "wf_1",
+      createdAt: now,
+      updatedAt: now,
+      name: "Main",
+      description: null,
+      type: WorkflowType.manual,
+      schedule: null,
+      builtin: false,
+      x: 0,
+      y: 0,
+      zoom: 1,
+      direction: "horizontal",
+      runAfterMs: 0,
+      createdBy: null,
+      publishedVersion: null,
+    };
+    const version = {
+      id: "wfv_1",
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+      definitionYml: "defs: {}\nflow: []\noutputs: {}",
+      checksum: "sha",
+      message: null,
+      action: WorkflowVersionAction.create,
+      workflowId: "wf_1",
+      createdById: "u_1",
+      parentVersionId: null,
+    };
+    const definition = { defs: {}, flow: [], outputs: {} };
+    const inputSchema = { type: "object", required: ["question"] };
+
+    it("derives it from the workflow type and the current definition", () => {
+      const resolveInputSchema = jest.fn(() => inputSchema);
+      const parsed = createWorkflowFullSchema({
+        parseDefinition: () => definition,
+        resolveInputSchema,
+      }).parse({ ...record, currentVersion: version });
+
+      expect(parsed.inputSchema).toEqual(inputSchema);
+      expect(resolveInputSchema).toHaveBeenCalledTimes(1);
+      expect(resolveInputSchema).toHaveBeenCalledWith(
+        WorkflowType.manual,
+        definition,
+      );
+    });
+
+    it("replaces a value carried by the record", () => {
+      const parsed = createWorkflowFullSchema({
+        parseDefinition: () => definition,
+        resolveInputSchema: () => inputSchema,
+      }).parse({
+        ...record,
+        inputSchema: { type: "object", required: ["stale"] },
+        currentVersion: version,
+      });
+
+      expect(parsed.inputSchema).toEqual(inputSchema);
+    });
+
+    it("derives it without a definition when the workflow has no version", () => {
+      const resolveInputSchema = jest.fn(() => inputSchema);
+      const parsed = createWorkflowFullSchema({
+        parseDefinition: () => definition,
+        resolveInputSchema,
+      }).parse({ ...record, currentVersion: null });
+
+      expect(parsed.inputSchema).toEqual(inputSchema);
+      expect(resolveInputSchema).toHaveBeenCalledWith(
+        WorkflowType.manual,
+        undefined,
+      );
+    });
+
+    it("keeps the value it is given when no resolver is set", () => {
+      const withValue = workflowFullSchema.parse({
+        ...record,
+        inputSchema,
+        currentVersion: version,
+      });
+      const withoutValue = workflowFullSchema.parse({
+        ...record,
+        currentVersion: version,
+      });
+
+      expect(withValue.inputSchema).toEqual(inputSchema);
+      expect(withoutValue.inputSchema).toBeUndefined();
+    });
+
+    it("derives it with resolveWorkflowInputSchema", () => {
+      const parsed = createWorkflowFullSchema({
+        parseDefinition: () => ({
+          ...definition,
+          inputs: { schema: inputSchema },
+        }),
+        resolveInputSchema: resolveWorkflowInputSchema,
+      }).parse({ ...record, currentVersion: version });
+
+      expect(parsed.inputSchema).toEqual(inputSchema);
+    });
+  });
+
+  describe("resolveWorkflowInputSchema", () => {
+    const declared = {
+      type: "object",
+      properties: { question: { type: "string" } },
+      required: ["question"],
+    };
+    const definition = {
+      inputs: { schema: declared },
+      defs: {},
+      flow: [],
+      outputs: {},
+    };
+
+    it("gives a manual workflow the schema its definition declares", () => {
+      expect(resolveWorkflowInputSchema(WorkflowType.manual, definition)).toBe(
+        declared,
+      );
+    });
+
+    it.each([
+      ["no definition", undefined],
+      ["no inputs", { defs: {}, flow: [], outputs: {} }],
+      ["inputs without a schema", { inputs: {}, defs: {}, flow: [] }],
+      ["a schema that is not an object", { inputs: { schema: "object" } }],
+    ])("lets a manual workflow with %s take any object", (_label, value) => {
+      expect(resolveWorkflowInputSchema(WorkflowType.manual, value)).toEqual({
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {},
+        additionalProperties: {},
+      });
+    });
+
+    it("gives a conversational workflow the input of an inbound message", () => {
+      const schema = resolveWorkflowInputSchema(
+        WorkflowType.conversational,
+        definition,
+      );
+
+      expect(schema).toEqual(
+        expect.objectContaining({
+          type: "object",
+          required: ["message", "text", "thread_id"],
+          additionalProperties: false,
+        }),
+      );
+      expect(Object.keys(schema.properties ?? {})).toEqual([
+        "message_type",
+        "payload",
+        "message",
+        "text",
+        "mid",
+        "thread_id",
+      ]);
+      expect(schema.properties?.text).toEqual({
+        title: "Text",
+        description: "Extracted text content from the inbound message.",
+        type: "string",
+      });
+    });
+
+    it("gives a scheduled workflow the input of its schedule", () => {
+      const schema = resolveWorkflowInputSchema(
+        WorkflowType.scheduled,
+        definition,
+      );
+
+      expect(schema).toEqual(
+        expect.objectContaining({
+          type: "object",
+          required: ["schedule", "triggered_at"],
+          additionalProperties: false,
+        }),
+      );
+      expect(schema.properties?.schedule).toEqual({
+        title: "Schedule",
+        description: "Schedule expression that triggered this workflow run.",
+        type: ["string", "null"],
+      });
+      expect(Object.keys(schema.properties ?? {})).toEqual([
+        "schedule",
+        "triggered_at",
+      ]);
+    });
+
+    it("gives the same schema on every call for a fixed input", () => {
+      expect(resolveWorkflowInputSchema(WorkflowType.conversational)).toBe(
+        resolveWorkflowInputSchema(WorkflowType.conversational),
+      );
+    });
+
+    it("matches what the trigger schemas accept", () => {
+      expect(
+        scheduledWorkflowInputSchema.safeParse({
+          schedule: "* * * * *",
+          triggered_at: "2026-11-12T10:00:00+01:00",
+        }).success,
+      ).toBe(true);
+      expect(
+        conversationalWorkflowInputSchema.safeParse({ text: "hi" }).success,
+      ).toBe(false);
+    });
   });
 
   it("parses workflow export bundles without credential secrets", () => {
@@ -1328,7 +1536,6 @@ describe("@hexabot-ai/types schemas", () => {
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         builtin: false,
         x: 0,
         y: 0,
@@ -1385,7 +1592,6 @@ describe("@hexabot-ai/types schemas", () => {
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         builtin: false,
         x: 0,
         y: 0,
@@ -1512,7 +1718,6 @@ describe("@hexabot-ai/types schemas", () => {
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         builtin: false,
         x: 0,
         y: 0,

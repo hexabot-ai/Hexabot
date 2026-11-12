@@ -121,6 +121,15 @@ export const webhookTriggerSchema = preprocess(
 export type WebhookTriggerConfig = z.infer<typeof webhookTriggerSchema>;
 
 export type WorkflowDefinitionParser = (definitionYml: string) => unknown;
+
+/**
+ * Gives the JSON Schema of the input a workflow is run with, from its type
+ * and the definition of its current version (undefined when it has none).
+ */
+export type WorkflowInputSchemaResolver = (
+  type: unknown,
+  definition: unknown,
+) => unknown;
 const workflowAliasMap = {
   currentVersionId: "currentVersion",
   publishedVersionId: "publishedVersion",
@@ -131,7 +140,12 @@ const workflowStubObjectSchema = baseStubSchema.extend({
   description: preprocess(nullishToNull, z.string().nullable()),
   type: workflowTypeSchema,
   schedule: preprocess(nullishToNull, z.string().nullable()),
-  inputSchema: z.any(),
+  /**
+   * JSON Schema of the input the workflow is run with. It is not stored: it
+   * follows from the workflow type and the current definition
+   * (`resolveWorkflowInputSchema`), and is only filled on full workflows.
+   */
+  inputSchema: z.any().optional(),
   builtin: z.coerce.boolean(),
   x: z.coerce.number(),
   y: z.coerce.number(),
@@ -174,6 +188,7 @@ const workflowDefinitionSchema = z.any();
 const withWorkflowDerivedFields = (
   value: unknown,
   parseDefinition?: WorkflowDefinitionParser,
+  resolveInputSchema?: WorkflowInputSchemaResolver,
 ): unknown => {
   const record = toRecord(value);
   if (!record) {
@@ -200,6 +215,12 @@ const withWorkflowDerivedFields = (
     parseDefinition
   ) {
     next.definition = parseDefinition(currentDefinitionYml);
+  }
+
+  // The input schema is not stored: it follows from the workflow type and the
+  // current definition, so whatever the record carries is replaced.
+  if (resolveInputSchema) {
+    next.inputSchema = resolveInputSchema(next.type, next.definition);
   }
 
   return next;
@@ -252,9 +273,15 @@ export const workflowSchema = preprocess(
 
 export const createWorkflowFullSchema = (options?: {
   parseDefinition?: WorkflowDefinitionParser;
+  resolveInputSchema?: WorkflowInputSchemaResolver;
 }) => {
   return preprocess(
-    (value) => withWorkflowDerivedFields(value, options?.parseDefinition),
+    (value) =>
+      withWorkflowDerivedFields(
+        value,
+        options?.parseDefinition,
+        options?.resolveInputSchema,
+      ),
     workflowFullObjectSchema,
   );
 };
