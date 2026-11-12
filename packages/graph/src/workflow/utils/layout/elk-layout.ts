@@ -204,10 +204,15 @@ const toElk = (nodes: GraphNode[], edges: Edge[], ctx: LayoutContext) => {
       "elk.spacing.nodeNode": String(ELK_NODE_NODE_SPACING),
       "elk.layered.spacing.nodeNodeBetweenLayers": String(FLOW_LAYER_GAP),
       "org.eclipse.elk.layered.considerModelOrder.strategy": "PREFER_NODES",
+      // Forcing the node model order keeps the nodes of a layer in model
+      // order through every crossing minimization sweep. That is why
+      // "considerModelOrder.crossingCounterNodeInfluence" is left unset: it
+      // weighs model order violations against crossings, there are none to
+      // weigh, and counting them after each sweep took half of the layout
+      // time. It needs setting again (ELK advises 0.001) if the order stops
+      // being forced.
       "org.eclipse.elk.layered.crossingMinimization.forceNodeModelOrder":
         "true",
-      "org.eclipse.elk.layered.considerModelOrder.crossingCounterNodeInfluence":
-        "0.001",
       "org.eclipse.elk.randomSeed": "1",
     },
     children: nodes.map((node) => {

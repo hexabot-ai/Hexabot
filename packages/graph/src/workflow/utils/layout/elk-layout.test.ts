@@ -75,3 +75,22 @@ it.each([
     ).toBeGreaterThan(direction === "vertical" ? 20 : 10);
   },
 );
+
+// ELK weighs node model order violations against crossings only when given an
+// influence. With the order forced it never finds one, so the influence would
+// only add the cost of counting; without the force it is needed again.
+it("forces the node model order and leaves its violations unweighted", async () => {
+  await layoutNodesWithElk([node("task", ENodeType.TASK)], [], {
+    config: getWorkflowDefaultConfig("horizontal"),
+  });
+
+  const [graph] = mocks.layout.mock.calls.at(-1) ?? [];
+
+  expect(graph.layoutOptions).toMatchObject({
+    "org.eclipse.elk.layered.considerModelOrder.strategy": "PREFER_NODES",
+    "org.eclipse.elk.layered.crossingMinimization.forceNodeModelOrder": "true",
+  });
+  expect(graph.layoutOptions).not.toHaveProperty([
+    "org.eclipse.elk.layered.considerModelOrder.crossingCounterNodeInfluence",
+  ]);
+});
