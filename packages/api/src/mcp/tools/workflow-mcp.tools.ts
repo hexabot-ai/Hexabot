@@ -165,7 +165,7 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_workflow_update',
     description:
-      'Update workflow metadata. Optionally commit a new workflow definition YAML version.',
+      'Update workflow metadata. Optionally commit a new workflow definition YAML version; if it is refused, nothing is changed.',
     parameters: z.object({
       id: uuidSchema,
       ...workflowPayloadSchema,
@@ -184,7 +184,13 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   ) {
     const actorId = this.getActorId(request);
     const { id, definitionYml, versionMessage, ...updates } = args;
-    await this.workflowHelper.requireWorkflow(id);
+    const workflow = await this.workflowHelper.requireWorkflow(id);
+    if (definitionYml) {
+      this.workflowHelper.assertDefinitionCommittable(
+        definitionYml,
+        workflow.type,
+      );
+    }
 
     if (Object.keys(updates).length > 0) {
       await this.workflowService.updateOne(id, updates as any);
