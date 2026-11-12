@@ -20,6 +20,7 @@ Use this file as the predictable entrypoint for AI coding agents working on the 
 
 ## DSL essentials (YAML or JS object)
 - Workflow parts: optional `inputs.schema`, `context`, `defaults.settings`, required `defs`, `flow`, `outputs`. Long-term state should be stored on the workflow context.
+- `inputs.schema` is a JSON Schema whose root `type` is `object` (fields under `properties`, `required`, `default`, ...), not a map of fields. `buildWorkflowInputParser` (`src/workflow-compiler.ts`) is the only conversion of it to a parser; `WorkflowRunner.start` refuses a payload that does not match with `WorkflowInputRejectedError` before changing any state.
 - Expressions: any string starting with `=` is JSONata; everything else is literal. Scopes: `$input`, `$context`, `$output`, `$iteration` (`item`, `index`), `$accumulator`.
 - Flow primitives: `do` (single task def reference), `parallel` (`strategy: wait_all|wait_any`), `conditional` (first truthy branch wins; optional `else`), `loop` with required `type` discriminator (`for_each` or `while`), optional `accumulate`, and `max_concurrency` hint on `for_each` loops.
 - Defs: `defs.<name>` is the only root registry. `kind: task` defs execute actions (`action`, optional `inputs`/`settings`/`bindings`), non-task defs require `settings` and may also declare nested `bindings`.

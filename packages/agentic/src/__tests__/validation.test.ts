@@ -1016,4 +1016,118 @@ describe('validateWorkflow', () => {
       }
     });
   });
+
+  describe('inputs.schema', () => {
+    const validateInputs = (schema: unknown) =>
+      validateWorkflow({
+        inputs: { schema },
+        defs: {},
+        flow: [],
+        outputs: {},
+      });
+    const messagesOf = (schema: unknown) => {
+      const result = validateInputs(schema);
+
+      return result.success ? [] : issueMessages(result.issues);
+    };
+
+    it('accepts a JSON Schema of type object', () => {
+      const schema = {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'What to ask.' },
+          pages: { type: 'integer', default: 1, minimum: 1 },
+          mode: { enum: ['fast', 'thorough'] },
+          tags: { type: 'array', items: { type: 'string' } },
+          author: {
+            type: 'object',
+            properties: { name: { type: ['string', 'null'] } },
+            required: ['name'],
+          },
+        },
+        required: ['question'],
+        additionalProperties: false,
+      };
+      const result = validateInputs(schema);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({ inputs: { schema } }),
+        }),
+      );
+    });
+
+    it('accepts a workflow without inputs, or without a schema', () => {
+      expect(
+        validateWorkflow({ defs: {}, flow: [], outputs: {} }).success,
+      ).toBe(true);
+      expect(
+        validateWorkflow({ inputs: {}, defs: {}, flow: [], outputs: {} })
+          .success,
+      ).toBe(true);
+    });
+
+    it('refuses a map of fields with one issue naming the expected format', () => {
+      const result = validateInputs({
+        question: { type: 'string' },
+        pages: { type: 'array', items: { type: 'string' } },
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.issues).toEqual([
+          {
+            code: 'schema',
+            message:
+              'inputs.schema: Workflow inputs must be described by a JSON ' +
+              'Schema, e.g. { type: object, properties: { question: { type: ' +
+              'string } }, required: [question] }; a map of fields ' +
+              '({ question: { type: string } }) is no longer supported',
+            path: ['inputs', 'schema'],
+          },
+        ]);
+      }
+    });
+
+    it('refuses a map of fields that has a field named "type"', () => {
+      expect(messagesOf({ type: { type: 'string' } })).toEqual([
+        expect.stringContaining('a map of fields'),
+      ]);
+    });
+
+    it.each([
+      ['an empty schema', {}],
+      ['a schema without a type', { properties: { a: { type: 'string' } } }],
+      ['a schema of another type', { type: 'string' }],
+      ['a schema with several types', { type: ['object', 'null'] }],
+    ])('refuses %s, as the input is always an object', (_label, schema) => {
+      expect(messagesOf(schema)).toEqual([
+        'inputs.schema.type: Workflow inputs must be described by a JSON ' +
+          'Schema of type "object"; declare the input fields under ' +
+          '"properties"',
+      ]);
+    });
+
+    it('refuses a schema that is not valid JSON Schema, with the reason', () => {
+      expect(
+        messagesOf({ type: 'object', properties: { a: { type: 'text' } } }),
+      ).toEqual([
+        'inputs.schema: Not a valid JSON Schema (Unsupported type: text)',
+      ]);
+    });
+
+    it('refuses keys other than "schema" under inputs', () => {
+      const result = validateWorkflow({
+        inputs: { type: 'object' },
+        defs: {},
+        flow: [],
+        outputs: {},
+      });
+
+      expect(result.success ? [] : issueMessages(result.issues)).toEqual([
+        'inputs: Unrecognized key: "type"',
+      ]);
+    });
+  });
 });

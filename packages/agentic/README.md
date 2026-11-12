@@ -25,7 +25,7 @@ The package ships both ESM (`import`) and CommonJS (`require`) entrypoints plus 
 
 A workflow is a single YAML (or object) that declares inputs, context, defaults, definitions, control-flow, and outputs. The full annotated reference lives in `./DSL.md` and `examples/full/workflow.yml`. The important pieces:
 
-- `inputs.schema`: JSON-schema-like fields validated at runtime.
+- `inputs.schema`: JSON Schema (root `type: object`) of the payload a run is started with. The payload is checked against it before anything runs, and its `default` values are filled in.
 - `context`: read-only values injected by the host (including any long-term state) and exposed to expressions.
 - `defaults.settings`: inherited by every task (timeouts, retries, and action-specific settings).
 - `defs`: required root registry for all definitions.
@@ -168,8 +168,11 @@ const workflow = Workflow.fromYaml(yamlSource, {
 ```yaml
 inputs:
   schema:
-    user_id:
-      type: string
+    type: object
+    properties:
+      user_id:
+        type: string
+    required: [user_id]
 defs:
   greet_user:
     kind: task
@@ -181,6 +184,12 @@ flow:
 outputs:
   reply: "='Hello ' & $output.greet_user.body"
 ```
+
+### Workflow inputs
+
+`runner.start({ inputData })` checks `inputData` against `inputs.schema` and throws a `WorkflowInputRejectedError` (with `issues`, one `<path>: <message>` line each) when it does not match; nothing has run at that point. A host that wants to refuse a payload before creating a run can build the same parser with `buildWorkflowInputParser(definition.inputs?.schema)`.
+
+> **Breaking change.** `inputs.schema` used to be a map of fields (`{ user_id: { type: string } }`) and is now a JSON Schema. Definitions in the old form fail validation with a message naming the expected format, and the `InputField` type is replaced by `WorkflowInputSchema`. To convert a definition, move the fields under `properties` and add `type: object`; add `additionalProperties: false` to keep refusing undeclared keys, which the old form always did. See `DSL.md` ("Workflow inputs").
 
 ## Custom JSONata functions
 

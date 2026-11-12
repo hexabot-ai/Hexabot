@@ -10,7 +10,10 @@ import type { Action } from '../action/action.types';
 import type { BindingKindSchemas } from '../bindings/base-binding';
 import { BaseWorkflowContext } from '../context';
 import type { Settings, WorkflowDefinition } from '../dsl.types';
-import { compileWorkflow } from '../workflow-compiler';
+import {
+  buildWorkflowInputParser,
+  compileWorkflow,
+} from '../workflow-compiler';
 import { StepType, type EventEmitterLike } from '../workflow-event-emitter';
 
 import { createTaskDefs, mergeTaskDefs } from './test-helpers';
@@ -125,8 +128,12 @@ describe('compileWorkflow', () => {
       outputs: { final: '=$output.worker_task.echoed' },
       inputs: {
         schema: {
-          source: { type: 'string' },
-          items: { type: 'array', items: { type: 'string' } },
+          type: 'object',
+          properties: {
+            source: { type: 'string' },
+            items: { type: 'array', items: { type: 'string' } },
+          },
+          additionalProperties: false,
         },
       },
     };
@@ -895,6 +902,89 @@ describe('compileWorkflow', () => {
       ),
     ).toThrow(
       'Workflow bindings validation failed: defs.worker_task.action: No action implementation provided for "".',
+    );
+  });
+});
+
+describe('buildWorkflowInputParser', () => {
+  const parser = buildWorkflowInputParser({
+    type: 'object',
+    properties: {
+      question: { type: 'string' },
+      pages: { type: 'integer', default: 1 },
+      mode: { enum: ['fast', 'thorough'] },
+      author: {
+        type: 'object',
+        properties: { name: { type: 'string' } },
+        required: ['name'],
+        additionalProperties: false,
+      },
+    },
+    required: ['question'],
+  });
+  const issuesOf = (input: unknown) => {
+    const result = parser.safeParse(input);
+
+    return result.success
+      ? []
+      : result.error.issues.map(
+          (issue) => `${issue.path.join('.')}: ${issue.code}`,
+        );
+  };
+
+  it('accepts a matching payload and applies the default values', () => {
+    expect(parser.parse({ question: 'Why?' })).toEqual({
+      question: 'Why?',
+      pages: 1,
+    });
+    expect(parser.parse({ question: 'Why?', pages: 3, mode: 'fast' })).toEqual({
+      question: 'Why?',
+      pages: 3,
+      mode: 'fast',
+    });
+  });
+
+  it('refuses a payload without a required field', () => {
+    expect(issuesOf({})).toEqual(['question: invalid_type']);
+    expect(issuesOf({ question: 'Why?', author: {} })).toEqual([
+      'author.name: invalid_type',
+    ]);
+  });
+
+  it('refuses values of the wrong type or outside an enum', () => {
+    expect(issuesOf({ question: 1, pages: 1.5, mode: 'slow' }).sort()).toEqual([
+      'mode: invalid_value',
+      'pages: invalid_type',
+      'question: invalid_type',
+    ]);
+  });
+
+  it('keeps undeclared keys unless the schema forbids them', () => {
+    expect(parser.parse({ question: 'Why?', extra: true })).toEqual({
+      question: 'Why?',
+      pages: 1,
+      extra: true,
+    });
+    expect(
+      issuesOf({ question: 'Why?', author: { name: 'Ada', extra: true } }),
+    ).toEqual(['author: unrecognized_keys']);
+  });
+
+  it('refuses a payload that is not an object', () => {
+    expect(issuesOf('Why?')).toEqual([': invalid_type']);
+    expect(issuesOf(['Why?'])).toEqual([': invalid_type']);
+  });
+
+  it('accepts any object when the workflow declares no schema', () => {
+    const open = buildWorkflowInputParser(undefined);
+
+    expect(open.parse({ anything: [1, 2] })).toEqual({ anything: [1, 2] });
+    expect(open.safeParse('text').success).toBe(false);
+  });
+
+  it('throws on a schema that is not valid JSON Schema', () => {
+    expect(() => buildWorkflowInputParser({ type: 'text' })).toThrow(
+      'Unsupported type: text',
     );
   });
 });

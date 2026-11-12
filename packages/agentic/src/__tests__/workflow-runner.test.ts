@@ -10,7 +10,10 @@ import { defineAction } from '../action/action';
 import type { TaskFrame, WorkflowCheckpoint } from '../checkpoint';
 import { BaseWorkflowContext } from '../context';
 import type { Settings, WorkflowDefinition } from '../dsl.types';
-import { WorkflowCheckpointInvalidError } from '../errors';
+import {
+  WorkflowCheckpointInvalidError,
+  WorkflowInputRejectedError,
+} from '../errors';
 import { compileWorkflow } from '../workflow-compiler';
 import {
   StepType,
@@ -284,7 +287,10 @@ describe('WorkflowRunner', () => {
       },
       inputs: {
         schema: {
-          items: { type: 'array', items: { type: 'number' } },
+          type: 'object',
+          properties: {
+            items: { type: 'array', items: { type: 'number' } },
+          },
         },
       },
     };
@@ -913,7 +919,8 @@ describe('WorkflowRunner', () => {
       outputs: { note: '=$output.emit_step.note' },
       inputs: {
         schema: {
-          note: { type: 'string' },
+          type: 'object',
+          properties: { note: { type: 'string' } },
         },
       },
     };
@@ -1194,7 +1201,10 @@ describe('WorkflowRunner', () => {
       },
       inputs: {
         schema: {
-          items: { type: 'array', items: { type: 'string' } },
+          type: 'object',
+          properties: {
+            items: { type: 'array', items: { type: 'string' } },
+          },
         },
       },
     };
@@ -1693,7 +1703,8 @@ describe('WorkflowRunner', () => {
       outputs: { total: '=$output.count_step.total' },
       inputs: {
         schema: {
-          amount: { type: 'number' },
+          type: 'object',
+          properties: { amount: { type: 'number' } },
         },
       },
     };
@@ -1780,7 +1791,9 @@ describe('WorkflowRunner', () => {
     });
     const compiled = compileWorkflow(
       {
-        inputs: { schema: { name: { type: 'string' } } },
+        inputs: {
+          schema: { type: 'object', properties: { name: { type: 'string' } } },
+        },
         defs: createTaskDefs({ echo: { action: 'echo_action' } }),
         flow: [{ do: 'echo' }],
         outputs: { input: '=$input' },
@@ -1801,6 +1814,97 @@ describe('WorkflowRunner', () => {
       output: { echo: { ok: true } },
       iterationStack: [],
     });
+  });
+
+  it('applies the default values of the input schema to $input', async () => {
+    const action = defineAction({
+      name: 'echo_action',
+      execute: async () => ({ ok: true }),
+    });
+    const compiled = compileWorkflow(
+      {
+        inputs: {
+          schema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              pages: { type: 'integer', default: 2 },
+            },
+            required: ['name'],
+          },
+        },
+        defs: createTaskDefs({ echo: { action: 'echo_action' } }),
+        flow: [{ do: 'echo' }],
+        outputs: { input: '=$input' },
+      },
+      { actions: { echo_action: action } },
+    );
+    const result = await new WorkflowRunner(compiled).start({
+      inputData: { name: 'Ada', extra: true },
+      context: new TestContext({}),
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: 'finished',
+        output: { input: { name: 'Ada', pages: 2, extra: true } },
+      }),
+    );
+  });
+
+  it('refuses an input that does not match the input schema, without starting', async () => {
+    const execute = jest.fn(async () => ({ ok: true }));
+    const action = defineAction({ name: 'echo_action', execute });
+    const compiled = compileWorkflow(
+      {
+        inputs: {
+          schema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              pages: { type: 'integer' },
+            },
+            required: ['name'],
+            additionalProperties: false,
+          },
+        },
+        defs: createTaskDefs({ echo: { action: 'echo_action' } }),
+        flow: [{ do: 'echo' }],
+        outputs: {},
+      },
+      { actions: { echo_action: action } },
+    );
+    const emitter = new WorkflowEventEmitter();
+    const events: string[] = [];
+    emitter.on('hook:workflow:start', () => events.push('start'));
+    emitter.on('hook:workflow:failure', () => events.push('failure'));
+    const context = new TestContext({});
+    context.eventEmitter = emitter;
+    const runner = new WorkflowRunner(compiled);
+    const statusBefore = runner.getStatus();
+    const started = runner.start({
+      inputData: { pages: 'two', extra: true },
+      context,
+    });
+
+    await expect(started).rejects.toBeInstanceOf(WorkflowInputRejectedError);
+    await expect(started).rejects.toMatchObject({
+      name: 'WorkflowInputRejectedError',
+      message:
+        'Workflow input was rejected: ' +
+        'name: Invalid input: expected string, received undefined; ' +
+        'pages: Invalid input: expected number, received string; ' +
+        '(root): Unrecognized key: "extra"',
+      issues: [
+        'name: Invalid input: expected string, received undefined',
+        'pages: Invalid input: expected number, received string',
+        '(root): Unrecognized key: "extra"',
+      ],
+    });
+    expect(runner.getStatus()).toBe(statusBefore);
+    expect(runner.getState()).toBeUndefined();
+    expect(events).toEqual([]);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('hands out copies of its step records', async () => {

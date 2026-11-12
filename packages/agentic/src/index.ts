@@ -52,6 +52,7 @@ export type {
 } from './bindings/base-binding';
 
 export {
+  buildWorkflowInputParser,
   compileWorkflow,
   Workflow,
   WorkflowEventEmitter,
@@ -116,6 +117,7 @@ export {
   WorkflowCancellationError,
   WorkflowCheckpointInvalidError,
   WorkflowDefinitionDriftError,
+  WorkflowInputRejectedError,
   WorkflowResumeError,
   WorkflowResumeRejectedError,
   WorkflowWaitAmbiguousError,

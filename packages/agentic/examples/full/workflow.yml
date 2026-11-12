@@ -4,24 +4,29 @@
 ---
 # End-to-end assistant that classifies a user request, collects signals, performs a human-in-the-loop
 # clarification (pausing the run until the user replies), branches by intent/priority, and delivers an email.
-# Declares external inputs the caller must provide when starting a run.
+# Declares the payload the caller provides when starting a run, as a JSON Schema of type object.
+# A payload that does not match is refused before anything runs; "default" values are filled in.
 inputs:
   schema:
-    query:
-      type: string
-      description: "Natural language request or question from the user."
-    user_email:
-      type: string
-      description: "Where to send the response."
-    priority:
-      type: string
-      enum: ["low", "normal", "high"]
-      description: "Used for routing/escalation decisions."
-    attachments:
-      type: array
-      items:
+    type: object
+    properties:
+      query:
         type: string
-      description: "Optional file ids that the user attached with the request."
+        description: "Natural language request or question from the user."
+      user_email:
+        type: string
+        description: "Where to send the response."
+      priority:
+        type: string
+        enum: ["low", "normal", "high"]
+        default: "normal"
+        description: "Used for routing/escalation decisions."
+      attachments:
+        type: array
+        items:
+          type: string
+        description: "Optional file ids that the user attached with the request."
+    required: [query, user_email]
 
 # Context is provided by the runtime (read-only) and accessed with $context.* inside tasks.
 # Include any long-term state here (thread ids, transcripts, briefs) instead of a separate memory block.

@@ -28,8 +28,8 @@ import {
   type WorkflowRunStatus,
   type WorkflowSnapshot,
 } from './context';
-import { throwIfAborted } from './errors';
-import { checkResumePayload } from './resume-payload';
+import { throwIfAborted, WorkflowInputRejectedError } from './errors';
+import { checkResumePayload, describeSchemaIssues } from './resume-payload';
 import { RunnerRuntimeControl } from './runner-runtime-control';
 import { executeConditional as runConditionalExecutor } from './step-executors/conditional-executor';
 import { executeLoop as runLoopExecutor } from './step-executors/loop-executor';
@@ -197,17 +197,23 @@ export class WorkflowRunner {
    *
    * @param args Input payload and context to seed execution.
    * @returns Execution result including status and snapshot.
+   * @throws {WorkflowInputRejectedError} When the input payload does not match
+   * the workflow's `inputs.schema`; nothing ran and the runner is unchanged.
    */
   async start(args: RunnerStartArgs): Promise<WorkflowRunResult> {
+    const input = this.compiled.inputParser.safeParse(args.inputData ?? {});
+    if (!input.success) {
+      throw new WorkflowInputRejectedError(
+        describeSchemaIssues(input.error.issues),
+      );
+    }
+
     this.status = EWorkflowRunStatus.RUNNING;
     this.snapshots = {};
     this.stepLog = {};
     this.checkpoint = undefined;
     this.context = args.context;
-    this.state = rootState(
-      this.compiled.inputParser.parse(args.inputData ?? {}),
-      {},
-    );
+    this.state = rootState(input.data, {});
 
     this.runtimeControl = new RunnerRuntimeControl();
     this.context.attachWorkflowRuntime(this.runtimeControl);
