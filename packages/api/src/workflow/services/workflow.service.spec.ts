@@ -218,6 +218,20 @@ describe('WorkflowService (TypeORM)', () => {
     expect(created.inputSchema).toEqual(conversationalWorkflowInputJsonSchema);
   });
 
+  it('creates a workflow without a type as a conversational workflow', async () => {
+    const created = await workflowService.create({
+      name: `workflow_without_type_${Date.now()}`,
+      createdBy: creatorId,
+    });
+
+    expect(created).toEqual(
+      expect.objectContaining({
+        type: WorkflowType.conversational,
+        inputSchema: conversationalWorkflowInputJsonSchema,
+      }),
+    );
+  });
+
   it('allows custom manual schema updates', async () => {
     const manualSchema: JsonSchema = {
       type: 'object',

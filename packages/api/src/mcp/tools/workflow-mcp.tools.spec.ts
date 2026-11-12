@@ -4,6 +4,19 @@
  * Full terms: see LICENSE.md.
  */
 
+import { BadRequestException } from '@nestjs/common';
+
+import { ActionService } from '@/actions/actions.service';
+import {
+  installUserFixturesTypeOrm,
+  userFixtureIds,
+} from '@/utils/test/fixtures/user';
+import { buildTestingMocks } from '@/utils/test/utils';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
+import { WorkflowRunRepository } from '@/workflow/repositories/workflow-run.repository';
+import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
+import { WorkflowVersionService } from '@/workflow/services/workflow-version.service';
+import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowType, WorkflowVersionAction } from '@/workflow/types';
 
 import type { HexabotMcpRequest } from '../types';
@@ -320,5 +333,135 @@ describe('HexabotWorkflowMcpTools', () => {
     expect(workflowService.updateOne).toHaveBeenCalledWith('workflow-id', {
       publishedVersion: null,
     });
+  });
+});
+
+describe('HexabotWorkflowMcpTools (TypeORM)', () => {
+  let tools: HexabotWorkflowMcpTools;
+  let workflowService: WorkflowService;
+  const adminRequest = {
+    hexabotUser: { ...actor, id: userFixtureIds.admin },
+  } as HexabotMcpRequest;
+  // `await_reply` is mocked below as a conversational-only action.
+  const awaitReplyYml = [
+    'defs:',
+    '  ask:',
+    '    kind: task',
+    '    action: await_reply',
+    'flow:',
+    '  - do: ask',
+    'outputs: {}',
+  ].join('\n');
+
+  beforeAll(async () => {
+    const testing = await buildTestingMocks({
+      autoInjectFrom: ['providers'],
+      providers: [
+        HexabotWorkflowMcpTools,
+        HexabotWorkflowMcpHelper,
+        WorkflowService,
+        WorkflowVersionService,
+        WorkflowRunService,
+        WorkflowRunRepository,
+        {
+          provide: WEBSOCKET_GATEWAY,
+          useValue: {
+            joinSockets: jest.fn(),
+            broadcastWorkflowEvent: jest.fn(),
+          },
+        },
+      ],
+      typeorm: {
+        fixtures: installUserFixturesTypeOrm,
+      },
+    });
+
+    [tools, workflowService] = await testing.getMocks([
+      HexabotWorkflowMcpTools,
+      WorkflowService,
+    ]);
+  });
+
+  beforeEach(() => {
+    jest.spyOn(ActionService.prototype, 'getRegistry').mockReturnValue({
+      await_reply: { workflowTypes: [WorkflowType.conversational] },
+    } as any);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('creates nothing when the definition YAML is invalid, so the same call can be retried', async () => {
+    // Without a type, as the workflow gets the default one.
+    const args = { name: 'Invalid YAML' };
+
+    await expect(
+      tools.createWorkflow(
+        { ...args, definitionYml: 'defs: {}\nflow: 42\noutputs: {}\n' },
+        {},
+        adminRequest,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(
+      await workflowService.findOne({ where: { name: args.name } }),
+    ).toBeNull();
+
+    const summary = await tools.createWorkflow(
+      { ...args, definitionYml: 'defs: {}\nflow: []\noutputs: {}\n' },
+      {},
+      adminRequest,
+    );
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        type: WorkflowType.conversational,
+        currentVersion: expect.objectContaining({ version: 1 }),
+      }),
+    );
+  });
+
+  it('creates nothing when the definition uses an action the workflow type cannot run', async () => {
+    const name = 'Unsupported action';
+
+    await expect(
+      tools.createWorkflow(
+        {
+          name,
+          type: WorkflowType.manual,
+          definitionYml: awaitReplyYml,
+        },
+        {},
+        adminRequest,
+      ),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Actions not available in manual workflows: ask (await_reply)',
+      ),
+    );
+    expect(await workflowService.findOne({ where: { name } })).toBeNull();
+  });
+
+  it('changes nothing when an update commits a definition the workflow type cannot run', async () => {
+    const { id } = await workflowService.create({
+      name: 'Manual workflow',
+      description: 'Before',
+      type: WorkflowType.manual,
+      createdBy: userFixtureIds.admin,
+    });
+    const before = await workflowService.findOne(id);
+
+    await expect(
+      tools.updateWorkflow(
+        { id, description: 'After', definitionYml: awaitReplyYml },
+        {},
+        adminRequest,
+      ),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Actions not available in manual workflows: ask (await_reply)',
+      ),
+    );
+    expect(await workflowService.findOne(id)).toEqual(before);
   });
 });

@@ -42,6 +42,9 @@ export {
   WorkflowVersionAction,
 };
 
+/** Type of a workflow created without one (`workflows.type` column default). */
+export const DEFAULT_WORKFLOW_TYPE = WorkflowType.conversational;
+
 export type MemoryValue = Record<string, unknown>;
 
 /**

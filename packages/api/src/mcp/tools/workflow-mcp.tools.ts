@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import {
+  DEFAULT_WORKFLOW_TYPE,
   DirectionType,
   WorkflowType,
   WorkflowVersionAction,
@@ -106,7 +107,7 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_workflow_create',
     description:
-      'Create a Hexabot workflow. Optionally commit an initial workflow definition YAML.',
+      'Create a Hexabot workflow. Optionally commit an initial workflow definition YAML; if it is refused, no workflow is created, so the call can be retried with a fixed definition.',
     parameters: z.object({
       ...workflowPayloadSchema,
       name: z.string().min(1),
@@ -134,6 +135,12 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   ) {
     const actorId = this.getActorId(request);
     const { definitionYml, versionMessage, ...workflowPayload } = args;
+    if (definitionYml) {
+      this.workflowHelper.assertDefinitionCommittable(
+        definitionYml,
+        workflowPayload.type ?? DEFAULT_WORKFLOW_TYPE,
+      );
+    }
     const workflow = await this.workflowService.create({
       ...workflowPayload,
       createdBy: actorId,
@@ -158,7 +165,7 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_workflow_update',
     description:
-      'Update workflow metadata. Optionally commit a new workflow definition YAML version.',
+      'Update workflow metadata. Optionally commit a new workflow definition YAML version; if it is refused, nothing is changed.',
     parameters: z.object({
       id: uuidSchema,
       ...workflowPayloadSchema,
@@ -177,7 +184,13 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   ) {
     const actorId = this.getActorId(request);
     const { id, definitionYml, versionMessage, ...updates } = args;
-    await this.workflowHelper.requireWorkflow(id);
+    const workflow = await this.workflowHelper.requireWorkflow(id);
+    if (definitionYml) {
+      this.workflowHelper.assertDefinitionCommittable(
+        definitionYml,
+        workflow.type,
+      );
+    }
 
     if (Object.keys(updates).length > 0) {
       await this.workflowService.updateOne(id, updates as any);

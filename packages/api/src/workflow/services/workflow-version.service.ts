@@ -159,14 +159,16 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
 
   /**
    * Refuse a definition that uses an action its workflow's type cannot run
-   * (`BaseAction.workflowTypes`), since no run of it could compile.
+   * (`BaseAction.workflowTypes`), since no run of it could compile. Run by
+   * every snapshot, and by callers that check a definition before creating
+   * its workflow.
    *
    * @param definitionYml The definition to save.
    * @param workflowType The type of its workflow; nothing is checked without
    * it, as the version cannot be saved anyway.
    * @throws {BadRequestException} Listing the offending tasks.
    */
-  private assertActionsSupported(
+  assertActionsSupported(
     definitionYml: string,
     workflowType: WorkflowType | undefined,
   ): void {
