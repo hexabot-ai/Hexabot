@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import {
+  DEFAULT_WORKFLOW_TYPE,
   DirectionType,
   WorkflowType,
   WorkflowVersionAction,
@@ -135,10 +136,9 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
     const actorId = this.getActorId(request);
     const { definitionYml, versionMessage, ...workflowPayload } = args;
     if (definitionYml) {
-      // `conversational` is the column default of `WorkflowOrmEntity.type`.
       this.workflowHelper.assertDefinitionCommittable(
         definitionYml,
-        workflowPayload.type ?? WorkflowType.conversational,
+        workflowPayload.type ?? DEFAULT_WORKFLOW_TYPE,
       );
     }
     const workflow = await this.workflowService.create({

@@ -43,7 +43,12 @@ import {
   manualWorkflowDefaultInputJsonSchema,
   scheduledWorkflowInputJsonSchema,
 } from '../schemas/workflow-input-schemas';
-import { DirectionType, WorkflowType, WorkflowVersionAction } from '../types';
+import {
+  DEFAULT_WORKFLOW_TYPE,
+  DirectionType,
+  WorkflowType,
+  WorkflowVersionAction,
+} from '../types';
 
 import { WorkflowVersionOrmEntity } from './workflow-version.entity';
 
@@ -78,7 +83,7 @@ export class WorkflowOrmEntity extends BaseOrmEntity<WorkflowDto> {
   /** Workflow trigger type (conversational, manual, scheduled). */
   @EnumColumn({
     enum: WorkflowType,
-    default: WorkflowType.conversational,
+    default: DEFAULT_WORKFLOW_TYPE,
   })
   type!: WorkflowType;
 
@@ -203,6 +208,17 @@ export class WorkflowOrmEntity extends BaseOrmEntity<WorkflowDto> {
     if (this.builtin) {
       throw new Error('Cannot delete builtin workflow');
     }
+  }
+
+  /**
+   * Give a workflow inserted without a type the default type, so that
+   * `syncInputSchema` gives it that type's input schema: the column default is
+   * only applied by the database, and `input_schema` cannot be null. Declared
+   * before `syncInputSchema`, as hooks run in declaration order.
+   */
+  @OnBeforeInsert()
+  protected applyDefaultType(): void {
+    this.type ??= DEFAULT_WORKFLOW_TYPE;
   }
 
   /**

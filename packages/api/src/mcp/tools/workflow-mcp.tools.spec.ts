@@ -377,7 +377,8 @@ describe('HexabotWorkflowMcpTools (TypeORM)', () => {
   });
 
   it('creates nothing when the definition YAML is invalid, so the same call can be retried', async () => {
-    const args = { name: 'Invalid YAML', type: WorkflowType.conversational };
+    // Without a type, as the workflow gets the default one.
+    const args = { name: 'Invalid YAML' };
 
     await expect(
       tools.createWorkflow(
@@ -396,8 +397,11 @@ describe('HexabotWorkflowMcpTools (TypeORM)', () => {
       adminRequest,
     );
 
-    expect(summary.currentVersion).toEqual(
-      expect.objectContaining({ version: 1 }),
+    expect(summary).toEqual(
+      expect.objectContaining({
+        type: WorkflowType.conversational,
+        currentVersion: expect.objectContaining({ version: 1 }),
+      }),
     );
   });
 

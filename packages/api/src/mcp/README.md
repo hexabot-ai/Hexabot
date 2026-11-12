@@ -176,7 +176,8 @@ structured validation errors without mutating workflow state.
 `hexabot_workflow_create` runs the same checks on its `definitionYml` before
 creating the workflow: when the definition is refused (invalid YAML, an action
 the workflow's type cannot run), no workflow is created and the same call can be
-retried with a fixed definition. Commits inherit
+retried with a fixed definition. A workflow created without a `type` is
+`conversational`. Commits inherit
 the workflow's current version as their parent unless `parentVersion` is
 explicitly supplied. `hexabot_workflow_rollback` creates a new current restore snapshot;
 publish that snapshot with `hexabot_workflow_publish` when it should become the
