@@ -11,7 +11,7 @@ import type { GroupMeta } from "../graph-builder/types";
 
 import { runBranchGroupPass } from "./branch-group-pass";
 import { FLOW_LAYER_GAP } from "./constants";
-import type { LayoutContext } from "./geometry";
+import { getGroupPadding, type LayoutContext } from "./geometry";
 import {
   collectAttachmentDescendants,
   countNodeIds,
@@ -41,7 +41,7 @@ export const alignBranchFlowOrigins = (
   const groupEntryLeadingInset = new Map<string, number>();
 
   groups.forEach((group) => {
-    const padding = ctx.config?.highlights?.[group.operatorType]?.padding;
+    const padding = getGroupPadding(group, ctx);
 
     if (!padding) {
       return;

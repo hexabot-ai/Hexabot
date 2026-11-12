@@ -30,7 +30,7 @@ import {
 import {
   buildAttachmentMaps,
   collectAttachmentDescendants,
-  collectNodeIdsWithAttachmentDescendants,
+  collectGroupSubtreeIds,
   mapNodesToGroup,
 } from "./graph-maps";
 
@@ -67,38 +67,18 @@ export const alignAllNodesToStartAxis = (
     { memberIds: Set<string>; referenceCenter: number }
   >();
   const referenceCenters: number[] = [];
+  // A group's alignment moves its whole subtree, nested overlays included.
   const collectGroupMemberIds = (groupId: string): Set<string> => {
     const group = groups.get(groupId);
 
-    if (!group) {
-      return new Set();
-    }
-
-    const memberIds = collectNodeIdsWithAttachmentDescendants(
-      group.memberNodeIds,
-      attachmentChildrenByParent,
-      nodesById,
-    );
-
-    groups.forEach((candidateGroup, candidateGroupId) => {
-      if (
-        candidateGroupId === groupId ||
-        candidateGroup.level <= group.level ||
-        !nodesById.has(candidateGroupId)
-      ) {
-        return;
-      }
-
-      const isNestedGroup = [...candidateGroup.memberNodeIds].some((nodeId) =>
-        group.memberNodeIds.has(nodeId),
-      );
-
-      if (isNestedGroup) {
-        memberIds.add(candidateGroupId);
-      }
-    });
-
-    return memberIds;
+    return group
+      ? collectGroupSubtreeIds(
+          group,
+          groups,
+          attachmentChildrenByParent,
+          nodesById,
+        )
+      : new Set();
   };
   const getGroupReferenceCenter = (
     groupId: string,

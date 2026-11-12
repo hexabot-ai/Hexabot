@@ -10,7 +10,8 @@ export type {
   WorkflowGraphHandle,
   WorkflowGraphIssue,
   WorkflowGraphProps,
-} from "./components/WorkflowGraph";
+} from "./components/workflow-graph.props";
+export { EDGE_TYPES, NODE_TYPES } from "./components/workflow-graph.registry";
 export * from "./contexts/workflow-graph-host.context";
 export * from "./hooks/useFocusNode";
 export * from "./hooks/useWorkflowViewport";

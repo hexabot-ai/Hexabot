@@ -9,16 +9,7 @@ import type { Edge } from "@xyflow/react";
 import type { GraphNode } from "../../types/workflow-node.types";
 import type { GroupMeta } from "../graph-builder/types";
 
-import {
-  getPositionedNodeAxisBounds,
-  isHorizontalDirection,
-  type Axis,
-  type AxisBounds,
-  type LayoutContext,
-  type NodePosition,
-  translateFlow,
-  translateSpread,
-} from "./geometry";
+import type { Axis, AxisBounds, LayoutContext, NodePosition } from "./geometry";
 import {
   buildMainFlowMaps,
   collectBranchNodeIds,
@@ -27,6 +18,7 @@ import {
   type BranchTraversal,
   type OutgoingTarget,
 } from "./graph-maps";
+import { createPositionTracker } from "./position-tracker";
 
 export type BranchTargetRef = { targetId: string; branchIndex: number };
 export type BranchLayoutPass = {
@@ -63,30 +55,17 @@ export const runBranchGroupPass = (
     pass: BranchLayoutPass;
   }) => void,
 ): GraphNode[] => {
-  const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const positions = new Map(nodes.map((node) => [node.id, node.position]));
+  const tracker = createPositionTracker(nodes, ctx);
+  const { isVertical, nodesById, positions } = tracker;
   const { outgoingBySource, attachmentChildrenByParent } =
     buildMainFlowMaps(edges);
-  const translate = axis === "spread" ? translateSpread : translateFlow;
   const pass: BranchLayoutPass = {
     isVertical,
     nodesById,
     positions,
     outgoingBySource,
     attachmentChildrenByParent,
-    moveNode: (nodeId, delta) => {
-      const node = nodesById.get(nodeId);
-
-      if (!node) {
-        return;
-      }
-
-      positions.set(
-        nodeId,
-        translate(positions.get(nodeId) ?? node.position, isVertical, delta),
-      );
-    },
+    moveNode: (nodeId, delta) => tracker.move(nodeId, axis, delta),
     collectBranch: (startId, group) =>
       collectBranchNodeIds({
         startId,
@@ -96,15 +75,7 @@ export const runBranchGroupPass = (
         outgoingBySource,
         attachmentChildrenByParent,
       }),
-    getNodeBounds: (nodeId, boundsAxis) =>
-      getPositionedNodeAxisBounds(
-        nodeId,
-        positions,
-        nodesById,
-        ctx,
-        isVertical,
-        boundsAxis,
-      ),
+    getNodeBounds: tracker.getBounds,
   };
 
   [...groups.values()]
@@ -137,8 +108,5 @@ export const runBranchGroupPass = (
       handleGroup({ group, operatorNode, branchTargets, pass });
     });
 
-  return nodes.map((node) => ({
-    ...node,
-    position: positions.get(node.id) ?? node.position,
-  }));
+  return tracker.apply();
 };

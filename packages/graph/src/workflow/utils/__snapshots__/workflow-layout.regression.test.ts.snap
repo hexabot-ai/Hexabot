@@ -1,0 +1,2072 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`workflow layout regression > builds the nodes and edges of agent bindings 1`] = `
+"
+step:0:task task selectable
+  ports: taskIn taskOut bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="agent" description="Answers" stepId="0" stepPath=["flow",0] taskName="agent" actionName="agent_action" level=0
+attachment:0:binding:agent:tools:0:search bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="search" description="Search" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="search" level=0
+attachment:0:binding-placeholder:search:model bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="model" description="" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="search" bindingKind="model" level=0
+attachment:0:binding:agent:tools:1:calc bindingMulti
+  ports: bindingMultiIn
+  title="calc" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="calc" level=0
+attachment:0:binding:agent:tools:2:self_ref bindingMulti
+  ports: bindingMultiIn bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="self_ref" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="self_ref" level=0
+attachment:0:binding:self_ref:tools:0:self_ref bindingMulti
+  ports: bindingMultiIn bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="self_ref" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="tools" bindingKind="tools" bindingName="self_ref" level=0
+attachment:0:binding:self_ref:tools:1:search bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="search" description="Search" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="tools" bindingKind="tools" bindingName="search" level=0
+attachment:0:binding-placeholder:self_ref:tools bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="tools" description="" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="self_ref" bindingKind="tools" level=0
+attachment:0:binding:self_ref:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=0
+attachment:0:binding-placeholder:self_ref:memory bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="memory" description="" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="self_ref" bindingKind="memory" level=0
+attachment:0:binding:agent:tools:3:missing_tool bindingMulti
+  ports: bindingMultiIn
+  title="missing_tool" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="missing_tool" level=0
+attachment:0:binding-placeholder:agent:tools bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="tools" description="" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="agent" bindingKind="tools" level=0
+attachment:0:binding:agent:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="agent" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=0
+attachment:0:binding:agent:memory:0:profile bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="profile" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="agent" ownerBindingKind="memory" bindingKind="memory" bindingName="profile" level=0
+attachment:0:binding:profile:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="profile" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=0
+attachment:0:binding-placeholder:agent:memory bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="memory" description="" stepId="0" stepPath=["flow",0] taskName="agent" ownerDefName="agent" bindingKind="memory" level=0
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+step:1:task task selectable
+  ports: taskIn taskOut
+  title="missing_def" description="No description provided." stepId="1" stepPath=["flow",1] taskName="missing_def" actionName="" level=0
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+step:0:task#bindingOut-0-3-tools -> attachment:0:binding:agent:tools:0:search
+attachment:0:binding:agent:tools:0:search#bindingOut-0-1-model -> attachment:0:binding-placeholder:search:model
+step:0:task#bindingOut-0-3-tools -> attachment:0:binding:agent:tools:1:calc
+step:0:task#bindingOut-0-3-tools -> attachment:0:binding:agent:tools:2:self_ref
+attachment:0:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:0:binding:self_ref:tools:0:self_ref
+attachment:0:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:0:binding:self_ref:tools:1:search
+attachment:0:binding:self_ref:tools:1:search#bindingOut-0-1-model -> attachment:0:binding-placeholder:search:model
+attachment:0:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:0:binding-placeholder:self_ref:tools
+attachment:0:binding:agent:tools:2:self_ref#bindingOut-1-3-model -> attachment:0:binding:self_ref:model:0:gpt
+attachment:0:binding:agent:tools:2:self_ref#bindingOut-2-3-memory -> attachment:0:binding-placeholder:self_ref:memory
+step:0:task#bindingOut-0-3-tools -> attachment:0:binding:agent:tools:3:missing_tool
+step:0:task#bindingOut-0-3-tools -> attachment:0:binding-placeholder:agent:tools
+step:0:task#bindingOut-1-3-model -> attachment:0:binding:agent:model:0:gpt
+step:0:task#bindingOut-2-3-memory -> attachment:0:binding:agent:memory:0:profile
+attachment:0:binding:agent:memory:0:profile#bindingOut-0-1-model -> attachment:0:binding:profile:model:0:gpt
+step:0:task#bindingOut-2-3-memory -> attachment:0:binding-placeholder:agent:memory
+indicator:start -> step:0:task insert=["flow",0]
+step:0:task -> step:1:task insert=["flow",1]
+step:1:task -> indicator:end insert=["flow",2]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of all-empty conditional 1`] = `
+"
+group:0 group
+  ports: groupIn groupOut
+step:0:operator operator selectable
+  ports: operatorIn operatorOut-0-4(case 0) operatorOut-1-4(case 1) operatorOut-2-4(case 2) operatorOut-3-4(else)
+  i18nTitle="message.conditional_indicator" stepId="0" stepPath=["flow",0] groupName="group:0" level=0 operatorType="conditional"
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+placeholder:0:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",0,"steps",0]
+placeholder:0:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",1,"steps",0]
+placeholder:0:conditional:2 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",2,"steps",0]
+placeholder:0:conditional:3 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",3,"steps",0]
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:operator hidden
+step:0:operator#operatorOut-0-4 -> placeholder:0:conditional:0
+step:0:operator#operatorOut-1-4 -> placeholder:0:conditional:1
+step:0:operator#operatorOut-2-4 -> placeholder:0:conditional:2
+step:0:operator#operatorOut-3-4 -> placeholder:0:conditional:3
+placeholder:0:conditional:0 -> indicator:end hidden
+placeholder:0:conditional:1 -> indicator:end hidden
+placeholder:0:conditional:2 -> indicator:end hidden
+placeholder:0:conditional:3 -> indicator:end hidden
+indicator:start -> group:0 insert=["flow",0]
+group:0 -> indicator:end insert=["flow",1]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of deep nesting 1`] = `
+"
+group:0 group
+  ports: groupIn groupOut
+group:0.0 group
+  ports: groupIn groupOut
+group:0.0.0 group
+  ports: groupIn groupOut
+group:0.0.0.0 group
+  ports: groupIn groupOut
+step:0:operator operator selectable
+  ports: operatorIn operatorOut-0-2(case 0) operatorOut-1-2(else)
+  i18nTitle="message.conditional_indicator" stepId="0" stepPath=["flow",0] groupName="group:0" level=0 operatorType="conditional"
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+step:0.0:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.parallel_drawer.form.strategy.wait_all.label)
+  i18nTitle="message.parallel_indicator" stepId="0.0" stepPath=["flow",0,"conditional","when",0,"steps",0] groupName="group:0.0" level=1 operatorType="parallel" strategy="wait_all"
+placeholder:0.0:parallel:2 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.0" level=2 insertPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",2]
+step:0.0.0:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.loop_drawer.form.type.for_each.label)
+  i18nTitle="message.loop_indicator" stepId="0.0.0" stepPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0] groupName="group:0.0.0" level=2 operatorType="loop"
+step:0.0.0.0:operator operator selectable
+  ports: operatorIn operatorOut-0-2(case 0) operatorOut-1-2(else)
+  i18nTitle="message.conditional_indicator" stepId="0.0.0.0" stepPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0,"loop","steps",0] groupName="group:0.0.0.0" level=3 operatorType="conditional"
+step:x:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="x" stepPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0,"loop","steps",0,"conditional","when",0,"steps",0] taskName="a" actionName="plain" groupName="group:0.0.0.0" level=4
+placeholder:0.0.0.0:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.0.0.0" level=4 insertPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0,"loop","steps",0,"conditional","when",0,"steps",1]
+placeholder:0.0.0.0:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.0.0.0" level=4 insertPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0,"loop","steps",0,"conditional","when",1,"steps",0]
+placeholder:0.0.0:loop:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.0.0" level=3 insertPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0,"loop","steps",1]
+step:0.0.1:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="0.0.1" stepPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",1] taskName="b" actionName="plain" groupName="group:0.0" level=2
+placeholder:0:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",0,"steps",1]
+step:0.1:task task selectable
+  ports: taskIn taskOut
+  title="c" description="No description provided." stepId="0.1" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="c" actionName="plain" groupName="group:0" level=1
+placeholder:0:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",1,"steps",1]
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:operator hidden
+step:0:operator#operatorOut-0-2 -> step:0.0:operator hidden
+step:0.0:operator -> step:0.0.0:operator hidden
+step:0.0.0:operator -> step:0.0.0.0:operator hidden
+step:0.0.0.0:operator#operatorOut-0-2 -> step:x:task insert=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0,"loop","steps",0,"conditional","when",0,"steps",0]
+step:x:task -> placeholder:0.0.0.0:conditional:0
+step:0.0.0.0:operator#operatorOut-1-2 -> placeholder:0.0.0.0:conditional:1
+placeholder:0.0.0.0:conditional:0 -> placeholder:0.0.0:loop:0 hidden
+placeholder:0.0.0.0:conditional:1 -> placeholder:0.0.0:loop:0 hidden
+placeholder:0.0.0:loop:0 -> placeholder:0.0:parallel:2 hidden
+step:0.0:operator -> step:0.0.1:task
+step:0.0.1:task -> placeholder:0.0:parallel:2
+placeholder:0.0:parallel:2 -> placeholder:0:conditional:0 hidden
+step:0:operator#operatorOut-1-2 -> step:0.1:task insert=["flow",0,"conditional","when",1,"steps",0]
+step:0.1:task -> placeholder:0:conditional:1
+placeholder:0:conditional:0 -> indicator:end hidden
+placeholder:0:conditional:1 -> indicator:end hidden
+indicator:start -> group:0 insert=["flow",0]
+step:0:operator#operatorOut-0-2 -> group:0.0 insert=["flow",0,"conditional","when",0,"steps",0]
+step:0.0:operator -> group:0.0.0
+step:0.0.0:operator -> group:0.0.0.0 insert=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0,"loop","steps",0]
+group:0.0.0.0 -> placeholder:0.0.0:loop:0
+group:0.0.0 -> placeholder:0.0:parallel:2
+group:0.0 -> placeholder:0:conditional:0
+group:0 -> indicator:end insert=["flow",1]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of empty branches around content 1`] = `
+"
+group:0 group
+  ports: groupIn groupOut
+step:0:operator operator selectable
+  ports: operatorIn operatorOut-0-6(case 0) operatorOut-1-6(case 1) operatorOut-2-6(case 2) operatorOut-3-6(case 3) operatorOut-4-6(case 4) operatorOut-5-6(else)
+  i18nTitle="message.conditional_indicator" stepId="0" stepPath=["flow",0] groupName="group:0" level=0 operatorType="conditional"
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+placeholder:0:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",0,"steps",0]
+step:0.1:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="0.1" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="a" actionName="plain" groupName="group:0" level=1
+placeholder:0:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",1,"steps",1]
+placeholder:0:conditional:2 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",2,"steps",0]
+placeholder:0:conditional:3 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",3,"steps",0]
+step:0.4:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="0.4" stepPath=["flow",0,"conditional","when",4,"steps",0] taskName="b" actionName="plain" groupName="group:0" level=1
+placeholder:0:conditional:4 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",4,"steps",1]
+placeholder:0:conditional:5 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",5,"steps",0]
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:operator hidden
+step:0:operator#operatorOut-0-6 -> placeholder:0:conditional:0
+step:0:operator#operatorOut-1-6 -> step:0.1:task insert=["flow",0,"conditional","when",1,"steps",0]
+step:0.1:task -> placeholder:0:conditional:1
+step:0:operator#operatorOut-2-6 -> placeholder:0:conditional:2
+step:0:operator#operatorOut-3-6 -> placeholder:0:conditional:3
+step:0:operator#operatorOut-4-6 -> step:0.4:task insert=["flow",0,"conditional","when",4,"steps",0]
+step:0.4:task -> placeholder:0:conditional:4
+step:0:operator#operatorOut-5-6 -> placeholder:0:conditional:5
+placeholder:0:conditional:0 -> indicator:end hidden
+placeholder:0:conditional:1 -> indicator:end hidden
+placeholder:0:conditional:2 -> indicator:end hidden
+placeholder:0:conditional:3 -> indicator:end hidden
+placeholder:0:conditional:4 -> indicator:end hidden
+placeholder:0:conditional:5 -> indicator:end hidden
+indicator:start -> group:0 insert=["flow",0]
+group:0 -> indicator:end insert=["flow",1]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of group chain in a branch 1`] = `
+"
+group:0 group
+  ports: groupIn groupOut
+group:0.0 group
+  ports: groupIn groupOut
+group:0.2 group
+  ports: groupIn groupOut
+step:0:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.loop_drawer.form.type.for_each.label)
+  i18nTitle="message.loop_indicator" stepId="0" stepPath=["flow",0] groupName="group:0" level=0 operatorType="loop"
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+step:0.0:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.parallel_drawer.form.strategy.wait_all.label)
+  i18nTitle="message.parallel_indicator" stepId="0.0" stepPath=["flow",0,"loop","steps",0] groupName="group:0.0" level=1 operatorType="parallel" strategy="wait_all"
+placeholder:0.0:parallel:2 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.0" level=2 insertPath=["flow",0,"loop","steps",0,"parallel","steps",2]
+step:0.0.0:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="0.0.0" stepPath=["flow",0,"loop","steps",0,"parallel","steps",0] taskName="a" actionName="plain" groupName="group:0.0" level=2
+step:0.0.1:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="0.0.1" stepPath=["flow",0,"loop","steps",0,"parallel","steps",1] taskName="b" actionName="plain" groupName="group:0.0" level=2
+step:0.1:task task selectable
+  ports: taskIn taskOut
+  title="c" description="No description provided." stepId="0.1" stepPath=["flow",0,"loop","steps",1] taskName="c" actionName="plain" groupName="group:0" level=1
+step:0.2:operator operator selectable
+  ports: operatorIn operatorOut-0-2(case 0) operatorOut-1-2(else)
+  i18nTitle="message.conditional_indicator" stepId="0.2" stepPath=["flow",0,"loop","steps",2] groupName="group:0.2" level=1 operatorType="conditional"
+step:0.2.0:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="0.2.0" stepPath=["flow",0,"loop","steps",2,"conditional","when",0,"steps",0] taskName="a" actionName="plain" groupName="group:0.2" level=2
+placeholder:0.2:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.2" level=2 insertPath=["flow",0,"loop","steps",2,"conditional","when",0,"steps",1]
+step:0.2.1:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="0.2.1" stepPath=["flow",0,"loop","steps",2,"conditional","when",1,"steps",0] taskName="b" actionName="plain" groupName="group:0.2" level=2
+placeholder:0.2:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.2" level=2 insertPath=["flow",0,"loop","steps",2,"conditional","when",1,"steps",1]
+step:0.3:task task selectable
+  ports: taskIn taskOut
+  title="d" description="No description provided." stepId="0.3" stepPath=["flow",0,"loop","steps",3] taskName="d" actionName="plain" groupName="group:0" level=1
+placeholder:0:loop:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"loop","steps",4]
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:operator hidden
+step:0:operator -> step:0.0:operator hidden
+step:0.0:operator -> step:0.0.0:task
+step:0.0.0:task -> placeholder:0.0:parallel:2
+step:0.0:operator -> step:0.0.1:task
+step:0.0.1:task -> placeholder:0.0:parallel:2
+placeholder:0.0:parallel:2 -> step:0.1:task hidden
+step:0.1:task -> step:0.2:operator hidden
+step:0.2:operator#operatorOut-0-2 -> step:0.2.0:task insert=["flow",0,"loop","steps",2,"conditional","when",0,"steps",0]
+step:0.2.0:task -> placeholder:0.2:conditional:0
+step:0.2:operator#operatorOut-1-2 -> step:0.2.1:task insert=["flow",0,"loop","steps",2,"conditional","when",1,"steps",0]
+step:0.2.1:task -> placeholder:0.2:conditional:1
+placeholder:0.2:conditional:0 -> step:0.3:task hidden
+placeholder:0.2:conditional:1 -> step:0.3:task hidden
+step:0.3:task -> placeholder:0:loop:0
+placeholder:0:loop:0 -> indicator:end hidden
+indicator:start -> group:0 insert=["flow",0]
+step:0:operator -> group:0.0 insert=["flow",0,"loop","steps",0]
+group:0.0 -> step:0.1:task insert=["flow",0,"loop","steps",1]
+step:0.1:task -> group:0.2 insert=["flow",0,"loop","steps",2]
+group:0.2 -> step:0.3:task insert=["flow",0,"loop","steps",3]
+group:0 -> indicator:end insert=["flow",1]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of group then step in a branch 1`] = `
+"
+group:0 group
+  ports: groupIn groupOut
+group:0.0 group
+  ports: groupIn groupOut
+step:0:operator operator selectable
+  ports: operatorIn operatorOut-0-2(case 0) operatorOut-1-2(else)
+  i18nTitle="message.conditional_indicator" stepId="0" stepPath=["flow",0] groupName="group:0" level=0 operatorType="conditional"
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+step:0.0:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.parallel_drawer.form.strategy.wait_all.label)
+  i18nTitle="message.parallel_indicator" stepId="0.0" stepPath=["flow",0,"conditional","when",0,"steps",0] groupName="group:0.0" level=1 operatorType="parallel" strategy="wait_all"
+placeholder:0.0:parallel:2 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.0" level=2 insertPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",2]
+step:0.0.0:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="0.0.0" stepPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",0] taskName="a" actionName="plain" groupName="group:0.0" level=2
+step:0.0.1:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="0.0.1" stepPath=["flow",0,"conditional","when",0,"steps",0,"parallel","steps",1] taskName="b" actionName="plain" groupName="group:0.0" level=2
+step:0.1:task task selectable
+  ports: taskIn taskOut
+  title="c" description="No description provided." stepId="0.1" stepPath=["flow",0,"conditional","when",0,"steps",1] taskName="c" actionName="plain" groupName="group:0" level=1
+placeholder:0:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",0,"steps",2]
+step:0.2:task task selectable
+  ports: taskIn taskOut bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="agent" description="Answers" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" actionName="agent_action" groupName="group:0" level=1
+attachment:0.2:binding:agent:tools:0:search bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="search" description="Search" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="search" level=1
+attachment:0.2:binding-placeholder:search:model bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="model" description="" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="search" bindingKind="model" level=1
+attachment:0.2:binding:agent:tools:1:calc bindingMulti
+  ports: bindingMultiIn
+  title="calc" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="calc" level=1
+attachment:0.2:binding:agent:tools:2:self_ref bindingMulti
+  ports: bindingMultiIn bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="self_ref" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="self_ref" level=1
+attachment:0.2:binding:self_ref:tools:0:self_ref bindingMulti
+  ports: bindingMultiIn bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="self_ref" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="tools" bindingKind="tools" bindingName="self_ref" level=1
+attachment:0.2:binding:self_ref:tools:1:search bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="search" description="Search" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="tools" bindingKind="tools" bindingName="search" level=1
+attachment:0.2:binding-placeholder:self_ref:tools bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="tools" description="" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="self_ref" bindingKind="tools" level=1
+attachment:0.2:binding:self_ref:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=1
+attachment:0.2:binding-placeholder:self_ref:memory bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="memory" description="" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="self_ref" bindingKind="memory" level=1
+attachment:0.2:binding:agent:tools:3:missing_tool bindingMulti
+  ports: bindingMultiIn
+  title="missing_tool" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="missing_tool" level=1
+attachment:0.2:binding-placeholder:agent:tools bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="tools" description="" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="agent" bindingKind="tools" level=1
+attachment:0.2:binding:agent:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=1
+attachment:0.2:binding:agent:memory:0:profile bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="profile" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="memory" bindingKind="memory" bindingName="profile" level=1
+attachment:0.2:binding:profile:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="profile" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=1
+attachment:0.2:binding-placeholder:agent:memory bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="memory" description="" stepId="0.2" stepPath=["flow",0,"conditional","when",1,"steps",0] taskName="agent" ownerDefName="agent" bindingKind="memory" level=1
+placeholder:0:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"conditional","when",1,"steps",1]
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:operator hidden
+step:0:operator#operatorOut-0-2 -> step:0.0:operator hidden
+step:0.0:operator -> step:0.0.0:task
+step:0.0.0:task -> placeholder:0.0:parallel:2
+step:0.0:operator -> step:0.0.1:task
+step:0.0.1:task -> placeholder:0.0:parallel:2
+placeholder:0.0:parallel:2 -> step:0.1:task hidden
+step:0.1:task -> placeholder:0:conditional:0
+step:0.2:task#bindingOut-0-3-tools -> attachment:0.2:binding:agent:tools:0:search
+attachment:0.2:binding:agent:tools:0:search#bindingOut-0-1-model -> attachment:0.2:binding-placeholder:search:model
+step:0.2:task#bindingOut-0-3-tools -> attachment:0.2:binding:agent:tools:1:calc
+step:0.2:task#bindingOut-0-3-tools -> attachment:0.2:binding:agent:tools:2:self_ref
+attachment:0.2:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:0.2:binding:self_ref:tools:0:self_ref
+attachment:0.2:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:0.2:binding:self_ref:tools:1:search
+attachment:0.2:binding:self_ref:tools:1:search#bindingOut-0-1-model -> attachment:0.2:binding-placeholder:search:model
+attachment:0.2:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:0.2:binding-placeholder:self_ref:tools
+attachment:0.2:binding:agent:tools:2:self_ref#bindingOut-1-3-model -> attachment:0.2:binding:self_ref:model:0:gpt
+attachment:0.2:binding:agent:tools:2:self_ref#bindingOut-2-3-memory -> attachment:0.2:binding-placeholder:self_ref:memory
+step:0.2:task#bindingOut-0-3-tools -> attachment:0.2:binding:agent:tools:3:missing_tool
+step:0.2:task#bindingOut-0-3-tools -> attachment:0.2:binding-placeholder:agent:tools
+step:0.2:task#bindingOut-1-3-model -> attachment:0.2:binding:agent:model:0:gpt
+step:0.2:task#bindingOut-2-3-memory -> attachment:0.2:binding:agent:memory:0:profile
+attachment:0.2:binding:agent:memory:0:profile#bindingOut-0-1-model -> attachment:0.2:binding:profile:model:0:gpt
+step:0.2:task#bindingOut-2-3-memory -> attachment:0.2:binding-placeholder:agent:memory
+step:0:operator#operatorOut-1-2 -> step:0.2:task insert=["flow",0,"conditional","when",1,"steps",0]
+step:0.2:task -> placeholder:0:conditional:1
+placeholder:0:conditional:0 -> indicator:end hidden
+placeholder:0:conditional:1 -> indicator:end hidden
+indicator:start -> group:0 insert=["flow",0]
+step:0:operator#operatorOut-0-2 -> group:0.0 insert=["flow",0,"conditional","when",0,"steps",0]
+group:0.0 -> step:0.1:task insert=["flow",0,"conditional","when",0,"steps",1]
+group:0 -> indicator:end insert=["flow",1]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of mixed conditional 1`] = `
+"
+group:1 group
+  ports: groupIn groupOut
+group:2 group
+  ports: groupIn groupOut
+group:1.2 group
+  ports: groupIn groupOut
+step:0:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="0" stepPath=["flow",0] taskName="a" actionName="plain" level=0
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+step:1:operator operator selectable
+  ports: operatorIn operatorOut-0-3(case 0) operatorOut-1-3(case 1) operatorOut-2-3(else)
+  i18nTitle="message.conditional_indicator" stepId="1" stepPath=["flow",1] groupName="group:1" level=0 operatorType="conditional"
+step:1.0:task task selectable
+  ports: taskIn taskOut bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="agent" description="Answers" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" actionName="agent_action" groupName="group:1" level=1
+attachment:1.0:binding:agent:tools:0:search bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="search" description="Search" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="search" level=1
+attachment:1.0:binding-placeholder:search:model bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="model" description="" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="search" bindingKind="model" level=1
+attachment:1.0:binding:agent:tools:1:calc bindingMulti
+  ports: bindingMultiIn
+  title="calc" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="calc" level=1
+attachment:1.0:binding:agent:tools:2:self_ref bindingMulti
+  ports: bindingMultiIn bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="self_ref" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="self_ref" level=1
+attachment:1.0:binding:self_ref:tools:0:self_ref bindingMulti
+  ports: bindingMultiIn bindingOut-0-3-tools(visual_editor.port_label.tools) bindingOut-1-3-model(visual_editor.port_label.model) bindingOut-2-3-memory(visual_editor.port_label.memory)
+  title="self_ref" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="tools" bindingKind="tools" bindingName="self_ref" level=1
+attachment:1.0:binding:self_ref:tools:1:search bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="search" description="Search" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="tools" bindingKind="tools" bindingName="search" level=1
+attachment:1.0:binding-placeholder:self_ref:tools bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="tools" description="" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="self_ref" bindingKind="tools" level=1
+attachment:1.0:binding:self_ref:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="self_ref" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=1
+attachment:1.0:binding-placeholder:self_ref:memory bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="memory" description="" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="self_ref" bindingKind="memory" level=1
+attachment:1.0:binding:agent:tools:3:missing_tool bindingMulti
+  ports: bindingMultiIn
+  title="missing_tool" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="tools" bindingKind="tools" bindingName="missing_tool" level=1
+attachment:1.0:binding-placeholder:agent:tools bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="tools" description="" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="agent" bindingKind="tools" level=1
+attachment:1.0:binding:agent:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=1
+attachment:1.0:binding:agent:memory:0:profile bindingMulti
+  ports: bindingMultiIn bindingOut-0-1-model(visual_editor.port_label.model)
+  title="profile" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="agent" ownerBindingKind="memory" bindingKind="memory" bindingName="profile" level=1
+attachment:1.0:binding:profile:model:0:gpt bindingSingle
+  ports: bindingSingleIn
+  title="gpt" description="GPT" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="profile" ownerBindingKind="model" bindingKind="model" bindingName="gpt" level=1
+attachment:1.0:binding-placeholder:agent:memory bindingPlaceholder
+  ports: bindingPlaceholderIn
+  title="memory" description="" stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="agent" ownerDefName="agent" bindingKind="memory" level=1
+placeholder:1:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:1" level=1 insertPath=["flow",1,"conditional","when",0,"steps",1]
+placeholder:1:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:1" level=1 insertPath=["flow",1,"conditional","when",1,"steps",0]
+step:1.2:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.parallel_drawer.form.strategy.wait_all.label)
+  i18nTitle="message.parallel_indicator" stepId="1.2" stepPath=["flow",1,"conditional","when",2,"steps",0] groupName="group:1.2" level=1 operatorType="parallel" strategy="wait_all"
+placeholder:1.2:parallel:2 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:1.2" level=2 insertPath=["flow",1,"conditional","when",2,"steps",0,"parallel","steps",2]
+step:1.2.0:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="1.2.0" stepPath=["flow",1,"conditional","when",2,"steps",0,"parallel","steps",0] taskName="b" actionName="plain" groupName="group:1.2" level=2
+step:1.2.1:task task selectable
+  ports: taskIn taskOut
+  title="c" description="No description provided." stepId="1.2.1" stepPath=["flow",1,"conditional","when",2,"steps",0,"parallel","steps",1] taskName="c" actionName="plain" groupName="group:1.2" level=2
+placeholder:1:conditional:2 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:1" level=1 insertPath=["flow",1,"conditional","when",2,"steps",1]
+step:2:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.loop_drawer.form.type.for_each.label)
+  i18nTitle="message.loop_indicator" stepId="2" stepPath=["flow",2] groupName="group:2" level=0 operatorType="loop"
+step:2.0:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="2.0" stepPath=["flow",2,"loop","steps",0] taskName="b" actionName="plain" groupName="group:2" level=1
+placeholder:2:loop:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:2" level=1 insertPath=["flow",2,"loop","steps",1]
+step:3:task task selectable
+  ports: taskIn taskOut
+  title="d" description="No description provided." stepId="3" stepPath=["flow",3] taskName="d" actionName="plain" level=0
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:task insert=["flow",0]
+step:0:task -> step:1:operator hidden
+step:1.0:task#bindingOut-0-3-tools -> attachment:1.0:binding:agent:tools:0:search
+attachment:1.0:binding:agent:tools:0:search#bindingOut-0-1-model -> attachment:1.0:binding-placeholder:search:model
+step:1.0:task#bindingOut-0-3-tools -> attachment:1.0:binding:agent:tools:1:calc
+step:1.0:task#bindingOut-0-3-tools -> attachment:1.0:binding:agent:tools:2:self_ref
+attachment:1.0:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:1.0:binding:self_ref:tools:0:self_ref
+attachment:1.0:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:1.0:binding:self_ref:tools:1:search
+attachment:1.0:binding:self_ref:tools:1:search#bindingOut-0-1-model -> attachment:1.0:binding-placeholder:search:model
+attachment:1.0:binding:agent:tools:2:self_ref#bindingOut-0-3-tools -> attachment:1.0:binding-placeholder:self_ref:tools
+attachment:1.0:binding:agent:tools:2:self_ref#bindingOut-1-3-model -> attachment:1.0:binding:self_ref:model:0:gpt
+attachment:1.0:binding:agent:tools:2:self_ref#bindingOut-2-3-memory -> attachment:1.0:binding-placeholder:self_ref:memory
+step:1.0:task#bindingOut-0-3-tools -> attachment:1.0:binding:agent:tools:3:missing_tool
+step:1.0:task#bindingOut-0-3-tools -> attachment:1.0:binding-placeholder:agent:tools
+step:1.0:task#bindingOut-1-3-model -> attachment:1.0:binding:agent:model:0:gpt
+step:1.0:task#bindingOut-2-3-memory -> attachment:1.0:binding:agent:memory:0:profile
+attachment:1.0:binding:agent:memory:0:profile#bindingOut-0-1-model -> attachment:1.0:binding:profile:model:0:gpt
+step:1.0:task#bindingOut-2-3-memory -> attachment:1.0:binding-placeholder:agent:memory
+step:1:operator#operatorOut-0-3 -> step:1.0:task insert=["flow",1,"conditional","when",0,"steps",0]
+step:1.0:task -> placeholder:1:conditional:0
+step:1:operator#operatorOut-1-3 -> placeholder:1:conditional:1
+step:1:operator#operatorOut-2-3 -> step:1.2:operator hidden
+step:1.2:operator -> step:1.2.0:task
+step:1.2.0:task -> placeholder:1.2:parallel:2
+step:1.2:operator -> step:1.2.1:task
+step:1.2.1:task -> placeholder:1.2:parallel:2
+placeholder:1.2:parallel:2 -> placeholder:1:conditional:2 hidden
+placeholder:1:conditional:0 -> step:2:operator hidden
+placeholder:1:conditional:1 -> step:2:operator hidden
+placeholder:1:conditional:2 -> step:2:operator hidden
+step:2:operator -> step:2.0:task insert=["flow",2,"loop","steps",0]
+step:2.0:task -> placeholder:2:loop:0
+placeholder:2:loop:0 -> step:3:task hidden
+step:3:task -> indicator:end insert=["flow",4]
+step:0:task -> group:1 insert=["flow",1]
+step:1:operator#operatorOut-2-3 -> group:1.2 insert=["flow",1,"conditional","when",2,"steps",0]
+group:1.2 -> placeholder:1:conditional:2
+group:1 -> group:2 insert=["flow",2]
+group:2 -> step:3:task insert=["flow",3]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of nested parallel 1`] = `
+"
+group:0 group
+  ports: groupIn groupOut
+group:0.1 group
+  ports: groupIn groupOut
+group:0.2 group
+  ports: groupIn groupOut
+step:0:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.parallel_drawer.form.strategy.wait_any.label)
+  i18nTitle="message.parallel_indicator" stepId="0" stepPath=["flow",0] groupName="group:0" level=0 operatorType="parallel" strategy="wait_any"
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+placeholder:0:parallel:3 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"parallel","steps",3]
+step:0.0:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="0.0" stepPath=["flow",0,"parallel","steps",0] taskName="a" actionName="plain" groupName="group:0" level=1
+step:0.1:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.loop_drawer.form.type.for_each.label)
+  i18nTitle="message.loop_indicator" stepId="0.1" stepPath=["flow",0,"parallel","steps",1] groupName="group:0.1" level=1 operatorType="loop"
+step:0.1.0:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="0.1.0" stepPath=["flow",0,"parallel","steps",1,"loop","steps",0] taskName="b" actionName="plain" groupName="group:0.1" level=2
+step:0.1.1:task task selectable
+  ports: taskIn taskOut
+  title="c" description="No description provided." stepId="0.1.1" stepPath=["flow",0,"parallel","steps",1,"loop","steps",1] taskName="c" actionName="plain" groupName="group:0.1" level=2
+placeholder:0.1:loop:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.1" level=2 insertPath=["flow",0,"parallel","steps",1,"loop","steps",2]
+step:0.2:operator operator selectable
+  ports: operatorIn operatorOut-0-2(case 0) operatorOut-1-2(else)
+  i18nTitle="message.conditional_indicator" stepId="0.2" stepPath=["flow",0,"parallel","steps",2] groupName="group:0.2" level=1 operatorType="conditional"
+step:0.2.0:task task selectable
+  ports: taskIn taskOut
+  title="d" description="No description provided." stepId="0.2.0" stepPath=["flow",0,"parallel","steps",2,"conditional","when",0,"steps",0] taskName="d" actionName="plain" groupName="group:0.2" level=2
+placeholder:0.2:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.2" level=2 insertPath=["flow",0,"parallel","steps",2,"conditional","when",0,"steps",1]
+placeholder:0.2:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0.2" level=2 insertPath=["flow",0,"parallel","steps",2,"conditional","when",1,"steps",0]
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:operator hidden
+step:0:operator -> step:0.0:task
+step:0.0:task -> placeholder:0:parallel:3
+step:0:operator -> step:0.1:operator hidden
+step:0.1:operator -> step:0.1.0:task insert=["flow",0,"parallel","steps",1,"loop","steps",0]
+step:0.1.0:task -> step:0.1.1:task insert=["flow",0,"parallel","steps",1,"loop","steps",1]
+step:0.1.1:task -> placeholder:0.1:loop:0
+placeholder:0.1:loop:0 -> placeholder:0:parallel:3 hidden
+step:0:operator -> step:0.2:operator hidden
+step:0.2:operator#operatorOut-0-2 -> step:0.2.0:task insert=["flow",0,"parallel","steps",2,"conditional","when",0,"steps",0]
+step:0.2.0:task -> placeholder:0.2:conditional:0
+step:0.2:operator#operatorOut-1-2 -> placeholder:0.2:conditional:1
+placeholder:0.2:conditional:0 -> placeholder:0:parallel:3 hidden
+placeholder:0.2:conditional:1 -> placeholder:0:parallel:3 hidden
+placeholder:0:parallel:3 -> indicator:end hidden
+indicator:start -> group:0 insert=["flow",0]
+step:0:operator -> group:0.1
+group:0.1 -> placeholder:0:parallel:3
+step:0:operator -> group:0.2
+group:0.2 -> placeholder:0:parallel:3
+group:0 -> indicator:end insert=["flow",1]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of sequence 1`] = `
+"
+step:0:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="0" stepPath=["flow",0] taskName="a" actionName="plain" level=0
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+step:1:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="1" stepPath=["flow",1] taskName="b" actionName="plain" level=0
+step:2:task task selectable
+  ports: taskIn taskOut
+  title="c" description="No description provided." stepId="2" stepPath=["flow",2] taskName="c" actionName="plain" level=0
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:task insert=["flow",0]
+step:0:task -> step:1:task insert=["flow",1]
+step:1:task -> step:2:task insert=["flow",2]
+step:2:task -> indicator:end insert=["flow",3]
+"
+`;
+
+exports[`workflow layout regression > builds the nodes and edges of top-level groups 1`] = `
+"
+group:0 group
+  ports: groupIn groupOut
+group:1 group
+  ports: groupIn groupOut
+group:2 group
+  ports: groupIn groupOut
+step:0:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.parallel_drawer.form.strategy.wait_all.label)
+  i18nTitle="message.parallel_indicator" stepId="0" stepPath=["flow",0] groupName="group:0" level=0 operatorType="parallel" strategy="wait_all"
+indicator:start indicator
+  ports: indicatorOut
+  i18nTitle="message.start" level=0 indicator="workflowStart"
+placeholder:0:parallel:2 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:0" level=1 insertPath=["flow",0,"parallel","steps",2]
+step:0.0:task task selectable
+  ports: taskIn taskOut
+  title="a" description="Step A" stepId="0.0" stepPath=["flow",0,"parallel","steps",0] taskName="a" actionName="plain" groupName="group:0" level=1
+step:0.1:task task selectable
+  ports: taskIn taskOut
+  title="b" description="No description provided." stepId="0.1" stepPath=["flow",0,"parallel","steps",1] taskName="b" actionName="plain" groupName="group:0" level=1
+step:1:operator operator selectable
+  ports: operatorIn operatorOut-0-2(case 0) operatorOut-1-2(else)
+  i18nTitle="message.conditional_indicator" stepId="1" stepPath=["flow",1] groupName="group:1" level=0 operatorType="conditional"
+step:1.0:task task selectable
+  ports: taskIn taskOut
+  title="c" description="No description provided." stepId="1.0" stepPath=["flow",1,"conditional","when",0,"steps",0] taskName="c" actionName="plain" groupName="group:1" level=1
+placeholder:1:conditional:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:1" level=1 insertPath=["flow",1,"conditional","when",0,"steps",1]
+placeholder:1:conditional:1 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:1" level=1 insertPath=["flow",1,"conditional","when",1,"steps",0]
+step:2:operator operator selectable
+  ports: operatorIn operatorOut(visual_editor.loop_drawer.form.type.for_each.label)
+  i18nTitle="message.loop_indicator" stepId="2" stepPath=["flow",2] groupName="group:2" level=0 operatorType="loop"
+step:2.0:task task selectable
+  ports: taskIn taskOut
+  title="d" description="No description provided." stepId="2.0" stepPath=["flow",2,"loop","steps",0] taskName="d" actionName="plain" groupName="group:2" level=1
+placeholder:2:loop:0 branchPlaceholder
+  ports: branchPlaceholderIn branchPlaceholderOut
+  i18nTitle="button.add" groupName="group:2" level=1 insertPath=["flow",2,"loop","steps",1]
+indicator:end indicator
+  ports: indicatorIn
+  i18nTitle="message.stop" indicator="workflowEnd"
+
+indicator:start -> step:0:operator hidden
+step:0:operator -> step:0.0:task
+step:0.0:task -> placeholder:0:parallel:2
+step:0:operator -> step:0.1:task
+step:0.1:task -> placeholder:0:parallel:2
+placeholder:0:parallel:2 -> step:1:operator hidden
+step:1:operator#operatorOut-0-2 -> step:1.0:task insert=["flow",1,"conditional","when",0,"steps",0]
+step:1.0:task -> placeholder:1:conditional:0
+step:1:operator#operatorOut-1-2 -> placeholder:1:conditional:1
+placeholder:1:conditional:0 -> step:2:operator hidden
+placeholder:1:conditional:1 -> step:2:operator hidden
+step:2:operator -> step:2.0:task insert=["flow",2,"loop","steps",0]
+step:2.0:task -> placeholder:2:loop:0
+placeholder:2:loop:0 -> indicator:end hidden
+indicator:start -> group:0 insert=["flow",0]
+group:0 -> group:1 insert=["flow",1]
+group:1 -> group:2 insert=["flow",2]
+group:2 -> indicator:end insert=["flow",3]
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of agent bindings 1`] = `
+"
+step:0:task @ 1434,1912
+attachment:0:binding:agent:tools:0:search @ 702,2198 handles top/bottom
+attachment:0:binding-placeholder:search:model @ 1162,2750 handles top/bottom
+attachment:0:binding:agent:tools:1:calc @ 958,2198 handles top/bottom
+attachment:0:binding:agent:tools:2:self_ref @ 1214,2198 handles top/bottom
+attachment:0:binding:self_ref:tools:0:self_ref @ 838,2474 handles top/bottom
+attachment:0:binding:self_ref:tools:1:search @ 1094,2474 handles top/bottom
+attachment:0:binding-placeholder:self_ref:tools @ 1350,2474 handles top/bottom
+attachment:0:binding:self_ref:model:0:gpt @ 1470,2474 handles top/bottom
+attachment:0:binding-placeholder:self_ref:memory @ 1726,2474 handles top/bottom
+attachment:0:binding:agent:tools:3:missing_tool @ 1470,2198 handles top/bottom
+attachment:0:binding-placeholder:agent:tools @ 1726,2198 handles top/bottom
+attachment:0:binding:agent:model:0:gpt @ 1846,2198 handles top/bottom
+attachment:0:binding:agent:memory:0:profile @ 2102,2198 handles top/bottom
+attachment:0:binding:profile:model:0:gpt @ 2102,2474 handles top/bottom
+attachment:0:binding-placeholder:agent:memory @ 2358,2198 handles top/bottom
+indicator:start @ 1120,1921
+step:1:task @ 3332,1912
+indicator:end @ 3774,1921
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of all-empty conditional 1`] = `
+"
+group:0 @ 302,-183.6 454x496
+step:0:operator @ 326,30.4
+indicator:start @ -12,30.4
+placeholder:0:conditional:0 @ 668,-159.6
+placeholder:0:conditional:1 @ 668,-31.6
+placeholder:0:conditional:2 @ 668,96.4
+placeholder:0:conditional:3 @ 668,224.4
+indicator:end @ 942,30.4
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of deep nesting 1`] = `
+"
+group:0 @ 302,-190.33 3702x706
+group:0.0 @ 1010,-166.33 2720x508
+group:0.0.0 @ 1818,-142.33 1569.33x310
+group:0.0.0.0 @ 2184,-118.33 929.33x262
+step:0:operator @ 326,128.67
+indicator:start @ -12,128.67
+step:0.0:operator @ 1034,53.67
+placeholder:0.0:parallel:2 @ 3642,55.67
+step:0.0.0:operator @ 1842,-21.33
+step:0.0.0.0:operator @ 2208,-21.33
+step:x:task @ 2583.33,-94.33
+placeholder:0.0.0.0:conditional:0 @ 3025.33,-83.33
+placeholder:0.0.0.0:conditional:1 @ 2583.33,55.67
+placeholder:0.0.0:loop:0 @ 3299.33,-19.33
+step:0.0.1:task @ 1818,231.67
+placeholder:0:conditional:0 @ 3916,55.67
+step:0.1:task @ 1010,405.67
+placeholder:0:conditional:1 @ 1452,416.67
+indicator:end @ 4190,128.67
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of empty branches around content 1`] = `
+"
+group:0 @ 302,-329.71 896x796
+step:0:operator @ 326,34.29
+indicator:start @ -12,34.29
+placeholder:0:conditional:0 @ 668,-305.71
+step:0.1:task @ 668,-177.71
+placeholder:0:conditional:1 @ 1110,-166.71
+placeholder:0:conditional:2 @ 668,-27.71
+placeholder:0:conditional:3 @ 668,100.29
+step:0.4:task @ 668,228.29
+placeholder:0:conditional:4 @ 1110,239.29
+placeholder:0:conditional:5 @ 668,378.29
+indicator:end @ 1384,34.29
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #1 1`] = `
+"
+group:s0 @ 302,602.3 6593x2096
+group:s1 @ 719,626.3 2913x434
+group:s8 @ 719,1424.3 2110x950
+group:s10 @ 3015,1274.3 3606x1250
+step:s0:operator @ 326,1616.3
+indicator:start @ -12,1616.3
+step:s1:operator @ 743,809.3
+step:s2:task @ 2218,650.3
+step:s3:task @ 2660,650.3
+step:s4:task @ 3102,650.3
+placeholder:s1:conditional:0 @ 3544,661.3
+step:s5:task @ 2218,800.3
+placeholder:s1:conditional:1 @ 2660,811.3
+step:s6:task @ 2218,950.3
+placeholder:s1:conditional:2 @ 2660,961.3
+placeholder:s0:conditional:0 @ 3818,811.3
+step:s7:task @ 719,1124.3
+placeholder:s0:conditional:1 @ 1161,1135.3
+step:s8:operator @ 743,1865.3
+placeholder:s8:parallel:1 @ 2259,1459.3
+step:s9:task @ 1817,1448.3
+attachment:s9:binding:agent:tools:0:search @ 1085,1734.3 handles top/bottom
+attachment:s9:binding-placeholder:search:model @ 1545,2286.3 handles top/bottom
+attachment:s9:binding:agent:tools:1:calc @ 1341,1734.3 handles top/bottom
+attachment:s9:binding:agent:tools:2:self_ref @ 1597,1734.3 handles top/bottom
+attachment:s9:binding:self_ref:tools:0:self_ref @ 1221,2010.3 handles top/bottom
+attachment:s9:binding:self_ref:tools:1:search @ 1477,2010.3 handles top/bottom
+attachment:s9:binding-placeholder:self_ref:tools @ 1733,2010.3 handles top/bottom
+attachment:s9:binding:self_ref:model:0:gpt @ 1853,2010.3 handles top/bottom
+attachment:s9:binding-placeholder:self_ref:memory @ 2109,2010.3 handles top/bottom
+attachment:s9:binding:agent:tools:3:missing_tool @ 1853,1734.3 handles top/bottom
+attachment:s9:binding-placeholder:agent:tools @ 2109,1734.3 handles top/bottom
+attachment:s9:binding:agent:model:0:gpt @ 2229,1734.3 handles top/bottom
+attachment:s9:binding:agent:memory:0:profile @ 2485,1734.3 handles top/bottom
+attachment:s9:binding:profile:model:0:gpt @ 2485,2010.3 handles top/bottom
+attachment:s9:binding-placeholder:agent:memory @ 2741,1734.3 handles top/bottom
+step:s10:operator @ 3039,1865.3
+placeholder:s10:parallel:3 @ 6533,1867.3
+step:s11:task @ 4539,1298.3
+step:s12:task @ 4539,1448.3
+attachment:s12:binding:agent:tools:0:search @ 3807,1734.3 handles top/bottom
+attachment:s12:binding-placeholder:search:model @ 4267,2286.3 handles top/bottom
+attachment:s12:binding:agent:tools:1:calc @ 4063,1734.3 handles top/bottom
+attachment:s12:binding:agent:tools:2:self_ref @ 4319,1734.3 handles top/bottom
+attachment:s12:binding:self_ref:tools:0:self_ref @ 3943,2010.3 handles top/bottom
+attachment:s12:binding:self_ref:tools:1:search @ 4199,2010.3 handles top/bottom
+attachment:s12:binding-placeholder:self_ref:tools @ 4455,2010.3 handles top/bottom
+attachment:s12:binding:self_ref:model:0:gpt @ 4575,2010.3 handles top/bottom
+attachment:s12:binding-placeholder:self_ref:memory @ 4831,2010.3 handles top/bottom
+attachment:s12:binding:agent:tools:3:missing_tool @ 4575,1734.3 handles top/bottom
+attachment:s12:binding-placeholder:agent:tools @ 4831,1734.3 handles top/bottom
+attachment:s12:binding:agent:model:0:gpt @ 4951,1734.3 handles top/bottom
+attachment:s12:binding:agent:memory:0:profile @ 5207,1734.3 handles top/bottom
+attachment:s12:binding:profile:model:0:gpt @ 5207,2010.3 handles top/bottom
+attachment:s12:binding-placeholder:agent:memory @ 5463,1734.3 handles top/bottom
+step:s13:task @ 4539,2414.3
+placeholder:s0:conditional:2 @ 6807,1867.3
+step:s14:task @ 719,2588.3
+placeholder:s0:conditional:3 @ 1161,2599.3
+indicator:end @ 7081,1616.3
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #2 1`] = `
+"
+group:s1 @ 744,3839 4016x950
+step:s0:task @ 326,4271
+indicator:start @ 12,4280
+step:s1:operator @ 768,4280
+step:s2:task @ 1842,3863
+attachment:s2:binding:agent:tools:0:search @ 1110,4149 handles top/bottom
+attachment:s2:binding-placeholder:search:model @ 1570,4701 handles top/bottom
+attachment:s2:binding:agent:tools:1:calc @ 1366,4149 handles top/bottom
+attachment:s2:binding:agent:tools:2:self_ref @ 1622,4149 handles top/bottom
+attachment:s2:binding:self_ref:tools:0:self_ref @ 1246,4425 handles top/bottom
+attachment:s2:binding:self_ref:tools:1:search @ 1502,4425 handles top/bottom
+attachment:s2:binding-placeholder:self_ref:tools @ 1758,4425 handles top/bottom
+attachment:s2:binding:self_ref:model:0:gpt @ 1878,4425 handles top/bottom
+attachment:s2:binding-placeholder:self_ref:memory @ 2134,4425 handles top/bottom
+attachment:s2:binding:agent:tools:3:missing_tool @ 1878,4149 handles top/bottom
+attachment:s2:binding-placeholder:agent:tools @ 2134,4149 handles top/bottom
+attachment:s2:binding:agent:model:0:gpt @ 2254,4149 handles top/bottom
+attachment:s2:binding:agent:memory:0:profile @ 2510,4149 handles top/bottom
+attachment:s2:binding:profile:model:0:gpt @ 2510,4425 handles top/bottom
+attachment:s2:binding-placeholder:agent:memory @ 2766,4149 handles top/bottom
+step:s3:task @ 3748,3863
+attachment:s3:binding:agent:tools:0:search @ 3016,4149 handles top/bottom
+attachment:s3:binding-placeholder:search:model @ 3476,4701 handles top/bottom
+attachment:s3:binding:agent:tools:1:calc @ 3272,4149 handles top/bottom
+attachment:s3:binding:agent:tools:2:self_ref @ 3528,4149 handles top/bottom
+attachment:s3:binding:self_ref:tools:0:self_ref @ 3152,4425 handles top/bottom
+attachment:s3:binding:self_ref:tools:1:search @ 3408,4425 handles top/bottom
+attachment:s3:binding-placeholder:self_ref:tools @ 3664,4425 handles top/bottom
+attachment:s3:binding:self_ref:model:0:gpt @ 3784,4425 handles top/bottom
+attachment:s3:binding-placeholder:self_ref:memory @ 4040,4425 handles top/bottom
+attachment:s3:binding:agent:tools:3:missing_tool @ 3784,4149 handles top/bottom
+attachment:s3:binding-placeholder:agent:tools @ 4040,4149 handles top/bottom
+attachment:s3:binding:agent:model:0:gpt @ 4160,4149 handles top/bottom
+attachment:s3:binding:agent:memory:0:profile @ 4416,4149 handles top/bottom
+attachment:s3:binding:profile:model:0:gpt @ 4416,4425 handles top/bottom
+attachment:s3:binding-placeholder:agent:memory @ 4672,4149 handles top/bottom
+placeholder:s1:loop:0 @ 4190,3874
+indicator:end @ 4946,4280
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #3 1`] = `
+"
+step:s0:task @ 326,12
+indicator:start @ 12,21
+indicator:end @ 768,21
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #4 1`] = `
+"
+step:s0:task @ 326,12
+indicator:start @ 12,21
+step:s1:task @ 768,12
+indicator:end @ 1210,21
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #5 1`] = `
+"
+group:s2 @ 4120,3025.5 4658x2114
+group:s4 @ 5642,4015.5 896x134
+step:s0:task @ 1434,4039.5
+attachment:s0:binding:agent:tools:0:search @ 702,4325.5 handles top/bottom
+attachment:s0:binding-placeholder:search:model @ 1162,4877.5 handles top/bottom
+attachment:s0:binding:agent:tools:1:calc @ 958,4325.5 handles top/bottom
+attachment:s0:binding:agent:tools:2:self_ref @ 1214,4325.5 handles top/bottom
+attachment:s0:binding:self_ref:tools:0:self_ref @ 838,4601.5 handles top/bottom
+attachment:s0:binding:self_ref:tools:1:search @ 1094,4601.5 handles top/bottom
+attachment:s0:binding-placeholder:self_ref:tools @ 1350,4601.5 handles top/bottom
+attachment:s0:binding:self_ref:model:0:gpt @ 1470,4601.5 handles top/bottom
+attachment:s0:binding-placeholder:self_ref:memory @ 1726,4601.5 handles top/bottom
+attachment:s0:binding:agent:tools:3:missing_tool @ 1470,4325.5 handles top/bottom
+attachment:s0:binding-placeholder:agent:tools @ 1726,4325.5 handles top/bottom
+attachment:s0:binding:agent:model:0:gpt @ 1846,4325.5 handles top/bottom
+attachment:s0:binding:agent:memory:0:profile @ 2102,4325.5 handles top/bottom
+attachment:s0:binding:profile:model:0:gpt @ 2102,4601.5 handles top/bottom
+attachment:s0:binding-placeholder:agent:memory @ 2358,4325.5 handles top/bottom
+indicator:start @ 1120,4048.5
+step:s1:task @ 3332,4039.5
+step:s2:operator @ 4144,4048.5
+placeholder:s2:parallel:3 @ 8690,4050.5
+step:s3:task @ 5642,3049.5
+attachment:s3:binding:agent:tools:0:search @ 4910,3335.5 handles top/bottom
+attachment:s3:binding-placeholder:search:model @ 5370,3887.5 handles top/bottom
+attachment:s3:binding:agent:tools:1:calc @ 5166,3335.5 handles top/bottom
+attachment:s3:binding:agent:tools:2:self_ref @ 5422,3335.5 handles top/bottom
+attachment:s3:binding:self_ref:tools:0:self_ref @ 5046,3611.5 handles top/bottom
+attachment:s3:binding:self_ref:tools:1:search @ 5302,3611.5 handles top/bottom
+attachment:s3:binding-placeholder:self_ref:tools @ 5558,3611.5 handles top/bottom
+attachment:s3:binding:self_ref:model:0:gpt @ 5678,3611.5 handles top/bottom
+attachment:s3:binding-placeholder:self_ref:memory @ 5934,3611.5 handles top/bottom
+attachment:s3:binding:agent:tools:3:missing_tool @ 5678,3335.5 handles top/bottom
+attachment:s3:binding-placeholder:agent:tools @ 5934,3335.5 handles top/bottom
+attachment:s3:binding:agent:model:0:gpt @ 6054,3335.5 handles top/bottom
+attachment:s3:binding:agent:memory:0:profile @ 6310,3335.5 handles top/bottom
+attachment:s3:binding:profile:model:0:gpt @ 6310,3611.5 handles top/bottom
+attachment:s3:binding-placeholder:agent:memory @ 6566,3335.5 handles top/bottom
+step:s4:operator @ 5666,4048.5
+placeholder:s4:parallel:1 @ 6450,4050.5
+step:s5:task @ 6008,4039.5
+step:s6:task @ 5642,4213.5
+attachment:s6:binding:agent:tools:0:search @ 4910,4499.5 handles top/bottom
+attachment:s6:binding-placeholder:search:model @ 5370,5051.5 handles top/bottom
+attachment:s6:binding:agent:tools:1:calc @ 5166,4499.5 handles top/bottom
+attachment:s6:binding:agent:tools:2:self_ref @ 5422,4499.5 handles top/bottom
+attachment:s6:binding:self_ref:tools:0:self_ref @ 5046,4775.5 handles top/bottom
+attachment:s6:binding:self_ref:tools:1:search @ 5302,4775.5 handles top/bottom
+attachment:s6:binding-placeholder:self_ref:tools @ 5558,4775.5 handles top/bottom
+attachment:s6:binding:self_ref:model:0:gpt @ 5678,4775.5 handles top/bottom
+attachment:s6:binding-placeholder:self_ref:memory @ 5934,4775.5 handles top/bottom
+attachment:s6:binding:agent:tools:3:missing_tool @ 5678,4499.5 handles top/bottom
+attachment:s6:binding-placeholder:agent:tools @ 5934,4499.5 handles top/bottom
+attachment:s6:binding:agent:model:0:gpt @ 6054,4499.5 handles top/bottom
+attachment:s6:binding:agent:memory:0:profile @ 6310,4499.5 handles top/bottom
+attachment:s6:binding:profile:model:0:gpt @ 6310,4775.5 handles top/bottom
+attachment:s6:binding-placeholder:agent:memory @ 6566,4499.5 handles top/bottom
+step:s7:task @ 8940,4039.5
+indicator:end @ 9382,4048.5
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #6 1`] = `
+"
+group:s0 @ 302,-12 896x134
+step:s0:operator @ 326,21
+indicator:start @ -12,21
+step:s1:task @ 668,12
+placeholder:s0:conditional:0 @ 1110,23
+indicator:end @ 1384,21
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #7 1`] = `
+"
+group:s0 @ 302,-12 1338x134
+step:s0:operator @ 326,21
+indicator:start @ -12,21
+step:s1:task @ 668,12
+step:s2:task @ 1110,12
+placeholder:s0:loop:0 @ 1552,23
+indicator:end @ 1826,21
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #8 1`] = `
+"
+group:s1 @ 3490.67,1771 1161.33x262
+group:s3 @ 4790,1835 896x134
+group:s5 @ 5824,1835 896x134
+step:s0:task @ 1434,1859
+attachment:s0:binding:agent:tools:0:search @ 702,2145 handles top/bottom
+attachment:s0:binding-placeholder:search:model @ 1162,2697 handles top/bottom
+attachment:s0:binding:agent:tools:1:calc @ 958,2145 handles top/bottom
+attachment:s0:binding:agent:tools:2:self_ref @ 1214,2145 handles top/bottom
+attachment:s0:binding:self_ref:tools:0:self_ref @ 838,2421 handles top/bottom
+attachment:s0:binding:self_ref:tools:1:search @ 1094,2421 handles top/bottom
+attachment:s0:binding-placeholder:self_ref:tools @ 1350,2421 handles top/bottom
+attachment:s0:binding:self_ref:model:0:gpt @ 1470,2421 handles top/bottom
+attachment:s0:binding-placeholder:self_ref:memory @ 1726,2421 handles top/bottom
+attachment:s0:binding:agent:tools:3:missing_tool @ 1470,2145 handles top/bottom
+attachment:s0:binding-placeholder:agent:tools @ 1726,2145 handles top/bottom
+attachment:s0:binding:agent:model:0:gpt @ 1846,2145 handles top/bottom
+attachment:s0:binding:agent:memory:0:profile @ 2102,2145 handles top/bottom
+attachment:s0:binding:profile:model:0:gpt @ 2102,2421 handles top/bottom
+attachment:s0:binding-placeholder:agent:memory @ 2358,2145 handles top/bottom
+indicator:start @ 1120,1868
+step:s1:operator @ 3514.67,1868
+step:s2:task @ 4122,1795
+placeholder:s1:conditional:0 @ 4564,1806
+placeholder:s1:conditional:1 @ 4122,1945
+step:s3:operator @ 4814,1868
+step:s4:task @ 5156,1859
+placeholder:s3:conditional:0 @ 5598,1870
+step:s5:operator @ 5848,1868
+step:s6:task @ 6190,1859
+placeholder:s5:loop:0 @ 6632,1870
+indicator:end @ 6906,1868
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #9 1`] = `
+"
+group:s1 @ 744,5 896x134
+group:s3 @ 1778,-134 1338x412
+group:s7 @ 3254,5 1338x134
+group:s10 @ 4730,-59 896x262
+step:s0:task @ 326,29
+indicator:start @ 12,38
+step:s1:operator @ 768,38
+placeholder:s1:parallel:1 @ 1552,40
+step:s2:task @ 1110,29
+step:s3:operator @ 1802,38
+step:s4:task @ 2144,-110
+placeholder:s3:conditional:0 @ 2586,-99
+placeholder:s3:conditional:1 @ 2144,40
+step:s5:task @ 2144,168
+step:s6:task @ 2586,168
+placeholder:s3:conditional:2 @ 3028,179
+step:s7:operator @ 3278,38
+step:s8:task @ 3620,29
+step:s9:task @ 4062,29
+placeholder:s7:loop:0 @ 4504,40
+step:s10:operator @ 4754,38
+placeholder:s10:conditional:0 @ 5096,-35
+step:s11:task @ 5096,93
+placeholder:s10:conditional:1 @ 5538,104
+indicator:end @ 5812,38
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #10 1`] = `
+"
+group:s0 @ 302,4227.6 3634x1400
+group:s5 @ 1552,4944.6 454x116
+step:s0:operator @ 326,4893.6
+indicator:start @ -12,4893.6
+step:s1:task @ 1110,4251.6
+step:s2:task @ 1552,4251.6
+placeholder:s0:conditional:0 @ 1994,4262.6
+step:s3:task @ 1110,4401.6
+placeholder:s0:conditional:1 @ 1552,4412.6
+step:s4:task @ 1110,4959.6
+step:s5:operator @ 1576,4968.6
+placeholder:s5:loop:0 @ 1918,4970.6
+step:s6:task @ 2924,4551.6
+attachment:s6:binding:agent:tools:0:search @ 2192,4837.6 handles top/bottom
+attachment:s6:binding-placeholder:search:model @ 2652,5389.6 handles top/bottom
+attachment:s6:binding:agent:tools:1:calc @ 2448,4837.6 handles top/bottom
+attachment:s6:binding:agent:tools:2:self_ref @ 2704,4837.6 handles top/bottom
+attachment:s6:binding:self_ref:tools:0:self_ref @ 2328,5113.6 handles top/bottom
+attachment:s6:binding:self_ref:tools:1:search @ 2584,5113.6 handles top/bottom
+attachment:s6:binding-placeholder:self_ref:tools @ 2840,5113.6 handles top/bottom
+attachment:s6:binding:self_ref:model:0:gpt @ 2960,5113.6 handles top/bottom
+attachment:s6:binding-placeholder:self_ref:memory @ 3216,5113.6 handles top/bottom
+attachment:s6:binding:agent:tools:3:missing_tool @ 2960,4837.6 handles top/bottom
+attachment:s6:binding-placeholder:agent:tools @ 3216,4837.6 handles top/bottom
+attachment:s6:binding:agent:model:0:gpt @ 3336,4837.6 handles top/bottom
+attachment:s6:binding:agent:memory:0:profile @ 3592,4837.6 handles top/bottom
+attachment:s6:binding:profile:model:0:gpt @ 3592,5113.6 handles top/bottom
+attachment:s6:binding-placeholder:agent:memory @ 3848,4837.6 handles top/bottom
+placeholder:s0:conditional:2 @ 3366,4562.6
+step:s7:task @ 1110,5517.6
+step:s8:task @ 1552,5517.6
+placeholder:s0:conditional:3 @ 1994,5528.6
+step:s9:task @ 4122,4884.6
+step:s10:task @ 4564,4884.6
+step:s11:task @ 5006,4884.6
+step:s12:task @ 5448,4884.6
+indicator:end @ 5890,4893.6
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #11 1`] = `
+"
+group:s0 @ 302,5941.67 5516x1382
+group:s7 @ 6446,6133.67 3168x998
+group:s2 @ 1086,5965.67 4458x1078
+group:s9 @ 7230,6157.67 2110x950
+step:s0:operator @ 326,6598.67
+indicator:start @ -12,6598.67
+step:s1:task @ 668,6461.67
+step:s2:operator @ 1110,6470.67
+step:s3:task @ 1452,6397.67
+step:s4:task @ 2626,5989.67
+attachment:s4:binding:agent:tools:0:search @ 1894,6275.67 handles top/bottom
+attachment:s4:binding-placeholder:search:model @ 2354,6827.67 handles top/bottom
+attachment:s4:binding:agent:tools:1:calc @ 2150,6275.67 handles top/bottom
+attachment:s4:binding:agent:tools:2:self_ref @ 2406,6275.67 handles top/bottom
+attachment:s4:binding:self_ref:tools:0:self_ref @ 2030,6551.67 handles top/bottom
+attachment:s4:binding:self_ref:tools:1:search @ 2286,6551.67 handles top/bottom
+attachment:s4:binding-placeholder:self_ref:tools @ 2542,6551.67 handles top/bottom
+attachment:s4:binding:self_ref:model:0:gpt @ 2662,6551.67 handles top/bottom
+attachment:s4:binding-placeholder:self_ref:memory @ 2918,6551.67 handles top/bottom
+attachment:s4:binding:agent:tools:3:missing_tool @ 2662,6275.67 handles top/bottom
+attachment:s4:binding-placeholder:agent:tools @ 2918,6275.67 handles top/bottom
+attachment:s4:binding:agent:model:0:gpt @ 3038,6275.67 handles top/bottom
+attachment:s4:binding:agent:memory:0:profile @ 3294,6275.67 handles top/bottom
+attachment:s4:binding:profile:model:0:gpt @ 3294,6551.67 handles top/bottom
+attachment:s4:binding-placeholder:agent:memory @ 3550,6275.67 handles top/bottom
+step:s5:task @ 4532,5989.67
+attachment:s5:binding:agent:tools:0:search @ 3800,6275.67 handles top/bottom
+attachment:s5:binding-placeholder:search:model @ 4260,6827.67 handles top/bottom
+attachment:s5:binding:agent:tools:1:calc @ 4056,6275.67 handles top/bottom
+attachment:s5:binding:agent:tools:2:self_ref @ 4312,6275.67 handles top/bottom
+attachment:s5:binding:self_ref:tools:0:self_ref @ 3936,6551.67 handles top/bottom
+attachment:s5:binding:self_ref:tools:1:search @ 4192,6551.67 handles top/bottom
+attachment:s5:binding-placeholder:self_ref:tools @ 4448,6551.67 handles top/bottom
+attachment:s5:binding:self_ref:model:0:gpt @ 4568,6551.67 handles top/bottom
+attachment:s5:binding-placeholder:self_ref:memory @ 4824,6551.67 handles top/bottom
+attachment:s5:binding:agent:tools:3:missing_tool @ 4568,6275.67 handles top/bottom
+attachment:s5:binding-placeholder:agent:tools @ 4824,6275.67 handles top/bottom
+attachment:s5:binding:agent:model:0:gpt @ 4944,6275.67 handles top/bottom
+attachment:s5:binding:agent:memory:0:profile @ 5200,6275.67 handles top/bottom
+attachment:s5:binding:profile:model:0:gpt @ 5200,6551.67 handles top/bottom
+attachment:s5:binding-placeholder:agent:memory @ 5456,6275.67 handles top/bottom
+placeholder:s2:conditional:0 @ 4974,6000.67
+placeholder:s2:conditional:1 @ 1452,6955.67
+placeholder:s0:conditional:0 @ 5730,6472.67
+placeholder:s0:conditional:1 @ 668,7107.67
+placeholder:s0:conditional:2 @ 668,7235.67
+step:s6:task @ 6004,6589.67
+step:s7:operator @ 6470,6598.67
+step:s8:task @ 6812,6589.67
+step:s9:operator @ 7254,6598.67
+placeholder:s9:parallel:1 @ 8770,6192.67
+step:s10:task @ 8328,6181.67
+attachment:s10:binding:agent:tools:0:search @ 7596,6467.67 handles top/bottom
+attachment:s10:binding-placeholder:search:model @ 8056,7019.67 handles top/bottom
+attachment:s10:binding:agent:tools:1:calc @ 7852,6467.67 handles top/bottom
+attachment:s10:binding:agent:tools:2:self_ref @ 8108,6467.67 handles top/bottom
+attachment:s10:binding:self_ref:tools:0:self_ref @ 7732,6743.67 handles top/bottom
+attachment:s10:binding:self_ref:tools:1:search @ 7988,6743.67 handles top/bottom
+attachment:s10:binding-placeholder:self_ref:tools @ 8244,6743.67 handles top/bottom
+attachment:s10:binding:self_ref:model:0:gpt @ 8364,6743.67 handles top/bottom
+attachment:s10:binding-placeholder:self_ref:memory @ 8620,6743.67 handles top/bottom
+attachment:s10:binding:agent:tools:3:missing_tool @ 8364,6467.67 handles top/bottom
+attachment:s10:binding-placeholder:agent:tools @ 8620,6467.67 handles top/bottom
+attachment:s10:binding:agent:model:0:gpt @ 8740,6467.67 handles top/bottom
+attachment:s10:binding:agent:memory:0:profile @ 8996,6467.67 handles top/bottom
+attachment:s10:binding:profile:model:0:gpt @ 8996,6743.67 handles top/bottom
+attachment:s10:binding-placeholder:agent:memory @ 9252,6467.67 handles top/bottom
+placeholder:s7:conditional:0 @ 9526,6600.67
+indicator:end @ 9800,6598.67
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of generated #12 1`] = `
+"
+group:s0 @ 302,3169.6 2552x1334
+step:s0:operator @ 326,3802.6
+indicator:start @ -12,3802.6
+placeholder:s0:conditional:0 @ 668,3193.6
+placeholder:s0:conditional:1 @ 668,3321.6
+step:s1:task @ 668,3857.6
+step:s2:task @ 1842,3449.6
+attachment:s2:binding:agent:tools:0:search @ 1110,3735.6 handles top/bottom
+attachment:s2:binding-placeholder:search:model @ 1570,4287.6 handles top/bottom
+attachment:s2:binding:agent:tools:1:calc @ 1366,3735.6 handles top/bottom
+attachment:s2:binding:agent:tools:2:self_ref @ 1622,3735.6 handles top/bottom
+attachment:s2:binding:self_ref:tools:0:self_ref @ 1246,4011.6 handles top/bottom
+attachment:s2:binding:self_ref:tools:1:search @ 1502,4011.6 handles top/bottom
+attachment:s2:binding-placeholder:self_ref:tools @ 1758,4011.6 handles top/bottom
+attachment:s2:binding:self_ref:model:0:gpt @ 1878,4011.6 handles top/bottom
+attachment:s2:binding-placeholder:self_ref:memory @ 2134,4011.6 handles top/bottom
+attachment:s2:binding:agent:tools:3:missing_tool @ 1878,3735.6 handles top/bottom
+attachment:s2:binding-placeholder:agent:tools @ 2134,3735.6 handles top/bottom
+attachment:s2:binding:agent:model:0:gpt @ 2254,3735.6 handles top/bottom
+attachment:s2:binding:agent:memory:0:profile @ 2510,3735.6 handles top/bottom
+attachment:s2:binding:profile:model:0:gpt @ 2510,4011.6 handles top/bottom
+attachment:s2:binding-placeholder:agent:memory @ 2766,3735.6 handles top/bottom
+placeholder:s0:conditional:2 @ 2284,3460.6
+placeholder:s0:conditional:3 @ 668,4415.6
+indicator:end @ 3040,3802.6
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of group chain in a branch 1`] = `
+"
+group:0 @ 302,-111 3406x332
+group:0.0 @ 644,-87 896x284
+group:0.2 @ 2120,-87 896x284
+step:0:operator @ 326,21
+indicator:start @ -12,21
+step:0.0:operator @ 668,21
+placeholder:0.0:parallel:2 @ 1452,23
+step:0.0.0:task @ 1010,-63
+step:0.0.1:task @ 1010,87
+step:0.1:task @ 1702,12
+step:0.2:operator @ 2144,21
+step:0.2.0:task @ 2486,-63
+placeholder:0.2:conditional:0 @ 2928,-52
+step:0.2.1:task @ 2486,87
+placeholder:0.2:conditional:1 @ 2928,98
+step:0.3:task @ 3178,12
+placeholder:0:loop:0 @ 3620,23
+indicator:end @ 3894,21
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of group then step in a branch 1`] = `
+"
+group:0 @ 302,-389.33 5034x1298
+group:0.0 @ 1802,-365.33 2818x284
+step:0:operator @ 326,225.67
+indicator:start @ -12,225.67
+step:0.0:operator @ 1826,-257.33
+placeholder:0.0:parallel:2 @ 4532,-255.33
+step:0.0.0:task @ 3674,-341.33
+step:0.0.1:task @ 3674,-191.33
+step:0.1:task @ 4806,-266.33
+placeholder:0:conditional:0 @ 5248,-255.33
+step:0.2:task @ 1802,-17.33
+attachment:0.2:binding:agent:tools:0:search @ 1070,268.67 handles top/bottom
+attachment:0.2:binding-placeholder:search:model @ 1530,820.67 handles top/bottom
+attachment:0.2:binding:agent:tools:1:calc @ 1326,268.67 handles top/bottom
+attachment:0.2:binding:agent:tools:2:self_ref @ 1582,268.67 handles top/bottom
+attachment:0.2:binding:self_ref:tools:0:self_ref @ 1206,544.67 handles top/bottom
+attachment:0.2:binding:self_ref:tools:1:search @ 1462,544.67 handles top/bottom
+attachment:0.2:binding-placeholder:self_ref:tools @ 1718,544.67 handles top/bottom
+attachment:0.2:binding:self_ref:model:0:gpt @ 1838,544.67 handles top/bottom
+attachment:0.2:binding-placeholder:self_ref:memory @ 2094,544.67 handles top/bottom
+attachment:0.2:binding:agent:tools:3:missing_tool @ 1838,268.67 handles top/bottom
+attachment:0.2:binding-placeholder:agent:tools @ 2094,268.67 handles top/bottom
+attachment:0.2:binding:agent:model:0:gpt @ 2214,268.67 handles top/bottom
+attachment:0.2:binding:agent:memory:0:profile @ 2470,268.67 handles top/bottom
+attachment:0.2:binding:profile:model:0:gpt @ 2470,544.67 handles top/bottom
+attachment:0.2:binding-placeholder:agent:memory @ 2726,268.67 handles top/bottom
+placeholder:0:conditional:1 @ 2244,-6.33
+indicator:end @ 5522,225.67
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of mixed conditional 1`] = `
+"
+group:1 @ 744,1912.75 4592x1426
+group:2 @ 5518,2558.75 896x134
+group:1.2 @ 2244,3030.75 2818x284
+step:0:task @ 326,2582.75
+indicator:start @ 12,2591.75
+step:1:operator @ 768,2591.75
+step:1.0:task @ 2244,1936.75
+attachment:1.0:binding:agent:tools:0:search @ 1512,2222.75 handles top/bottom
+attachment:1.0:binding-placeholder:search:model @ 1972,2774.75 handles top/bottom
+attachment:1.0:binding:agent:tools:1:calc @ 1768,2222.75 handles top/bottom
+attachment:1.0:binding:agent:tools:2:self_ref @ 2024,2222.75 handles top/bottom
+attachment:1.0:binding:self_ref:tools:0:self_ref @ 1648,2498.75 handles top/bottom
+attachment:1.0:binding:self_ref:tools:1:search @ 1904,2498.75 handles top/bottom
+attachment:1.0:binding-placeholder:self_ref:tools @ 2160,2498.75 handles top/bottom
+attachment:1.0:binding:self_ref:model:0:gpt @ 2280,2498.75 handles top/bottom
+attachment:1.0:binding-placeholder:self_ref:memory @ 2536,2498.75 handles top/bottom
+attachment:1.0:binding:agent:tools:3:missing_tool @ 2280,2222.75 handles top/bottom
+attachment:1.0:binding-placeholder:agent:tools @ 2536,2222.75 handles top/bottom
+attachment:1.0:binding:agent:model:0:gpt @ 2656,2222.75 handles top/bottom
+attachment:1.0:binding:agent:memory:0:profile @ 2912,2222.75 handles top/bottom
+attachment:1.0:binding:profile:model:0:gpt @ 2912,2498.75 handles top/bottom
+attachment:1.0:binding-placeholder:agent:memory @ 3168,2222.75 handles top/bottom
+placeholder:1:conditional:0 @ 2686,1947.75
+placeholder:1:conditional:1 @ 2244,2902.75
+step:1.2:operator @ 2268,3138.75
+placeholder:1.2:parallel:2 @ 4974,3140.75
+step:1.2.0:task @ 4116,3054.75
+step:1.2.1:task @ 4116,3204.75
+placeholder:1:conditional:2 @ 5248,3140.75
+step:2:operator @ 5542,2591.75
+step:2.0:task @ 5884,2582.75
+placeholder:2:loop:0 @ 6326,2593.75
+step:3:task @ 6576,2582.75
+indicator:end @ 7018,2591.75
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of nested parallel 1`] = `
+"
+group:0 @ 302,-65.5 2488.67x658
+group:0.1 @ 1152.67,108.5 1338x134
+group:0.2 @ 1152.67,306.5 929.33x262
+step:0:operator @ 326,229.5
+indicator:start @ -12,229.5
+placeholder:0:parallel:3 @ 2702.67,231.5
+step:0.0:task @ 1152.67,-41.5
+step:0.1:operator @ 1176.67,141.5
+step:0.1.0:task @ 1518.67,132.5
+step:0.1.1:task @ 1960.67,132.5
+placeholder:0.1:loop:0 @ 2402.67,143.5
+step:0.2:operator @ 1176.67,403.5
+step:0.2.0:task @ 1552,330.5
+placeholder:0.2:conditional:0 @ 1994,341.5
+placeholder:0.2:conditional:1 @ 1552,480.5
+indicator:end @ 2976.67,229.5
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of sequence 1`] = `
+"
+step:0:task @ 326,12
+indicator:start @ 12,21
+step:1:task @ 768,12
+step:2:task @ 1210,12
+indicator:end @ 1652,21
+"
+`;
+
+exports[`workflow layout regression > horizontal > positions the nodes of top-level groups 1`] = `
+"
+group:0 @ 302,63 896x284
+group:1 @ 1336,74 896x262
+group:2 @ 2370,138 896x134
+step:0:operator @ 326,171
+indicator:start @ -12,171
+placeholder:0:parallel:2 @ 1110,173
+step:0.0:task @ 668,87
+step:0.1:task @ 668,237
+step:1:operator @ 1360,171
+step:1.0:task @ 1702,98
+placeholder:1:conditional:0 @ 2144,109
+placeholder:1:conditional:1 @ 1702,248
+step:2:operator @ 2394,171
+step:2.0:task @ 2736,162
+placeholder:2:loop:0 @ 3178,173
+indicator:end @ 3452,171
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of agent bindings 1`] = `
+"
+step:0:task @ 4265,963
+attachment:0:binding:agent:tools:0:search @ 3865,518 handles right/left
+attachment:0:binding-placeholder:search:model @ 3201,668 handles right/left
+attachment:0:binding:agent:tools:1:calc @ 3865,650 handles right/left
+attachment:0:binding:agent:tools:2:self_ref @ 3865,782 handles right/left
+attachment:0:binding:self_ref:tools:0:self_ref @ 3465,530 handles right/left
+attachment:0:binding:self_ref:tools:1:search @ 3465,662 handles right/left
+attachment:0:binding-placeholder:self_ref:tools @ 3601,794 handles right/left
+attachment:0:binding:self_ref:model:0:gpt @ 3465,914 handles right/left
+attachment:0:binding-placeholder:self_ref:memory @ 3601,1046 handles right/left
+attachment:0:binding:agent:tools:3:missing_tool @ 3865,914 handles right/left
+attachment:0:binding-placeholder:agent:tools @ 4001,1046 handles right/left
+attachment:0:binding:agent:model:0:gpt @ 3865,1166 handles right/left
+attachment:0:binding:agent:memory:0:profile @ 3865,1298 handles right/left
+attachment:0:binding:profile:model:0:gpt @ 3465,1298 handles right/left
+attachment:0:binding-placeholder:agent:memory @ 4001,1430 handles right/left
+indicator:start @ 4329,709
+step:1:task @ 4265,2179
+indicator:end @ 4329,2451
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of all-empty conditional 1`] = `
+"
+group:0 @ -157.2,242 496x366
+step:0:operator @ 12.8,266
+indicator:start @ 26.8,-12
+placeholder:0:conditional:0 @ -133.2,520
+placeholder:0:conditional:1 @ -5.2,520
+placeholder:0:conditional:2 @ 122.8,520
+placeholder:0:conditional:3 @ 250.8,520
+indicator:end @ 26.8,794
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of deep nesting 1`] = `
+"
+group:0 @ -268,242 1216x2799
+group:0.0 @ -244,774 848x1993
+group:0.0.0 @ -220,1324 480x1193
+group:0.0.0.0 @ -196,1599 432x644
+step:0:operator @ 262,266
+indicator:start @ 276,-12
+step:0.0:operator @ 102,798
+placeholder:0.0:parallel:2 @ 148,2679
+step:0.0.0:operator @ -58,1348
+step:0.0.0.0:operator @ -58,1623
+step:x:task @ -172,1883
+placeholder:0.0.0.0:conditional:0 @ -76,2155
+placeholder:0.0.0.0:conditional:1 @ 148,1883
+placeholder:0.0.0:loop:0 @ -12,2429
+step:0.0.1:task @ 324,1324
+placeholder:0:conditional:0 @ 148,2953
+step:0.1:task @ 668,774
+placeholder:0:conditional:1 @ 764,1046
+indicator:end @ 276,3227
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of empty branches around content 1`] = `
+"
+group:0 @ -468.29,242 1136x638
+step:0:operator @ 21.71,266
+indicator:start @ 35.71,-12
+placeholder:0:conditional:0 @ -444.29,520
+step:0.1:task @ -316.29,520
+placeholder:0:conditional:1 @ -220.29,792
+placeholder:0:conditional:2 @ 3.71,520
+placeholder:0:conditional:3 @ 131.71,520
+step:0.4:task @ 259.71,520
+placeholder:0:conditional:4 @ 355.71,792
+placeholder:0:conditional:5 @ 579.71,520
+indicator:end @ 35.71,1066
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #1 1`] = `
+"
+group:s0 @ -4690.2,242 3704x4315
+group:s1 @ -4666.2,520 944x1883.5
+group:s8 @ -3018.2,520 1368x1278
+group:s10 @ -3338.2,1984 2008x2299
+step:s0:operator @ -2916.2,266
+indicator:start @ -2902.2,-12
+step:s1:operator @ -4272.2,544
+step:s2:task @ -4642.2,1499.5
+step:s3:task @ -4642.2,1771.5
+step:s4:task @ -4642.2,2043.5
+placeholder:s1:conditional:0 @ -4546.2,2315.5
+step:s5:task @ -4322.2,1499.5
+placeholder:s1:conditional:1 @ -4226.2,1771.5
+step:s6:task @ -4002.2,1499.5
+placeholder:s1:conditional:2 @ -3906.2,1771.5
+placeholder:s0:conditional:0 @ -4226.2,2589.5
+step:s7:task @ -3658.2,520
+placeholder:s0:conditional:1 @ -3562.2,792
+step:s8:operator @ -2412.2,544
+placeholder:s8:parallel:1 @ -1834.2,1515
+step:s9:task @ -1930.2,1243
+attachment:s9:binding:agent:tools:0:search @ -2330.2,798 handles right/left
+attachment:s9:binding-placeholder:search:model @ -2994.2,948 handles right/left
+attachment:s9:binding:agent:tools:1:calc @ -2330.2,930 handles right/left
+attachment:s9:binding:agent:tools:2:self_ref @ -2330.2,1062 handles right/left
+attachment:s9:binding:self_ref:tools:0:self_ref @ -2730.2,810 handles right/left
+attachment:s9:binding:self_ref:tools:1:search @ -2730.2,942 handles right/left
+attachment:s9:binding-placeholder:self_ref:tools @ -2594.2,1074 handles right/left
+attachment:s9:binding:self_ref:model:0:gpt @ -2730.2,1194 handles right/left
+attachment:s9:binding-placeholder:self_ref:memory @ -2594.2,1326 handles right/left
+attachment:s9:binding:agent:tools:3:missing_tool @ -2330.2,1194 handles right/left
+attachment:s9:binding-placeholder:agent:tools @ -2194.2,1326 handles right/left
+attachment:s9:binding:agent:model:0:gpt @ -2330.2,1446 handles right/left
+attachment:s9:binding:agent:memory:0:profile @ -2330.2,1578 handles right/left
+attachment:s9:binding:profile:model:0:gpt @ -2730.2,1578 handles right/left
+attachment:s9:binding-placeholder:agent:memory @ -2194.2,1710 handles right/left
+step:s10:operator @ -2412.2,2008
+placeholder:s10:parallel:3 @ -2366.2,4195
+step:s11:task @ -3314.2,2968
+step:s12:task @ -1930.2,2968
+attachment:s12:binding:agent:tools:0:search @ -2330.2,2523 handles right/left
+attachment:s12:binding-placeholder:search:model @ -2994.2,2673 handles right/left
+attachment:s12:binding:agent:tools:1:calc @ -2330.2,2655 handles right/left
+attachment:s12:binding:agent:tools:2:self_ref @ -2330.2,2787 handles right/left
+attachment:s12:binding:self_ref:tools:0:self_ref @ -2730.2,2535 handles right/left
+attachment:s12:binding:self_ref:tools:1:search @ -2730.2,2667 handles right/left
+attachment:s12:binding-placeholder:self_ref:tools @ -2594.2,2799 handles right/left
+attachment:s12:binding:self_ref:model:0:gpt @ -2730.2,2919 handles right/left
+attachment:s12:binding-placeholder:self_ref:memory @ -2594.2,3051 handles right/left
+attachment:s12:binding:agent:tools:3:missing_tool @ -2330.2,2919 handles right/left
+attachment:s12:binding-placeholder:agent:tools @ -2194.2,3051 handles right/left
+attachment:s12:binding:agent:model:0:gpt @ -2330.2,3171 handles right/left
+attachment:s12:binding:agent:memory:0:profile @ -2330.2,3303 handles right/left
+attachment:s12:binding:profile:model:0:gpt @ -2730.2,3303 handles right/left
+attachment:s12:binding-placeholder:agent:memory @ -2194.2,3435 handles right/left
+step:s13:task @ -1610.2,2968
+placeholder:s0:conditional:2 @ -2366.2,4469
+step:s14:task @ -1266.2,520
+placeholder:s0:conditional:3 @ -1170.2,792
+indicator:end @ -2902.2,4743
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #2 1`] = `
+"
+group:s1 @ 5331,514 1368x2440
+step:s0:task @ 5887,266
+indicator:start @ 5951,12
+step:s1:operator @ 5937,538
+step:s2:task @ 6419,1237
+attachment:s2:binding:agent:tools:0:search @ 6019,792 handles right/left
+attachment:s2:binding-placeholder:search:model @ 5355,942 handles right/left
+attachment:s2:binding:agent:tools:1:calc @ 6019,924 handles right/left
+attachment:s2:binding:agent:tools:2:self_ref @ 6019,1056 handles right/left
+attachment:s2:binding:self_ref:tools:0:self_ref @ 5619,804 handles right/left
+attachment:s2:binding:self_ref:tools:1:search @ 5619,936 handles right/left
+attachment:s2:binding-placeholder:self_ref:tools @ 5755,1068 handles right/left
+attachment:s2:binding:self_ref:model:0:gpt @ 5619,1188 handles right/left
+attachment:s2:binding-placeholder:self_ref:memory @ 5755,1320 handles right/left
+attachment:s2:binding:agent:tools:3:missing_tool @ 6019,1188 handles right/left
+attachment:s2:binding-placeholder:agent:tools @ 6155,1320 handles right/left
+attachment:s2:binding:agent:model:0:gpt @ 6019,1440 handles right/left
+attachment:s2:binding:agent:memory:0:profile @ 6019,1572 handles right/left
+attachment:s2:binding:profile:model:0:gpt @ 5619,1572 handles right/left
+attachment:s2:binding-placeholder:agent:memory @ 6155,1704 handles right/left
+step:s3:task @ 6419,2399
+attachment:s3:binding:agent:tools:0:search @ 6019,1954 handles right/left
+attachment:s3:binding-placeholder:search:model @ 5355,2104 handles right/left
+attachment:s3:binding:agent:tools:1:calc @ 6019,2086 handles right/left
+attachment:s3:binding:agent:tools:2:self_ref @ 6019,2218 handles right/left
+attachment:s3:binding:self_ref:tools:0:self_ref @ 5619,1966 handles right/left
+attachment:s3:binding:self_ref:tools:1:search @ 5619,2098 handles right/left
+attachment:s3:binding-placeholder:self_ref:tools @ 5755,2230 handles right/left
+attachment:s3:binding:self_ref:model:0:gpt @ 5619,2350 handles right/left
+attachment:s3:binding-placeholder:self_ref:memory @ 5755,2482 handles right/left
+attachment:s3:binding:agent:tools:3:missing_tool @ 6019,2350 handles right/left
+attachment:s3:binding-placeholder:agent:tools @ 6155,2482 handles right/left
+attachment:s3:binding:agent:model:0:gpt @ 6019,2602 handles right/left
+attachment:s3:binding:agent:memory:0:profile @ 6019,2734 handles right/left
+attachment:s3:binding:profile:model:0:gpt @ 5619,2734 handles right/left
+attachment:s3:binding-placeholder:agent:memory @ 6155,2866 handles right/left
+placeholder:s1:loop:0 @ 6515,2671
+indicator:end @ 5951,3140
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #3 1`] = `
+"
+step:s0:task @ 12,266
+indicator:start @ 76,12
+indicator:end @ 76,538
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #4 1`] = `
+"
+step:s0:task @ 12,266
+indicator:start @ 76,12
+step:s1:task @ 12,538
+indicator:end @ 76,810
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #5 1`] = `
+"
+group:s2 @ 10856.75,2678 3120x3064
+group:s4 @ 12264.75,3657 304x638
+step:s0:task @ 12288.75,963
+attachment:s0:binding:agent:tools:0:search @ 11888.75,518 handles right/left
+attachment:s0:binding-placeholder:search:model @ 11224.75,668 handles right/left
+attachment:s0:binding:agent:tools:1:calc @ 11888.75,650 handles right/left
+attachment:s0:binding:agent:tools:2:self_ref @ 11888.75,782 handles right/left
+attachment:s0:binding:self_ref:tools:0:self_ref @ 11488.75,530 handles right/left
+attachment:s0:binding:self_ref:tools:1:search @ 11488.75,662 handles right/left
+attachment:s0:binding-placeholder:self_ref:tools @ 11624.75,794 handles right/left
+attachment:s0:binding:self_ref:model:0:gpt @ 11488.75,914 handles right/left
+attachment:s0:binding-placeholder:self_ref:memory @ 11624.75,1046 handles right/left
+attachment:s0:binding:agent:tools:3:missing_tool @ 11888.75,914 handles right/left
+attachment:s0:binding-placeholder:agent:tools @ 12024.75,1046 handles right/left
+attachment:s0:binding:agent:model:0:gpt @ 11888.75,1166 handles right/left
+attachment:s0:binding:agent:memory:0:profile @ 11888.75,1298 handles right/left
+attachment:s0:binding:profile:model:0:gpt @ 11488.75,1298 handles right/left
+attachment:s0:binding-placeholder:agent:memory @ 12024.75,1430 handles right/left
+indicator:start @ 12352.75,709
+step:s1:task @ 12288.75,2179
+step:s2:operator @ 12338.75,2702
+placeholder:s2:parallel:3 @ 12384.75,5654
+step:s3:task @ 11944.75,3657
+attachment:s3:binding:agent:tools:0:search @ 11544.75,3212 handles right/left
+attachment:s3:binding-placeholder:search:model @ 10880.75,3362 handles right/left
+attachment:s3:binding:agent:tools:1:calc @ 11544.75,3344 handles right/left
+attachment:s3:binding:agent:tools:2:self_ref @ 11544.75,3476 handles right/left
+attachment:s3:binding:self_ref:tools:0:self_ref @ 11144.75,3224 handles right/left
+attachment:s3:binding:self_ref:tools:1:search @ 11144.75,3356 handles right/left
+attachment:s3:binding-placeholder:self_ref:tools @ 11280.75,3488 handles right/left
+attachment:s3:binding:self_ref:model:0:gpt @ 11144.75,3608 handles right/left
+attachment:s3:binding-placeholder:self_ref:memory @ 11280.75,3740 handles right/left
+attachment:s3:binding:agent:tools:3:missing_tool @ 11544.75,3608 handles right/left
+attachment:s3:binding-placeholder:agent:tools @ 11680.75,3740 handles right/left
+attachment:s3:binding:agent:model:0:gpt @ 11544.75,3860 handles right/left
+attachment:s3:binding:agent:memory:0:profile @ 11544.75,3992 handles right/left
+attachment:s3:binding:profile:model:0:gpt @ 11144.75,3992 handles right/left
+attachment:s3:binding-placeholder:agent:memory @ 11680.75,4124 handles right/left
+step:s4:operator @ 12338.75,3681
+placeholder:s4:parallel:1 @ 12384.75,4207
+step:s5:task @ 12288.75,3935
+step:s6:task @ 13696.75,3657
+attachment:s6:binding:agent:tools:0:search @ 13296.75,3212 handles right/left
+attachment:s6:binding-placeholder:search:model @ 12632.75,3362 handles right/left
+attachment:s6:binding:agent:tools:1:calc @ 13296.75,3344 handles right/left
+attachment:s6:binding:agent:tools:2:self_ref @ 13296.75,3476 handles right/left
+attachment:s6:binding:self_ref:tools:0:self_ref @ 12896.75,3224 handles right/left
+attachment:s6:binding:self_ref:tools:1:search @ 12896.75,3356 handles right/left
+attachment:s6:binding-placeholder:self_ref:tools @ 13032.75,3488 handles right/left
+attachment:s6:binding:self_ref:model:0:gpt @ 12896.75,3608 handles right/left
+attachment:s6:binding-placeholder:self_ref:memory @ 13032.75,3740 handles right/left
+attachment:s6:binding:agent:tools:3:missing_tool @ 13296.75,3608 handles right/left
+attachment:s6:binding-placeholder:agent:tools @ 13432.75,3740 handles right/left
+attachment:s6:binding:agent:model:0:gpt @ 13296.75,3860 handles right/left
+attachment:s6:binding:agent:memory:0:profile @ 13296.75,3992 handles right/left
+attachment:s6:binding:profile:model:0:gpt @ 12896.75,3992 handles right/left
+attachment:s6:binding-placeholder:agent:memory @ 13432.75,4124 handles right/left
+step:s7:task @ 12288.75,5904
+indicator:end @ 12352.75,6176
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #6 1`] = `
+"
+group:s0 @ -12,242 304x638
+step:s0:operator @ 62,266
+indicator:start @ 76,-12
+step:s1:task @ 12,520
+placeholder:s0:conditional:0 @ 108,792
+indicator:end @ 76,1066
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #7 1`] = `
+"
+group:s0 @ -12,242 304x910
+step:s0:operator @ 62,266
+indicator:start @ 76,-12
+step:s1:task @ 12,520
+step:s2:task @ 12,792
+placeholder:s0:loop:0 @ 108,1064
+indicator:end @ 76,1338
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #8 1`] = `
+"
+group:s1 @ 4127,2249.33 432x808.67
+group:s3 @ 4191,3196 304x638
+group:s5 @ 4191,3972 304x638
+step:s0:task @ 4215,963
+attachment:s0:binding:agent:tools:0:search @ 3815,518 handles right/left
+attachment:s0:binding-placeholder:search:model @ 3151,668 handles right/left
+attachment:s0:binding:agent:tools:1:calc @ 3815,650 handles right/left
+attachment:s0:binding:agent:tools:2:self_ref @ 3815,782 handles right/left
+attachment:s0:binding:self_ref:tools:0:self_ref @ 3415,530 handles right/left
+attachment:s0:binding:self_ref:tools:1:search @ 3415,662 handles right/left
+attachment:s0:binding-placeholder:self_ref:tools @ 3551,794 handles right/left
+attachment:s0:binding:self_ref:model:0:gpt @ 3415,914 handles right/left
+attachment:s0:binding-placeholder:self_ref:memory @ 3551,1046 handles right/left
+attachment:s0:binding:agent:tools:3:missing_tool @ 3815,914 handles right/left
+attachment:s0:binding-placeholder:agent:tools @ 3951,1046 handles right/left
+attachment:s0:binding:agent:model:0:gpt @ 3815,1166 handles right/left
+attachment:s0:binding:agent:memory:0:profile @ 3815,1298 handles right/left
+attachment:s0:binding:profile:model:0:gpt @ 3415,1298 handles right/left
+attachment:s0:binding-placeholder:agent:memory @ 3951,1430 handles right/left
+indicator:start @ 4279,709
+step:s1:operator @ 4265,2273.33
+step:s2:task @ 4151,2698
+placeholder:s1:conditional:0 @ 4247,2970
+placeholder:s1:conditional:1 @ 4471,2698
+step:s3:operator @ 4265,3220
+step:s4:task @ 4215,3474
+placeholder:s3:conditional:0 @ 4311,3746
+step:s5:operator @ 4265,3996
+step:s6:task @ 4215,4250
+placeholder:s5:loop:0 @ 4311,4522
+indicator:end @ 4279,4796
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #9 1`] = `
+"
+group:s1 @ 27,514 304x638
+group:s3 @ -197,1290 752x910
+group:s7 @ 27,2338 304x910
+group:s10 @ -37,3386 432x638
+step:s0:task @ 51,266
+indicator:start @ 115,12
+step:s1:operator @ 101,538
+placeholder:s1:parallel:1 @ 147,1064
+step:s2:task @ 51,792
+step:s3:operator @ 101,1314
+step:s4:task @ -173,1568
+placeholder:s3:conditional:0 @ -77,1840
+placeholder:s3:conditional:1 @ 147,1568
+step:s5:task @ 275,1568
+step:s6:task @ 275,1840
+placeholder:s3:conditional:2 @ 371,2112
+step:s7:operator @ 101,2362
+step:s8:task @ 51,2616
+step:s9:task @ 51,2888
+placeholder:s7:loop:0 @ 147,3160
+step:s10:operator @ 101,3410
+placeholder:s10:conditional:0 @ -13,3664
+step:s11:task @ 115,3664
+placeholder:s10:conditional:1 @ 211,3936
+indicator:end @ 115,4210
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #10 1`] = `
+"
+group:s0 @ -977.2,242 2328x2359
+group:s5 @ 244.8,1049 204x366
+step:s0:operator @ 108.8,266
+indicator:start @ 122.8,-12
+step:s1:task @ -953.2,792
+step:s2:task @ -953.2,1064
+placeholder:s0:conditional:0 @ -857.2,1336
+step:s3:task @ -633.2,792
+placeholder:s0:conditional:1 @ -537.2,1064
+step:s4:task @ 218.8,792
+step:s5:operator @ 268.8,1073
+placeholder:s5:loop:0 @ 314.8,1327
+step:s6:task @ 750.8,2046
+attachment:s6:binding:agent:tools:0:search @ 350.8,1601 handles right/left
+attachment:s6:binding-placeholder:search:model @ -313.2,1751 handles right/left
+attachment:s6:binding:agent:tools:1:calc @ 350.8,1733 handles right/left
+attachment:s6:binding:agent:tools:2:self_ref @ 350.8,1865 handles right/left
+attachment:s6:binding:self_ref:tools:0:self_ref @ -49.2,1613 handles right/left
+attachment:s6:binding:self_ref:tools:1:search @ -49.2,1745 handles right/left
+attachment:s6:binding-placeholder:self_ref:tools @ 86.8,1877 handles right/left
+attachment:s6:binding:self_ref:model:0:gpt @ -49.2,1997 handles right/left
+attachment:s6:binding-placeholder:self_ref:memory @ 86.8,2129 handles right/left
+attachment:s6:binding:agent:tools:3:missing_tool @ 350.8,1997 handles right/left
+attachment:s6:binding-placeholder:agent:tools @ 486.8,2129 handles right/left
+attachment:s6:binding:agent:model:0:gpt @ 350.8,2249 handles right/left
+attachment:s6:binding:agent:memory:0:profile @ 350.8,2381 handles right/left
+attachment:s6:binding:profile:model:0:gpt @ -49.2,2381 handles right/left
+attachment:s6:binding-placeholder:agent:memory @ 486.8,2513 handles right/left
+placeholder:s0:conditional:2 @ 846.8,2318
+step:s7:task @ 1070.8,792
+step:s8:task @ 1070.8,1064
+placeholder:s0:conditional:3 @ 1166.8,1336
+step:s9:task @ 58.8,2787
+step:s10:task @ 58.8,3059
+step:s11:task @ 58.8,3331
+step:s12:task @ 58.8,3603
+indicator:end @ 122.8,3875
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #11 1`] = `
+"
+group:s0 @ 7268.83,242 1800x3512
+group:s7 @ 7460.83,4212 1416x2078
+group:s2 @ 7292.83,768 1496x2712
+group:s9 @ 7484.83,4738 1368x1278
+step:s0:operator @ 8090.83,266
+indicator:start @ 8104.83,-12
+step:s1:task @ 7912.83,520
+step:s2:operator @ 7962.83,792
+step:s3:task @ 7848.83,1046
+step:s4:task @ 8380.83,1763
+attachment:s4:binding:agent:tools:0:search @ 7980.83,1318 handles right/left
+attachment:s4:binding-placeholder:search:model @ 7316.83,1468 handles right/left
+attachment:s4:binding:agent:tools:1:calc @ 7980.83,1450 handles right/left
+attachment:s4:binding:agent:tools:2:self_ref @ 7980.83,1582 handles right/left
+attachment:s4:binding:self_ref:tools:0:self_ref @ 7580.83,1330 handles right/left
+attachment:s4:binding:self_ref:tools:1:search @ 7580.83,1462 handles right/left
+attachment:s4:binding-placeholder:self_ref:tools @ 7716.83,1594 handles right/left
+attachment:s4:binding:self_ref:model:0:gpt @ 7580.83,1714 handles right/left
+attachment:s4:binding-placeholder:self_ref:memory @ 7716.83,1846 handles right/left
+attachment:s4:binding:agent:tools:3:missing_tool @ 7980.83,1714 handles right/left
+attachment:s4:binding-placeholder:agent:tools @ 8116.83,1846 handles right/left
+attachment:s4:binding:agent:model:0:gpt @ 7980.83,1966 handles right/left
+attachment:s4:binding:agent:memory:0:profile @ 7980.83,2098 handles right/left
+attachment:s4:binding:profile:model:0:gpt @ 7580.83,2098 handles right/left
+attachment:s4:binding-placeholder:agent:memory @ 8116.83,2230 handles right/left
+step:s5:task @ 8380.83,2925
+attachment:s5:binding:agent:tools:0:search @ 7980.83,2480 handles right/left
+attachment:s5:binding-placeholder:search:model @ 7316.83,2630 handles right/left
+attachment:s5:binding:agent:tools:1:calc @ 7980.83,2612 handles right/left
+attachment:s5:binding:agent:tools:2:self_ref @ 7980.83,2744 handles right/left
+attachment:s5:binding:self_ref:tools:0:self_ref @ 7580.83,2492 handles right/left
+attachment:s5:binding:self_ref:tools:1:search @ 7580.83,2624 handles right/left
+attachment:s5:binding-placeholder:self_ref:tools @ 7716.83,2756 handles right/left
+attachment:s5:binding:self_ref:model:0:gpt @ 7580.83,2876 handles right/left
+attachment:s5:binding-placeholder:self_ref:memory @ 7716.83,3008 handles right/left
+attachment:s5:binding:agent:tools:3:missing_tool @ 7980.83,2876 handles right/left
+attachment:s5:binding-placeholder:agent:tools @ 8116.83,3008 handles right/left
+attachment:s5:binding:agent:model:0:gpt @ 7980.83,3128 handles right/left
+attachment:s5:binding:agent:memory:0:profile @ 7980.83,3260 handles right/left
+attachment:s5:binding:profile:model:0:gpt @ 7580.83,3260 handles right/left
+attachment:s5:binding-placeholder:agent:memory @ 8116.83,3392 handles right/left
+placeholder:s2:conditional:0 @ 8476.83,3197
+placeholder:s2:conditional:1 @ 8700.83,1046
+placeholder:s0:conditional:0 @ 8008.83,3666
+placeholder:s0:conditional:1 @ 8852.83,520
+placeholder:s0:conditional:2 @ 8980.83,520
+step:s6:task @ 8040.83,3940
+step:s7:operator @ 8090.83,4236
+step:s8:task @ 8040.83,4490
+step:s9:operator @ 8090.83,4762
+placeholder:s9:parallel:1 @ 8668.83,5733
+step:s10:task @ 8572.83,5461
+attachment:s10:binding:agent:tools:0:search @ 8172.83,5016 handles right/left
+attachment:s10:binding-placeholder:search:model @ 7508.83,5166 handles right/left
+attachment:s10:binding:agent:tools:1:calc @ 8172.83,5148 handles right/left
+attachment:s10:binding:agent:tools:2:self_ref @ 8172.83,5280 handles right/left
+attachment:s10:binding:self_ref:tools:0:self_ref @ 7772.83,5028 handles right/left
+attachment:s10:binding:self_ref:tools:1:search @ 7772.83,5160 handles right/left
+attachment:s10:binding-placeholder:self_ref:tools @ 7908.83,5292 handles right/left
+attachment:s10:binding:self_ref:model:0:gpt @ 7772.83,5412 handles right/left
+attachment:s10:binding-placeholder:self_ref:memory @ 7908.83,5544 handles right/left
+attachment:s10:binding:agent:tools:3:missing_tool @ 8172.83,5412 handles right/left
+attachment:s10:binding-placeholder:agent:tools @ 8308.83,5544 handles right/left
+attachment:s10:binding:agent:model:0:gpt @ 8172.83,5664 handles right/left
+attachment:s10:binding:agent:memory:0:profile @ 8172.83,5796 handles right/left
+attachment:s10:binding:profile:model:0:gpt @ 7772.83,5796 handles right/left
+attachment:s10:binding-placeholder:agent:memory @ 8308.83,5928 handles right/left
+placeholder:s7:conditional:0 @ 8136.83,6202
+indicator:end @ 8104.83,6476
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of generated #12 1`] = `
+"
+group:s0 @ 2893.4,242 1752x1550
+step:s0:operator @ 3691.4,266
+indicator:start @ 3705.4,-12
+placeholder:s0:conditional:0 @ 2917.4,520
+placeholder:s0:conditional:1 @ 3045.4,520
+step:s1:task @ 3705.4,520
+step:s2:task @ 4237.4,1237
+attachment:s2:binding:agent:tools:0:search @ 3837.4,792 handles right/left
+attachment:s2:binding-placeholder:search:model @ 3173.4,942 handles right/left
+attachment:s2:binding:agent:tools:1:calc @ 3837.4,924 handles right/left
+attachment:s2:binding:agent:tools:2:self_ref @ 3837.4,1056 handles right/left
+attachment:s2:binding:self_ref:tools:0:self_ref @ 3437.4,804 handles right/left
+attachment:s2:binding:self_ref:tools:1:search @ 3437.4,936 handles right/left
+attachment:s2:binding-placeholder:self_ref:tools @ 3573.4,1068 handles right/left
+attachment:s2:binding:self_ref:model:0:gpt @ 3437.4,1188 handles right/left
+attachment:s2:binding-placeholder:self_ref:memory @ 3573.4,1320 handles right/left
+attachment:s2:binding:agent:tools:3:missing_tool @ 3837.4,1188 handles right/left
+attachment:s2:binding-placeholder:agent:tools @ 3973.4,1320 handles right/left
+attachment:s2:binding:agent:model:0:gpt @ 3837.4,1440 handles right/left
+attachment:s2:binding:agent:memory:0:profile @ 3837.4,1572 handles right/left
+attachment:s2:binding:profile:model:0:gpt @ 3437.4,1572 handles right/left
+attachment:s2:binding-placeholder:agent:memory @ 3973.4,1704 handles right/left
+placeholder:s0:conditional:2 @ 4333.4,1509
+placeholder:s0:conditional:3 @ 4557.4,520
+indicator:end @ 3705.4,1978
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of group chain in a branch 1`] = `
+"
+group:0 @ 150,242 672x2462
+group:0.0 @ 174,496 624x638
+group:0.2 @ 174,1544 624x638
+step:0:operator @ 408,266
+indicator:start @ 422,-12
+step:0.0:operator @ 408,520
+placeholder:0.0:parallel:2 @ 454,1046
+step:0.0.0:task @ 198,774
+step:0.0.1:task @ 518,774
+step:0.1:task @ 358,1296
+step:0.2:operator @ 408,1568
+step:0.2.0:task @ 198,1822
+placeholder:0.2:conditional:0 @ 294,2094
+step:0.2.1:task @ 518,1822
+placeholder:0.2:conditional:1 @ 614,2094
+step:0.3:task @ 358,2344
+placeholder:0:loop:0 @ 454,2616
+indicator:end @ 422,2890
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of group then step in a branch 1`] = `
+"
+group:0 @ -702,242 2056x3347
+group:0.0 @ -678,1217 624x1844
+step:0:operator @ 248,266
+indicator:start @ 262,-12
+step:0.0:operator @ -444,1241
+placeholder:0.0:parallel:2 @ -398,2973
+step:0.0.0:task @ -654,2448
+step:0.0.1:task @ -334,2448
+step:0.1:task @ -494,3229
+placeholder:0:conditional:0 @ -398,3501
+step:0.2:task @ 1074,1217
+attachment:0.2:binding:agent:tools:0:search @ 674,772 handles right/left
+attachment:0.2:binding-placeholder:search:model @ 10,922 handles right/left
+attachment:0.2:binding:agent:tools:1:calc @ 674,904 handles right/left
+attachment:0.2:binding:agent:tools:2:self_ref @ 674,1036 handles right/left
+attachment:0.2:binding:self_ref:tools:0:self_ref @ 274,784 handles right/left
+attachment:0.2:binding:self_ref:tools:1:search @ 274,916 handles right/left
+attachment:0.2:binding-placeholder:self_ref:tools @ 410,1048 handles right/left
+attachment:0.2:binding:self_ref:model:0:gpt @ 274,1168 handles right/left
+attachment:0.2:binding-placeholder:self_ref:memory @ 410,1300 handles right/left
+attachment:0.2:binding:agent:tools:3:missing_tool @ 674,1168 handles right/left
+attachment:0.2:binding-placeholder:agent:tools @ 810,1300 handles right/left
+attachment:0.2:binding:agent:model:0:gpt @ 674,1420 handles right/left
+attachment:0.2:binding:agent:memory:0:profile @ 674,1552 handles right/left
+attachment:0.2:binding:profile:model:0:gpt @ 274,1552 handles right/left
+attachment:0.2:binding-placeholder:agent:memory @ 810,1684 handles right/left
+placeholder:0:conditional:1 @ 1170,1489
+indicator:end @ 262,3775
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of mixed conditional 1`] = `
+"
+group:1 @ 4415,514 2184x3093
+group:2 @ 5355,3745 304x638
+group:1.2 @ 5951,1489 624x1844
+step:0:task @ 5379,266
+indicator:start @ 5443,12
+step:1:operator @ 5429,538
+step:1.0:task @ 5503,1489
+attachment:1.0:binding:agent:tools:0:search @ 5103,1044 handles right/left
+attachment:1.0:binding-placeholder:search:model @ 4439,1194 handles right/left
+attachment:1.0:binding:agent:tools:1:calc @ 5103,1176 handles right/left
+attachment:1.0:binding:agent:tools:2:self_ref @ 5103,1308 handles right/left
+attachment:1.0:binding:self_ref:tools:0:self_ref @ 4703,1056 handles right/left
+attachment:1.0:binding:self_ref:tools:1:search @ 4703,1188 handles right/left
+attachment:1.0:binding-placeholder:self_ref:tools @ 4839,1320 handles right/left
+attachment:1.0:binding:self_ref:model:0:gpt @ 4703,1440 handles right/left
+attachment:1.0:binding-placeholder:self_ref:memory @ 4839,1572 handles right/left
+attachment:1.0:binding:agent:tools:3:missing_tool @ 5103,1440 handles right/left
+attachment:1.0:binding-placeholder:agent:tools @ 5239,1572 handles right/left
+attachment:1.0:binding:agent:model:0:gpt @ 5103,1692 handles right/left
+attachment:1.0:binding:agent:memory:0:profile @ 5103,1824 handles right/left
+attachment:1.0:binding:profile:model:0:gpt @ 4703,1824 handles right/left
+attachment:1.0:binding-placeholder:agent:memory @ 5239,1956 handles right/left
+placeholder:1:conditional:0 @ 5599,1761
+placeholder:1:conditional:1 @ 5823,1489
+step:1.2:operator @ 6185,1513
+placeholder:1.2:parallel:2 @ 6231,3245
+step:1.2.0:task @ 5975,2720
+step:1.2.1:task @ 6295,2720
+placeholder:1:conditional:2 @ 6231,3519
+step:2:operator @ 5429,3769
+step:2.0:task @ 5379,4023
+placeholder:2:loop:0 @ 5475,4295
+step:3:task @ 5379,4545
+indicator:end @ 5443,4817
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of nested parallel 1`] = `
+"
+group:0 @ -103,242 1168x1707
+group:0.1 @ 241,780 304x910
+group:0.2 @ 609,780 432x644
+step:0:operator @ 403,266
+indicator:start @ 417,-12
+placeholder:0:parallel:3 @ 449,1861
+step:0.0:task @ -79,780
+step:0.1:operator @ 315,804
+step:0.1.0:task @ 265,1058
+step:0.1.1:task @ 265,1330
+placeholder:0.1:loop:0 @ 361,1602
+step:0.2:operator @ 747,804
+step:0.2.0:task @ 633,1064
+placeholder:0.2:conditional:0 @ 729,1336
+placeholder:0.2:conditional:1 @ 953,1064
+indicator:end @ 417,2135
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of sequence 1`] = `
+"
+step:0:task @ 12,266
+indicator:start @ 76,12
+step:1:task @ 12,538
+step:2:task @ 12,810
+indicator:end @ 76,1082
+"
+`;
+
+exports[`workflow layout regression > vertical > positions the nodes of top-level groups 1`] = `
+"
+group:0 @ -146,242 624x638
+group:1 @ -50,1018 432x638
+group:2 @ 14,1794 304x638
+step:0:operator @ 88,266
+indicator:start @ 102,-12
+placeholder:0:parallel:2 @ 134,792
+step:0.0:task @ -122,520
+step:0.1:task @ 198,520
+step:1:operator @ 88,1042
+step:1.0:task @ -26,1296
+placeholder:1:conditional:0 @ 70,1568
+placeholder:1:conditional:1 @ 294,1296
+step:2:operator @ 88,1818
+step:2.0:task @ 38,2072
+placeholder:2:loop:0 @ 134,2344
+indicator:end @ 102,2618
+"
+`;

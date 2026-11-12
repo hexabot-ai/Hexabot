@@ -12,17 +12,57 @@ import type { GroupMeta } from "../graph-builder/types";
 import { FLOW_LAYER_GAP } from "./constants";
 import {
   appendMapValue,
-  getPositionedNodeAxisBounds,
-  isHorizontalDirection,
+  getGroupPadding,
+  type AxisBounds,
   type LayoutContext,
-  translateFlow,
-  translateSpread,
 } from "./geometry";
 import {
   buildAttachmentMaps,
+  collectGroupSubtreeIds,
   collectNodeIdsWithAttachmentDescendants,
   isAttachmentEdge,
 } from "./graph-maps";
+import { createPositionTracker } from "./position-tracker";
+
+const CHAIN_SOURCE_TYPES = new Set<ENodeType>([
+  ENodeType.GROUP,
+  ENodeType.OPERATOR,
+  ENodeType.TASK,
+]);
+const CHAIN_TARGET_TYPES = new Set<ENodeType>([
+  ENodeType.GROUP,
+  ENodeType.BRANCH_PLACEHOLDER,
+  ENodeType.TASK,
+]);
+/**
+ * Links that continue a branch's sequence: from a group, an operator or a
+ * plain step to the next group or step, or to the trailing placeholder.
+ * Hidden edges are direct duplicates of group overlay links, so they are
+ * skipped.
+ */
+const buildChainLinks = (edges: Edge[], nodesById: Map<string, GraphNode>) => {
+  const successors = new Map<string, string[]>();
+  const predecessors = new Map<string, string[]>();
+  const hasType = (nodeId: string, types: Set<ENodeType>) => {
+    const type = nodesById.get(nodeId)?.type;
+
+    return type !== undefined && types.has(type);
+  };
+
+  edges.forEach((edge) => {
+    if (
+      !isAttachmentEdge(edge) &&
+      !edge.hidden &&
+      hasType(edge.source, CHAIN_SOURCE_TYPES) &&
+      hasType(edge.target, CHAIN_TARGET_TYPES)
+    ) {
+      appendMapValue(successors, edge.source, edge.target);
+      appendMapValue(predecessors, edge.target, edge.source);
+    }
+  });
+
+  return { successors, predecessors };
+};
 
 /**
  * A single branch can hold a *sequence* of operator groups, possibly with
@@ -46,85 +86,34 @@ export const alignGroupChainAxes = (
   groups: Map<string, GroupMeta>,
   ctx: LayoutContext,
 ): GraphNode[] => {
-  const isVertical = !isHorizontalDirection(ctx);
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const positions = new Map(nodes.map((node) => [node.id, node.position]));
+  const tracker = createPositionTracker(nodes, ctx);
+  const { nodesById, getBounds } = tracker;
   const { childrenByParent: attachmentChildrenByParent } = buildAttachmentMaps(
     edges,
     nodesById,
   );
-  const isGroupNode = (id: string) =>
-    nodesById.get(id)?.type === ENodeType.GROUP;
-  const isOperatorNode = (id: string) =>
-    nodesById.get(id)?.type === ENodeType.OPERATOR;
+  const { successors: chainSuccessors, predecessors: chainPredecessors } =
+    buildChainLinks(edges, nodesById);
+  const isOfType = (id: string, type: ENodeType) =>
+    nodesById.get(id)?.type === type;
+  const isGroupNode = (id: string) => isOfType(id, ENodeType.GROUP);
+  const isOperatorNode = (id: string) => isOfType(id, ENodeType.OPERATOR);
   const isPlaceholderNode = (id: string) =>
-    nodesById.get(id)?.type === ENodeType.BRANCH_PLACEHOLDER;
-  const isTaskNode = (id: string) => nodesById.get(id)?.type === ENodeType.TASK;
-  // Links continuing a branch's sequence: from a single-branch operator, group,
-  // or plain step to the next group/step, or to the trailing placeholder.
-  // Hidden edges are direct duplicates of group overlay links, so skip them.
-  const overlaySuccessors = new Map<string, string[]>();
-  const overlayPredecessors = new Map<string, string[]>();
-
-  edges.forEach((edge) => {
-    if (
-      isAttachmentEdge(edge) ||
-      edge.hidden ||
-      (!isGroupNode(edge.source) &&
-        !isOperatorNode(edge.source) &&
-        !isTaskNode(edge.source)) ||
-      (!isGroupNode(edge.target) &&
-        !isPlaceholderNode(edge.target) &&
-        !isTaskNode(edge.target))
-    ) {
-      return;
-    }
-
-    appendMapValue(overlaySuccessors, edge.source, edge.target);
-    appendMapValue(overlayPredecessors, edge.target, edge.source);
-  });
-  // Every node that moves when this group moves: its members (which already
-  // include nested groups' members) plus their attachment descendants, its own
-  // overlay box, and any nested group overlays.
-  const collectSubtreeIds = (group: GroupMeta): Set<string> => {
-    const ids = collectNodeIdsWithAttachmentDescendants(
-      group.memberNodeIds,
+    isOfType(id, ENodeType.BRANCH_PLACEHOLDER);
+  const isTaskNode = (id: string) => isOfType(id, ENodeType.TASK);
+  // A node and its attachments, which move together.
+  const collectBundleIds = (id: string) =>
+    collectNodeIdsWithAttachmentDescendants(
+      [id],
       attachmentChildrenByParent,
       nodesById,
     );
-
-    if (nodesById.has(group.id)) {
-      ids.add(group.id);
-    }
-
-    groups.forEach((candidate, candidateId) => {
-      if (
-        candidateId === group.id ||
-        candidate.level <= group.level ||
-        !nodesById.has(candidateId)
-      ) {
-        return;
-      }
-
-      const isNested = [...candidate.memberNodeIds].some((memberId) =>
-        group.memberNodeIds.has(memberId),
-      );
-
-      if (isNested) {
-        ids.add(candidateId);
-      }
-    });
-
-    return ids;
-  };
-  const getBounds = (nodeId: string, axis: "flow" | "spread") =>
-    getPositionedNodeAxisBounds(
-      nodeId,
-      positions,
+  const collectSubtreeIds = (group: GroupMeta) =>
+    collectGroupSubtreeIds(
+      group,
+      groups,
+      attachmentChildrenByParent,
       nodesById,
-      ctx,
-      isVertical,
-      axis,
     );
   const getGroupFlowBounds = (group: GroupMeta) => {
     const memberBounds = [...collectSubtreeIds(group)]
@@ -139,7 +128,7 @@ export const alignGroupChainAxes = (
       return getBounds(group.id, "flow");
     }
 
-    const padding = ctx.config?.highlights?.[group.operatorType]?.padding ?? 0;
+    const padding = getGroupPadding(group, ctx);
 
     return {
       leading:
@@ -148,6 +137,24 @@ export const alignGroupChainAxes = (
         Math.max(...memberBounds.map(({ trailing }) => trailing)) + padding / 2,
     };
   };
+  // The flow-axis extent of nodes, ±Infinity when none of them is laid out.
+  const getFlowExtent = (nodeIds: Iterable<string>): AxisBounds =>
+    [...nodeIds].reduce(
+      (extent, id) => {
+        const bounds = getBounds(id, "flow");
+
+        return {
+          leading: Math.min(extent.leading, bounds?.leading ?? Infinity),
+          trailing: Math.max(extent.trailing, bounds?.trailing ?? -Infinity),
+        };
+      },
+      { leading: Infinity, trailing: -Infinity },
+    );
+  // A chain element spans its group overlay, or its nodes when it is a step.
+  const getElementFlowBounds = (
+    group: GroupMeta | undefined,
+    nodeIds: Iterable<string>,
+  ) => (group ? getGroupFlowBounds(group) : getFlowExtent(nodeIds));
   const getSpreadCenter = (nodeIds: Iterable<string>): number | undefined => {
     const bounds = [...nodeIds].flatMap((nodeId) => {
       const result = getBounds(nodeId, "spread");
@@ -161,24 +168,10 @@ export const alignGroupChainAxes = (
           2
       : undefined;
   };
-  const moveNodeSpread = (nodeId: string, delta: number) => {
-    const node = nodesById.get(nodeId);
-
-    if (!node) {
-      return;
+  const moveSpread = (nodeIds: Iterable<string>, delta: number) => {
+    for (const nodeId of nodeIds) {
+      tracker.move(nodeId, "spread", delta);
     }
-
-    positions.set(
-      nodeId,
-      translateSpread(
-        positions.get(nodeId) ?? node.position,
-        isVertical,
-        delta,
-      ),
-    );
-  };
-  const moveGroup = (group: GroupMeta, delta: number) => {
-    collectSubtreeIds(group).forEach((id) => moveNodeSpread(id, delta));
   };
   // Whether a spine of 1-to-1 links upstream of `id` (walking back through
   // plain steps) eventually reaches a group. If it does, `id` is pulled by
@@ -188,7 +181,7 @@ export const alignGroupChainAxes = (
     let currentId = id;
 
     for (;;) {
-      const predecessors = overlayPredecessors.get(currentId) ?? [];
+      const predecessors = chainPredecessors.get(currentId) ?? [];
 
       if (predecessors.length !== 1 || seen.has(predecessors[0])) {
         return false;
@@ -202,166 +195,150 @@ export const alignGroupChainAxes = (
       currentId = predecessors[0];
     }
   };
-  const visited = new Set<string>();
+  // Group roots align sibling group chains. A one-output operator also aligns
+  // its sole branch bundle, and so does the first step of an operator's
+  // branch; fan-out operators remain symmetry-owned.
+  const isChainRoot = (rootId: string, rootSuccessors: string[]): boolean => {
+    const hasOneSuccessor = rootSuccessors.length === 1;
+    const startsChain =
+      isGroupNode(rootId) ||
+      (hasOneSuccessor && isOperatorNode(rootId)) ||
+      (hasOneSuccessor &&
+        isTaskNode(rootId) &&
+        (chainPredecessors.get(rootId) ?? []).some(isOperatorNode));
 
-  overlaySuccessors.forEach((rootSuccessors, rootId) => {
-    // Group roots align sibling group chains. A one-output operator additionally
-    // aligns its sole branch bundle; fan-out operators remain symmetry-owned.
-    const isSingleBranchOperator =
-      isOperatorNode(rootId) && rootSuccessors.length === 1;
-    const isBranchRootTask =
-      isTaskNode(rootId) &&
-      rootSuccessors.length === 1 &&
-      (overlayPredecessors.get(rootId) ?? []).some(isOperatorNode);
+    return startsChain && !hasUpstreamGroupInSpine(rootId);
+  };
+  const visited = new Set<string>();
+  // The next element of the chain, as long as it continues a strict 1-to-1
+  // spine: a fan-out or a join ends the chain (branch symmetry positions
+  // those), and so does an element already aligned by another chain.
+  const getSpineSuccessor = (currentId: string): string | undefined => {
+    const successors = chainSuccessors.get(currentId) ?? [];
 
     if (
-      (!isGroupNode(rootId) && !isSingleBranchOperator && !isBranchRootTask) ||
-      hasUpstreamGroupInSpine(rootId)
+      successors.length !== 1 ||
+      (chainPredecessors.get(successors[0])?.length ?? 0) !== 1 ||
+      visited.has(successors[0])
     ) {
+      return undefined;
+    }
+
+    return successors[0];
+  };
+  // Links into a group, a placeholder, a step continuing the chain, or a
+  // final step flowing into the Stop indicator keep a uniform flow gap.
+  const shouldCloseFlowGap = (
+    nextId: string,
+    nextGroup: GroupMeta | undefined,
+  ): boolean =>
+    Boolean(nextGroup) ||
+    isPlaceholderNode(nextId) ||
+    (chainSuccessors.get(nextId) ?? []).length === 1 ||
+    (isTaskNode(nextId) &&
+      edges.some(
+        (edge) =>
+          !edge.hidden &&
+          edge.source === nextId &&
+          isOfType(edge.target, ENodeType.INDICATOR),
+      ));
+  // Pulls the next element (with everything moving with it) back to
+  // FLOW_LAYER_GAP after the current one when ELK left a longer link.
+  const closeFlowGap = (
+    currentId: string,
+    nextId: string,
+    nextGroup: GroupMeta | undefined,
+  ) => {
+    const targetIds = nextGroup
+      ? collectSubtreeIds(nextGroup)
+      : collectBundleIds(nextId);
+    // A placeholder links to the step card itself, not to its attachments.
+    const sourceIds = isPlaceholderNode(nextId)
+      ? [currentId]
+      : collectBundleIds(currentId);
+    const sourceTrailing = getElementFlowBounds(
+      groups.get(currentId),
+      sourceIds,
+    )?.trailing;
+    const targetLeading = getElementFlowBounds(nextGroup, targetIds)?.leading;
+
+    if (sourceTrailing === undefined || targetLeading === undefined) {
       return;
     }
 
-    const anchorAxis = getSpreadCenter(
-      collectNodeIdsWithAttachmentDescendants(
-        [rootId],
-        attachmentChildrenByParent,
-        nodesById,
-      ),
-    );
+    const flowDelta = sourceTrailing + FLOW_LAYER_GAP - targetLeading;
+
+    if (flowDelta < -0.5) {
+      targetIds.forEach((id) => tracker.move(id, "flow", flowDelta));
+    }
+  };
+  // Centers the next element on the chain axis: a group moves as a unit and a
+  // plain step with its attachments, while a trailing placeholder stays on
+  // its predecessor's card axis so their link stays straight.
+  const alignOnChainAxis = (
+    currentId: string,
+    nextId: string,
+    nextGroup: GroupMeta | undefined,
+    anchorAxis: number,
+  ) => {
+    const movedIds = nextGroup
+      ? collectSubtreeIds(nextGroup)
+      : collectBundleIds(nextId);
+    const nextCenter = getSpreadCenter(nextGroup ? [nextId] : movedIds);
+    const targetAxis = isPlaceholderNode(nextId)
+      ? (getSpreadCenter([currentId]) ?? anchorAxis)
+      : anchorAxis;
+
+    if (nextCenter === undefined) {
+      return;
+    }
+
+    const delta = targetAxis - nextCenter;
+
+    if (Math.abs(delta) >= 1) {
+      moveSpread(movedIds, delta);
+    }
+  };
+  const alignChain = (rootId: string) => {
+    const anchorAxis = getSpreadCenter(collectBundleIds(rootId));
 
     if (anchorAxis === undefined) {
       return;
     }
 
     let currentId = rootId;
+    let nextId = getSpineSuccessor(currentId);
 
-    while (true) {
-      const successors = overlaySuccessors.get(currentId) ?? [];
-
-      // Only follow a strict 1-to-1 spine — stop at a fan-out or a join, which
-      // the branch-symmetry passes already position.
-      if (
-        successors.length !== 1 ||
-        (overlayPredecessors.get(successors[0])?.length ?? 0) !== 1 ||
-        visited.has(successors[0])
-      ) {
-        break;
-      }
-
-      const nextId = successors[0];
-
+    while (nextId !== undefined) {
       visited.add(nextId);
 
       const nextGroup = groups.get(nextId);
-      const nextNode = nodesById.get(nextId);
-      const nextSuccessors = overlaySuccessors.get(nextId) ?? [];
 
-      if (
-        nextGroup ||
-        isPlaceholderNode(nextId) ||
-        nextSuccessors.length === 1 ||
-        (isTaskNode(nextId) &&
-          edges.some(
-            (edge) =>
-              !edge.hidden &&
-              edge.source === nextId &&
-              nodesById.get(edge.target)?.type === ENodeType.INDICATOR,
-          ))
-      ) {
-        const sourceIds = isPlaceholderNode(nextId)
-          ? new Set([currentId])
-          : collectNodeIdsWithAttachmentDescendants(
-              [currentId],
-              attachmentChildrenByParent,
-              nodesById,
-            );
-        const sourceGroup = groups.get(currentId);
-        const targetIds = nextGroup
-          ? collectSubtreeIds(nextGroup)
-          : collectNodeIdsWithAttachmentDescendants(
-              [nextId],
-              attachmentChildrenByParent,
-              nodesById,
-            );
-        const sourceTrailing = sourceGroup
-          ? getGroupFlowBounds(sourceGroup)?.trailing
-          : [...sourceIds].reduce(
-              (trailing, id) =>
-                Math.max(
-                  trailing,
-                  getBounds(id, "flow")?.trailing ?? -Infinity,
-                ),
-              -Infinity,
-            );
-        const targetLeading = nextGroup
-          ? getGroupFlowBounds(nextGroup)?.leading
-          : [...targetIds].reduce(
-              (leading, id) =>
-                Math.min(leading, getBounds(id, "flow")?.leading ?? Infinity),
-              Infinity,
-            );
-        const flowDelta =
-          sourceTrailing === undefined || targetLeading === undefined
-            ? 0
-            : sourceTrailing + FLOW_LAYER_GAP - targetLeading;
-
-        if (flowDelta < -0.5) {
-          targetIds.forEach((id) => {
-            const position = positions.get(id);
-
-            if (position) {
-              positions.set(id, translateFlow(position, isVertical, flowDelta));
-            }
-          });
-        }
+      if (shouldCloseFlowGap(nextId, nextGroup)) {
+        closeFlowGap(currentId, nextId, nextGroup);
       }
 
-      if (nextGroup) {
-        const nextCenter = getSpreadCenter([nextId]);
-
-        if (nextCenter !== undefined) {
-          const delta = anchorAxis - nextCenter;
-
-          if (Math.abs(delta) >= 1) {
-            moveGroup(nextGroup, delta);
-          }
-        }
-
-        currentId = nextId;
-
-        continue;
+      if (!nextGroup && !nodesById.has(nextId)) {
+        return;
       }
 
-      // Center plain-step bundles on the chain axis; keep a trailing
-      // placeholder on its predecessor's card axis so their link stays linear.
-      if (nextNode) {
-        const alignedNodeIds = collectNodeIdsWithAttachmentDescendants(
-          [nextId],
-          attachmentChildrenByParent,
-          nodesById,
-        );
-        const nextCenter = getSpreadCenter(alignedNodeIds);
-        const targetAxis = isPlaceholderNode(nextId)
-          ? (getSpreadCenter([currentId]) ?? anchorAxis)
-          : anchorAxis;
-        const delta = targetAxis - (nextCenter ?? targetAxis);
+      alignOnChainAxis(currentId, nextId, nextGroup, anchorAxis);
 
-        if (Math.abs(delta) >= 1) {
-          alignedNodeIds.forEach((id) => moveNodeSpread(id, delta));
-        }
-      }
-
-      // The trailing placeholder is the chain's end; a plain step continues it.
-      if (!nextNode || isPlaceholderNode(nextId)) {
-        break;
+      // The trailing placeholder ends the chain; groups and steps continue it.
+      if (isPlaceholderNode(nextId)) {
+        return;
       }
 
       currentId = nextId;
+      nextId = getSpineSuccessor(currentId);
+    }
+  };
+
+  chainSuccessors.forEach((rootSuccessors, rootId) => {
+    if (isChainRoot(rootId, rootSuccessors)) {
+      alignChain(rootId);
     }
   });
 
-  return nodes.map((node) => ({
-    ...node,
-    position: positions.get(node.id) ?? node.position,
-  }));
+  return tracker.apply();
 };

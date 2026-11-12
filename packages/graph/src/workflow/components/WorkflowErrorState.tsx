@@ -8,7 +8,7 @@ import { ArrowUpRight, TriangleAlert } from "lucide-react";
 
 import { useWorkflowGraphHost } from "../contexts/workflow-graph-host.context";
 
-import type { WorkflowGraphIssue } from "./WorkflowGraph";
+import type { WorkflowGraphIssue } from "./workflow-graph.props";
 
 type WorkflowErrorStateProps = {
   issues: WorkflowGraphIssue[];

@@ -31,7 +31,7 @@ import { addExtraNodes } from "./layout/extra-nodes";
 import { isAttachmentEdge } from "./layout/graph-maps";
 import { alignGroupBoundaryNodesToGroupAxis } from "./layout/group-boundary-alignment";
 import { alignGroupChainAxes } from "./layout/group-chain-alignment";
-import { getGroupNodes, withFreshGroupNodes } from "./layout/group-nodes";
+import { withFreshGroupNodes } from "./layout/group-nodes";
 import { alignNextNodesWithPlaceholders } from "./layout/next-node-alignment";
 import { alignAllNodesToStartAxis } from "./layout/start-axis-alignment";
 import { tightenTrailingPlaceholders } from "./layout/trailing-placeholder-flow";
@@ -49,7 +49,7 @@ export const buildNodesAndEdges = async ({
     return;
   }
 
-  const traversal = traverseWorkflow({
+  const { registry, groups } = traverseWorkflow({
     flow,
     config,
     defs,
@@ -57,139 +57,73 @@ export const buildNodesAndEdges = async ({
     bindingCatalog,
   });
 
-  decorateSemanticGraph(traversal.registry);
+  decorateSemanticGraph(registry);
 
-  const projected = projectSemanticGraph(traversal.registry, config);
-  const attachmentEdges = projected.edges.filter(isAttachmentEdge);
-  const elkNodes = await layoutNodesWithElk(projected.nodes, projected.edges, {
-    config,
-  });
+  const projected = projectSemanticGraph(registry, config);
+  const { edges } = projected;
+  const attachmentEdges = edges.filter(isAttachmentEdge);
+  const ctx = { config };
+  // Group overlays are sized from their content: rebuild them whenever a
+  // pass may have moved it.
+  const regroup = (nodes: GraphNode[]) =>
+    withFreshGroupNodes(nodes, groups, config, attachmentEdges);
+  const symmetrize = (nodes: GraphNode[]) =>
+    regroup(symmetrizeBranchSiblings(nodes, edges, groups, ctx));
+  /**
+   * Straighten group chains (e.g. Parallel → Conditional sequenced in one
+   * branch) BEFORE packing branches again: chain alignment can move a
+   * chained group a long way onto its chain root's axis, and packing with the
+   * pre-alignment bounds would reserve that group's old position as a
+   * permanent oversized gap between sibling branches. Axis alignment runs
+   * last, on the final group bounding boxes (which include padding and
+   * attachment-shifted positions), so that groups, top-level nodes and
+   * Start/Stop all land on the same perpendicular-axis line.
+   */
+  const straightenGroupChains = (nodes: GraphNode[]) =>
+    alignAllNodesToStartAxis(
+      symmetrize(regroup(alignGroupChainAxes(nodes, edges, groups, ctx))),
+      edges,
+      groups,
+      ctx,
+    );
+  const elkNodes = await layoutNodesWithElk(projected.nodes, edges, ctx);
   const alignedNodes = alignNextNodesWithPlaceholders(
     elkNodes,
-    projected.edges,
-    traversal.groups,
-    { config },
+    edges,
+    groups,
+    ctx,
   );
-  const positionedNodes = addExtraNodes(alignedNodes, attachmentEdges, {
-    config,
-  });
+  const positionedNodes = addExtraNodes(alignedNodes, attachmentEdges, ctx);
   const emptyBranchAlignedNodes = alignEmptyBranchPlaceholders(
     positionedNodes,
-    projected.edges,
-    { config },
+    edges,
+    ctx,
   );
   const trailingTightenedNodes = tightenTrailingPlaceholders(
     emptyBranchAlignedNodes,
-    projected.edges,
-    traversal.groups,
-    { config },
+    edges,
+    groups,
+    ctx,
   );
   const flowAlignedNodes = alignBranchFlowOrigins(
     trailingTightenedNodes,
-    projected.edges,
-    traversal.groups,
-    { config },
+    edges,
+    groups,
+    ctx,
   );
-  const groupNodes = getGroupNodes(
-    flowAlignedNodes,
-    traversal.groups,
-    config,
-    attachmentEdges,
-  );
-  const allNodesBeforeSymmetry = [...groupNodes, ...flowAlignedNodes];
-  const firstSymmetricNodes = withFreshGroupNodes(
-    symmetrizeBranchSiblings(
-      allNodesBeforeSymmetry,
-      projected.edges,
-      traversal.groups,
-      { config },
-    ),
-    traversal.groups,
-    config,
-    attachmentEdges,
-  );
-  const symmetricNodes = withFreshGroupNodes(
-    symmetrizeBranchSiblings(
-      firstSymmetricNodes,
-      projected.edges,
-      traversal.groups,
-      { config },
-    ),
-    traversal.groups,
-    config,
-    attachmentEdges,
-  );
-  // Run axis alignment last — after getGroupNodes — so that alignAllNodesToStartAxis
-  // computes targetAxis from the final group bounding boxes (which include
-  // padding and attachment-shifted positions).  This ensures groups, top-level
-  // nodes, and Start/Stop all land on the same perpendicular-axis line.
-  const finalNodes = alignAllNodesToStartAxis(
-    withFreshGroupNodes(
-      symmetrizeBranchSiblings(
-        // Straighten group chains (e.g. Parallel → Conditional sequenced in
-        // one branch) BEFORE the last packing pass: chain alignment can move a
-        // chained group a long way onto its chain root's axis, and packing
-        // with the pre-alignment bounds would reserve that group's old
-        // position as a permanent oversized gap between sibling branches.
-        withFreshGroupNodes(
-          alignGroupChainAxes(
-            symmetricNodes,
-            projected.edges,
-            traversal.groups,
-            { config },
-          ),
-          traversal.groups,
-          config,
-          attachmentEdges,
-        ),
-        projected.edges,
-        traversal.groups,
-        { config },
-      ),
-      traversal.groups,
-      config,
-      attachmentEdges,
-    ),
-    projected.edges,
-    traversal.groups,
-    { config },
-  );
+  const symmetricNodes = symmetrize(symmetrize(regroup(flowAlignedNodes)));
   const boundaryAlignedNodes = alignGroupBoundaryNodesToGroupAxis(
-    finalNodes,
-    traversal.groups,
-    { config },
+    straightenGroupChains(symmetricNodes),
+    groups,
+    ctx,
   );
 
   return {
-    edges: projected.edges,
-    // Finally, straighten any chain of sibling groups sequenced inside a branch
-    // (e.g. Parallel → Conditional → Conditional) onto a single spread axis.
-    nodes: alignAllNodesToStartAxis(
-      withFreshGroupNodes(
-        symmetrizeBranchSiblings(
-          withFreshGroupNodes(
-            alignGroupChainAxes(
-              boundaryAlignedNodes,
-              projected.edges,
-              traversal.groups,
-              { config },
-            ),
-            traversal.groups,
-            config,
-            attachmentEdges,
-          ),
-          projected.edges,
-          traversal.groups,
-          { config },
-        ),
-        traversal.groups,
-        config,
-        attachmentEdges,
-      ),
-      projected.edges,
-      traversal.groups,
-      { config },
-    ),
+    edges,
+    // Finally, straighten any chain of sibling groups sequenced inside a
+    // branch (e.g. Parallel → Conditional → Conditional) onto a single
+    // spread axis.
+    nodes: straightenGroupChains(boundaryAlignedNodes),
   };
 };
 

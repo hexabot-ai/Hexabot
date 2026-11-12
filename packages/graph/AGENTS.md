@@ -12,6 +12,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot work
 - Graph builder pipeline: `packages/graph/src/workflow/utils/graph-builder/*`.
 - Layout and projection utilities: `packages/graph/src/workflow/utils/workflow-node.utils.ts`.
 - Shared graph types: `packages/graph/src/workflow/types/workflow-node.types.ts`.
+- Node/edge renderer registries (`NODE_TYPES`, `EDGE_TYPES`): `packages/graph/src/workflow/components/workflow-graph.registry.ts`.
 - Constants and menu definitions: `packages/graph/src/workflow/constants/workflow.constants.ts`.
 - Stylesheet export source: `packages/graph/src/workflow/styles/index.css`.
 - Tests: `packages/graph/src/**/*.test.ts` and `packages/graph/src/**/*.test.tsx`.
@@ -30,7 +31,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot work
 
 ## Public APIs and contracts
 - This package is documentation-only in this guide; do not change runtime contracts unless explicitly requested.
-- Core public component and prop contracts are defined in `packages/graph/src/workflow/components/WorkflowGraph.tsx`.
+- Core public component is `packages/graph/src/workflow/components/WorkflowGraph.tsx`; its prop contracts and memo comparator (`areWorkflowGraphPropsEqual`) are in `packages/graph/src/workflow/components/workflow-graph.props.ts`. A new prop needs a comparator entry there (type checking enforces it).
 - Public exports are defined by `packages/graph/src/workflow/index.ts` and re-exported from `packages/graph/src/index.ts`.
 - Shared node/edge enums and graph types are in `packages/graph/src/workflow/types/workflow-node.types.ts`.
 
@@ -66,14 +67,18 @@ Related runtime hooks:
 - Path alias `@/*` maps to `packages/graph/src/*` (`tsconfig.json`).
 - `no-console` is enforced; keep logging out of production paths. Current layout error logging in `useWorkflowGraphLayout.ts` is an explicit lint-disabled exception.
 - Keep `resolveWorkflowPortRule` (`port-rules.ts`) and `getHandleConfig` (`handle.utils.ts`) aligned; update corresponding tests when changing handle behavior.
+- Indexed out port ids (`operatorOut-<index>-<total>`, `bindingOut-<index>-<total>-<kind>`) are built and parsed only in `port-rules.ts`; use its helpers instead of formatting or matching them inline.
 - Group overlay edges are derived from semantic edges in `decorate.ts`; attachment source handles (`AGENT_MODEL`, `AGENT_MEMORY`, `AGENT_TOOL`) intentionally bypass overlay grouping logic.
 - Preserve CSS export compatibility in `package.json`:
   - `"./workflow.css": "./src/workflow/styles/index.css"`
 
 ## Testing workflows
-- Test runner: Vitest (`node`) configured in `packages/graph/vite.config.mts`.
+- Test runner: Vitest (`node`) configured in `packages/graph/vite.config.mts`; component tests opt into jsdom with a `// @vitest-environment jsdom` docblock.
 - Package tests command: `pnpm --filter @hexabot-ai/graph run test`.
+- Test helpers live in `packages/graph/src/test/` (left out of the build): `installXyflowDom` gives jsdom the layout APIs xyflow needs, `layout-fixtures.ts` holds the layout regression corpus.
 - High-value suites:
+  - `packages/graph/src/workflow/utils/workflow-layout.regression.test.ts` (snapshot of the builder and layout output for a corpus of workflows, both directions). It fails on any layout change: when the change is intended, run the tests with `-u` and review the snapshot diff.
+  - `packages/graph/src/workflow/components/WorkflowGraph.test.tsx` (rendered graph in jsdom: overlays, insert menus, delete/add/see-definition buttons and their payloads, color mode, viewport focus and persistence).
   - `packages/graph/src/workflow/utils/workflow-node.utils.test.ts` (graph-building and branch/group wiring behavior).
   - `packages/graph/src/workflow/utils/workflow-selection.utils.test.ts` (selection snapshot stability and equality checks).
   - `packages/graph/src/workflow/utils/handle.utils.test.ts` (port/handle rule parity and conditional/attachment handle metadata).
@@ -86,7 +91,8 @@ Related runtime hooks:
 
 ## Common change recipes
 1. Add or change a node/edge type:
-   - Update enums, node/edge registries, and related data types in `workflow-node.types.ts`.
+   - Update enums and related data types in `workflow-node.types.ts`.
+   - Register the renderer in `NODE_TYPES`/`EDGE_TYPES` (`components/workflow-graph.registry.ts`); the types module must not import components.
    - Register defaults in `workflow.constants.ts`.
    - Add or update rendering component(s) under `components/workflow-nodes` or `components/edges`.
    - Validate graph-builder output and add tests in `workflow-node.utils.test.ts`.

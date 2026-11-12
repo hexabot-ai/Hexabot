@@ -25,12 +25,28 @@ type WorkflowActionsProviderProps = PropsWithChildren<{
   workflowType?: string;
 }>;
 
+// The catalog must keep its identity across renders: the workflow definition
+// is recompiled and the graph laid out again whenever it changes. So `select`
+// and what it puts on each action are module-level references — an inline
+// `select` runs on every render, and a per-action closure defeats the query's
+// structural sharing.
+const EMPTY_ACTIONS: IAction[] = [];
+const parseSettings = (payload: unknown) => payload;
+const toCatalogActions = (actions: IAction[]) =>
+  actions.map((action) => ({
+    ...action,
+    title: action.name
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char: string) => char.toUpperCase()),
+    parseSettings,
+  }));
+
 export const WorkflowActionsProvider = ({
   children,
   workflowType,
 }: WorkflowActionsProviderProps) => {
   const {
-    data: actions = [],
+    data: actions = EMPTY_ACTIONS,
     isLoading,
     isFetching,
     isSuccess,
@@ -38,14 +54,7 @@ export const WorkflowActionsProvider = ({
   } = useApiClientQuery("getActions", {
     params: workflowType ? [workflowType] : undefined,
     enabled: !!workflowType,
-    select: (actions) =>
-      actions.map((action) => ({
-        ...action,
-        title: action.name
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (char: string) => char.toUpperCase()),
-        parseSettings: (payload) => payload,
-      })),
+    select: toCatalogActions,
   });
   const actionsByName = useMemo(
     () =>

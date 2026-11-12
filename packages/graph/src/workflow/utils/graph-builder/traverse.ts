@@ -18,8 +18,6 @@ import {
   EIndicatorType,
   ELinkType,
   ENodeType,
-  type BindingOutPort,
-  type ConditionalOperatorOutPort,
   type EOperatorType,
   type INodeConfig,
   type WorkflowAction,
@@ -28,6 +26,10 @@ import {
   type WorkflowNodePort,
 } from "../../types/workflow-node.types";
 import type { FlowStepPath } from "../../types/workflow-path.types";
+import {
+  buildBindingOutPort,
+  buildConditionalOperatorOutPort,
+} from "../port-rules";
 import { getTaskAction, getTaskDescription } from "../workflow-task.utils";
 
 import {
@@ -111,12 +113,6 @@ const BINDING_PORT_LABELS: Record<string, string> = {
 };
 const getBindingPortLabel = (kind: string): string =>
   BINDING_PORT_LABELS[kind] ?? humanizeBindingKind(kind);
-const buildBindingOutPort = (
-  bindingKind: string,
-  index: number,
-  total: number,
-): BindingOutPort =>
-  `${ELinkType.BINDING_OUT}-${index}-${total}-${encodeURIComponent(bindingKind)}`;
 const buildBindingPorts = <
   TNodeType extends
     | ENodeType.TASK
@@ -217,11 +213,6 @@ const resolveEffectiveBindingKindsForDef = (
     bindingCatalog,
   );
 };
-const buildConditionalOperatorOutPort = (
-  branchIndex: number,
-  branchesCount: number,
-): ConditionalOperatorOutPort =>
-  `${ELinkType.OPERATOR_OUT}-${branchIndex}-${branchesCount}`;
 const getConditionalBranchLabel = (
   branch: CompiledConditionalStep["branches"][number],
 ): string => {
@@ -382,36 +373,26 @@ const addDirectEdge = (
     kind: "direct",
   });
 };
-const ensureStartIndicator = (state: TraverseState, level: number) => {
-  if (state.registry.getNode(START_INDICATOR_ID)) {
+const ensureIndicatorNode = (
+  state: TraverseState,
+  id: string,
+  indicator: EIndicatorType,
+  level: number,
+  extraData?: Record<string, unknown>,
+) => {
+  if (state.registry.getNode(id)) {
     return;
   }
 
   addSemanticNode(state, {
-    id: START_INDICATOR_ID,
+    id,
     type: ENodeType.INDICATOR,
     level,
     groupPath: [],
     data: {
-      ...state.config.nodes[ENodeType.INDICATOR][EIndicatorType.WORKFLOW_START],
-      indicator: EIndicatorType.WORKFLOW_START,
-      level,
-    },
-  });
-};
-const ensureEndIndicator = (state: TraverseState) => {
-  if (state.registry.getNode(END_INDICATOR_ID)) {
-    return;
-  }
-
-  addSemanticNode(state, {
-    id: END_INDICATOR_ID,
-    type: ENodeType.INDICATOR,
-    level: 0,
-    groupPath: [],
-    data: {
-      ...state.config.nodes[ENodeType.INDICATOR][EIndicatorType.WORKFLOW_END],
-      indicator: EIndicatorType.WORKFLOW_END,
+      ...state.config.nodes[ENodeType.INDICATOR][indicator],
+      indicator,
+      ...extraData,
     },
   });
 };
@@ -434,7 +415,13 @@ const connectIncoming = (
   },
 ) => {
   if (!incoming.length) {
-    ensureStartIndicator(state, level);
+    ensureIndicatorNode(
+      state,
+      START_INDICATOR_ID,
+      EIndicatorType.WORKFLOW_START,
+      level,
+      { level },
+    );
     addDirectEdge(state, {
       source: START_INDICATOR_ID,
       target,
@@ -515,31 +502,187 @@ const getBindingNodeDescription = ({
     ? def.description.trim()
     : undefined;
 };
-const addDefAttachments = (
+
+type AttachmentOwner = {
+  stepId: string;
+  stepPath: FlowStepPath;
+  ownerDefName: string;
+  taskName: string;
+  parentNodeId: string;
+  level: number;
+};
+
+/** One binding kind of an owner def, and the handle its attachments hang from. */
+type BindingSlot = AttachmentOwner & {
+  bindingKind: string;
+  bindingDefinition: WorkflowBindingDefinition;
+  isMultiple: boolean;
+  sourceHandle: string;
+};
+
+// A def mounted in a binding slot, followed by the defs mounted in its own slots.
+const addMountedBinding = (
   state: TraverseState,
-  {
+  slot: BindingSlot,
+  bindingName: string,
+  bindingRefIndex: number,
+  visitedOwnerDefs: Set<string>,
+) => {
+  const {
     stepId,
     stepPath,
     ownerDefName,
     taskName,
     parentNodeId,
     level,
+    bindingKind,
+    bindingDefinition,
+    isMultiple,
+    sourceHandle,
+  } = slot;
+  const mountedDefinition = state.defs?.[bindingName];
+  const mountedBindingKind =
+    typeof mountedDefinition?.kind === "string"
+      ? mountedDefinition.kind
+      : bindingKind;
+  const mountedBindingDefinition =
+    state.bindingCatalog.get(mountedBindingKind) ?? bindingDefinition;
+  const nestedBindingKinds = mountedDefinition
+    ? resolveEffectiveBindingKindsForDef(
+        mountedDefinition,
+        state.actionCatalog,
+        state.bindingCatalog,
+      )
+    : [];
+  const bindingNodeType = resolveBindingNodeType(isMultiple);
+  const bindingNodeId = createAttachmentNodeId(
+    stepId,
+    ownerDefName,
+    bindingName,
+    bindingRefIndex,
+    bindingKind,
+  );
+  const bindingNodeBaseData = state.config.nodes[bindingNodeType];
+  const ports = [
+    ...bindingNodeBaseData.ports,
+    ...buildBindingPorts<typeof bindingNodeType>(nestedBindingKinds),
+  ] as typeof bindingNodeBaseData.ports;
+
+  addSemanticNode(state, {
+    id: bindingNodeId,
+    type: bindingNodeType,
+    level,
+    stepPath,
+    groupPath: [],
+    isAttachment: true,
+    data: {
+      ...bindingNodeBaseData,
+      title: bindingName,
+      i18nTitle: undefined,
+      description: getBindingNodeDescription({
+        bindingName,
+        defs: state.defs,
+      }),
+      stepId,
+      stepPath,
+      taskName,
+      ownerDefName,
+      ownerBindingKind: bindingKind,
+      bindingKind: mountedBindingKind,
+      bindingName,
+      level,
+      ports,
+      theme: {
+        ...bindingNodeBaseData.theme,
+        ...getBindingNodeTheme(mountedBindingDefinition),
+      },
+    },
+  });
+
+  addDirectEdge(state, {
+    source: parentNodeId,
+    target: bindingNodeId,
+    sourceHandle,
+  });
+
+  addDefAttachments(state, {
+    stepId,
+    stepPath,
+    ownerDefName: bindingName,
+    taskName,
+    parentNodeId: bindingNodeId,
+    level,
     visitedOwnerDefs,
-  }: {
-    stepId: string;
-    stepPath: FlowStepPath;
-    ownerDefName: string;
-    taskName: string;
-    parentNodeId: string;
-    level: number;
-    visitedOwnerDefs: Set<string>;
-  },
+  });
+};
+// The "+" of a binding slot that can still take a def.
+const addBindingPlaceholder = (state: TraverseState, slot: BindingSlot) => {
+  const {
+    stepId,
+    stepPath,
+    ownerDefName,
+    taskName,
+    parentNodeId,
+    level,
+    bindingKind,
+    bindingDefinition,
+    sourceHandle,
+  } = slot;
+  const placeholderNodeId = createBindingPlaceholderNodeId(
+    stepId,
+    ownerDefName,
+    bindingKind,
+  );
+  const bindingPlaceholderBaseData =
+    state.config.nodes[ENodeType.BINDING_PLACEHOLDER];
+
+  addSemanticNode(state, {
+    id: placeholderNodeId,
+    type: ENodeType.BINDING_PLACEHOLDER,
+    level,
+    stepPath,
+    groupPath: [],
+    isAttachment: true,
+    data: {
+      ...bindingPlaceholderBaseData,
+      title: bindingKind,
+      i18nTitle: undefined,
+      description: "",
+      stepId,
+      stepPath,
+      taskName,
+      ownerDefName,
+      bindingKind,
+      level,
+      theme: {
+        ...bindingPlaceholderBaseData.theme,
+        ...(bindingDefinition.color
+          ? { borderColor: bindingDefinition.color }
+          : {}),
+      },
+    },
+  });
+
+  addDirectEdge(state, {
+    source: parentNodeId,
+    target: placeholderNodeId,
+    sourceHandle,
+  });
+};
+// Attach the defs mounted in each binding slot of `ownerDefName`, recursively;
+// `visitedOwnerDefs` stops a def that mounts itself, directly or not.
+const addDefAttachments = (
+  state: TraverseState,
+  {
+    visitedOwnerDefs,
+    ...owner
+  }: AttachmentOwner & { visitedOwnerDefs: Set<string> },
 ) => {
-  if (visitedOwnerDefs.has(ownerDefName)) {
+  if (visitedOwnerDefs.has(owner.ownerDefName)) {
     return;
   }
 
-  const ownerDefinition = state.defs?.[ownerDefName];
+  const ownerDefinition = state.defs?.[owner.ownerDefName];
 
   if (!ownerDefinition) {
     return;
@@ -550,9 +693,9 @@ const addDefAttachments = (
     state.actionCatalog,
     state.bindingCatalog,
   );
-  const nextVisitedOwnerDefs = new Set(visitedOwnerDefs);
-
-  nextVisitedOwnerDefs.add(ownerDefName);
+  const nextVisitedOwnerDefs = new Set(visitedOwnerDefs).add(
+    owner.ownerDefName,
+  );
 
   bindingKinds.forEach((bindingKind, bindingIndex) => {
     const bindingDefinition = state.bindingCatalog.get(bindingKind);
@@ -561,136 +704,35 @@ const addDefAttachments = (
       return;
     }
 
-    const isMultiple = bindingDefinition?.multiple ?? true;
-    const bindingPlaceholderTheme = bindingDefinition?.color
-      ? { borderColor: bindingDefinition.color }
-      : {};
-    const sourceHandle = buildBindingOutPort(
+    const slot: BindingSlot = {
+      ...owner,
       bindingKind,
-      bindingIndex,
-      bindingKinds.length,
-    );
+      bindingDefinition,
+      isMultiple: bindingDefinition.multiple ?? true,
+      sourceHandle: buildBindingOutPort(
+        bindingKind,
+        bindingIndex,
+        bindingKinds.length,
+      ),
+    };
     const mountedRefs = toBindingRefs(
       ownerDefinition.bindings?.[bindingKind],
       bindingDefinition,
     );
-    const placeholderNodeId = createBindingPlaceholderNodeId(
-      stepId,
-      ownerDefName,
-      bindingKind,
-    );
 
     mountedRefs.forEach((bindingName, bindingRefIndex) => {
-      const mountedDefinition = state.defs?.[bindingName];
-      const mountedBindingKind =
-        typeof mountedDefinition?.kind === "string"
-          ? mountedDefinition.kind
-          : bindingKind;
-      const mountedBindingDefinition =
-        state.bindingCatalog.get(mountedBindingKind) ?? bindingDefinition;
-      const nestedBindingKinds = mountedDefinition
-        ? resolveEffectiveBindingKindsForDef(
-            mountedDefinition,
-            state.actionCatalog,
-            state.bindingCatalog,
-          )
-        : [];
-      const bindingNodeType = resolveBindingNodeType(isMultiple);
-      const bindingNodeId = createAttachmentNodeId(
-        stepId,
-        ownerDefName,
+      addMountedBinding(
+        state,
+        slot,
         bindingName,
         bindingRefIndex,
-        bindingKind,
+        nextVisitedOwnerDefs,
       );
-      const bindingNodeBaseData = state.config.nodes[bindingNodeType];
-      const ports = [
-        ...bindingNodeBaseData.ports,
-        ...buildBindingPorts<typeof bindingNodeType>(nestedBindingKinds),
-      ] as typeof bindingNodeBaseData.ports;
-
-      addSemanticNode(state, {
-        id: bindingNodeId,
-        type: bindingNodeType,
-        level,
-        stepPath,
-        groupPath: [],
-        isAttachment: true,
-        data: {
-          ...bindingNodeBaseData,
-          title: bindingName,
-          i18nTitle: undefined,
-          description: getBindingNodeDescription({
-            bindingName,
-            defs: state.defs,
-          }),
-          stepId,
-          stepPath,
-          taskName,
-          ownerDefName,
-          ownerBindingKind: bindingKind,
-          bindingKind: mountedBindingKind,
-          bindingName,
-          level,
-          ports,
-          theme: {
-            ...bindingNodeBaseData.theme,
-            ...getBindingNodeTheme(mountedBindingDefinition),
-          },
-        },
-      });
-
-      addDirectEdge(state, {
-        source: parentNodeId,
-        target: bindingNodeId,
-        sourceHandle,
-      });
-
-      addDefAttachments(state, {
-        stepId,
-        stepPath,
-        ownerDefName: bindingName,
-        taskName,
-        parentNodeId: bindingNodeId,
-        level,
-        visitedOwnerDefs: nextVisitedOwnerDefs,
-      });
     });
 
-    if (isMultiple || mountedRefs.length === 0) {
-      const bindingPlaceholderBaseData =
-        state.config.nodes[ENodeType.BINDING_PLACEHOLDER];
-
-      addSemanticNode(state, {
-        id: placeholderNodeId,
-        type: ENodeType.BINDING_PLACEHOLDER,
-        level,
-        stepPath,
-        groupPath: [],
-        isAttachment: true,
-        data: {
-          ...bindingPlaceholderBaseData,
-          title: bindingKind,
-          i18nTitle: undefined,
-          description: "",
-          stepId,
-          stepPath,
-          taskName,
-          ownerDefName,
-          bindingKind,
-          level,
-          theme: {
-            ...bindingPlaceholderBaseData.theme,
-            ...bindingPlaceholderTheme,
-          },
-        },
-      });
-
-      addDirectEdge(state, {
-        source: parentNodeId,
-        target: placeholderNodeId,
-        sourceHandle,
-      });
+    // A single-def slot loses its "+" once a def is mounted in it.
+    if (slot.isMultiple || mountedRefs.length === 0) {
+      addBindingPlaceholder(state, slot);
     }
   });
 };
@@ -862,94 +904,112 @@ const walkLoopSteps = (
     nextInsertPath: getNextInsertPath(stepPath),
   },
 ];
-const walkStep = ({
-  step,
-  index,
-  level,
-  incoming,
-  state,
-  path,
-  pathIndex,
-  entryEdgeLabel,
-  entryEdgeSourceHandle,
-  groupPath,
-  disableEntryInsertPath,
-}: WalkStepArgs): TraversalExit[] => {
-  const stepPath = buildStepPath(path, index, pathIndex);
-  const entryInsertPath = disableEntryInsertPath ? undefined : stepPath;
 
-  if (step.type === StepType.Task) {
-    const taskDefinition = state.defs?.[step.taskName];
-    const actionName =
-      taskDefinition && isTaskDefinition(taskDefinition)
-        ? taskDefinition.action
-        : (getTaskAction(step.taskName, state.defs) ?? "");
-    const bindingKinds =
-      taskDefinition && isTaskDefinition(taskDefinition)
-        ? resolveEffectiveBindingKindsForDef(
-            taskDefinition,
-            state.actionCatalog,
-            state.bindingCatalog,
-          )
-        : [];
-    const taskNodeId = createStepNodeId(step.id, "task");
-    const groupName = getGroupName(groupPath);
-    const taskBaseData = state.config.nodes[ENodeType.TASK];
-    const ports: WorkflowNodePort<ENodeType.TASK>[] = [
-      ...taskBaseData.ports,
-      ...buildBindingPorts<ENodeType.TASK>(bindingKinds),
-    ];
+type TaskStep = Extract<CompiledStep, { type: StepType.Task }>;
+type OperatorStep = Exclude<CompiledStep, TaskStep>;
+/** A step's position in the walk once its own path is known. */
+type StepWalk = Omit<WalkArgs, "steps"> & {
+  stepPath: FlowStepPath;
+  entryInsertPath?: FlowStepPath;
+};
 
-    addSemanticNode(state, {
-      id: taskNodeId,
-      type: ENodeType.TASK,
-      selectable: true,
-      level,
+const walkTaskStep = (
+  step: TaskStep,
+  {
+    level,
+    incoming,
+    state,
+    groupPath,
+    stepPath,
+    entryInsertPath,
+    entryEdgeLabel,
+    entryEdgeSourceHandle,
+  }: StepWalk,
+): TraversalExit[] => {
+  const taskDefinition = state.defs?.[step.taskName];
+  const actionName =
+    taskDefinition && isTaskDefinition(taskDefinition)
+      ? taskDefinition.action
+      : (getTaskAction(step.taskName, state.defs) ?? "");
+  const bindingKinds =
+    taskDefinition && isTaskDefinition(taskDefinition)
+      ? resolveEffectiveBindingKindsForDef(
+          taskDefinition,
+          state.actionCatalog,
+          state.bindingCatalog,
+        )
+      : [];
+  const taskNodeId = createStepNodeId(step.id, "task");
+  const groupName = getGroupName(groupPath);
+  const taskBaseData = state.config.nodes[ENodeType.TASK];
+  const ports: WorkflowNodePort<ENodeType.TASK>[] = [
+    ...taskBaseData.ports,
+    ...buildBindingPorts<ENodeType.TASK>(bindingKinds),
+  ];
+
+  addSemanticNode(state, {
+    id: taskNodeId,
+    type: ENodeType.TASK,
+    selectable: true,
+    level,
+    stepId: step.id,
+    stepPath,
+    groupPath,
+    data: {
+      ...taskBaseData,
+      title: step.taskName,
+      description: getTaskDescription(step.taskName, state.defs),
+      actionName,
       stepId: step.id,
-      stepPath,
-      groupPath,
-      data: {
-        ...taskBaseData,
-        title: step.taskName,
-        description: getTaskDescription(step.taskName, state.defs),
-        actionName,
-        stepId: step.id,
-        taskName: step.taskName,
-        level,
-        groupName,
-        stepPath,
-        ports,
-      },
-    });
-
-    addDefAttachments(state, {
-      stepId: step.id,
-      stepPath,
-      ownerDefName: step.taskName,
       taskName: step.taskName,
-      parentNodeId: taskNodeId,
       level,
-      visitedOwnerDefs: new Set(),
-    });
+      groupName,
+      stepPath,
+      ports,
+    },
+  });
 
-    connectIncoming(state, {
-      incoming,
-      target: taskNodeId,
-      level,
-      insertPath: entryInsertPath,
-      label: entryEdgeLabel,
-      sourceHandle: entryEdgeSourceHandle,
-    });
+  addDefAttachments(state, {
+    stepId: step.id,
+    stepPath,
+    ownerDefName: step.taskName,
+    taskName: step.taskName,
+    parentNodeId: taskNodeId,
+    level,
+    visitedOwnerDefs: new Set(),
+  });
 
-    return [
-      {
-        nodeId: taskNodeId,
-        nextInsertPath: getNextInsertPath(stepPath),
-      },
-    ];
-  }
+  connectIncoming(state, {
+    incoming,
+    target: taskNodeId,
+    level,
+    insertPath: entryInsertPath,
+    label: entryEdgeLabel,
+    sourceHandle: entryEdgeSourceHandle,
+  });
 
-  const operatorType = step.type as EOperatorType;
+  return [
+    {
+      nodeId: taskNodeId,
+      nextInsertPath: getNextInsertPath(stepPath),
+    },
+  ];
+};
+// An operator opens a group holding the operator and every node of its branches.
+const walkOperatorStep = (
+  step: OperatorStep,
+  {
+    level,
+    incoming,
+    state,
+    groupPath,
+    stepPath,
+    entryInsertPath,
+    entryEdgeLabel,
+    entryEdgeSourceHandle,
+  }: StepWalk,
+): TraversalExit[] => {
+  const operatorType: EOperatorType = step.type;
   const groupId = createGroupId(step.id);
   const operatorGroupPath = [...groupPath, groupId];
   const operatorNodeId = createStepNodeId(step.id, "operator");
@@ -982,10 +1042,7 @@ const walkStep = ({
       level,
       groupName: groupId,
       stepPath,
-      strategy:
-        operatorType === StepType.Parallel
-          ? (step as CompiledParallelStep).strategy
-          : undefined,
+      strategy: step.type === StepType.Parallel ? step.strategy : undefined,
       ports: resolvedPorts,
     },
   });
@@ -999,36 +1056,53 @@ const walkStep = ({
     sourceHandle: entryEdgeSourceHandle,
   });
 
-  if (operatorType === StepType.Parallel) {
-    return walkParallelSteps(
-      step as CompiledParallelStep,
-      operatorNodeId,
-      level,
-      stepPath,
-      operatorGroupPath,
-      state,
-    );
+  switch (step.type) {
+    case StepType.Parallel:
+      return walkParallelSteps(
+        step,
+        operatorNodeId,
+        level,
+        stepPath,
+        operatorGroupPath,
+        state,
+      );
+    case StepType.Conditional:
+      return walkConditionalBranches(
+        step,
+        operatorNodeId,
+        level,
+        stepPath,
+        operatorGroupPath,
+        state,
+      );
+    default:
+      return walkLoopSteps(
+        step,
+        operatorNodeId,
+        level,
+        stepPath,
+        operatorGroupPath,
+        state,
+      );
   }
-
-  if (operatorType === StepType.Conditional) {
-    return walkConditionalBranches(
-      step as CompiledConditionalStep,
-      operatorNodeId,
-      level,
-      stepPath,
-      operatorGroupPath,
-      state,
-    );
-  }
-
-  return walkLoopSteps(
-    step as CompiledLoopStep,
-    operatorNodeId,
-    level,
+};
+const walkStep = ({
+  step,
+  index,
+  pathIndex,
+  disableEntryInsertPath,
+  ...walk
+}: WalkStepArgs): TraversalExit[] => {
+  const stepPath = buildStepPath(walk.path, index, pathIndex);
+  const stepWalk: StepWalk = {
+    ...walk,
     stepPath,
-    operatorGroupPath,
-    state,
-  );
+    entryInsertPath: disableEntryInsertPath ? undefined : stepPath,
+  };
+
+  return step.type === StepType.Task
+    ? walkTaskStep(step, stepWalk)
+    : walkOperatorStep(step, stepWalk);
 };
 const walkSteps = ({
   steps,
@@ -1102,7 +1176,7 @@ export const traverseWorkflow = ({
     groupPath: [],
   });
 
-  ensureEndIndicator(state);
+  ensureIndicatorNode(state, END_INDICATOR_ID, EIndicatorType.WORKFLOW_END, 0);
 
   exits.forEach((exit) => {
     addDirectEdge(state, {

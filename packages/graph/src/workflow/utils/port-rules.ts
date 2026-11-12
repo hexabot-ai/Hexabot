@@ -8,30 +8,34 @@ import { Position } from "@xyflow/react";
 import type { ResizeControlDirection } from "@xyflow/system";
 import type { CSSProperties } from "react";
 
-import type { WorkflowPort } from "../types/workflow-node.types";
+import {
+  ELinkType,
+  type BindingOutPort,
+  type ConditionalOperatorOutPort,
+  type WorkflowPort,
+} from "../types/workflow-node.types";
 
-const LINK = {
-  BINDING_SINGLE_IN: "bindingSingleIn",
-  BINDING_MULTI_IN: "bindingMultiIn",
-  BINDING_PLACEHOLDER_IN: "bindingPlaceholderIn",
-  TASK_IN: "taskIn",
-  TASK_OUT: "taskOut",
-  BINDING_OUT: "bindingOut",
-  INDICATOR_IN: "indicatorIn",
-  INDICATOR_OUT: "indicatorOut",
-  OPERATOR_IN: "operatorIn",
-  OPERATOR_OUT: "operatorOut",
-  GROUP_IN: "groupIn",
-  GROUP_OUT: "groupOut",
-  BRANCH_PLACEHOLDER_IN: "branchPlaceholderIn",
-  BRANCH_PLACEHOLDER_OUT: "branchPlaceholderOut",
-} as const;
-
-type LinkType = (typeof LINK)[keyof typeof LINK];
 type HandleType = "target" | "source";
 
-const CONDITIONAL_OPERATOR_OUT_PATTERN = /^operatorOut-(\d+)-(\d+)$/;
-const BINDING_OUT_PATTERN = /^bindingOut-(\d+)-(\d+)-(.+)$/;
+// Indexed out ports are named "<base>-<index>-<total>[-<encoded binding kind>]".
+export const buildConditionalOperatorOutPort = (
+  branchIndex: number,
+  branchesCount: number,
+): ConditionalOperatorOutPort =>
+  `${ELinkType.OPERATOR_OUT}-${branchIndex}-${branchesCount}`;
+export const buildBindingOutPort = (
+  bindingKind: string,
+  index: number,
+  total: number,
+): BindingOutPort =>
+  `${ELinkType.BINDING_OUT}-${index}-${total}-${encodeURIComponent(bindingKind)}`;
+
+const CONDITIONAL_OPERATOR_OUT_PATTERN = new RegExp(
+  `^${ELinkType.OPERATOR_OUT}-(\\d+)-(\\d+)$`,
+);
+const BINDING_OUT_PATTERN = new RegExp(
+  `^${ELinkType.BINDING_OUT}-(\\d+)-(\\d+)-(.+)$`,
+);
 // Parses an "<index>-<total>" indexed handle id and validates 0 <= index < total.
 const parseIndexedHandle = (id: WorkflowPort | string, pattern: RegExp) => {
   const match = String(id).match(pattern);
@@ -88,7 +92,7 @@ export const getBindingOutHandleMeta = (id: WorkflowPort | string) => {
   }
 
   return {
-    baseId: LINK.BINDING_OUT,
+    baseId: ELinkType.BINDING_OUT,
     index: meta.index,
     total: meta.total,
     bindingKind,
@@ -105,11 +109,11 @@ export const isAttachmentSourceHandle = (
   return Boolean(getBindingOutHandleMeta(String(id)));
 };
 
-const getPortBaseId = (id: WorkflowPort): LinkType => {
+const getPortBaseId = (id: WorkflowPort): ELinkType => {
   const conditionalMeta = getConditionalOperatorOutHandleMeta(id);
 
   if (conditionalMeta) {
-    return LINK.OPERATOR_OUT;
+    return ELinkType.OPERATOR_OUT;
   }
 
   const bindingMeta = getBindingOutHandleMeta(id);
@@ -118,7 +122,7 @@ const getPortBaseId = (id: WorkflowPort): LinkType => {
     return bindingMeta.baseId;
   }
 
-  return id as LinkType;
+  return id as ELinkType;
 };
 // Spreads sibling handles evenly along the node edge named by `key`.
 const buildProgressStyle = (
@@ -173,42 +177,42 @@ const BINDING_IN_RULE: PortRule = {
   style: (_, direction) =>
     direction === "horizontal" ? { left: "50%" } : undefined,
 };
-const PORT_RULES: Partial<Record<LinkType, PortRule>> = {
-  [LINK.GROUP_IN]: FLOW_IN_RULE,
-  [LINK.GROUP_OUT]: FLOW_OUT_RULE,
-  [LINK.INDICATOR_IN]: FLOW_IN_RULE,
-  [LINK.INDICATOR_OUT]: FLOW_OUT_RULE,
-  [LINK.OPERATOR_IN]: FLOW_IN_RULE,
-  [LINK.OPERATOR_OUT]: {
+const PORT_RULES: Partial<Record<ELinkType, PortRule>> = {
+  [ELinkType.GROUP_IN]: FLOW_IN_RULE,
+  [ELinkType.GROUP_OUT]: FLOW_OUT_RULE,
+  [ELinkType.INDICATOR_IN]: FLOW_IN_RULE,
+  [ELinkType.INDICATOR_OUT]: FLOW_OUT_RULE,
+  [ELinkType.OPERATOR_IN]: FLOW_IN_RULE,
+  [ELinkType.OPERATOR_OUT]: {
     ...FLOW_OUT_RULE,
     style: getConditionalOperatorOutStyle,
   },
-  [LINK.TASK_IN]: FLOW_IN_RULE,
-  [LINK.TASK_OUT]: FLOW_OUT_RULE,
-  [LINK.BINDING_OUT]: {
+  [ELinkType.TASK_IN]: FLOW_IN_RULE,
+  [ELinkType.TASK_OUT]: FLOW_OUT_RULE,
+  [ELinkType.BINDING_OUT]: {
     type: "source",
     position: { horizontal: Position.Bottom, vertical: Position.Left },
     style: getBindingOutStyle,
   },
-  [LINK.BINDING_MULTI_IN]: BINDING_IN_RULE,
-  [LINK.BINDING_PLACEHOLDER_IN]: BINDING_IN_RULE,
-  [LINK.BINDING_SINGLE_IN]: BINDING_IN_RULE,
-  [LINK.BRANCH_PLACEHOLDER_IN]: FLOW_IN_RULE,
-  [LINK.BRANCH_PLACEHOLDER_OUT]: FLOW_OUT_RULE,
+  [ELinkType.BINDING_MULTI_IN]: BINDING_IN_RULE,
+  [ELinkType.BINDING_PLACEHOLDER_IN]: BINDING_IN_RULE,
+  [ELinkType.BINDING_SINGLE_IN]: BINDING_IN_RULE,
+  [ELinkType.BRANCH_PLACEHOLDER_IN]: FLOW_IN_RULE,
+  [ELinkType.BRANCH_PLACEHOLDER_OUT]: FLOW_OUT_RULE,
 };
 const DEFAULT_PORT_RULE: PortRule = FLOW_IN_RULE;
-const SPECIAL_DIMENSION_HANDLES = new Set<LinkType>([
-  LINK.BINDING_MULTI_IN,
-  LINK.BINDING_PLACEHOLDER_IN,
-  LINK.BINDING_SINGLE_IN,
-  LINK.BINDING_OUT,
+const SPECIAL_DIMENSION_HANDLES = new Set<ELinkType>([
+  ELinkType.BINDING_MULTI_IN,
+  ELinkType.BINDING_PLACEHOLDER_IN,
+  ELinkType.BINDING_SINGLE_IN,
+  ELinkType.BINDING_OUT,
 ]);
 
 export const resolveWorkflowPortRule = (
   id: WorkflowPort,
   direction: ResizeControlDirection,
 ): {
-  baseId: LinkType;
+  baseId: ELinkType;
   type: HandleType;
   position: Position;
   style?: CSSProperties;

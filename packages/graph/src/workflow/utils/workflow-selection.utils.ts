@@ -17,6 +17,8 @@ import type {
   WorkflowSelectionSnapshot,
 } from "../types/workflow-selection.types";
 
+import { areArraysEqual } from "./array.utils";
+
 const isOperatorType = (value: unknown): value is EOperatorType => {
   return (
     value === StepType.Conditional ||
@@ -92,23 +94,6 @@ export const createWorkflowSelectionSnapshotFromMap = (
   };
 };
 
-const isSameStepPath = (
-  leftStepPath: FlowStepPath | undefined,
-  rightStepPath: FlowStepPath | undefined,
-): boolean => {
-  if (!leftStepPath || !rightStepPath) {
-    return leftStepPath === rightStepPath;
-  }
-
-  if (leftStepPath.length !== rightStepPath.length) {
-    return false;
-  }
-
-  return leftStepPath.every(
-    (pathPart, index) => pathPart === rightStepPath[index],
-  );
-};
-
 export const isSameWorkflowSelectionNode = (
   leftNode: WorkflowSelectionNode,
   rightNode: WorkflowSelectionNode,
@@ -120,37 +105,17 @@ export const isSameWorkflowSelectionNode = (
     leftNode.operatorType === rightNode.operatorType &&
     leftNode.taskName === rightNode.taskName &&
     leftNode.actionName === rightNode.actionName &&
-    isSameStepPath(leftNode.stepPath, rightNode.stepPath)
+    areArraysEqual(leftNode.stepPath, rightNode.stepPath)
   );
 };
 
 export const isSameWorkflowSelection = (
   leftSelection: WorkflowSelectionSnapshot,
   rightSelection: WorkflowSelectionSnapshot,
-): boolean => {
-  if (
-    leftSelection.nodeIds.length !== rightSelection.nodeIds.length ||
-    leftSelection.nodes.length !== rightSelection.nodes.length
-  ) {
-    return false;
-  }
-
-  for (let index = 0; index < leftSelection.nodeIds.length; index += 1) {
-    if (leftSelection.nodeIds[index] !== rightSelection.nodeIds[index]) {
-      return false;
-    }
-  }
-
-  for (let index = 0; index < leftSelection.nodes.length; index += 1) {
-    if (
-      !isSameWorkflowSelectionNode(
-        leftSelection.nodes[index],
-        rightSelection.nodes[index],
-      )
-    ) {
-      return false;
-    }
-  }
-
-  return true;
-};
+): boolean =>
+  areArraysEqual(leftSelection.nodeIds, rightSelection.nodeIds) &&
+  areArraysEqual(
+    leftSelection.nodes,
+    rightSelection.nodes,
+    isSameWorkflowSelectionNode,
+  );

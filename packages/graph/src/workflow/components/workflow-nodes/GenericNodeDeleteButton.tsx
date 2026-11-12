@@ -5,16 +5,12 @@
  */
 
 import { Trash2 } from "lucide-react";
-import { useCallback, type MouseEvent } from "react";
+import { useCallback, useMemo, type MouseEvent } from "react";
 
 import { useWorkflowGraphHost } from "../../contexts/workflow-graph-host.context";
 import { useWorkflowNode } from "../../hooks/useWorkflowNode";
-
-type StepRemovableNodeType = "task" | "operator";
-const STEP_REMOVABLE_NODE_TYPES = new Set<StepRemovableNodeType>([
-  "task",
-  "operator",
-]);
+import { ENodeType } from "../../types/workflow-node.types";
+import { getBindingRemovalPayload } from "../../utils/workflow-binding.utils";
 
 export const GenericNodeDeleteButton = () => {
   const { translate, onRemoveStep, onRemoveBinding } = useWorkflowGraphHost();
@@ -28,70 +24,48 @@ export const GenericNodeDeleteButton = () => {
     bindingKind,
     bindingName,
   } = useWorkflowNode();
-  const isStepRemovable =
-    !!stepPath &&
-    typeof type === "string" &&
-    STEP_REMOVABLE_NODE_TYPES.has(type as StepRemovableNodeType);
-  const isBindingRemovable = !!(
-    onRemoveBinding &&
-    stepPath &&
-    stepId &&
-    ownerDefName &&
-    (ownerBindingKind || bindingKind) &&
-    bindingName
-  );
-  const handleDelete = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (isBindingRemovable) {
-        const resolvedBindingKind = ownerBindingKind ?? bindingKind;
-
-        if (
-          !stepPath ||
-          !stepId ||
-          !ownerDefName ||
-          !bindingName ||
-          !resolvedBindingKind
-        ) {
-          return;
-        }
-
-        onRemoveBinding?.({
-          nodeId: id,
-          stepId,
-          stepPath,
-          ownerDefName,
-          bindingKind: resolvedBindingKind,
-          bindingName,
-        });
-
-        return;
-      }
-
-      if (!isStepRemovable || !stepPath) {
-        return;
-      }
-
-      onRemoveStep(stepPath, id);
-    },
+  const bindingRemoval = useMemo(
+    () =>
+      onRemoveBinding
+        ? getBindingRemovalPayload(id, {
+            stepId,
+            stepPath,
+            ownerDefName,
+            ownerBindingKind,
+            bindingKind,
+            bindingName,
+          })
+        : undefined,
     [
       bindingKind,
       bindingName,
       id,
-      isBindingRemovable,
-      isStepRemovable,
       onRemoveBinding,
-      onRemoveStep,
       ownerBindingKind,
       ownerDefName,
       stepId,
       stepPath,
     ],
   );
+  const removableStepPath =
+    type === ENodeType.TASK || type === ENodeType.OPERATOR
+      ? stepPath
+      : undefined;
+  const handleDelete = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
 
-  if (!isBindingRemovable && !isStepRemovable) {
+      if (bindingRemoval) {
+        onRemoveBinding?.(bindingRemoval);
+      } else if (removableStepPath) {
+        onRemoveStep(removableStepPath, id);
+      }
+    },
+    [bindingRemoval, id, onRemoveBinding, onRemoveStep, removableStepPath],
+  );
+
+  if (!bindingRemoval && !removableStepPath) {
     return null;
   }
 

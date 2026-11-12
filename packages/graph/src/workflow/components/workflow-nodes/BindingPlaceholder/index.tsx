@@ -6,11 +6,12 @@
 
 import type { NodeProps } from "@xyflow/react";
 import { Plus } from "lucide-react";
-import { useCallback, type FC, type MouseEvent } from "react";
+import { useCallback, useMemo, type FC, type MouseEvent } from "react";
 
 import { useWorkflowGraphHost } from "../../../contexts/workflow-graph-host.context";
 import { WorkflowNodeProvider } from "../../../providers/WorkflowNodeProvider";
 import { ENodeType, type GraphNode } from "../../../types/workflow-node.types";
+import { getBindingAddPayload } from "../../../utils/workflow-binding.utils";
 import { PulseIconButton } from "../../PulseIconButton";
 import { GenericNodeContainer } from "../GenericNodeContainer";
 import { GenericNodePorts } from "../GenericNodePorts";
@@ -24,8 +25,17 @@ export const BindingPlaceholder: FC<
   const stepPath = data?.stepPath;
   const ownerDefName = data?.ownerDefName;
   const bindingKind = data?.bindingKind;
-  const canAddBinding = Boolean(
-    onAddBinding && stepId && stepPath && ownerDefName && bindingKind,
+  const bindingAddition = useMemo(
+    () =>
+      onAddBinding
+        ? getBindingAddPayload(id, {
+            stepId,
+            stepPath,
+            ownerDefName,
+            bindingKind,
+          })
+        : undefined,
+    [bindingKind, id, onAddBinding, ownerDefName, stepId, stepPath],
   );
   const addLabel = translate("button.add");
   const handleAddBinding = useCallback(
@@ -33,27 +43,11 @@ export const BindingPlaceholder: FC<
       event.preventDefault();
       event.stopPropagation();
 
-      if (!canAddBinding || !onAddBinding || !ownerDefName || !bindingKind) {
-        return;
+      if (bindingAddition) {
+        onAddBinding?.(bindingAddition);
       }
-
-      onAddBinding({
-        nodeId: id,
-        stepId,
-        stepPath,
-        ownerDefName,
-        bindingKind,
-      });
     },
-    [
-      bindingKind,
-      canAddBinding,
-      id,
-      onAddBinding,
-      ownerDefName,
-      stepId,
-      stepPath,
-    ],
+    [bindingAddition, onAddBinding],
   );
 
   return (
@@ -68,7 +62,7 @@ export const BindingPlaceholder: FC<
             aria-label={addLabel}
             title={addLabel}
             onClick={handleAddBinding}
-            disabled={!canAddBinding}
+            disabled={!bindingAddition}
           >
             <Plus size={18} />
           </PulseIconButton>

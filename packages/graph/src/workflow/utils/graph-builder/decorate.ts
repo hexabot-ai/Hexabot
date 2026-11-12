@@ -5,10 +5,12 @@
  */
 
 import { ENodeType } from "../../types/workflow-node.types";
+import { areArraysEqual } from "../array.utils";
 import { isAttachmentSourceHandle } from "../port-rules";
 
 import { createEdgeId } from "./id-factory";
 import { GraphRegistry } from "./registry";
+import type { SemanticEdge, SemanticNode } from "./types";
 
 const GROUP_EDGE_ELIGIBLE_NODE_TYPES = new Set<ENodeType>([
   ENodeType.INDICATOR,
@@ -23,66 +25,94 @@ const isPrefixPath = (prefix: string[], value: string[]): boolean => {
 
   return prefix.every((part, index) => value[index] === part);
 };
-const isSamePath = (left: string[], right: string[]): boolean => {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((part, index) => part === right[index]);
-};
+/**
+ * Endpoints of the overlay edge standing for a direct edge that crosses a
+ * group boundary: each end is replaced by its innermost group, except the
+ * end that sits in a group enclosing the other one.
+ */
 const resolveGroupEdgeEndpoints = (
   source: { id: string; groupPath: string[] },
   target: { id: string; groupPath: string[] },
 ): { source: string; target: string } | undefined => {
-  if (isSamePath(source.groupPath, target.groupPath)) {
+  if (areArraysEqual(source.groupPath, target.groupPath)) {
     return;
   }
 
-  const sourceGroupId = source.groupPath[source.groupPath.length - 1];
-  const targetGroupId = target.groupPath[target.groupPath.length - 1];
+  const sourceGroupId = source.groupPath.at(-1);
+  const targetGroupId = target.groupPath.at(-1);
 
-  if (!sourceGroupId && !targetGroupId) {
+  // Entering a group, from outside or from a group enclosing it.
+  if (
+    targetGroupId &&
+    (!sourceGroupId || isPrefixPath(source.groupPath, target.groupPath))
+  ) {
+    return { source: source.id, target: targetGroupId };
+  }
+
+  // Leaving a group, to outside or to a group enclosing it.
+  if (
+    sourceGroupId &&
+    (!targetGroupId || isPrefixPath(target.groupPath, source.groupPath))
+  ) {
+    return { source: sourceGroupId, target: target.id };
+  }
+
+  // Between two groups that do not enclose one another.
+  return sourceGroupId && targetGroupId
+    ? { source: sourceGroupId, target: targetGroupId }
+    : undefined;
+};
+const toGroupOverlayEdge = (
+  edge: SemanticEdge,
+  sourceNode: SemanticNode,
+  targetNode: SemanticNode,
+): SemanticEdge | undefined => {
+  // Attachment links stay direct: they never leave their owner's group.
+  if (
+    (edge.sourceHandle && isAttachmentSourceHandle(edge.sourceHandle)) ||
+    !GROUP_EDGE_ELIGIBLE_NODE_TYPES.has(sourceNode.type) ||
+    !GROUP_EDGE_ELIGIBLE_NODE_TYPES.has(targetNode.type)
+  ) {
     return;
   }
 
-  if (!sourceGroupId && targetGroupId) {
-    return {
-      source: source.id,
-      target: targetGroupId,
-    };
-  }
+  const endpoints = resolveGroupEdgeEndpoints(
+    { id: sourceNode.id, groupPath: sourceNode.meta.groupPath },
+    { id: targetNode.id, groupPath: targetNode.meta.groupPath },
+  );
 
-  if (sourceGroupId && !targetGroupId) {
-    return {
-      source: sourceGroupId,
-      target: target.id,
-    };
-  }
-
-  if (!sourceGroupId || !targetGroupId) {
+  if (!endpoints || endpoints.source === endpoints.target) {
     return;
   }
 
-  if (isPrefixPath(target.groupPath, source.groupPath)) {
-    return {
-      source: sourceGroupId,
-      target: target.id,
-    };
-  }
-
-  if (isPrefixPath(source.groupPath, target.groupPath)) {
-    return {
-      source: source.id,
-      target: targetGroupId,
-    };
-  }
+  // Handles only make sense on the ends that are still the original nodes.
+  const sourceHandle =
+    endpoints.source === sourceNode.id ? edge.sourceHandle : undefined;
+  const targetHandle =
+    endpoints.target === targetNode.id ? edge.targetHandle : undefined;
 
   return {
-    source: sourceGroupId,
-    target: targetGroupId,
+    id: createEdgeId({
+      ...endpoints,
+      sourceHandle,
+      targetHandle,
+      kind: "group",
+    }),
+    ...endpoints,
+    sourceHandle,
+    targetHandle,
+    label: edge.label,
+    insertPath: edge.insertPath,
+    kind: "group",
   };
 };
 
+/**
+ * Adds an overlay edge between groups for every direct edge crossing a group
+ * boundary, and hides the direct edges the overlays replace (their insert
+ * buttons move to the overlay) as well as edges leaving a placeholder for
+ * real content.
+ */
 export const decorateSemanticGraph = (registry: GraphRegistry): void => {
   registry
     .listEdges()
@@ -95,64 +125,21 @@ export const decorateSemanticGraph = (registry: GraphRegistry): void => {
         return;
       }
 
-      const sourceMeta = sourceNode.meta;
-      const targetMeta = targetNode.meta;
-      const sourceType = sourceNode.type;
-      const targetType = targetNode.type;
-      const canCreateGroupEdge =
-        (!edge.sourceHandle || !isAttachmentSourceHandle(edge.sourceHandle)) &&
-        GROUP_EDGE_ELIGIBLE_NODE_TYPES.has(sourceType) &&
-        GROUP_EDGE_ELIGIBLE_NODE_TYPES.has(targetType);
-      const endpoints = canCreateGroupEdge
-        ? resolveGroupEdgeEndpoints(
-            {
-              id: sourceNode.id,
-              groupPath: sourceMeta.groupPath,
-            },
-            {
-              id: targetNode.id,
-              groupPath: targetMeta.groupPath,
-            },
-          )
-        : undefined;
-      const hasGroupEdge = Boolean(
-        endpoints &&
-          endpoints.source &&
-          endpoints.target &&
-          endpoints.source !== endpoints.target,
-      );
+      const overlayEdge = toGroupOverlayEdge(edge, sourceNode, targetNode);
 
-      if (hasGroupEdge && endpoints) {
-        const overlaySourceHandle =
-          endpoints.source === sourceNode.id ? edge.sourceHandle : undefined;
-        const overlayTargetHandle =
-          endpoints.target === targetNode.id ? edge.targetHandle : undefined;
-
-        registry.upsertEdge({
-          id: createEdgeId({
-            source: endpoints.source,
-            target: endpoints.target,
-            sourceHandle: overlaySourceHandle,
-            targetHandle: overlayTargetHandle,
-            kind: "group",
-          }),
-          source: endpoints.source,
-          target: endpoints.target,
-          sourceHandle: overlaySourceHandle,
-          targetHandle: overlayTargetHandle,
-          label: edge.label,
-          insertPath: edge.insertPath,
-          kind: "group",
-        });
+      if (overlayEdge) {
+        registry.upsertEdge(overlayEdge);
       }
 
       const shouldHideDirectEdge =
-        hasGroupEdge ||
-        Boolean(sourceMeta.isPlaceholder && !targetMeta.isPlaceholder);
+        Boolean(overlayEdge) ||
+        Boolean(
+          sourceNode.meta.isPlaceholder && !targetNode.meta.isPlaceholder,
+        );
 
       registry.patchEdge(edge.id, {
         hidden: shouldHideDirectEdge || edge.hidden,
-        insertPath: hasGroupEdge ? undefined : edge.insertPath,
+        insertPath: overlayEdge ? undefined : edge.insertPath,
       });
     });
 };
