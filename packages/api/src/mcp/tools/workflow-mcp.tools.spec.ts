@@ -4,6 +4,19 @@
  * Full terms: see LICENSE.md.
  */
 
+import { BadRequestException } from '@nestjs/common';
+
+import { ActionService } from '@/actions/actions.service';
+import {
+  installUserFixturesTypeOrm,
+  userFixtureIds,
+} from '@/utils/test/fixtures/user';
+import { buildTestingMocks } from '@/utils/test/utils';
+import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
+import { WorkflowRunRepository } from '@/workflow/repositories/workflow-run.repository';
+import { WorkflowRunService } from '@/workflow/services/workflow-run.service';
+import { WorkflowVersionService } from '@/workflow/services/workflow-version.service';
+import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowType, WorkflowVersionAction } from '@/workflow/types';
 
 import type { HexabotMcpRequest } from '../types';
@@ -320,5 +333,103 @@ describe('HexabotWorkflowMcpTools', () => {
     expect(workflowService.updateOne).toHaveBeenCalledWith('workflow-id', {
       publishedVersion: null,
     });
+  });
+});
+
+describe('HexabotWorkflowMcpTools (TypeORM)', () => {
+  let tools: HexabotWorkflowMcpTools;
+  let workflowService: WorkflowService;
+  const adminRequest = {
+    hexabotUser: { ...actor, id: userFixtureIds.admin },
+  } as HexabotMcpRequest;
+
+  beforeAll(async () => {
+    const testing = await buildTestingMocks({
+      autoInjectFrom: ['providers'],
+      providers: [
+        HexabotWorkflowMcpTools,
+        HexabotWorkflowMcpHelper,
+        WorkflowService,
+        WorkflowVersionService,
+        WorkflowRunService,
+        WorkflowRunRepository,
+        {
+          provide: WEBSOCKET_GATEWAY,
+          useValue: {
+            joinSockets: jest.fn(),
+            broadcastWorkflowEvent: jest.fn(),
+          },
+        },
+      ],
+      typeorm: {
+        fixtures: installUserFixturesTypeOrm,
+      },
+    });
+
+    [tools, workflowService] = await testing.getMocks([
+      HexabotWorkflowMcpTools,
+      WorkflowService,
+    ]);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('creates nothing when the definition YAML is invalid, so the same call can be retried', async () => {
+    const args = { name: 'Invalid YAML', type: WorkflowType.conversational };
+
+    await expect(
+      tools.createWorkflow(
+        { ...args, definitionYml: 'defs: {}\nflow: 42\noutputs: {}\n' },
+        {},
+        adminRequest,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(
+      await workflowService.findOne({ where: { name: args.name } }),
+    ).toBeNull();
+
+    const summary = await tools.createWorkflow(
+      { ...args, definitionYml: 'defs: {}\nflow: []\noutputs: {}\n' },
+      {},
+      adminRequest,
+    );
+
+    expect(summary.currentVersion).toEqual(
+      expect.objectContaining({ version: 1 }),
+    );
+  });
+
+  it('creates nothing when the definition uses an action the workflow type cannot run', async () => {
+    jest.spyOn(ActionService.prototype, 'getRegistry').mockReturnValue({
+      await_reply: { workflowTypes: [WorkflowType.conversational] },
+    } as any);
+    const name = 'Unsupported action';
+
+    await expect(
+      tools.createWorkflow(
+        {
+          name,
+          type: WorkflowType.manual,
+          definitionYml: [
+            'defs:',
+            '  ask:',
+            '    kind: task',
+            '    action: await_reply',
+            'flow:',
+            '  - do: ask',
+            'outputs: {}',
+          ].join('\n'),
+        },
+        {},
+        adminRequest,
+      ),
+    ).rejects.toThrow(
+      new BadRequestException(
+        'Actions not available in manual workflows: ask (await_reply)',
+      ),
+    );
+    expect(await workflowService.findOne({ where: { name } })).toBeNull();
   });
 });

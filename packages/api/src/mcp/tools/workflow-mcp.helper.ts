@@ -19,7 +19,7 @@ import { WorkflowNewVersionDto } from '@/workflow/dto/workflow-version.dto';
 import { parseWorkflowDefinition } from '@/workflow/lib/workflow-definition';
 import { WorkflowVersionService } from '@/workflow/services/workflow-version.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
-import { WorkflowVersionAction } from '@/workflow/types';
+import { WorkflowType, WorkflowVersionAction } from '@/workflow/types';
 
 import { McpUserRef, resolveRelationId, toUserRef } from './hexabot-mcp.utils';
 
@@ -83,13 +83,7 @@ export class HexabotWorkflowMcpHelper {
     createdBy: string;
   }) {
     const workflow = await this.requireWorkflow(params.workflowId);
-    try {
-      parseWorkflowDefinition(params.definitionYml);
-    } catch (error) {
-      throw new BadRequestException(
-        error instanceof Error ? error.message : 'Invalid workflow YAML',
-      );
-    }
+    this.assertDefinitionParses(params.definitionYml);
     const parentVersion =
       params.parentVersion === undefined
         ? resolveRelationId(workflow.currentVersion)
@@ -104,6 +98,35 @@ export class HexabotWorkflowMcpHelper {
     };
 
     return await this.workflowVersionService.commit(payload);
+  }
+
+  /**
+   * Run the checks `commitWorkflowDefinition` runs on a definition, for a
+   * workflow of the given type that does not exist yet: a definition refused
+   * after its workflow was created would leave the workflow behind.
+   *
+   * @throws {BadRequestException} When the YAML is invalid or uses an action
+   * the workflow type cannot run.
+   */
+  assertDefinitionCommittable(
+    definitionYml: string,
+    workflowType: WorkflowType,
+  ): void {
+    this.assertDefinitionParses(definitionYml);
+    this.workflowVersionService.assertActionsSupported(
+      definitionYml,
+      workflowType,
+    );
+  }
+
+  private assertDefinitionParses(definitionYml: string): void {
+    try {
+      parseWorkflowDefinition(definitionYml);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Invalid workflow YAML',
+      );
+    }
   }
 
   async restoreWorkflowVersionSnapshot(

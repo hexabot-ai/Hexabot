@@ -172,7 +172,11 @@ which prints both in full, is turned off (`logging` in `mcp-api.module.ts`).
 
 Workflow YAML is validated with `parseWorkflowDefinition()` before a version is
 created. Coding agents can call `hexabot_workflow_yaml_validate` first to get
-structured validation errors without mutating workflow state. Commits inherit
+structured validation errors without mutating workflow state.
+`hexabot_workflow_create` runs the same checks on its `definitionYml` before
+creating the workflow: when the definition is refused (invalid YAML, an action
+the workflow's type cannot run), no workflow is created and the same call can be
+retried with a fixed definition. Commits inherit
 the workflow's current version as their parent unless `parentVersion` is
 explicitly supplied. `hexabot_workflow_rollback` creates a new current restore snapshot;
 publish that snapshot with `hexabot_workflow_publish` when it should become the

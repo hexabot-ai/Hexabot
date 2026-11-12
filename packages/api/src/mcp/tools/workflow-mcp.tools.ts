@@ -106,7 +106,7 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_workflow_create',
     description:
-      'Create a Hexabot workflow. Optionally commit an initial workflow definition YAML.',
+      'Create a Hexabot workflow. Optionally commit an initial workflow definition YAML; if it is refused, no workflow is created, so the call can be retried with a fixed definition.',
     parameters: z.object({
       ...workflowPayloadSchema,
       name: z.string().min(1),
@@ -134,6 +134,13 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   ) {
     const actorId = this.getActorId(request);
     const { definitionYml, versionMessage, ...workflowPayload } = args;
+    if (definitionYml) {
+      // `conversational` is the column default of `WorkflowOrmEntity.type`.
+      this.workflowHelper.assertDefinitionCommittable(
+        definitionYml,
+        workflowPayload.type ?? WorkflowType.conversational,
+      );
+    }
     const workflow = await this.workflowService.create({
       ...workflowPayload,
       createdBy: actorId,
