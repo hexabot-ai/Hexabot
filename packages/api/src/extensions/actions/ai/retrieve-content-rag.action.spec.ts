@@ -192,6 +192,87 @@ describe('RetrieveRagContentAction', () => {
     });
   });
 
+  it('removes the excluded terms from the query and reports them', async () => {
+    const hits = [
+      {
+        contentId: 'content-1',
+        title: 'Promotions',
+        text: 'Promotions du moment',
+        source: 'pgvector',
+      },
+    ];
+    contentService.retrieve.mockResolvedValue(hits);
+
+    const settings = action.parseSettings({
+      excluded_terms: [' Orange ', 'Tunisie', 'Orange Tunisie'],
+      preserved_phrases: [' Orange Money '],
+    });
+    const result = await action.execute({
+      input: { query: 'promotions Orange Money Orange Tunisie' },
+      context,
+      settings,
+      bindings: {} as any,
+    });
+
+    expect(contentService.retrieve).toHaveBeenCalledWith(
+      'promotions Orange Money',
+      { includeInactive: false },
+    );
+    expect(result).toEqual({
+      hits,
+      text: 'Promotions du moment',
+      query_used: 'promotions Orange Money',
+      removed_terms: ['Orange Tunisie'],
+    });
+    expect(action.parseOutput(result)).toEqual(result);
+  });
+
+  it('reports the unchanged query when no excluded term occurs in it', async () => {
+    contentService.retrieve.mockResolvedValue([]);
+
+    const result = await action.execute({
+      input: { query: 'transfert de crédit' },
+      context,
+      settings: action.parseSettings({ excluded_terms: ['Orange'] }),
+      bindings: {} as any,
+    });
+
+    expect(contentService.retrieve).toHaveBeenCalledWith(
+      'transfert de crédit',
+      { includeInactive: false },
+    );
+    expect(result).toEqual({
+      hits: [],
+      text: '',
+      query_used: 'transfert de crédit',
+      removed_terms: [],
+    });
+  });
+
+  it('does not report the query when excluded_terms is empty', async () => {
+    contentService.retrieve.mockResolvedValue([]);
+
+    const result = await action.execute({
+      input: { query: 'Orange' },
+      context,
+      settings: action.parseSettings({
+        excluded_terms: [],
+        preserved_phrases: ['Orange Money'],
+      }),
+      bindings: {} as any,
+    });
+
+    expect(contentService.retrieve).toHaveBeenCalledWith('Orange', {
+      includeInactive: false,
+    });
+    expect(result).toEqual({ hits: [], text: '' });
+  });
+
+  it('rejects blank excluded terms and preserved phrases', () => {
+    expect(() => action.parseSettings({ excluded_terms: ['  '] })).toThrow();
+    expect(() => action.parseSettings({ preserved_phrases: [''] })).toThrow();
+  });
+
   it('throws when configured content type does not exist', async () => {
     contentTypeService.findOne.mockResolvedValue(undefined);
 
@@ -251,6 +332,27 @@ describe('RetrieveRagContentAction', () => {
       expect(context.services.logger?.warn).toHaveBeenCalled();
     },
   );
+
+  it('reports the filtered query alongside a helper warning', async () => {
+    contentService.retrieve.mockRejectedValue(
+      new RagHelperUnavailableError('missing extension'),
+    );
+
+    const result = await action.execute({
+      input: { query: 'forfaits Orange' },
+      context,
+      settings: action.parseSettings({ excluded_terms: ['Orange'] }),
+      bindings: {} as any,
+    });
+
+    expect(result).toEqual({
+      hits: [],
+      text: '',
+      warning: 'missing extension',
+      query_used: 'forfaits',
+      removed_terms: ['Orange'],
+    });
+  });
 
   it('throws when required content services are missing from context', async () => {
     const invalidContext = {

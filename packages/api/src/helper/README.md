@@ -52,6 +52,21 @@ database outbox, database-native change capture, or an equivalent durable
 queue. It should also implement a complete, idempotent `reindex()` so
 administrators can reconcile it through `POST /content/rag/reindex`.
 
+## Excluded query terms
+
+Words that every indexed page repeats, such as a brand name in each page
+title, match every document. When an agent puts them in its query, generic
+pages outrank the relevant ones, with both lexical and embedding helpers.
+`retrieve_rag_content` removes the words listed in its `excluded_terms` setting
+from the query before the helper receives it, so no helper has to handle them.
+Matching ignores case and only matches whole words. Phrases listed in
+`preserved_phrases` are kept, so excluding a brand does not break a product
+name that contains it. When nothing would be left of the query, it is sent
+unchanged. With excluded terms configured, the action also returns the query it
+sent (`query_used`) and the terms it removed (`removed_terms`).
+`removeQueryTerms` (exported from the CMS module) applies the same filtering
+for other callers.
+
 ## v3.4.0 migration and rollback
 
 The core v3.4.0 migration removes the legacy (LlamaIndex-era) RAG footprint and

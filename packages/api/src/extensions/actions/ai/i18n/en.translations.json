@@ -153,18 +153,26 @@
   "retrieve_rag_content": {
     "Content Type": "Content Type",
     "Content property keys (e.g. url) to attach to each hit and prepend to its text.": "Content property keys (e.g. url) to attach to each hit and prepend to its text.",
+    "Excluded terms": "Excluded terms",
+    "Excluded terms that were removed from the query. Set when excluded terms are configured.": "Excluded terms that were removed from the query. Set when excluded terms are configured.",
     "Include inactive": "Include inactive",
     "Include properties": "Include properties",
     "Limit": "Limit",
     "Maximum number of content hits to return.": "Maximum number of content hits to return.",
     "Mode": "Mode",
     "Optional content type filter for retrieval.": "Optional content type filter for retrieval.",
+    "Phrases kept in the query even when they contain an excluded term, such as a product name that includes the brand.": "Phrases kept in the query even when they contain an excluded term, such as a product name that includes the brand.",
+    "Preserved phrases": "Preserved phrases",
     "Query": "Query",
+    "Query sent to the RAG helper once the excluded terms are removed. Set when excluded terms are configured.": "Query sent to the RAG helper once the excluded terms are removed. Set when excluded terms are configured.",
+    "Query used": "Query used",
     "Query used to retrieve CMS content through RAG.": "Query used to retrieve CMS content through RAG.",
+    "Removed terms": "Removed terms",
     "Retrieval mode used to search indexed content.": "Retrieval mode used to search indexed content.",
     "Retrieves RAG content from knowledge base using lexical or embedding mode for AI tool usage.": "Retrieves RAG content from knowledge base using lexical or embedding mode for AI tool usage.",
     "Warning": "Warning",
     "Warning explaining why retrieval was skipped (e.g. RAG disabled or embedding not configured).": "Warning explaining why retrieval was skipped (e.g. RAG disabled or embedding not configured).",
-    "When enabled, retrieval can include inactive content in results.": "When enabled, retrieval can include inactive content in results."
+    "When enabled, retrieval can include inactive content in results.": "When enabled, retrieval can include inactive content in results.",
+    "Words or phrases removed from the query before retrieval, such as a brand name that every page repeats. Matching ignores case and only matches whole words.": "Words or phrases removed from the query before retrieval, such as a brand name that every page repeats. Matching ignores case and only matches whole words."
   }
 }
