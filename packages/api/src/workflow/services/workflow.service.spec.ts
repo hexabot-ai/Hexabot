@@ -12,7 +12,7 @@ import {
   Workflow as WorkflowHelper,
   WorkflowResumeRejectedError,
 } from '@hexabot-ai/agentic';
-import { Workflow } from '@hexabot-ai/types';
+import { resolveWorkflowInputSchema, Workflow } from '@hexabot-ai/types';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
 
@@ -22,10 +22,6 @@ import {
 } from '@/utils/test/fixtures/user';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
-import {
-  conversationalWorkflowInputJsonSchema,
-  scheduledWorkflowInputJsonSchema,
-} from '@/workflow/schemas/workflow-input-schemas';
 
 import { WorkflowUpdateDto } from '../dto/workflow.dto';
 import { WorkflowRunRepository } from '../repositories/workflow-run.repository';
@@ -166,7 +162,6 @@ describe('WorkflowService (TypeORM)', () => {
       description: workflow.description,
       type: WorkflowType.conversational,
       schedule: null,
-      inputSchema: conversationalWorkflowInputJsonSchema,
     });
   });
 
@@ -199,24 +194,23 @@ describe('WorkflowService (TypeORM)', () => {
     });
   });
 
-  it('keeps the fixed conversational input schema on create', async () => {
-    const customSchema: JsonSchema = {
-      type: 'object',
-      properties: {
-        custom: { type: 'string' },
-      },
-    };
-    const created = await workflowService.create({
-      name: `workflow_with_custom_schema_${Date.now()}`,
-      description: 'Should still use fixed conversational schema',
-      type: WorkflowType.conversational,
-      schedule: null,
-      inputSchema: customSchema,
-      createdBy: creatorId,
-    });
+  it.each([WorkflowType.conversational, WorkflowType.scheduled])(
+    'gives a %s workflow the input of its trigger',
+    async (type) => {
+      const created = await workflowService.create({
+        name: `${type}_workflow_input_${Date.now()}`,
+        type,
+        schedule: type === WorkflowType.scheduled ? '*/10 * * * * *' : null,
+        createdBy: creatorId,
+      });
+      const full = await workflowService.findOneAndPopulate(created.id);
 
-    expect(created.inputSchema).toEqual(conversationalWorkflowInputJsonSchema);
-  });
+      expect(full?.inputSchema).toEqual(resolveWorkflowInputSchema(type));
+      expect(full?.inputSchema).toEqual(
+        expect.objectContaining({ type: 'object' }),
+      );
+    },
+  );
 
   it('creates a workflow without a type as a conversational workflow', async () => {
     const created = await workflowService.create({
@@ -225,48 +219,72 @@ describe('WorkflowService (TypeORM)', () => {
     });
 
     expect(created).toEqual(
-      expect.objectContaining({
-        type: WorkflowType.conversational,
-        inputSchema: conversationalWorkflowInputJsonSchema,
-      }),
+      expect.objectContaining({ type: WorkflowType.conversational }),
     );
   });
 
-  it('allows custom manual schema updates', async () => {
-    const manualSchema: JsonSchema = {
-      type: 'object',
-      properties: {
-        amount: { type: 'number' },
-      },
-      required: ['amount'],
-    };
-    const created = await workflowService.create({
+  it('gives a manual workflow the input its current definition declares', async () => {
+    const manual = await workflowService.create({
       name: `manual_workflow_${Date.now()}`,
       description: 'Manual workflow schema test',
       type: WorkflowType.manual,
-      inputSchema: manualSchema,
       schedule: null,
       createdBy: creatorId,
     });
-
-    expect(created.inputSchema).toEqual(manualSchema);
-
-    const updatedManual = await workflowService.updateOne(created.id, {
-      inputSchema: {
-        type: 'object',
-        properties: {
-          city: { type: 'string' },
-        },
-        required: ['city'],
-      },
-    });
-    expect(updatedManual.inputSchema).toEqual({
+    const { definition } = buildWorkflowDefinition();
+    const commitInputs = async (schema?: Record<string, unknown>) =>
+      await workflowVersionService.commit({
+        action: WorkflowVersionAction.update,
+        definitionYml: WorkflowHelper.stringifyDefinition({
+          ...definition,
+          ...(schema ? { inputs: { schema } } : {}),
+        } as WorkflowDefinition),
+        workflow: manual.id,
+        createdBy: creatorId,
+      });
+    const inputSchema = async () =>
+      (await workflowService.findOneAndPopulate(manual.id))?.inputSchema;
+    const amountSchema = {
       type: 'object',
-      properties: {
-        city: { type: 'string' },
-      },
-      required: ['city'],
+      properties: { amount: { type: 'number' } },
+      required: ['amount'],
+    };
+    const citySchema = {
+      type: 'object',
+      properties: { city: { type: 'string', default: 'Tunis' } },
+    };
+
+    // The blank definition a workflow is created with declares no input.
+    expect(await inputSchema()).toEqual(
+      resolveWorkflowInputSchema(WorkflowType.manual),
+    );
+
+    const amountVersion = await commitInputs(amountSchema);
+    expect(await inputSchema()).toEqual(amountSchema);
+
+    await commitInputs(citySchema);
+    expect(await inputSchema()).toEqual(citySchema);
+
+    // The schema follows the current version, as runs do.
+    await workflowVersionService.restoreVersion(manual.id, amountVersion.id, {
+      updatedBy: creatorId,
     });
+    expect(await inputSchema()).toEqual(amountSchema);
+  });
+
+  it('does not store an input schema on the workflow', async () => {
+    const created = await workflowService.create({
+      name: `manual_workflow_${Date.now()}`,
+      type: WorkflowType.manual,
+      schedule: null,
+      inputSchema: { type: 'object', properties: { amount: {} } },
+      createdBy: creatorId,
+    } as Parameters<WorkflowService['create']>[0]);
+
+    expect(created).not.toHaveProperty('inputSchema');
+    expect(
+      (await workflowService.findOneAndPopulate(created.id))?.inputSchema,
+    ).toEqual(resolveWorkflowInputSchema(WorkflowType.manual));
   });
 
   it('rejects workflow type changes after creation', async () => {
@@ -277,8 +295,6 @@ describe('WorkflowService (TypeORM)', () => {
       schedule: '*/10 * * * * *',
       createdBy: creatorId,
     });
-
-    expect(scheduled.inputSchema).toEqual(scheduledWorkflowInputJsonSchema);
 
     await expect(
       workflowService.updateOne(scheduled.id, {
@@ -479,6 +495,22 @@ describe('WorkflowService (TypeORM)', () => {
 
       expect(gatewayMock.broadcastWorkflowEvent).not.toHaveBeenCalled();
     });
+  });
+
+  it('applies the defaults of the schema to the manual input', () => {
+    expect(
+      workflowService.validateManualInput(
+        { question: 'why?' },
+        {
+          type: 'object',
+          properties: {
+            question: { type: 'string' },
+            pages: { type: 'integer', default: 1 },
+          },
+          required: ['question'],
+        },
+      ),
+    ).toEqual({ question: 'why?', pages: 1 });
   });
 
   it('validates manual input with the provided schema', () => {

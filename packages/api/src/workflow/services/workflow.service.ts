@@ -4,7 +4,11 @@
  * Full terms: see LICENSE.md.
  */
 
-import type { WorkflowEventMap } from '@hexabot-ai/agentic';
+import {
+  buildWorkflowInputParser,
+  type WorkflowEventMap,
+  type WorkflowInputSchema,
+} from '@hexabot-ai/agentic';
 import { WorkflowFull, Workflow } from '@hexabot-ai/types';
 import {
   BadRequestException,
@@ -15,7 +19,7 @@ import {
 } from '@nestjs/common';
 import { HookEventKey, OnEvent } from '@nestjs/event-emitter';
 import { EntityManager, FindOneOptions } from 'typeorm';
-import { z, ZodType } from 'zod';
+import { ZodType } from 'zod';
 
 import { UpdateOneOptions } from '@/utils/generics/base-orm.repository';
 import { BaseOrmService } from '@/utils/generics/base-orm.service';
@@ -145,17 +149,23 @@ export class WorkflowService extends BaseOrmService<WorkflowOrmEntity> {
   }
 
   /**
-   * Validate manual trigger input against the workflow input schema.
+   * Validate the input of a manual run against the input schema of the
+   * workflow, with the parser its runs are started with: an input accepted
+   * here is accepted by the run.
+   *
+   * @param input The input the caller sent.
+   * @param inputSchema The `inputSchema` of the full workflow, which follows
+   * from the definition of its current version (`inputs.schema`).
+   * @returns The input to run with, defaults of the schema applied.
+   * @throws {BadRequestException} Listing what the schema refused.
    */
   validateManualInput(
     input: unknown,
-    inputSchema: WorkflowOrmEntity['inputSchema'],
+    inputSchema: unknown,
   ): Record<string, unknown> {
     let schema: ZodType;
     try {
-      schema = z.fromJSONSchema(
-        inputSchema as Parameters<typeof z.fromJSONSchema>[0],
-      );
+      schema = buildWorkflowInputParser(inputSchema as WorkflowInputSchema);
     } catch {
       throw new BadRequestException({
         ...this.MANUAL_INPUT_VALIDATION_ERROR,

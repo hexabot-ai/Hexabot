@@ -224,11 +224,13 @@ strict schema.
 Resource arrays include workflow dependencies such as called workflows, memory
 definitions, MCP servers, credentials, content types, label groups, and labels.
 The root `workflow.exportId` and `resources.workflows` entries preserve
-`call_workflow` references across imports. Manual workflow input schemas and
-webhook trigger settings, including credential references, are also preserved.
-Conversational and scheduled input schemas are omitted and restored from their
-system defaults during import. Newer resource arrays default to empty lists so
-existing version 1 bundles remain importable.
+`call_workflow` references across imports. The input of a manual workflow
+travels in its definition (`inputs.schema`), and its webhook trigger settings,
+including credential references, are preserved. Bundles exported by v3.6 and
+earlier carry that input beside the definition, as `workflow.inputSchema`:
+the field is still accepted, and the import moves it into the definition.
+Newer resource arrays default to empty lists so existing version 1 bundles
+remain importable.
 
 Password-protected exports also contain a password-derived HMAC-SHA-256
 `integrity` value covering the complete bundle. Import results expose

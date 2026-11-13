@@ -22,6 +22,7 @@ import {
   I18nOptions,
   QueryResolver,
 } from 'nestjs-i18n';
+import { DataSource } from 'typeorm';
 
 import { ActionsModule } from './actions/actions.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -34,6 +35,7 @@ import { ChannelModule } from './channel/channel.module';
 import { ChatModule } from './chat/chat.module';
 import { CmsModule } from './cms/cms.module';
 import { config } from './config';
+import { runBeforeSynchronize } from './database/before-synchronize';
 import { TypeormConfigService } from './database/typeorm-config.service';
 import { ExtensionModule } from './extension/extension.module';
 import { HealthService } from './health/health.service';
@@ -158,6 +160,17 @@ export const HEXABOT_MODULE_IMPORTS: ModuleImports = [
   }),
   TypeOrmModule.forRootAsync({
     useClass: TypeormConfigService,
+    // The same connection Nest opens by default, once the data that
+    // synchronizing would drop has been moved.
+    dataSourceFactory: async (options) => {
+      if (!options) {
+        throw new Error('The database connection has no options');
+      }
+
+      await runBeforeSynchronize(options);
+
+      return new DataSource(options);
+    },
   }),
   MigrationModule,
   ExtensionModule,

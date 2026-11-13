@@ -8,8 +8,10 @@ import { randomUUID } from 'crypto';
 
 import {
   Workflow as WorkflowHelper,
+  type WorkflowInputSchema,
   WorkflowResumeRejectedError,
 } from '@hexabot-ai/agentic';
+import { resolveWorkflowInputSchema } from '@hexabot-ai/types';
 import {
   BadRequestException,
   NotFoundException,
@@ -42,10 +44,6 @@ import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provide
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import type { WebsocketGateway } from '@/websocket/websocket.gateway';
-import {
-  conversationalWorkflowInputJsonSchema,
-  scheduledWorkflowInputJsonSchema,
-} from '@/workflow/schemas/workflow-input-schemas';
 
 import { ManualWorkflowContext } from '../contexts/manual-workflow.context';
 import { WorkflowUpdateDto } from '../dto/workflow.dto';
@@ -56,8 +54,9 @@ import {
 import { WorkflowVersionRepository } from '../repositories/workflow-version.repository';
 import { AgenticService } from '../services/agentic.service';
 import { WorkflowRunService } from '../services/workflow-run.service';
+import { WorkflowVersionService } from '../services/workflow-version.service';
 import { WorkflowService } from '../services/workflow.service';
-import { DirectionType, WorkflowType } from '../types';
+import { DirectionType, WorkflowType, WorkflowVersionAction } from '../types';
 
 import { WorkflowController } from './workflow.controller';
 
@@ -94,6 +93,7 @@ class ManualOnlyAction extends BaseAction<
 describe('WorkflowController (TypeORM)', () => {
   let workflowController: WorkflowController;
   let workflowService: WorkflowService;
+  let workflowVersionService: WorkflowVersionService;
   let agenticService: AgenticService;
   let logger: LoggerService;
   let actionService: ActionService;
@@ -123,7 +123,6 @@ describe('WorkflowController (TypeORM)', () => {
       description: 'Workflow controller test definition',
       type: WorkflowType.conversational,
       schedule: null,
-      inputSchema: conversationalWorkflowInputJsonSchema,
       createdBy: userFixtureIds.admin,
       direction: DirectionType.HORIZONTAL,
       x: 0,
@@ -133,6 +132,30 @@ describe('WorkflowController (TypeORM)', () => {
       runAfterMs: 0,
       webhookTrigger: null,
     };
+  };
+  /** Create a manual workflow whose definition declares the given input. */
+  const createManualWorkflow = async (inputSchema?: JsonSchema) => {
+    const manual = await workflowService.create({
+      ...buildWorkflowPayload(),
+      type: WorkflowType.manual,
+      createdBy: userFixtureIds.admin,
+    });
+    createdWorkflowIds.add(manual.id);
+    if (inputSchema) {
+      await workflowVersionService.commit({
+        action: WorkflowVersionAction.update,
+        workflow: manual.id,
+        definitionYml: WorkflowHelper.stringifyDefinition({
+          defs: {},
+          inputs: { schema: inputSchema as WorkflowInputSchema },
+          flow: [],
+          outputs: {},
+        }),
+        createdBy: userFixtureIds.admin,
+      });
+    }
+
+    return manual;
   };
 
   beforeAll(async () => {
@@ -148,6 +171,7 @@ describe('WorkflowController (TypeORM)', () => {
         },
         I18nServiceProvider,
         WorkflowVersionRepository,
+        WorkflowVersionService,
         {
           provide: AgenticService,
           useValue: agenticServiceMock,
@@ -172,6 +196,7 @@ describe('WorkflowController (TypeORM)', () => {
       agenticService,
       workflowController,
       workflowService,
+      workflowVersionService,
       actionService,
       runtimeBindingsService,
       i18nService,
@@ -179,6 +204,7 @@ describe('WorkflowController (TypeORM)', () => {
       AgenticService,
       WorkflowController,
       WorkflowService,
+      WorkflowVersionService,
       ActionService,
       RuntimeBindingsService,
       I18nService,
@@ -250,6 +276,10 @@ describe('WorkflowController (TypeORM)', () => {
             ...messagingWorkflowFixtures[0],
             webhookTrigger: null,
             definition: messagingWorkflowDefinition,
+            // Derived from the workflow type: nothing stores it.
+            inputSchema: resolveWorkflowInputSchema(
+              WorkflowType.conversational,
+            ),
             currentVersion: {
               definitionYml: WorkflowHelper.stringifyDefinition(
                 messagingWorkflowDefinition,
@@ -746,13 +776,7 @@ describe('WorkflowController (TypeORM)', () => {
         required: ['customerId'],
         additionalProperties: false,
       };
-      const manual = await workflowService.create({
-        ...buildWorkflowPayload(),
-        type: WorkflowType.manual,
-        inputSchema: manualInputSchema,
-        createdBy: userFixtureIds.admin,
-      });
-      createdWorkflowIds.add(manual.id);
+      const manual = await createManualWorkflow(manualInputSchema);
       const input = { customerId: 'cust-1', retryCount: 1 };
       const userId = userFixtureIds.admin;
       const spyAgenticService = jest.spyOn(agenticService, 'triggerEvent');
@@ -771,13 +795,7 @@ describe('WorkflowController (TypeORM)', () => {
     });
 
     it('answers 422 when a suspended run of the workflow refuses the input', async () => {
-      const manual = await workflowService.create({
-        ...buildWorkflowPayload(),
-        type: WorkflowType.manual,
-        inputSchema: { type: 'object', properties: {} },
-        createdBy: userFixtureIds.admin,
-      });
-      createdWorkflowIds.add(manual.id);
+      const manual = await createManualWorkflow();
       const error = new WorkflowResumeRejectedError(
         'Resume payload for wait "ask" was rejected: quantity: Expected number',
         { issues: ['quantity: Expected number'] },
@@ -794,13 +812,7 @@ describe('WorkflowController (TypeORM)', () => {
     });
 
     it('answers 422 when no run could be started', async () => {
-      const manual = await workflowService.create({
-        ...buildWorkflowPayload(),
-        type: WorkflowType.manual,
-        inputSchema: { type: 'object', properties: {} },
-        createdBy: userFixtureIds.admin,
-      });
-      createdWorkflowIds.add(manual.id);
+      const manual = await createManualWorkflow();
       jest
         .spyOn(agenticService, 'triggerEvent')
         .mockResolvedValueOnce({ status: 'unprocessed' });
@@ -823,13 +835,7 @@ describe('WorkflowController (TypeORM)', () => {
         required: ['customerId'],
         additionalProperties: false,
       };
-      const manual = await workflowService.create({
-        ...buildWorkflowPayload(),
-        type: WorkflowType.manual,
-        inputSchema: manualInputSchema,
-        createdBy: userFixtureIds.admin,
-      });
-      createdWorkflowIds.add(manual.id);
+      const manual = await createManualWorkflow(manualInputSchema);
 
       let thrown: unknown;
       try {
@@ -859,7 +865,6 @@ describe('WorkflowController (TypeORM)', () => {
         ...buildWorkflowPayload(),
         type: WorkflowType.scheduled,
         schedule: '*/5 * * * * *',
-        inputSchema: scheduledWorkflowInputJsonSchema,
         createdBy: userFixtureIds.admin,
       });
       createdWorkflowIds.add(scheduled.id);
@@ -915,7 +920,6 @@ describe('WorkflowController (TypeORM)', () => {
         ...buildWorkflowPayload(),
         type: WorkflowType.scheduled,
         schedule: '*/5 * * * * *',
-        inputSchema: scheduledWorkflowInputJsonSchema,
         createdBy: userFixtureIds.admin,
       });
       createdWorkflowIds.add(scheduled.id);

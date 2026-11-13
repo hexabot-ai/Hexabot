@@ -71,7 +71,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
   @McpPermission('workflowrun', Action.CREATE)
   @Tool({
     name: 'hexabot_workflow_run',
-    description: `Run a manual or scheduled workflow and return the run summary. Waits until the run finishes, fails or suspends, for at most waitTimeoutSeconds (default ${DEFAULT_RUN_WAIT_TIMEOUT_SECONDS}). A run still going then, or with wait=false, is returned at once with inProgress=true and keeps running server-side: poll hexabot_workflow_run_get with run.id until its status is no longer idle or running. Do not call this tool again to get the result: that starts another run.`,
+    description: `Run a manual or scheduled workflow and return the run summary. The input of a manual workflow must match the inputSchema hexabot_workflow_get returns for it, or the call is refused with the fields at fault; a scheduled workflow takes no input. Waits until the run finishes, fails or suspends, for at most waitTimeoutSeconds (default ${DEFAULT_RUN_WAIT_TIMEOUT_SECONDS}). A run still going then, or with wait=false, is returned at once with inProgress=true and keeps running server-side: poll hexabot_workflow_run_get with run.id until its status is no longer idle or running. Do not call this tool again to get the result: that starts another run.`,
     parameters: z.object({
       workflowId: uuidSchema,
       input: jsonObjectSchema.default({}),
@@ -118,10 +118,7 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
             triggeredAt: new Date(),
           })
         : new ManualEventWrapper(
-            this.workflowService.validateManualInput(
-              args.input ?? {},
-              workflow.inputSchema,
-            ),
+            this.validateManualInput(args.input ?? {}, workflow.inputSchema),
             actor.id,
           );
     // Throws, and the tool reports the error, when a suspended run of the
@@ -142,6 +139,34 @@ export class HexabotWorkflowRunMcpTools extends HexabotMcpToolBase {
       inProgress: CLAIMED_WORKFLOW_RUN_STATUSES.includes(run.status),
       run: this.withoutWorkflowDefinition(this.withOpenWaits(run)),
     };
+  }
+
+  /**
+   * Validate the input of a manual run (`WorkflowService.validateManualInput`).
+   * A tool error only carries a message, so what the schema refused is put
+   * in it.
+   *
+   * @throws {BadRequestException} Listing what the schema refused.
+   */
+  private validateManualInput(
+    input: unknown,
+    inputSchema: unknown,
+  ): Record<string, unknown> {
+    try {
+      return this.workflowService.validateManualInput(input, inputSchema);
+    } catch (error) {
+      if (!(error instanceof BadRequestException)) {
+        throw error;
+      }
+
+      const { details } = error.getResponse() as { details?: unknown };
+
+      throw new BadRequestException(
+        details === undefined
+          ? error.message
+          : `${error.message}: ${JSON.stringify(details)}`,
+      );
+    }
   }
 
   @McpPermission('workflowrun', Action.READ)

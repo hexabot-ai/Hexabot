@@ -179,7 +179,19 @@ the workflow's type cannot run), no workflow is created and the same call can be
 retried with a fixed definition. A workflow created without a `type` is
 `conversational`. `hexabot_workflow_update` likewise checks its `definitionYml`
 before changing the workflow's metadata, so a refused definition changes
-nothing. Commits inherit
+nothing.
+
+A workflow's input is declared in its definition and nowhere else. A manual
+workflow describes it under `inputs.schema` with a JSON Schema of type
+`object`; conversational and scheduled workflows take the input of their
+trigger, and a definition of theirs that declares `inputs` is refused. The
+`inputSchema` the workflow tools return is derived from the workflow type and
+the current definition, and `hexabot_workflow_run` checks its `input` against
+it. `hexabot_workflow_create` and `hexabot_workflow_update` no longer take an
+`inputSchema`: a call that sends one is refused with a message saying where
+the input is declared, rather than ignored.
+
+Commits inherit
 the workflow's current version as their parent unless `parentVersion` is
 explicitly supplied. `hexabot_workflow_rollback` creates a new current restore snapshot;
 publish that snapshot with `hexabot_workflow_publish` when it should become the

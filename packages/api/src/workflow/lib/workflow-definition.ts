@@ -64,3 +64,26 @@ export const assertTaskActionsSupported = (
     );
   }
 };
+
+/**
+ * Refuse a definition that declares `inputs` for a workflow whose input is
+ * fixed by its trigger. Only a manual workflow declares its input: a
+ * conversational one is run with the inbound message and a scheduled one
+ * with its schedule (`resolveWorkflowInputSchema`), and a schema of their own
+ * would be checked against that input on every run.
+ *
+ * @param definition The workflow definition.
+ * @param workflowType The type of the workflow the definition belongs to.
+ * @throws When a conversational or scheduled definition declares `inputs`.
+ */
+export const assertInputsDeclarable = (
+  definition: WorkflowDefinition,
+  workflowType: WorkflowType,
+): void => {
+  if (workflowType !== WorkflowType.manual && definition.inputs !== undefined) {
+    throw new Error(
+      `A ${workflowType} workflow cannot declare "inputs": its input is ` +
+        'fixed by its trigger. Remove "inputs" from the definition.',
+    );
+  }
+};

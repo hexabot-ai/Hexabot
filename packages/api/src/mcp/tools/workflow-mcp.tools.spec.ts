@@ -464,4 +464,136 @@ describe('HexabotWorkflowMcpTools (TypeORM)', () => {
     );
     expect(await workflowService.findOne(id)).toEqual(before);
   });
+
+  describe('workflow input', () => {
+    const withInputs = (inputs: string[]) =>
+      [...inputs, 'defs: {}', 'flow: []', 'outputs: {}'].join('\n');
+    const questionSchemaYml = withInputs([
+      'inputs:',
+      '  schema:',
+      '    type: object',
+      '    properties:',
+      '      question:',
+      '        type: string',
+      '    required: [question]',
+    ]);
+    const fieldMapYml = withInputs([
+      'inputs:',
+      '  schema:',
+      '    question:',
+      '      type: string',
+    ]);
+
+    it('returns the input a manual workflow declares in its definition', async () => {
+      const created = await tools.createWorkflow(
+        {
+          name: 'Declared input',
+          type: WorkflowType.manual,
+          definitionYml: questionSchemaYml,
+        },
+        {},
+        adminRequest,
+      );
+
+      expect(created.inputSchema).toEqual({
+        type: 'object',
+        properties: { question: { type: 'string' } },
+        required: ['question'],
+      });
+      expect((await tools.getWorkflow({ id: created.id })).inputSchema).toEqual(
+        created.inputSchema,
+      );
+
+      const updated = await tools.updateWorkflow(
+        {
+          id: created.id,
+          definitionYml: withInputs([
+            'inputs:',
+            '  schema:',
+            '    type: object',
+            '    properties:',
+            '      topic:',
+            '        type: string',
+          ]),
+        },
+        {},
+        adminRequest,
+      );
+
+      expect(updated.inputSchema).toEqual({
+        type: 'object',
+        properties: { topic: { type: 'string' } },
+      });
+    });
+
+    it('creates nothing when the definition declares its input as a field map', async () => {
+      const name = 'Field map';
+
+      await expect(
+        tools.createWorkflow(
+          { name, type: WorkflowType.manual, definitionYml: fieldMapYml },
+          {},
+          adminRequest,
+        ),
+      ).rejects.toThrow(
+        'inputs.schema: Workflow inputs must be described by a JSON Schema',
+      );
+      expect(await workflowService.findOne({ where: { name } })).toBeNull();
+    });
+
+    it.each([WorkflowType.conversational, WorkflowType.scheduled])(
+      'creates nothing when a %s definition declares inputs',
+      async (type) => {
+        const name = `Inputs on ${type}`;
+
+        await expect(
+          tools.createWorkflow(
+            { name, type, definitionYml: questionSchemaYml },
+            {},
+            adminRequest,
+          ),
+        ).rejects.toThrow(
+          new BadRequestException(
+            `A ${type} workflow cannot declare "inputs": its input is fixed ` +
+              'by its trigger. Remove "inputs" from the definition.',
+          ),
+        );
+        expect(await workflowService.findOne({ where: { name } })).toBeNull();
+      },
+    );
+
+    it('refuses the inputSchema parameter instead of ignoring it', async () => {
+      const name = 'Input schema parameter';
+      const inputSchema = { type: 'object', properties: { question: {} } };
+      const refusal =
+        '"inputSchema" is no longer a parameter: a workflow declares its ' +
+        'input in its definition.';
+
+      await expect(
+        tools.createWorkflow(
+          { name, type: WorkflowType.manual, inputSchema },
+          {},
+          adminRequest,
+        ),
+      ).rejects.toThrow(refusal);
+      expect(await workflowService.findOne({ where: { name } })).toBeNull();
+
+      const { id } = await workflowService.create({
+        name,
+        description: 'Before',
+        type: WorkflowType.manual,
+        createdBy: userFixtureIds.admin,
+      });
+      const before = await workflowService.findOne(id);
+
+      await expect(
+        tools.updateWorkflow(
+          { id, description: 'After', inputSchema },
+          {},
+          adminRequest,
+        ),
+      ).rejects.toThrow(refusal);
+      expect(await workflowService.findOne(id)).toEqual(before);
+    });
+  });
 });

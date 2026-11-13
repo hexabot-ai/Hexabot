@@ -120,6 +120,24 @@ export default class Migration1700000000000_V2_2_0 implements MigrationInterface
 - **`up` Method**: Defines the operations to apply the migration (e.g., running SQL statements through the query runner).
 - **`down` Method**: Defines the rollback logic to revert the migration.
 
+## Moving data out of a column an entity no longer declares
+
+With `DB_SYNCHRONIZE=true`, TypeORM aligns the tables with the entities when
+the connection opens, which is before any migration runs. A column removed
+from an entity is dropped at that point, with its content, so a migration
+that moves this content elsewhere would find nothing left.
+
+Write such a move as a step that checks by itself whether its work is still
+to be done, and run it from two places:
+
+- `runBeforeSynchronize` (`src/database/before-synchronize.ts`), which the
+  application calls before it opens its connection when synchronizing is on;
+- the migration, for the deployments that do not synchronize.
+
+`src/migration/lib/workflow-input-schemas.ts` (v3.7.0) is the example to
+follow. A step that fails stops the application from starting, so that
+nothing is dropped before it succeeded.
+
 ## Best Practices
 
 - Use semantic versioning (e.g., `v3.0.1`) for your migration names to keep track of changes systematically.

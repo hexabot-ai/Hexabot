@@ -15,10 +15,6 @@ import { WorkflowCreateDto } from '@/workflow/dto/workflow.dto';
 import { WorkflowVersionOrmEntity } from '@/workflow/entities/workflow-version.entity';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
 import {
-  conversationalWorkflowInputJsonSchema,
-  scheduledWorkflowInputJsonSchema,
-} from '@/workflow/schemas/workflow-input-schemas';
-import {
   DirectionType,
   WorkflowType,
   WorkflowVersionAction,
@@ -91,7 +87,6 @@ export const messagingWorkflowFixtures: WorkflowFixture[] = [
     definitionYml: Workflow.stringifyDefinition(messagingWorkflowDefinition),
     type: WorkflowType.conversational,
     schedule: null,
-    inputSchema: conversationalWorkflowInputJsonSchema,
     createdBy: userFixtureIds.admin,
     direction: DirectionType.HORIZONTAL,
     x: 0,
@@ -108,7 +103,6 @@ export const scheduledWorkflowFixtures: WorkflowFixture[] = [
     definitionYml: Workflow.stringifyDefinition(scheduledWorkflowDefinition),
     type: WorkflowType.scheduled,
     schedule: '*/10 * * * * *',
-    inputSchema: scheduledWorkflowInputJsonSchema,
     createdBy: userFixtureIds.admin,
     builtin: false,
   },

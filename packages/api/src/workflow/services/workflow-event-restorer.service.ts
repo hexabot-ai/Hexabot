@@ -7,6 +7,7 @@
 import { randomUUID } from 'crypto';
 
 import {
+  conversationalWorkflowInputSchema,
   IncomingMessageType,
   StdIncomingMessage,
   Subscriber,
@@ -34,7 +35,6 @@ import {
   ScheduledEventWrapper,
   TriggerEventWrapper,
 } from '../lib/trigger-event-wrapper';
-import { conversationalWorkflowInputZodSchema } from '../schemas/workflow-input-schemas';
 
 import { WorkflowRunService } from './workflow-run.service';
 
@@ -179,7 +179,7 @@ export class WorkflowEventRestorer {
       );
     }
 
-    const input = conversationalWorkflowInputZodSchema.safeParse(root.input);
+    const input = conversationalWorkflowInputSchema.safeParse(root.input);
     const message: StdIncomingMessage = input.success
       ? input.data.message
       : { type: IncomingMessageType.text, data: { text: '' } };

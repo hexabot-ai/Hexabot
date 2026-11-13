@@ -7,6 +7,7 @@
 import { WorkflowType } from '../types';
 
 import {
+  assertInputsDeclarable,
   assertTaskActionsSupported,
   parseWorkflowDefinition,
 } from './workflow-definition';
@@ -102,4 +103,40 @@ describe('assertTaskActionsSupported', () => {
       assertTaskActionsSupported(definition, WorkflowType.manual, {}),
     ).not.toThrow();
   });
+});
+
+describe('assertInputsDeclarable', () => {
+  const definition = parseWorkflowDefinition(
+    [
+      'inputs:',
+      '  schema:',
+      '    type: object',
+      '    properties:',
+      '      question:',
+      '        type: string',
+      'defs: {}',
+      'flow: []',
+      'outputs: {}',
+    ].join('\n'),
+  );
+  const withoutInputs = parseWorkflowDefinition(
+    'defs: {}\nflow: []\noutputs: {}\n',
+  );
+
+  it('lets a manual workflow declare its input', () => {
+    expect(() =>
+      assertInputsDeclarable(definition, WorkflowType.manual),
+    ).not.toThrow();
+  });
+
+  it.each([WorkflowType.conversational, WorkflowType.scheduled])(
+    'refuses inputs in a %s workflow, whose trigger fixes the input',
+    (type) => {
+      expect(() => assertInputsDeclarable(definition, type)).toThrow(
+        `A ${type} workflow cannot declare "inputs": its input is fixed by ` +
+          'its trigger. Remove "inputs" from the definition.',
+      );
+      expect(() => assertInputsDeclarable(withoutInputs, type)).not.toThrow();
+    },
+  );
 });

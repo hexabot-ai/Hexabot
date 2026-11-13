@@ -45,6 +45,11 @@ const workflowExportBundleWorkflowSchema = z.strictObject({
   description: z.string().nullable(),
   type: workflowTypeSchema,
   schedule: z.string().nullable(),
+  /**
+   * Only in bundles exported by v3.6 and earlier, which kept the input
+   * schema of a manual workflow beside its definition. The import moves it
+   * into the definition, under `inputs.schema`.
+   */
   inputSchema: z.any().optional(),
   webhookTrigger: webhookTriggerSchema.nullable().optional(),
   layout: workflowExportBundleLayoutSchema,

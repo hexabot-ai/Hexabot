@@ -9,6 +9,7 @@ import {
   type WorkflowDefinition,
 } from '@hexabot-ai/agentic';
 import {
+  resolveWorkflowInputSchema,
   WebhookAuthType,
   WebhookJwtAlgorithm,
   WORKFLOW_EXPORT_BUNDLE_KIND,
@@ -40,7 +41,6 @@ import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import type { WebsocketGateway } from '@/websocket/websocket.gateway';
 import { workflowResourceRef } from '@/workflow/resource-refs';
-import { conversationalWorkflowInputJsonSchema } from '@/workflow/schemas/workflow-input-schemas';
 import { McpClientPoolService } from '@/workflow/services/mcp-client-pool.service';
 import { McpServerService } from '@/workflow/services/mcp-server.service';
 import { MemoryDefinitionService } from '@/workflow/services/memory-definition.service';
@@ -559,9 +559,6 @@ describe('WorkflowTransferService', () => {
       creatorId,
       credentialPassword,
     );
-    expect(importedProtected.workflow.inputSchema).toEqual(
-      conversationalWorkflowInputJsonSchema,
-    );
     expect(importedProtected.integrityVerified).toBe(true);
     const tamperedBundle = {
       ...bundleWithCredentials,
@@ -591,7 +588,6 @@ describe('WorkflowTransferService', () => {
       name: `Manual export ${Date.now()}`,
       type: WorkflowType.manual,
       schedule: null,
-      inputSchema,
       webhookTrigger: {
         enabled: true,
         authType: WebhookAuthType.jwt,
@@ -604,6 +600,7 @@ describe('WorkflowTransferService', () => {
       workflow: workflow.id,
       definitionYml: AgenticWorkflow.stringifyDefinition({
         defs: {},
+        inputs: { schema: inputSchema },
         flow: [],
         outputs: {},
       }),
@@ -628,7 +625,11 @@ describe('WorkflowTransferService', () => {
       (resource) => resource.kind === 'credential',
     );
 
-    expect(bundle.workflow.inputSchema).toEqual(inputSchema);
+    // The input travels in the definition, and nowhere else.
+    expect(bundle.workflow).not.toHaveProperty('inputSchema');
+    expect(parseYaml(bundle.definitionYml).inputs).toEqual({
+      schema: inputSchema,
+    });
     expect(bundle.workflow.webhookTrigger).toMatchObject({
       authType: WebhookAuthType.jwt,
       jwtSecretCredentialId: webhookCredential.id,
@@ -636,10 +637,125 @@ describe('WorkflowTransferService', () => {
     expect(bundle.resources.credentials).toEqual([
       expect.objectContaining({ exportId: webhookCredential.id }),
     ]);
-    expect(imported.workflow.inputSchema).toEqual(inputSchema);
+    expect(
+      (await workflowService.findOneAndPopulate(imported.workflow.id))
+        ?.inputSchema,
+    ).toEqual(inputSchema);
     expect(imported.workflow.webhookTrigger).toMatchObject({
       authType: WebhookAuthType.jwt,
       jwtSecretCredentialId: importedCredential?.localId,
+    });
+  });
+
+  describe('bundles exported by v3.6 and earlier', () => {
+    const exportBundle = async (type: WorkflowType) => {
+      const workflow = await workflowService.create({
+        name: `Legacy ${type} export ${Date.now()}`,
+        type,
+        schedule: null,
+        createdBy: creatorId,
+      });
+      await workflowVersionService.commit({
+        workflow: workflow.id,
+        definitionYml: AgenticWorkflow.stringifyDefinition({
+          defs: {},
+          flow: [],
+          outputs: {},
+        }),
+        action: WorkflowVersionAction.update,
+        createdBy: creatorId,
+      });
+      const exported = await transferService.exportWorkflow(workflow.id);
+
+      return workflowExportBundleSchema.parse(parseYaml(exported.content));
+    };
+    const FIELD_MAP = 'inputs:\n  schema:\n    question:\n      type: string\n';
+    const importedInputSchema = async (workflowId: string) =>
+      (await workflowService.findOneAndPopulate(workflowId))?.inputSchema;
+
+    it('moves the input schema of a manual workflow into its definition', async () => {
+      const bundle = await exportBundle(WorkflowType.manual);
+      const inputSchema = {
+        type: 'object',
+        properties: { topic: { type: 'string' } },
+        required: ['topic'],
+      };
+      const imported = await transferService.importWorkflow(
+        stringifyYaml({
+          ...bundle,
+          workflow: { ...bundle.workflow, inputSchema },
+        }),
+        creatorId,
+      );
+
+      expect(imported.warnings).toEqual([]);
+      expect(await importedInputSchema(imported.workflow.id)).toEqual(
+        inputSchema,
+      );
+    });
+
+    it('converts the field map of a manual workflow', async () => {
+      const bundle = await exportBundle(WorkflowType.manual);
+      const imported = await transferService.importWorkflow(
+        stringifyYaml({
+          ...bundle,
+          definitionYml: `${FIELD_MAP}${bundle.definitionYml}`,
+        }),
+        creatorId,
+      );
+
+      expect(imported.warnings).toEqual([]);
+      expect(await importedInputSchema(imported.workflow.id)).toEqual({
+        type: 'object',
+        properties: { question: { type: 'string' } },
+        additionalProperties: false,
+      });
+    });
+
+    it('warns when the input schema replaces the fields the definition declared', async () => {
+      const bundle = await exportBundle(WorkflowType.manual);
+      const inputSchema = {
+        type: 'object',
+        properties: { topic: { type: 'string' } },
+      };
+      const imported = await transferService.importWorkflow(
+        stringifyYaml({
+          ...bundle,
+          workflow: { ...bundle.workflow, inputSchema },
+          definitionYml: `${FIELD_MAP}${bundle.definitionYml}`,
+        }),
+        creatorId,
+      );
+
+      expect(imported.warnings).toEqual([
+        `Workflow "${bundle.workflow.name}": the fields the definition ` +
+          'declared (question) were replaced by the input schema of the ' +
+          'workflow.',
+      ]);
+      expect(await importedInputSchema(imported.workflow.id)).toEqual(
+        inputSchema,
+      );
+    });
+
+    it('removes the inputs a conversational workflow declared', async () => {
+      const bundle = await exportBundle(WorkflowType.conversational);
+      const imported = await transferService.importWorkflow(
+        stringifyYaml({
+          ...bundle,
+          definitionYml: `${FIELD_MAP}${bundle.definitionYml}`,
+        }),
+        creatorId,
+      );
+      const workflow = await workflowService.findOneAndPopulate(
+        imported.workflow.id,
+      );
+
+      expect(parseYaml(workflow?.definitionYml ?? '')).not.toHaveProperty(
+        'inputs',
+      );
+      expect(workflow?.inputSchema).toEqual(
+        resolveWorkflowInputSchema(WorkflowType.conversational),
+      );
     });
   });
 

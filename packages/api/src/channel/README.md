@@ -51,8 +51,10 @@ resolution. The endpoint is CSRF-exempt like the rest of `/webhook/*`.
   must exist, be `manual`, have `webhookTrigger.enabled`, and the request must
   satisfy the configured auth (`none`, `basic`, `header`, or `jwt`). Workflows
   that are not exposed as webhooks respond `404` without disclosing existence.
-- The JSON request body is the workflow input and is validated against the
-  workflow `inputSchema` (`400` on mismatch).
+- The JSON request body is the workflow input. It is validated against the
+  JSON Schema the workflow's current definition declares under `inputs.schema`
+  (`400` on mismatch, with the fields at fault), and the defaults of that
+  schema are applied. A workflow that declares no input takes any object.
 - By default the run executes before the response: the `200` response carries
   the outcome `{ runId, status, output, error }` once the run finishes, fails
   or suspends. When no run could be started the endpoint responds `422`.

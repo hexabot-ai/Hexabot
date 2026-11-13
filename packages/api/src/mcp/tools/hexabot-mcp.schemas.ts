@@ -28,7 +28,14 @@ export const workflowPayloadSchema = {
   description: z.string().optional(),
   type: z.enum(WorkflowType).optional(),
   schedule: z.string().nullable().optional(),
-  inputSchema: jsonObjectSchema.optional(),
+  // No longer taken: the tools refuse it and say where the input is declared,
+  // so that a caller still sending it is not ignored silently.
+  inputSchema: jsonObjectSchema
+    .optional()
+    .describe(
+      'Not accepted any more. Declare the input of a manual workflow in ' +
+        'definitionYml, under inputs.schema.',
+    ),
   builtin: z.boolean().optional(),
   x: z.number().optional(),
   y: z.number().optional(),

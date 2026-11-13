@@ -4,8 +4,6 @@
  * Full terms: see LICENSE.md.
  */
 
-import { isDeepStrictEqual } from 'node:util';
-
 import {
   Workflow as AgenticWorkflow,
   DEFAULT_RETRY_SETTINGS,
@@ -13,7 +11,6 @@ import {
 } from '@hexabot-ai/agentic';
 import { WebhookTriggerConfig, workflowSchema } from '@hexabot-ai/types';
 import { CronJob } from 'cron';
-import { JSONSchema7 as JsonSchema } from 'json-schema';
 import {
   Column,
   Entity,
@@ -31,18 +28,12 @@ import {
   OnAfterInsert,
   OnBeforeInsert,
   OnBeforeRemove,
-  OnBeforeUpdate,
 } from '@/database/decorators/orm-event-hooks.decorator';
 import { BaseOrmEntity } from '@/database/entities/base.entity';
 import { UserOrmEntity } from '@/user/entities/user.entity';
 import { AsRelation } from '@/utils';
 
 import { WorkflowDto, workflowFullSchema } from '../dto/workflow.dto';
-import {
-  conversationalWorkflowInputJsonSchema,
-  manualWorkflowDefaultInputJsonSchema,
-  scheduledWorkflowInputJsonSchema,
-} from '../schemas/workflow-input-schemas';
 import {
   DEFAULT_WORKFLOW_TYPE,
   DirectionType,
@@ -90,10 +81,6 @@ export class WorkflowOrmEntity extends BaseOrmEntity<WorkflowDto> {
   /** Cron expression used when the workflow is scheduled. */
   @Column({ type: 'varchar', length: 255, nullable: true })
   schedule?: string | null;
-
-  /** JSON Schema describing the expected workflow input payload. */
-  @JsonColumn({ name: 'input_schema' })
-  inputSchema!: JsonSchema;
 
   /**
    * Optional webhook trigger configuration for manual workflows. When enabled,
@@ -211,61 +198,13 @@ export class WorkflowOrmEntity extends BaseOrmEntity<WorkflowDto> {
   }
 
   /**
-   * Give a workflow inserted without a type the default type, so that
-   * `syncInputSchema` gives it that type's input schema: the column default is
-   * only applied by the database, and `input_schema` cannot be null. Declared
-   * before `syncInputSchema`, as hooks run in declaration order.
+   * Give a workflow inserted without a type the default type, instead of
+   * leaving it to the column default: whatever reads the entity during the
+   * insert then sees the type the workflow is saved with.
    */
   @OnBeforeInsert()
   protected applyDefaultType(): void {
     this.type ??= DEFAULT_WORKFLOW_TYPE;
-  }
-
-  /**
-   * Keep workflow input schema aligned with workflow trigger type.
-   *
-   * Conversational and scheduled workflows are assigned fixed schemas.
-   * Manual workflows preserve custom schemas, defaulting to an open object schema.
-   * When a workflow switches from a fixed-schema type to manual without an explicit
-   * custom schema, the previous fixed schema is replaced with the manual default.
-   */
-  @OnBeforeInsert()
-  @OnBeforeUpdate()
-  protected syncInputSchema(): void {
-    if (!this.type) {
-      return;
-    }
-
-    if (this.type === WorkflowType.conversational) {
-      this.inputSchema = conversationalWorkflowInputJsonSchema;
-
-      return;
-    }
-
-    if (this.type === WorkflowType.scheduled) {
-      this.inputSchema = scheduledWorkflowInputJsonSchema;
-
-      return;
-    }
-
-    if (
-      !this.inputSchema ||
-      typeof this.inputSchema !== 'object' ||
-      Array.isArray(this.inputSchema) ||
-      this.hasFixedInputSchema(this.inputSchema)
-    ) {
-      this.inputSchema = manualWorkflowDefaultInputJsonSchema;
-    }
-  }
-
-  /**
-   * Check whether the provided schema matches one of the fixed trigger schemas.
-   */
-  private hasFixedInputSchema(schema: JsonSchema): boolean {
-    return (
-      isDeepStrictEqual(schema, conversationalWorkflowInputJsonSchema) ||
-      isDeepStrictEqual(schema, scheduledWorkflowInputJsonSchema)
-    );
   }
 
   get runAfterMs() {
