@@ -1280,7 +1280,6 @@ describe('WorkflowTransferService', () => {
               description: null,
               type: WorkflowType.conversational,
               schedule: null,
-              inputSchema: {},
               layout: {
                 x: 0,
                 y: 0,
@@ -1358,7 +1357,6 @@ describe('WorkflowTransferService', () => {
               description: null,
               type: WorkflowType.conversational,
               schedule: null,
-              inputSchema: {},
               layout: {
                 x: 0,
                 y: 0,
@@ -1525,7 +1523,6 @@ const buildTaskResourceBundleYaml = ({
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         layout: {
           x: 0,
           y: 0,
@@ -1631,7 +1628,6 @@ const buildBundleYaml = async ({
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         layout: {
           x: 0,
           y: 0,

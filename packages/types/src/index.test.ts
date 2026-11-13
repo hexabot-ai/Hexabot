@@ -1291,7 +1291,6 @@ describe("@hexabot-ai/types schemas", () => {
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         layout: {
           x: 0,
           y: 0,
@@ -1367,7 +1366,6 @@ describe("@hexabot-ai/types schemas", () => {
               description: "Called child workflow",
               type: WorkflowType.conversational,
               schedule: null,
-              inputSchema: {},
               layout: {
                 x: 10,
                 y: 20,
@@ -1430,7 +1428,6 @@ describe("@hexabot-ai/types schemas", () => {
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         layout: {
           x: 0,
           y: 0,
@@ -1469,7 +1466,6 @@ describe("@hexabot-ai/types schemas", () => {
           description: null,
           type: WorkflowType.conversational,
           schedule: null,
-          inputSchema: {},
           layout: {
             x: 0,
             y: 0,
@@ -1507,7 +1503,6 @@ describe("@hexabot-ai/types schemas", () => {
           description: null,
           type: WorkflowType.conversational,
           schedule: null,
-          inputSchema: {},
           layout: {
             x: 0,
             y: 0,

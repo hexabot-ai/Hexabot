@@ -272,21 +272,6 @@ describe('WorkflowService (TypeORM)', () => {
     expect(await inputSchema()).toEqual(amountSchema);
   });
 
-  it('does not store an input schema on the workflow', async () => {
-    const created = await workflowService.create({
-      name: `manual_workflow_${Date.now()}`,
-      type: WorkflowType.manual,
-      schedule: null,
-      inputSchema: { type: 'object', properties: { amount: {} } },
-      createdBy: creatorId,
-    } as Parameters<WorkflowService['create']>[0]);
-
-    expect(created).not.toHaveProperty('inputSchema');
-    expect(
-      (await workflowService.findOneAndPopulate(created.id))?.inputSchema,
-    ).toEqual(resolveWorkflowInputSchema(WorkflowType.manual));
-  });
-
   it('rejects workflow type changes after creation', async () => {
     const scheduled = await workflowService.create({
       name: `scheduled_to_manual_${Date.now()}`,
