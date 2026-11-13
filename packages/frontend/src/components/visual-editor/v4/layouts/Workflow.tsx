@@ -22,7 +22,11 @@ import {
   type WorkflowGraphHandle,
   type WorkflowSelectionSnapshot,
 } from "@hexabot-ai/graph";
-import type { Workflow as WorkflowEntity } from "@hexabot-ai/types";
+import {
+  type Workflow as WorkflowEntity,
+  type WorkflowFull,
+  WorkflowType,
+} from "@hexabot-ai/types";
 import { Box, Button, Stack, styled } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
 import type { Node, NodeMouseHandler } from "@xyflow/react";
@@ -80,6 +84,7 @@ import {
   createBaseDefinition,
   extractDefinitionNamesByKind,
 } from "../utils/workflow-definition.utils";
+import type { WorkflowInputsChange } from "../utils/workflow-input-schema.utils";
 import { uniqueIssueLocations } from "../utils/workflow-issue-locations";
 import "./workflow-layout.css";
 
@@ -126,6 +131,7 @@ export const Workflow = () => {
     updateWorkflow,
     updateWorkflowURL,
     definition,
+    inputSchema,
     flow,
     definitionStatus,
     definitionIssues,
@@ -421,6 +427,14 @@ export const Workflow = () => {
       WorkflowFormDialog,
       {
         defaultValues: workflowToEdit,
+        presetValues: {
+          // The open workflow has the schema of the definition being edited;
+          // the others, fetched in full, the one the API derived for them.
+          inputSchema:
+            workflowToEdit.id === workflow?.id
+              ? inputSchema
+              : (workflowToEdit as Partial<WorkflowFull>).inputSchema,
+        },
       },
       { maxWidth: "lg" },
     );
@@ -432,13 +446,20 @@ export const Workflow = () => {
       : workflow,
   );
   const handleSaveWorkflowSettings = useCallback(
-    (settings: Settings) => {
+    (settings: Settings, inputsChange?: WorkflowInputsChange) => {
       if (!definition) {
         return;
       }
 
+      const { inputs: declaredInputs, ...rest } = definition;
+      // Without a change, the definition keeps the input it declares.
+      const inputs = inputsChange
+        ? inputsChange.schema && { schema: inputsChange.schema }
+        : declaredInputs;
+
       updateDefinitionState({
-        ...definition,
+        ...rest,
+        ...(inputs ? { inputs } : {}),
         defaults: {
           ...(definition.defaults ?? {}),
           settings,
@@ -452,6 +473,10 @@ export const Workflow = () => {
       return;
     }
 
+    // Only a manual workflow declares its input; the others take the input
+    // of their trigger.
+    const declaresInputs = workflow?.type === WorkflowType.manual;
+
     dialogs.open(
       WorkflowSettingsDialog,
       {
@@ -459,11 +484,20 @@ export const Workflow = () => {
         presetValues: {
           onSave: handleSaveWorkflowSettings,
           saveDisabled: isDefinitionSaving,
+          ...(declaresInputs
+            ? { inputs: { schema: definition.inputs?.schema } }
+            : {}),
         },
       },
-      { maxWidth: "sm" },
+      { maxWidth: declaresInputs ? "md" : "sm" },
     );
-  }, [definition, dialogs, handleSaveWorkflowSettings, isDefinitionSaving]);
+  }, [
+    definition,
+    dialogs,
+    handleSaveWorkflowSettings,
+    isDefinitionSaving,
+    workflow?.type,
+  ]);
   const handleAddBinding = useCallback(
     ({ ownerDefName, bindingKind, ...payload }: WorkflowBindingAddPayload) => {
       if (!definition || !definition.defs[ownerDefName]) {

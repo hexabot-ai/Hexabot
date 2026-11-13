@@ -140,12 +140,6 @@ const workflowStubObjectSchema = baseStubSchema.extend({
   description: preprocess(nullishToNull, z.string().nullable()),
   type: workflowTypeSchema,
   schedule: preprocess(nullishToNull, z.string().nullable()),
-  /**
-   * JSON Schema of the input the workflow is run with. It is not stored: it
-   * follows from the workflow type and the current definition
-   * (`resolveWorkflowInputSchema`), and is only filled on full workflows.
-   */
-  inputSchema: z.any().optional(),
   builtin: z.coerce.boolean(),
   x: z.coerce.number(),
   y: z.coerce.number(),
@@ -246,6 +240,12 @@ const workflowFullObjectSchema = workflowStubObjectSchema.extend({
     (value) => (value == null ? undefined : value),
     workflowDefinitionSchema.optional(),
   ).optional(),
+  /**
+   * JSON Schema of the input the workflow is run with. It is not stored: it
+   * follows from the workflow type and the current definition
+   * (`resolveWorkflowInputSchema`), which only a full workflow carries.
+   */
+  inputSchema: z.any().optional(),
 });
 
 export const workflowStubSchema = workflowStubObjectSchema;

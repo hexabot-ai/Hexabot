@@ -198,7 +198,7 @@ const schema = createWorkflowFullSchema({
 });
 ```
 
-Without a resolver, `inputSchema` is kept as received. Plain and stub workflows do not get it, since they do not carry a definition: derive it with `resolveWorkflowInputSchema` from the definition at hand.
+Without a resolver, `inputSchema` is kept as received. It is a field of full workflows only: plain and stub workflows do not carry a definition, so derive it with `resolveWorkflowInputSchema` from the definition at hand.
 
 ## Workflow Transfer Bundles
 

@@ -31,22 +31,15 @@ import {
 } from "@mui/material";
 import Grid from "@mui/material/Grid";
 import Typography from "@mui/material/Typography";
-import type { JSONSchema7 as JsonSchema } from "json-schema";
 import { Code, Copy, KeyRound } from "lucide-react";
 import type { JSONSchema } from "monaco-yaml";
-import { FC, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { FC, Fragment, useEffect, useMemo, useState } from "react";
 import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { ContentContainer, ContentItem } from "@/app-components/dialogs";
 import AutoCompleteEntitySelect from "@/app-components/inputs/AutoCompleteEntitySelect";
 import { CronInput } from "@/app-components/inputs/CronInput";
 import { getSchemaDefaults } from "@/app-components/inputs/JsonSchemaForm";
-import {
-  JsonSchemaObjectBuilder,
-  SchemaNodeForm,
-  fromJsonSchema,
-  toJsonSchema,
-} from "@/app-components/inputs/JsonSchemaObjectBuilder";
 import { useGenerateWebhookToken } from "@/components/workflow-webhook/hooks/useGenerateWebhookToken";
 import { WebhookSnippetDialog } from "@/components/workflow-webhook/WebhookSnippetDialog";
 import { useCreate } from "@/hooks/crud/useCreate";
@@ -63,98 +56,18 @@ import { writeToClipboard } from "@/utils/clipboard";
 
 import { WorkflowTypeSelector } from "./WorkflowTypeSelector";
 
-type TranslateFn = ReturnType<typeof useTranslate>["t"];
 type WorkflowSubmitAttributes = EntityAttributes<EntityType.WORKFLOW> & {
   definitionYml?: string;
-};
-
-const getConversationalWorkflowInputSchema = (t: TranslateFn): JsonSchema => ({
-  type: "object",
-  properties: {
-    message_type: {
-      type: "string",
-      title: t("label.message_type"),
-      description: t("message.workflow_input_message_type_description"),
-    },
-    payload: {
-      title: t("label.payload"),
-      description: t("message.workflow_input_payload_description"),
-    },
-    message: {
-      type: "object",
-      additionalProperties: true,
-      title: t("label.message"),
-      description: t("message.workflow_input_message_description"),
-    },
-    text: {
-      type: "string",
-      title: t("label.text"),
-      description: t("message.workflow_input_text_description"),
-    },
-    mid: {
-      type: "string",
-      title: t("label.mid"),
-      description: t("message.workflow_input_mid_description"),
-    },
-  },
-  required: ["message", "text"],
-  additionalProperties: false,
-});
-const getScheduledWorkflowInputSchema = (t: TranslateFn): JsonSchema => ({
-  type: "object",
-  properties: {
-    schedule: {
-      type: ["string", "null"],
-      title: t("label.schedule"),
-      description: t("message.workflow_input_schedule_description"),
-    },
-    triggered_at: {
-      type: ["string", "null"],
-      format: "date-time",
-      title: t("label.triggered_at"),
-      description: t("message.workflow_input_triggered_at_description"),
-    },
-  },
-  required: ["schedule", "triggered_at"],
-  additionalProperties: false,
-});
-const MANUAL_WORKFLOW_DEFAULT_INPUT_SCHEMA: JsonSchema = {
-  type: "object",
-  properties: {},
-  additionalProperties: true,
-};
-const getDefaultInputSchemaByWorkflowType = (
-  type: WorkflowType,
-  t: TranslateFn,
-): JsonSchema => {
-  switch (type) {
-    case WorkflowType.manual:
-      return MANUAL_WORKFLOW_DEFAULT_INPUT_SCHEMA;
-    case WorkflowType.scheduled:
-      return getScheduledWorkflowInputSchema(t);
-    case WorkflowType.conversational:
-    default:
-      return getConversationalWorkflowInputSchema(t);
-  }
-};
-const buildInputSchemaNode = (
-  type: WorkflowType,
-  t: TranslateFn,
-  inputSchema?: JsonSchema,
-): SchemaNodeForm => {
-  const defaultSchema = getDefaultInputSchemaByWorkflowType(type, t);
-  const schemaNode = fromJsonSchema(inputSchema ?? defaultSchema, "object");
-
-  if (schemaNode.type === "object") {
-    return schemaNode;
-  }
-
-  return fromJsonSchema(defaultSchema, "object");
 };
 
 type WorkflowFormPreset = {
   definition?: WorkflowDefinition;
   definitionYaml?: string;
+  /**
+   * JSON Schema of the input the edited workflow is run with, when the
+   * caller knows it: the webhook snippet shows a body made of its defaults.
+   */
+  inputSchema?: unknown;
   onCreated?: (workflow: Workflow) => void;
   onUpdated?: (workflow: Workflow) => void;
 };
@@ -175,7 +88,6 @@ type WorkflowFormValues = {
   description: string;
   type: WorkflowType;
   schedule: string;
-  inputSchema: SchemaNodeForm;
   webhookTrigger: WebhookTriggerFormValues;
 };
 
@@ -252,15 +164,11 @@ export const WorkflowForm: FC<
   ...rest
 }) => {
   const { t } = useTranslate();
-  const translateRef = useRef(t);
-
-  translateRef.current = t;
-
   const queryClient = useTanstackQueryClient();
   const { toast } = useToast();
   const { refetchUser } = useAuth();
   const { apiUrl } = useConfig();
-  const { definition, definitionYaml, onCreated, onUpdated } =
+  const { definition, definitionYaml, inputSchema, onCreated, onUpdated } =
     presetValues ?? {};
   const isEditing = Boolean(workflow?.id);
   const defaultValues = useMemo(() => {
@@ -272,11 +180,6 @@ export const WorkflowForm: FC<
           description: workflow.description ?? "",
           type: workflowType,
           schedule: workflow.schedule ?? "",
-          inputSchema: buildInputSchemaNode(
-            workflowType,
-            translateRef.current,
-            workflow.inputSchema,
-          ),
           webhookTrigger: buildWebhookTriggerFormValues(
             workflow.webhookTrigger,
           ),
@@ -286,7 +189,6 @@ export const WorkflowForm: FC<
           description: "",
           type: workflowType,
           schedule: "",
-          inputSchema: buildInputSchemaNode(workflowType, translateRef.current),
           webhookTrigger: buildWebhookTriggerFormValues(),
         };
   }, [workflow]);
@@ -297,11 +199,10 @@ export const WorkflowForm: FC<
     control,
     register,
     reset,
-    resetField,
     setValue,
     getValues,
     clearErrors,
-    formState: { errors, dirtyFields },
+    formState: { errors },
     handleSubmit,
   } = form;
   const typeValue = (useWatch({ control, name: "type" }) ??
@@ -389,7 +290,7 @@ export const WorkflowForm: FC<
     );
   };
   // Snapshotted when the dialog opens so snippets reflect the current
-  // (possibly unsaved) webhook settings and input schema.
+  // (possibly unsaved) webhook settings.
   const [snippetDialogState, setSnippetDialogState] = useState<{
     webhookTrigger: WebhookTriggerConfig | null;
     body: Record<string, unknown>;
@@ -399,9 +300,9 @@ export const WorkflowForm: FC<
       webhookTrigger:
         (getValues("webhookTrigger") as WebhookTriggerConfig | null) ?? null,
       body:
-        getSchemaDefaults(
-          toJsonSchema(getValues("inputSchema")) as JSONSchema,
-        ) ?? {},
+        (inputSchema
+          ? getSchemaDefaults(inputSchema as JSONSchema)
+          : undefined) ?? {},
     });
   };
   const handleTypeChange = (nextType: WorkflowType) => {
@@ -415,9 +316,6 @@ export const WorkflowForm: FC<
       shouldDirty: true,
       shouldTouch: true,
       shouldValidate: true,
-    });
-    resetField("inputSchema", {
-      defaultValue: buildInputSchemaNode(nextType, translateRef.current),
     });
   };
   const options = {
@@ -463,19 +361,12 @@ export const WorkflowForm: FC<
       params.type === WorkflowType.scheduled
         ? params.schedule.trim() || null
         : null;
-    const shouldIncludeManualInputSchema =
-      params.type === WorkflowType.manual &&
-      (!workflow?.id || Boolean(dirtyFields.inputSchema));
     const payload: WorkflowSubmitAttributes = {
       name,
       description,
       type: params.type,
       schedule,
     };
-
-    if (shouldIncludeManualInputSchema) {
-      payload.inputSchema = toJsonSchema(params.inputSchema) as JsonSchema;
-    }
 
     if (params.type === WorkflowType.manual) {
       payload.webhookTrigger = buildWebhookTriggerPayload(
@@ -1010,23 +901,16 @@ export const WorkflowForm: FC<
                     </Paper>
                   </ContentItem>
                 )}
-                <ContentItem>
-                  <JsonSchemaObjectBuilder
-                    key={`input-schema-${typeValue}`}
-                    name="inputSchema"
-                    label={t("label.input_schema", {
-                      defaultValue: "Input schema",
-                    })}
-                    description={t(
-                      "message.workflow_input_schema_description",
-                      {
+                {isManualWorkflow && (
+                  <ContentItem>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("message.workflow_input_schema_settings_hint", {
                         defaultValue:
-                          "Define the input parameters this workflow accepts when it runs.",
-                      },
-                    )}
-                    readOnly={!isManualWorkflow}
-                  />
-                </ContentItem>
+                          "You can define input fields in the workflow settings.",
+                      })}
+                    </Typography>
+                  </ContentItem>
+                )}
               </ContentContainer>
             </Grid>
           </Grid>

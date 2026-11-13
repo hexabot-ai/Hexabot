@@ -69,6 +69,7 @@ import {
   webhookTriggerSchema,
   WebhookAuthType,
   workflowFullSchema,
+  workflowSchema,
   workflowExportBundleSchema,
   workflowExportBundleV1Schema,
   workflowImportResultSchema,
@@ -1162,6 +1163,16 @@ describe("@hexabot-ai/types schemas", () => {
       }).parse({ ...record, currentVersion: version });
 
       expect(parsed.inputSchema).toEqual(inputSchema);
+    });
+
+    it("is not part of a plain workflow, which carries no definition", () => {
+      const parsed = workflowSchema.parse({
+        ...record,
+        inputSchema,
+        currentVersion: "wfv_1",
+      });
+
+      expect(parsed).not.toHaveProperty("inputSchema");
     });
   });
 

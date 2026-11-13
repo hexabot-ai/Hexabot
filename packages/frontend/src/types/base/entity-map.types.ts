@@ -56,7 +56,6 @@ import type {
   WorkflowVersionFull,
 } from "@hexabot-ai/types";
 import type { ResizeControlDirection } from "@xyflow/system";
-import type { JSONSchema7 as JsonSchema } from "json-schema";
 
 import type { SchemaNodeForm } from "@/app-components/inputs/JsonSchemaObjectBuilder";
 import type { EntityType } from "@/services/types";
@@ -112,7 +111,6 @@ export interface IEntityMapTypes {
       "builtin" | "zoom" | "x" | "y" | "webhookTrigger" | "currentVersion",
       {
         direction?: ResizeControlDirection;
-        inputSchema?: JsonSchema;
       }
     >,
     {

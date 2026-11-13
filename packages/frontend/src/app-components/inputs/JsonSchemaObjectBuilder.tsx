@@ -64,6 +64,8 @@ const BASE_TYPE_OPTIONS = {
   JsonSchemaOptionContext,
   { value: string; label: string }[]
 > & { fieldInput: { value: ContentFieldType; label: string }[] };
+const isPlainObject = (value: unknown): value is Record<string, any> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 export type JsonSchemaType<C extends JsonSchemaOptionContext = "default"> =
   (typeof BASE_TYPE_OPTIONS)[C][number]["value"];
@@ -78,24 +80,66 @@ const getContextTypeOptions = <C extends JsonSchemaOptionContext = "default">(
   return BASE_TYPE_OPTIONS[context || "default"] as ContextTypeOption<C>[];
 };
 
+type SchemaNodeBase = {
+  title?: string;
+  description?: string;
+  /**
+   * The JSON Schema the node was read from, kept so that the keywords the
+   * form does not edit (`default`, `enum`, `format`, ...) are written back
+   * (see `JsonSchemaConversionOptions.keepSource`). A node added in the form,
+   * or whose type was changed in it, has none.
+   */
+  source?: Record<string, unknown>;
+};
+
 export type SchemaNodeForm =
-  | {
+  | (SchemaNodeBase & {
       type: "object";
-      title?: string;
-      description?: string;
       properties: PropertyEntryForm[];
-    }
-  | {
+    })
+  | (SchemaNodeBase & {
       type: "array";
-      title?: string;
-      description?: string;
       items: SchemaNodeForm;
-    }
-  | {
+    })
+  | (SchemaNodeBase & {
       type: Exclude<JsonSchemaType, "object" | "array">;
-      title?: string;
-      description?: string;
-    };
+    });
+
+export type JsonSchemaConversionOptions = {
+  /**
+   * Round-trip a schema the form did not write. Reading keeps each node's
+   * original schema on the node; writing starts from it, so the keywords the
+   * form does not edit survive, a type it read loosely (a union, or none) is
+   * left as it was, and an object is only closed to other properties when
+   * its schema said so. Without it, the output only holds what the form
+   * edits, and every object refuses other properties.
+   */
+  keepSource?: boolean;
+};
+
+/** The keywords the form edits; a kept source says the rest. */
+const EDITED_KEYWORDS: readonly string[] = [
+  "type",
+  "title",
+  "description",
+  "properties",
+  "required",
+  "items",
+];
+
+/**
+ * List the keywords of a node's source the form does not show, for the
+ * reader to know they are there.
+ */
+export const getKeptKeywords = (source: unknown): string[] =>
+  isPlainObject(source)
+    ? Object.keys(source).filter(
+        (keyword) =>
+          !EDITED_KEYWORDS.includes(keyword) &&
+          keyword !== "$schema" &&
+          keyword !== "additionalProperties",
+      )
+    : [];
 
 export type PropertyEntryForm = {
   key: string;
@@ -123,11 +167,77 @@ export function makeDefaultSchemaNode(
   }
 }
 
+/** Whether array items are the ones the form gives an array by default. */
+const isDefaultItems = (items: SchemaNodeForm | undefined): boolean =>
+  !items ||
+  (!items.source &&
+    items.type === "string" &&
+    !items.title?.trim() &&
+    !items.description?.trim());
+/**
+ * Write what the form edited over the schema the node was read from, in the
+ * order of that schema.
+ */
+const mergeIntoSource = (
+  node: SchemaNodeForm,
+  edited: Record<string, any>,
+): Record<string, any> => {
+  const source = node.source ?? {};
+  // Whether other properties are allowed is the source's to say.
+  const { additionalProperties: _strict, ...values } = edited;
+
+  // The form shows one type; the source may hold a union, or none.
+  if ("type" in source) {
+    values.type = source.type;
+  } else {
+    delete values.type;
+  }
+
+  if (
+    node.type === "object" &&
+    !("properties" in source) &&
+    Object.keys(values.properties ?? {}).length === 0
+  ) {
+    delete values.properties;
+  }
+
+  // Items the form cannot show (a tuple, or none) stay as they were, unless
+  // they were edited.
+  if (node.type === "array" && !isPlainObject(source.items)) {
+    if ("items" in source) {
+      values.items = source.items;
+    } else if (isDefaultItems(node.items)) {
+      delete values.items;
+    }
+  }
+
+  const merged: Record<string, any> = {};
+
+  for (const [keyword, value] of Object.entries(source)) {
+    if (!EDITED_KEYWORDS.includes(keyword)) {
+      merged[keyword] = value;
+    } else if (keyword in values) {
+      merged[keyword] = values[keyword];
+    }
+  }
+
+  for (const keyword of EDITED_KEYWORDS) {
+    if (!(keyword in merged) && keyword in values) {
+      merged[keyword] = values[keyword];
+    }
+  }
+
+  return merged;
+};
+
 /**
  * Convert the form-friendly structure into a JSON Schema object.
  * You can wrap the root with {$schema: "..."} if you want in your submit handler.
  */
-export function toJsonSchema(node: SchemaNodeForm): Record<string, any> {
+export function toJsonSchema(
+  node: SchemaNodeForm,
+  options: JsonSchemaConversionOptions = {},
+): Record<string, any> {
   const base: Record<string, any> = { type: node.type };
   const title = (node as any).title?.trim?.();
   const description = (node as any).description?.trim?.();
@@ -144,7 +254,7 @@ export function toJsonSchema(node: SchemaNodeForm): Record<string, any> {
 
       if (!key) continue;
 
-      propsObj[key] = toJsonSchema(p.schema);
+      propsObj[key] = toJsonSchema(p.schema, options);
       if (p.required) required.push(key);
     }
 
@@ -156,14 +266,12 @@ export function toJsonSchema(node: SchemaNodeForm): Record<string, any> {
   }
 
   if (node.type === "array") {
-    base.items = toJsonSchema(node.items);
+    base.items = toJsonSchema(node.items, options);
   }
 
-  return base;
+  return options.keepSource && node.source ? mergeIntoSource(node, base) : base;
 }
 
-const isPlainObject = (value: unknown): value is Record<string, any> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const isJsonSchemaType = <C extends JsonSchemaOptionContext = "default">(
   value: unknown,
   options: ContextTypeOption<C>[],
@@ -203,12 +311,15 @@ export function fromJsonSchema(
   input: unknown,
   fallbackType: JsonSchemaType = "object",
   context?: JsonSchemaOptionContext,
+  options: JsonSchemaConversionOptions = {},
 ): SchemaNodeForm {
   const schema = isPlainObject(input) ? input : {};
   const type = resolveSchemaType(schema, fallbackType, context);
   const title = typeof schema.title === "string" ? schema.title : undefined;
   const description =
     typeof schema.description === "string" ? schema.description : undefined;
+  const source =
+    options.keepSource && isPlainObject(input) ? { source: input } : {};
 
   if (type === "object") {
     const properties = isPlainObject(schema.properties)
@@ -225,10 +336,11 @@ export function fromJsonSchema(
       type: "object",
       title,
       description,
+      ...source,
       properties: Object.entries(properties).map(([key, value]) => ({
         key,
         required: requiredSet.has(key),
-        schema: fromJsonSchema(value, "string", context),
+        schema: fromJsonSchema(value, "string", context, options),
       })),
     };
   }
@@ -238,13 +350,14 @@ export function fromJsonSchema(
       type: "array",
       title,
       description,
-      items: schema.items
-        ? fromJsonSchema(schema.items, "string", context)
+      ...source,
+      items: isPlainObject(schema.items)
+        ? fromJsonSchema(schema.items, "string", context, options)
         : makeDefaultSchemaNode("string"),
     };
   }
 
-  return { type, title, description };
+  return { type, title, description, ...source };
 }
 
 type SchemaNodeEditorProps<C extends JsonSchemaOptionContext = "default"> = {
@@ -288,6 +401,9 @@ function SchemaNodeEditor<C extends JsonSchemaOptionContext = "default">({
     control,
     name: `${name}.type`,
   }) as JsonSchemaType | undefined;
+  const keptKeywords = getKeptKeywords(
+    useWatch({ control, name: `${name}.source` }),
+  );
 
   // Initialize / enforce shape
   React.useEffect(() => {
@@ -469,6 +585,15 @@ function SchemaNodeEditor<C extends JsonSchemaOptionContext = "default">({
             />
           </>
         )}
+        {keptKeywords.length > 0 && (
+          <Typography variant="caption" color="text.secondary">
+            {t("message.schema_keywords_kept", {
+              0: keptKeywords.join(", "),
+              defaultValue:
+                "Kept as written: {{0}}. This form does not edit them.",
+            })}
+          </Typography>
+        )}
         {["object", "array"].includes(effectiveType) && canGoDeeper && (
           <Divider />
         )}
@@ -598,7 +723,7 @@ function PropertyEntryEditor<C extends JsonSchemaOptionContext = "default">({
   getAllProperties: () => PropertyEntryForm[];
   context?: C;
 }) {
-  const { control, getFieldState, setValue } = useFormContext();
+  const { control, getFieldState, getValues, setValue } = useFormContext();
   const { t } = useTranslate();
   const entryPath = `${objectName}.properties.${index}`;
   const propertyFormState = useFormState({ control, name: entryPath });
@@ -640,7 +765,9 @@ function PropertyEntryEditor<C extends JsonSchemaOptionContext = "default">({
 
     const key = (keyValue ?? "").trim();
 
-    if (!key) {
+    // A property read from a schema keeps the title it was written with,
+    // even none: opening the form must not change the schema.
+    if (!key || getValues(`${entryPath}.schema.source`)) {
       previousKeyRef.current = keyValue;
 
       return;
@@ -664,7 +791,7 @@ function PropertyEntryEditor<C extends JsonSchemaOptionContext = "default">({
     }
 
     previousKeyRef.current = keyValue;
-  }, [entryPath, isReadOnly, keyValue, setValue, titleValue]);
+  }, [entryPath, getValues, isReadOnly, keyValue, setValue, titleValue]);
 
   return (
     <Accordion

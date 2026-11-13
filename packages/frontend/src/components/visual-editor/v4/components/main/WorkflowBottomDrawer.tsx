@@ -217,7 +217,7 @@ const getDefaultChatColumnWidth = (containerWidth: number) =>
 export const WorkflowBottomDrawer = () => {
   const { t } = useTranslate();
   const theme = useTheme();
-  const { workflow } = useWorkflow();
+  const { inputSchema, workflow } = useWorkflow();
   const { user } = useAuth();
   const isConversationalWorkflow =
     workflow?.type === WorkflowType.conversational;
@@ -334,8 +334,8 @@ export const WorkflowBottomDrawer = () => {
       return;
     }
 
-    setWorkflowInput(getDefaultManualInput(workflow.inputSchema));
-  }, [workflow?.id, workflow?.inputSchema, workflow?.type]);
+    setWorkflowInput(getDefaultManualInput(inputSchema));
+  }, [inputSchema, workflow?.id, workflow?.type]);
 
   useEffect(() => {
     const element = drawerBodyRef.current;
@@ -444,6 +444,7 @@ export const WorkflowBottomDrawer = () => {
           >
             <TriggerSimulatorPanel
               workflow={workflow}
+              inputSchema={inputSchema}
               formData={workflowInput}
               onFormDataChange={setWorkflowInput}
             />

@@ -43,6 +43,7 @@ import { ExportCredentialsDialog } from "../components/dialogs/ExportCredentials
 import { ImportCredentialsDialog } from "../components/dialogs/ImportCredentialsDialog";
 import { WorkflowContext } from "../contexts/workflow.context";
 import { useWorkflowDefinitionState } from "../hooks/useWorkflowDefinitionState";
+import { useWorkflowInputSchema } from "../hooks/useWorkflowInputSchema";
 import type { WorkflowContextProps } from "../types/workflow.types";
 import { createBaseDefinition } from "../utils/workflow-definition.utils";
 
@@ -479,6 +480,8 @@ export const WorkflowProvider: React.FC<WorkflowContextProps> = ({
     }
   }, [flowId, workflows, isWorkflowsSuccess, updateWorkflowURL, router]);
 
+  const inputSchema = useWorkflowInputSchema(workflow?.type, definition);
+
   return (
     <WorkflowContext.Provider
       value={{
@@ -520,6 +523,7 @@ export const WorkflowProvider: React.FC<WorkflowContextProps> = ({
         addParallelStep,
         removeStepAtPath,
         definition,
+        inputSchema,
         flow,
         definitionStatus,
         definitionIssues,

@@ -22,7 +22,7 @@ import {
 export const WorkflowJsonataGlobalsSchemaProvider = ({
   children,
 }: PropsWithChildren) => {
-  const { definition, taskDefinitions, workflow } = useWorkflow();
+  const { definition, inputSchema, taskDefinitions } = useWorkflow();
   const { actionsByName } = useWorkflowActionsCatalog();
   const getMemoryDefinitionFromCache = useGetFromCache(
     EntityType.MEMORY_DEFINITION,
@@ -49,14 +49,14 @@ export const WorkflowJsonataGlobalsSchemaProvider = ({
         taskDefinitions,
         actionsByName,
         memoryDefinitions,
-        inputSchema: workflow?.inputSchema,
+        inputSchema,
       }),
     [
       actionsByName,
       definition,
+      inputSchema,
       memoryDefinitions,
       taskDefinitions,
-      workflow?.inputSchema,
     ],
   );
 

@@ -74,6 +74,12 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot admi
 - `usePendingWorkflowRunsSync` (mounted in `AuthenticatedLayout`) refetches the pending lists and counts on `entity` updates of runs entering or leaving them, and after a socket reconnection. Admins only get `workflow` socket events for runs they started, so other runs refresh per save.
 - Sidebar menu items can carry a live `Badge` component (`TMenuItem.Badge`); a collapsed group shows its first badged item's badge.
 
+## Workflow input schema
+- A workflow record carries no input schema: the input follows from the workflow type and, for a manual workflow, from `inputs.schema` in its definition. `inputSchema` in API responses exists on full workflows only (`WorkflowFull`), never on `Workflow`.
+- In the editor, read `inputSchema` from `useWorkflow()`. It is derived from the definition being edited (`useWorkflowInputSchema`) and only changes when the declared input does, so the run form and the `$input` suggestions follow unsaved edits without being reset by others. Elsewhere, call `resolveWorkflowInputSchema(type, definition)` from `@hexabot-ai/types`.
+- The input of a manual workflow is edited in the settings dialog (`WorkflowSettingsForm`), which writes `inputs.schema` into the definition through `updateDefinitionState`, like any other edit. `WorkflowForm` (create, rename, webhook) does not edit it.
+- That schema may be written by hand or over MCP. Convert it with `readWorkflowInputSchema` / `writeWorkflowInputSchema` (`utils/workflow-input-schema.utils.ts`), which use `JsonSchemaObjectBuilder` with `keepSource`: keywords the form does not edit (`default`, `enum`, `format`, ...) are written back as they were, and a schema the form did not change is not rewritten.
+
 ## WebSockets
 - Socket integration is in `packages/frontend/src/websocket/*`; use `SocketProvider`, `useSubscribe`, or `useSocketGetQuery`.
 - `AuthenticatedLayout` boots message/subscriber socket subscriptions.
