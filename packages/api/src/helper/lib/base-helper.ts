@@ -12,7 +12,7 @@ import { Extension } from '@/utils/generics/extension';
 import { HelperService } from '../helper.service';
 import { HelperName, HelperType } from '../types';
 
-export default abstract class BaseHelper<N extends HelperName = HelperName>
+export abstract class BaseHelper<N extends HelperName = HelperName>
   extends Extension
   implements OnModuleInit
 {
@@ -67,3 +67,5 @@ export default abstract class BaseHelper<N extends HelperName = HelperName>
     return settings[this.getName() as keyof Settings] as Settings[S];
   }
 }
+
+export default BaseHelper;
