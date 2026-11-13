@@ -2,6 +2,8 @@
   "Global settings": "Paramètres globaux",
   "Default storage helper": "Utilitaire de stockage par défaut",
   "Helper used to store and read attachment files.": "Utilitaire utilisé pour stocker et lire les fichiers des pièces jointes.",
+  "Default RAG helper": "Utilitaire RAG par défaut",
+  "Helper used to retrieve knowledge base content for RAG queries.": "Utilitaire utilisé pour récupérer le contenu de la base de connaissances lors des requêtes RAG.",
   "License key": "Clé de licence",
   "Provide the license key associated with your subscription. Learn more about available plans at https://hexabot.ai/pricing#pricing.": "Indiquez la clé de licence liée à votre abonnement. Découvrez nos offres sur https://hexabot.ai/pricing#pricing."
 }

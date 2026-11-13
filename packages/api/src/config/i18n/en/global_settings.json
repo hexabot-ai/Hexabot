@@ -2,6 +2,8 @@
   "Global settings": "Global settings",
   "Default storage helper": "Default storage helper",
   "Helper used to store and read attachment files.": "Helper used to store and read attachment files.",
+  "Default RAG helper": "Default RAG helper",
+  "Helper used to retrieve knowledge base content for RAG queries.": "Helper used to retrieve knowledge base content for RAG queries.",
   "License key": "License key",
   "Provide the license key associated with your subscription. Learn more about available plans at https://hexabot.ai/pricing#pricing.": "Provide the license key associated with your subscription. Learn more about available plans at https://hexabot.ai/pricing#pricing."
 }
