@@ -9,6 +9,7 @@ import { generateText, hasToolCall, stepCountIs } from 'ai';
 import { ActionService } from '@/actions/actions.service';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
+import { AI_LAST_STEP_INSTRUCTION } from './ai-base.action';
 import { AiGenerateTextAction } from './generate-text.action';
 
 jest.mock('ai', () => ({
@@ -47,7 +48,7 @@ describe('AiGenerateTextAction', () => {
   const hasToolCallMock = hasToolCall as jest.MockedFunction<
     typeof hasToolCall
   >;
-  const logger = { debug: jest.fn() };
+  const logger = { debug: jest.fn(), warn: jest.fn() };
   const defaultRetries = {
     max_attempts: 3,
     backoff_ms: 25,
@@ -199,6 +200,7 @@ describe('AiGenerateTextAction', () => {
     expect(result).toEqual({
       text: 'Generated text',
       finish_reason: 'stop',
+      step_limit_reached: false,
       model: 'gpt-4o-mini',
       usage: {
         input_tokens: 10,
@@ -319,7 +321,7 @@ describe('AiGenerateTextAction', () => {
     expect(callArgs.system).toContain('- Name: Ada');
   });
 
-  it('defaults stopWhen to bound tools count plus one output step and forwards tool settings', async () => {
+  it('defaults stopWhen to the default step limit and forwards tool settings', async () => {
     const provider = Object.assign(
       jest.fn().mockReturnValue('model-instance'),
       {
@@ -366,10 +368,16 @@ describe('AiGenerateTextAction', () => {
     const callArgs = generateTextMock.mock.calls[0][0] as any;
     const stopWhen = callArgs.stopWhen;
 
-    expect(stepCountIsMock).toHaveBeenCalledWith(3);
+    expect(stepCountIsMock).toHaveBeenCalledWith(10);
     expect(typeof stopWhen).toBe('function');
-    expect(stopWhen({ steps: [{}, {}, {}] })).toBe(true);
-    expect(stopWhen({ steps: [{}, {}] })).toBe(false);
+    expect(stopWhen({ steps: new Array(10).fill({}) })).toBe(true);
+    expect(stopWhen({ steps: new Array(9).fill({}) })).toBe(false);
+    expect(callArgs.prepareStep({ stepNumber: 8 })).toEqual({});
+    expect(callArgs.prepareStep({ stepNumber: 9 })).toEqual({
+      system: AI_LAST_STEP_INSTRUCTION,
+    });
+    expect(result.step_limit_reached).toBe(false);
+    expect(logger.warn).not.toHaveBeenCalled();
     await callArgs.tools.search.execute({ query: 'hello' });
     expect(toolRun).toHaveBeenCalledWith(
       { query: 'hello' },
@@ -444,6 +452,88 @@ describe('AiGenerateTextAction', () => {
         steps: [{ toolCalls: [{ toolName: 'other' }] }],
       }),
     ).toBe(false);
+  });
+
+  describe('step limit', () => {
+    const runWithSearchTool = async (
+      settings: Record<string, unknown>,
+      result: Record<string, unknown>,
+    ) => {
+      const provider = Object.assign(
+        jest.fn().mockReturnValue('model-instance'),
+        { languageModel: jest.fn() },
+      );
+      const context = createContext({
+        actions: {
+          get: jest.fn().mockReturnValue({
+            description: 'demo',
+            inputSchema: {},
+            outputSchema: {},
+            run: jest.fn(),
+          }),
+        },
+      });
+
+      jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+      generateTextMock.mockResolvedValue(result as any);
+
+      const output = await action.execute({
+        input: { prompt: 'Hello there' },
+        settings: { timeout_ms: 0, retries: defaultRetries, ...settings },
+        context,
+        bindings: {
+          ...createModelBindings(),
+          tools: { search: { action: 'search_action' } },
+        },
+      });
+
+      return { output, callArgs: generateTextMock.mock.calls[0][0] as any };
+    };
+    const searchStep = { toolCalls: [{ toolName: 'search' }] };
+
+    it('reports a run the limit ended on a tool call, and warns', async () => {
+      const { output } = await runWithSearchTool(
+        { stop_step_count: 2 },
+        {
+          text: '',
+          finishReason: 'tool-calls',
+          steps: [searchStep, searchStep],
+        },
+      );
+
+      expect(output.text).toBe('');
+      expect(output.step_limit_reached).toBe(true);
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Model "gpt-4o-mini" reached the step limit of the ai_generate_text action without a final answer',
+        { step_count: 2 },
+      );
+    });
+
+    it('does not report the stop tool ending the run at the limit', async () => {
+      const { output } = await runWithSearchTool(
+        { stop_step_count: 2, stop_tool_call: 'search' },
+        {
+          text: '',
+          finishReason: 'tool-calls',
+          steps: [searchStep, searchStep],
+        },
+      );
+
+      expect(output.step_limit_reached).toBe(false);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('keeps the tools of a single step and does not warn when it calls one', async () => {
+      const { output, callArgs } = await runWithSearchTool(
+        { stop_step_count: 1 },
+        { text: '', finishReason: 'tool-calls', steps: [searchStep] },
+      );
+
+      expect(callArgs.prepareStep).toBeUndefined();
+      expect(output.step_limit_reached).toBe(true);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
   });
 
   it('loads MCP tools and merges them with action tools', async () => {
@@ -522,7 +612,7 @@ describe('AiGenerateTextAction', () => {
       },
     });
     expect(Object.keys(callArgs.tools)).toEqual(['search', 'planner__lookup']);
-    expect(stepCountIsMock).toHaveBeenCalledWith(3);
+    expect(stepCountIsMock).toHaveBeenCalledWith(10);
     await callArgs.tools.search.execute({ query: 'hello' });
     expect(actionToolRun).toHaveBeenCalledWith(
       { query: 'hello' },

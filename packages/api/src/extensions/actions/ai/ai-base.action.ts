@@ -11,6 +11,7 @@ import { StdIncomingMessage, StdOutgoingMessage } from '@hexabot-ai/types';
 import {
   LanguageModel,
   LanguageModelUsage,
+  PrepareStepFunction,
   ToolSet,
   hasToolCall,
   stepCountIs,
@@ -32,7 +33,11 @@ import {
   resolveMessageContent,
   type PromptPayload,
 } from './ai-prompt.helpers';
-import { AiCommonSettings, AiPromptInput } from './ai-schemas';
+import {
+  AiCommonSettings,
+  AiPromptInput,
+  DEFAULT_AI_STOP_STEP_COUNT,
+} from './ai-schemas';
 
 export type { AiCommonSettings, AiPromptInput } from './ai-schemas';
 
@@ -52,6 +57,25 @@ export type LanguageModelProvider =
     })
   | ProviderV3
   | ProviderV2;
+
+/**
+ * Added to the system prompt of the last step an action may run, so the model
+ * answers instead of ending the run on a tool call, which would leave no text.
+ * The tools stay declared: providers such as Bedrock drop the tool results from
+ * the conversation when a call carries no tools.
+ */
+export const AI_LAST_STEP_INSTRUCTION = [
+  'You have reached the limit of tool calls for this request.',
+  'Do not call any more tools.',
+  'Give your final response now, using only the information you already have.',
+  'If that information is not enough, say what is missing.',
+].join(' ');
+
+/** The part of a model call result that tells whether its step limit cut it short. */
+type StepLimitResult = {
+  finishReason: string;
+  steps: Array<{ toolCalls: Array<{ toolName: string }> }>;
+};
 
 /** Returns `values`, or undefined when none of them is defined. */
 const unlessAllUndefined = <T extends Record<string, unknown>>(
@@ -449,9 +473,10 @@ export abstract class AiBaseAction<
       ...Object.keys(bindings.tools ?? {}),
       ...Object.keys(bindings.mcp ?? {}),
     ];
-    const { stopWhen, stepCount, toolCall } = this.buildStopWhen(
+    const { stopWhen, prepareStep, stepCount, toolCall } = this.buildStopWhen(
       settings,
       tools,
+      promptPayload.system,
     );
 
     return {
@@ -471,7 +496,30 @@ export abstract class AiBaseAction<
         ),
       model,
       modelId,
+      prepareStep,
       promptPayload,
+      stepCount,
+      /**
+       * Tells whether the step limit ended the call while the model still
+       * wanted to use tools, in which case it produced no final answer.
+       */
+      isStepLimitReached: (result: StepLimitResult): boolean => {
+        const reached = this.isStepLimitReached(result, {
+          stepCount,
+          toolCall,
+        });
+
+        // A single step is never asked to answer, so stopping on its tool
+        // call is what the workflow asked for.
+        if (reached && prepareStep) {
+          logger.warn(
+            `Model "${modelId}" reached the step limit of the ${this.name} action without a final answer`,
+            { step_count: stepCount },
+          );
+        }
+
+        return reached;
+      },
       stopWhen,
       tools,
     };
@@ -694,21 +742,23 @@ export abstract class AiBaseAction<
       stop_tool_call: string;
     }>,
     tools?: Record<string, unknown>,
+    system?: string,
   ): {
     stopWhen:
       | ReturnType<typeof stepCountIs>
       | ReturnType<typeof hasToolCall>
       | Array<ReturnType<typeof stepCountIs> | ReturnType<typeof hasToolCall>>
       | undefined;
+    prepareStep?: PrepareStepFunction<ToolSet>;
     stepCount?: number;
     toolCall?: string;
   } {
     const stopConditions: Array<
       ReturnType<typeof stepCountIs> | ReturnType<typeof hasToolCall>
     > = [];
-    // By default the default step count would be the max number of tools
-    // that could be called + 1 step pour generating the output
-    const defaultStepCount = tools ? 1 + Object.keys(tools).length : 0;
+    // Without tools the model answers in a single step, so no limit applies
+    // unless the settings ask for one.
+    const defaultStepCount = tools ? DEFAULT_AI_STOP_STEP_COUNT : 0;
     const resolvedStepCount = settings.stop_step_count ?? defaultStepCount;
 
     if (resolvedStepCount > 0) {
@@ -727,11 +777,43 @@ export abstract class AiBaseAction<
         : stopConditions.length === 1
           ? stopConditions[0]
           : stopConditions;
+    // The last step is reserved for the answer. A single step keeps its tools:
+    // it is how a workflow has the model pick one tool and stop.
+    const prepareStep: PrepareStepFunction<ToolSet> | undefined =
+      tools && resolvedStepCount > 1
+        ? ({ stepNumber }) =>
+            stepNumber === resolvedStepCount - 1
+              ? {
+                  system: [system, AI_LAST_STEP_INSTRUCTION]
+                    .filter(Boolean)
+                    .join('\n\n'),
+                }
+              : {}
+        : undefined;
 
     return {
       stopWhen,
+      prepareStep,
       stepCount: resolvedStepCount > 0 ? resolvedStepCount : undefined,
       toolCall: stopToolCall || undefined,
     };
+  }
+
+  protected isStepLimitReached(
+    result: StepLimitResult,
+    limit: { stepCount?: number; toolCall?: string },
+  ): boolean {
+    if (
+      result.finishReason !== 'tool-calls' ||
+      limit.stepCount === undefined ||
+      result.steps.length < limit.stepCount
+    ) {
+      return false;
+    }
+
+    // `stop_tool_call` ending the run on its tool is not the limit.
+    const lastToolCalls = result.steps[result.steps.length - 1]?.toolCalls;
+
+    return !lastToolCalls?.some(({ toolName }) => toolName === limit.toolCall);
   }
 }

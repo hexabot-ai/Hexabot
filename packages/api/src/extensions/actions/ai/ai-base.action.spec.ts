@@ -17,11 +17,13 @@ import { RuntimeBindings } from '@/bindings/runtime-bindings';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import {
+  AI_LAST_STEP_INSTRUCTION,
   AiBaseAction,
   AiCommonSettings,
   LanguageModelProvider,
   ProviderInitOptions,
 } from './ai-base.action';
+import { DEFAULT_AI_STOP_STEP_COUNT } from './ai-schemas';
 
 jest.mock('@ai-sdk/openai', () => ({
   createOpenAI: jest.fn(),
@@ -168,6 +170,18 @@ class TestAiBaseAction extends AiBaseAction<
 
   public normalizeUsagePublic(usage?: LanguageModelUsage) {
     return this.normalizeUsage(usage);
+  }
+
+  public buildStopWhenPublic(
+    ...args: Parameters<TestAiBaseAction['buildStopWhen']>
+  ) {
+    return this.buildStopWhen(...args);
+  }
+
+  public isStepLimitReachedPublic(
+    ...args: Parameters<TestAiBaseAction['isStepLimitReached']>
+  ) {
+    return this.isStepLimitReached(...args);
   }
 }
 
@@ -1145,6 +1159,156 @@ describe('AiBaseAction', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         'Skipping duplicate tool name "search" from bindings.mcp',
       );
+    });
+  });
+
+  describe('buildStopWhen', () => {
+    const tools = { search: {} };
+    const stepsOf = (count: number) => ({ steps: new Array(count).fill({}) });
+    const prepare = (
+      prepareStep: ReturnType<
+        TestAiBaseAction['buildStopWhenPublic']
+      >['prepareStep'],
+      stepNumber: number,
+    ) => prepareStep?.({ stepNumber } as any);
+
+    it('sets no limit when no tool is bound', () => {
+      expect(action.buildStopWhenPublic({})).toEqual({
+        stopWhen: undefined,
+        prepareStep: undefined,
+        stepCount: undefined,
+        toolCall: undefined,
+      });
+    });
+
+    it('defaults to the same step limit however many tools are bound', () => {
+      const one = action.buildStopWhenPublic({}, tools);
+      const many = action.buildStopWhenPublic(
+        {},
+        Object.fromEntries(
+          Array.from({ length: 30 }, (_, index) => [`tool_${index}`, {}]),
+        ),
+      );
+
+      expect(DEFAULT_AI_STOP_STEP_COUNT).toBe(10);
+      expect(one.stepCount).toBe(DEFAULT_AI_STOP_STEP_COUNT);
+      expect(many.stepCount).toBe(DEFAULT_AI_STOP_STEP_COUNT);
+
+      const stopWhen = one.stopWhen as (params: any) => boolean;
+
+      expect(stopWhen(stepsOf(DEFAULT_AI_STOP_STEP_COUNT - 1))).toBe(false);
+      expect(stopWhen(stepsOf(DEFAULT_AI_STOP_STEP_COUNT))).toBe(true);
+    });
+
+    it('asks for the answer on the last step only, keeping the system prompt', () => {
+      const { prepareStep } = action.buildStopWhenPublic(
+        { stop_step_count: 3 },
+        tools,
+        'Be brief.',
+      );
+
+      expect(prepare(prepareStep, 0)).toEqual({});
+      expect(prepare(prepareStep, 1)).toEqual({});
+      expect(prepare(prepareStep, 2)).toEqual({
+        system: `Be brief.\n\n${AI_LAST_STEP_INSTRUCTION}`,
+      });
+    });
+
+    it('asks for the answer on the last default step without a system prompt', () => {
+      const { prepareStep } = action.buildStopWhenPublic({}, tools);
+
+      expect(prepare(prepareStep, DEFAULT_AI_STOP_STEP_COUNT - 2)).toEqual({});
+      expect(prepare(prepareStep, DEFAULT_AI_STOP_STEP_COUNT - 1)).toEqual({
+        system: AI_LAST_STEP_INSTRUCTION,
+      });
+    });
+
+    it('leaves a single step its tools', () => {
+      const { prepareStep, stepCount } = action.buildStopWhenPublic(
+        { stop_step_count: 1 },
+        tools,
+      );
+
+      expect(stepCount).toBe(1);
+      expect(prepareStep).toBeUndefined();
+    });
+
+    it('does not prepare steps when no tool is bound', () => {
+      const { prepareStep, stepCount } = action.buildStopWhenPublic({
+        stop_step_count: 4,
+      });
+
+      expect(stepCount).toBe(4);
+      expect(prepareStep).toBeUndefined();
+    });
+  });
+
+  describe('isStepLimitReached', () => {
+    const step = (toolName?: string) => ({
+      toolCalls: toolName ? [{ toolName }] : [],
+    });
+
+    it('is true when the run ends on a tool call at the limit', () => {
+      expect(
+        action.isStepLimitReachedPublic(
+          {
+            finishReason: 'tool-calls',
+            steps: [step('search'), step('search')],
+          },
+          { stepCount: 2 },
+        ),
+      ).toBe(true);
+    });
+
+    it('is false when the model answered', () => {
+      expect(
+        action.isStepLimitReachedPublic(
+          { finishReason: 'stop', steps: [step('search'), step()] },
+          { stepCount: 2 },
+        ),
+      ).toBe(false);
+    });
+
+    it('is false when the run stopped on a tool call before the limit', () => {
+      expect(
+        action.isStepLimitReachedPublic(
+          { finishReason: 'tool-calls', steps: [step('search')] },
+          { stepCount: 2 },
+        ),
+      ).toBe(false);
+    });
+
+    it('is false when the stop tool ended the run at the limit', () => {
+      expect(
+        action.isStepLimitReachedPublic(
+          {
+            finishReason: 'tool-calls',
+            steps: [step('search'), step('finalize')],
+          },
+          { stepCount: 2, toolCall: 'finalize' },
+        ),
+      ).toBe(false);
+    });
+
+    it('is true when another tool than the stop tool was called at the limit', () => {
+      expect(
+        action.isStepLimitReachedPublic(
+          {
+            finishReason: 'tool-calls',
+            steps: [step('search'), step('search')],
+          },
+          { stepCount: 2, toolCall: 'finalize' },
+        ),
+      ).toBe(true);
+    });
+
+    it('is false without a step limit', () => {
+      expect(
+        action.isStepLimitReachedPublic(
+          { finishReason: 'tool-calls', steps: [step('search')] },
+          {},
+        ),
+      ).toBe(false);
     });
   });
 

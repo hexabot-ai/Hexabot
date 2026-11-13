@@ -14,6 +14,13 @@ export const DEFAULT_AI_MESSAGES_LIMIT = 4;
 export const DEFAULT_AI_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 /**
+ * Model calls (steps) an AI action may make when tools are bound and
+ * `stop_step_count` is not set. It bounds a runaway tool loop; the model stops
+ * earlier as soon as it answers.
+ */
+export const DEFAULT_AI_STOP_STEP_COUNT = 10;
+
+/**
  * Actions that request structured output need a system prompt that keeps the
  * model on the schema; a conversational persona makes it answer in prose and
  * the object comes back empty.
@@ -214,8 +221,8 @@ export const aiCommonSettingsSchema = z.strictObject({
     .positive()
     .optional()
     .meta({
-      title: 'Stop step count',
-      description: 'Maximum number of agent steps before stopping.',
+      title: 'Max steps',
+      description: `Maximum number of model calls when tools are bound; each call can run several tools. Defaults to ${DEFAULT_AI_STOP_STEP_COUNT}. When more than one step is allowed, the last one is reserved for the final answer.`,
       'ui:options': {
         hideUntilAdded: true,
       },
@@ -244,6 +251,7 @@ const aiTextOutputSchema = z.object({
   text: z.string(),
   reasoning: z.string().optional(),
   finish_reason: z.string().optional(),
+  step_limit_reached: z.boolean().optional(),
   model: z.string().optional(),
   usage: aiUsageSchema.optional(),
   raw: aiRawResponseSchema.optional(),
@@ -296,6 +304,7 @@ export const aiAgentOutputSchema = z.object({
   tool_results: z.array(z.any()).optional(),
   finish_reason: z.string().optional(),
   raw_finish_reason: z.string().optional(),
+  step_limit_reached: z.boolean().optional(),
   model: z.string().optional(),
   usage: aiUsageSchema.optional(),
   total_usage: aiUsageSchema.optional(),
