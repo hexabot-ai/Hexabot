@@ -48,9 +48,11 @@ export class AiAgentAction extends AiBaseAction<
     const { input, signal } = args;
     const {
       callSettings,
+      isStepLimitReached,
       logCall,
       model,
       modelId,
+      prepareStep,
       promptPayload,
       stopWhen,
       tools,
@@ -59,6 +61,7 @@ export class AiAgentAction extends AiBaseAction<
       ...callSettings,
       ...(promptPayload.system ? { instructions: promptPayload.system } : {}),
       ...(stopWhen ? { stopWhen } : {}),
+      ...(prepareStep ? { prepareStep } : {}),
       model,
       tools,
     });
@@ -88,6 +91,7 @@ export class AiAgentAction extends AiBaseAction<
       tool_results: result.steps.flatMap((step) => step.toolResults),
       finish_reason: result.finishReason,
       raw_finish_reason: result.rawFinishReason,
+      step_limit_reached: isStepLimitReached(result),
       model: modelId,
       usage: this.normalizeUsage(result.usage),
       total_usage: this.normalizeUsage(result.totalUsage),

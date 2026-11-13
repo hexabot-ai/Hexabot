@@ -30,9 +30,11 @@ export abstract class AiGenerateTextBaseAction<
     const { input, signal } = args;
     const {
       callSettings,
+      isStepLimitReached,
       logCall,
       model,
       modelId,
+      prepareStep,
       promptPayload,
       stopWhen,
       tools,
@@ -46,6 +48,7 @@ export abstract class AiGenerateTextBaseAction<
       abortSignal: signal,
       ...(tools ? { tools } : {}),
       ...(stopWhen ? { stopWhen } : {}),
+      ...(prepareStep ? { prepareStep } : {}),
     });
     const reasoning = this.extractReasoning(result);
 
@@ -53,6 +56,7 @@ export abstract class AiGenerateTextBaseAction<
       text: result.text,
       ...(reasoning ? { reasoning } : {}),
       finish_reason: result.finishReason,
+      step_limit_reached: isStepLimitReached(result),
       model: modelId,
       usage: this.normalizeUsage(result.usage),
       raw: {

@@ -34,10 +34,13 @@ export abstract class AiGenerateObjectBaseAction<
     const { input, settings, signal } = args;
     const {
       callSettings,
+      isStepLimitReached,
       logCall,
       model,
       modelId,
+      prepareStep,
       promptPayload,
+      stepCount,
       stopWhen,
       tools,
     } = await this.prepareCall(this.resolvePromptInput(input), args);
@@ -60,14 +63,18 @@ export abstract class AiGenerateObjectBaseAction<
       abortSignal: signal,
       ...(tools ? { tools } : {}),
       ...(stopWhen ? { stopWhen } : {}),
+      ...(prepareStep ? { prepareStep } : {}),
     });
+    const stepLimitReached = isStepLimitReached(result);
+    const object = this.readObject(result, stepLimitReached, stepCount);
     const reasoning = this.extractReasoning(result);
 
     return {
       text: result.text,
-      object: result.output,
+      object,
       ...(reasoning ? { reasoning } : {}),
       finish_reason: result.finishReason,
+      step_limit_reached: stepLimitReached,
       model: modelId,
       usage: this.normalizeUsage(result.usage),
       raw: {
@@ -77,5 +84,28 @@ export abstract class AiGenerateObjectBaseAction<
         warnings: result.warnings,
       },
     };
+  }
+
+  /**
+   * Reads the generated object. The AI SDK throws when the last step did not
+   * finish with an answer; when the step limit caused it, say so.
+   */
+  private readObject(
+    result: { readonly output: unknown },
+    stepLimitReached: boolean,
+    stepCount?: number,
+  ): unknown {
+    try {
+      return result.output;
+    } catch (error) {
+      if (!stepLimitReached) {
+        throw error;
+      }
+
+      throw new Error(
+        `The model reached the step limit (${stepCount}) before generating the object. Raise the "stop_step_count" setting of the ${this.name} action.`,
+        { cause: error },
+      );
+    }
   }
 }

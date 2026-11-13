@@ -45,7 +45,7 @@ describe('AiGenerateObjectAction', () => {
   const outputObjectMock = Output.object as jest.MockedFunction<
     typeof Output.object
   >;
-  const logger = { debug: jest.fn() };
+  const logger = { debug: jest.fn(), warn: jest.fn() };
   const defaultRetries = {
     max_attempts: 3,
     backoff_ms: 25,
@@ -216,6 +216,7 @@ describe('AiGenerateObjectAction', () => {
       object: { foo: 'bar' },
       reasoning: 'step-by-step',
       finish_reason: 'stop',
+      step_limit_reached: false,
       model: 'gpt-4o-mini',
       usage: {
         input_tokens: 10,
@@ -240,6 +241,72 @@ describe('AiGenerateObjectAction', () => {
         provider_metadata: { latency: 123 },
         warnings: ['warn'],
       },
+    });
+  });
+
+  describe('when the model produced no object', () => {
+    const noOutput = new Error('No output generated.');
+    const run = (
+      settings: Record<string, unknown>,
+      result: Record<string, unknown>,
+    ) => {
+      const provider = Object.assign(
+        jest.fn().mockReturnValue('model-instance'),
+        { languageModel: jest.fn() },
+      );
+      const context = createContext({
+        actions: {
+          get: jest.fn().mockReturnValue({
+            description: 'demo',
+            inputSchema: {},
+            outputSchema: {},
+            run: jest.fn(),
+          }),
+        },
+      });
+
+      jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+      generateTextMock.mockResolvedValue({
+        text: '',
+        get output() {
+          throw noOutput;
+        },
+        ...result,
+      } as any);
+
+      return action.execute({
+        input: { prompt: 'Generate an object' },
+        settings: {
+          timeout_ms: 0,
+          retries: defaultRetries,
+          output_schema: { type: 'object' },
+          ...settings,
+        } as any,
+        context,
+        bindings: {
+          ...createModelBindings(),
+          tools: { search: { action: 'search_action' } },
+        },
+      });
+    };
+    const searchStep = { toolCalls: [{ toolName: 'search' }] };
+
+    it('names the step limit when it ended the run on a tool call', async () => {
+      const execution = run(
+        { stop_step_count: 2 },
+        { finishReason: 'tool-calls', steps: [searchStep, searchStep] },
+      );
+
+      await expect(execution).rejects.toThrow(
+        'The model reached the step limit (2) before generating the object. Raise the "stop_step_count" setting of the ai_generate_object action.',
+      );
+      await expect(execution).rejects.toHaveProperty('cause', noOutput);
+    });
+
+    it('rethrows the error of the AI SDK otherwise', async () => {
+      await expect(
+        run({}, { finishReason: 'length', steps: [searchStep] }),
+      ).rejects.toBe(noOutput);
     });
   });
 
