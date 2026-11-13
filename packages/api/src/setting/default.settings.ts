@@ -26,7 +26,7 @@ export const globalSettingsSchema = z
       .default('local-storage')
       .meta({
         title: 'Default storage helper',
-        description: 'Helper used to persist workflow data by default.',
+        description: 'Helper used to store and read attachment files.',
         'ui:widget': 'AutoCompleteWidget',
         'ui:options': {
           entity: 'StorageHelper',
