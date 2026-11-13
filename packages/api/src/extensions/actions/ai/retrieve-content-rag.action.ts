@@ -12,6 +12,7 @@ import {
   RagHelperUnavailableError,
   RagHit,
   RagRetrieveOptions,
+  removeQueryTerms,
 } from '@/cms';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 import { workflowResourceRef } from '@/workflow/resource-refs';
@@ -58,6 +59,16 @@ const retrieveRagContentSettingsSchema = z.strictObject({
     description:
       'Content property keys (e.g. url) to attach to each hit and prepend to its text.',
   }),
+  excluded_terms: z.array(z.string().trim().min(1)).optional().meta({
+    title: 'Excluded terms',
+    description:
+      'Words or phrases removed from the query before retrieval, such as a brand name that every page repeats. Matching ignores case and only matches whole words.',
+  }),
+  preserved_phrases: z.array(z.string().trim().min(1)).optional().meta({
+    title: 'Preserved phrases',
+    description:
+      'Phrases kept in the query even when they contain an excluded term, such as a product name that includes the brand.',
+  }),
 });
 const contentRagHitSchema = z.strictObject({
   contentId: z.string(),
@@ -74,6 +85,16 @@ const retrieveRagContentOutputSchema = z.strictObject({
   warning: z.string().optional().meta({
     title: 'Warning',
     description: 'Warning explaining why retrieval returned no results.',
+  }),
+  query_used: z.string().optional().meta({
+    title: 'Query used',
+    description:
+      'Query sent to the RAG helper once the excluded terms are removed. Set when excluded terms are configured.',
+  }),
+  removed_terms: z.array(z.string()).optional().meta({
+    title: 'Removed terms',
+    description:
+      'Excluded terms that were removed from the query. Set when excluded terms are configured.',
   }),
 });
 
@@ -131,6 +152,15 @@ export const RetrieveRagContentAction = createAction<
       }
     }
 
+    const excludedTerms = settings.excluded_terms ?? [];
+    const { query, removedTerms } = removeQueryTerms(input.query, {
+      excludedTerms,
+      preservedPhrases: settings.preserved_phrases,
+    });
+    // Reported only when configured, so a tool result stays unchanged otherwise.
+    const filtering = excludedTerms.length
+      ? { query_used: query, removed_terms: removedTerms }
+      : {};
     const properties = settings.include_properties ?? [];
     const options: RagRetrieveOptions = {
       ...(settings.limit ? { limit: settings.limit } : {}),
@@ -139,9 +169,9 @@ export const RetrieveRagContentAction = createAction<
       ...(properties.length ? { properties } : {}),
     };
     try {
-      const hits = await content.retrieve(input.query, options);
+      const hits = await content.retrieve(query, options);
 
-      return { hits, text: hits.map(formatHitText).join('\n\n') };
+      return { hits, text: hits.map(formatHitText).join('\n\n'), ...filtering };
     } catch (error) {
       if (
         error instanceof RagHelperConfigurationError ||
@@ -150,7 +180,7 @@ export const RetrieveRagContentAction = createAction<
         const warning = error.message;
         logger?.warn(`retrieve_rag_content: ${warning}`);
 
-        return { hits: [], text: '', warning };
+        return { hits: [], text: '', warning, ...filtering };
       }
 
       throw error;

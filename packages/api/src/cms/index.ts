@@ -46,4 +46,6 @@ export * from './types/menu-types';
 
 export * from './types/menu';
 
+export * from './utilities/remove-query-terms';
+
 export * from './utilities/verifyTree';

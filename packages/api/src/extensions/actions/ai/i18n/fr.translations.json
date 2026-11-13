@@ -153,18 +153,26 @@
   "retrieve_rag_content": {
     "Content Type": "Type de contenu",
     "Content property keys (e.g. url) to attach to each hit and prepend to its text.": "Clés des propriétés du contenu (ex. url) à joindre à chaque résultat et à placer en tête de son texte.",
+    "Excluded terms": "Termes exclus",
+    "Excluded terms that were removed from the query. Set when excluded terms are configured.": "Termes exclus qui ont été retirés de la requête. Renseignés lorsque des termes exclus sont configurés.",
     "Include inactive": "Inclure le contenu inactif",
     "Include properties": "Inclure les propriétés",
     "Limit": "Limite",
     "Maximum number of content hits to return.": "Nombre maximal de résultats de contenu à renvoyer.",
     "Mode": "Mode",
     "Optional content type filter for retrieval.": "Filtre facultatif du type de contenu pour la récupération.",
+    "Phrases kept in the query even when they contain an excluded term, such as a product name that includes the brand.": "Expressions conservées dans la requête même lorsqu'elles contiennent un terme exclu, comme un nom de produit qui inclut la marque.",
+    "Preserved phrases": "Expressions préservées",
     "Query": "Requête",
+    "Query sent to the RAG helper once the excluded terms are removed. Set when excluded terms are configured.": "Requête envoyée au helper RAG une fois les termes exclus retirés. Renseignée lorsque des termes exclus sont configurés.",
+    "Query used": "Requête utilisée",
     "Query used to retrieve CMS content through RAG.": "Requête utilisée pour récupérer du contenu CMS via le RAG.",
+    "Removed terms": "Termes retirés",
     "Retrieval mode used to search indexed content.": "Mode de récupération utilisé pour rechercher dans le contenu indexé.",
     "Retrieves RAG content from knowledge base using lexical or embedding mode for AI tool usage.": "Récupère du contenu RAG depuis la base de connaissances en mode lexical ou vectoriel (embeddings) pour l'usage des outils IA.",
     "Warning": "Avertissement",
     "Warning explaining why retrieval was skipped (e.g. RAG disabled or embedding not configured).": "Avertissement expliquant pourquoi la récupération a été ignorée (ex. RAG désactivé ou embeddings non configurés).",
-    "When enabled, retrieval can include inactive content in results.": "Lorsqu'elle est activée, la récupération peut inclure du contenu inactif dans les résultats."
+    "When enabled, retrieval can include inactive content in results.": "Lorsqu'elle est activée, la récupération peut inclure du contenu inactif dans les résultats.",
+    "Words or phrases removed from the query before retrieval, such as a brand name that every page repeats. Matching ignores case and only matches whole words.": "Mots ou expressions retirés de la requête avant la récupération, comme un nom de marque répété sur chaque page. La correspondance ignore la casse et ne porte que sur des mots entiers."
   }
 }

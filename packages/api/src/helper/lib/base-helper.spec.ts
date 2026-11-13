@@ -4,6 +4,8 @@
  * Full terms: see LICENSE.md.
  */
 
+import * as helperExports from '@/helper';
+
 import { HelperType } from '../types';
 
 import BaseHelper from './base-helper';
@@ -19,6 +21,12 @@ class EnvironmentHelper extends BaseHelper {
     return this.available;
   }
 }
+
+describe('BaseHelper export', () => {
+  it('is exported by name, so helper packages can extend it', () => {
+    expect(helperExports).toHaveProperty('BaseHelper', BaseHelper);
+  });
+});
 
 describe('BaseHelper environment availability', () => {
   it.each([
