@@ -5,13 +5,12 @@
  */
 
 import {
+  ConversationalWorkflowInput,
   IncomingMessageType,
   StdEventType,
   StdIncomingMessage,
   Payload,
 } from '@hexabot-ai/types';
-
-import { ConversationalWorkflowInput } from '@/workflow/schemas/workflow-input-schemas';
 
 import { ChannelName } from '../../types';
 import type ChannelHandler from '../Handler';

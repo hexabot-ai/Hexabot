@@ -30,7 +30,6 @@ describe('WorkflowTransferController', () => {
     description: null,
     type: WorkflowType.conversational,
     schedule: null,
-    inputSchema: {},
     createdBy: userFixtureIds.admin,
     currentVersion: null,
     publishedVersion: null,

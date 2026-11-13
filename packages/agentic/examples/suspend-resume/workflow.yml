@@ -1,9 +1,12 @@
 # Minimal flow that pauses until an external reply is supplied.
 inputs:
   schema:
-    question:
-      type: string
-      description: "Prompt shown to the user when the workflow suspends."
+    type: object
+    properties:
+      question:
+        type: string
+        description: "Prompt shown to the user when the workflow suspends."
+    required: [question]
 
 defs:
   wait_for_confirmation:

@@ -6,7 +6,11 @@
 
 import { randomUUID } from 'crypto';
 
-import { WorkflowResumeRejectedError } from '@hexabot-ai/agentic';
+import {
+  Workflow as WorkflowHelper,
+  type WorkflowInputSchema,
+  WorkflowResumeRejectedError,
+} from '@hexabot-ai/agentic';
 import { WebhookAuthType, WebhookJwtAlgorithm } from '@hexabot-ai/types';
 import {
   BadRequestException,
@@ -26,19 +30,20 @@ import {
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import type { WebsocketGateway } from '@/websocket/websocket.gateway';
-import { conversationalWorkflowInputJsonSchema } from '@/workflow/schemas/workflow-input-schemas';
 
 import { ManualEventWrapper } from '../lib/trigger-event-wrapper';
-import { DirectionType, WorkflowType } from '../types';
+import { DirectionType, WorkflowType, WorkflowVersionAction } from '../types';
 
 import { AgenticService } from './agentic.service';
 import { WebhookTriggerService } from './webhook-trigger.service';
 import { WorkflowRunService } from './workflow-run.service';
+import { WorkflowVersionService } from './workflow-version.service';
 import { WorkflowService } from './workflow.service';
 
 describe('WebhookTriggerService (TypeORM)', () => {
   let webhookTriggerService: WebhookTriggerService;
   let workflowService: WorkflowService;
+  let workflowVersionService: WorkflowVersionService;
   let agenticService: AgenticService;
   const agenticServiceMock = {
     triggerEvent: jest.fn().mockResolvedValue({ status: 'unprocessed' }),
@@ -70,7 +75,6 @@ describe('WebhookTriggerService (TypeORM)', () => {
       description: 'Webhook trigger service test definition',
       type: WorkflowType.conversational,
       schedule: null,
-      inputSchema: conversationalWorkflowInputJsonSchema,
       createdBy: userFixtureIds.admin,
       direction: DirectionType.HORIZONTAL,
       x: 0,
@@ -88,11 +92,22 @@ describe('WebhookTriggerService (TypeORM)', () => {
     const created = await workflowService.create({
       ...buildWorkflowPayload(),
       type: WorkflowType.manual,
-      inputSchema,
       webhookTrigger,
       createdBy: userFixtureIds.admin,
     } as any);
     createdWorkflowIds.add(created.id);
+    // The input of a manual workflow is declared in its definition.
+    await workflowVersionService.commit({
+      action: WorkflowVersionAction.update,
+      workflow: created.id,
+      definitionYml: WorkflowHelper.stringifyDefinition({
+        defs: {},
+        inputs: { schema: inputSchema as WorkflowInputSchema },
+        flow: [],
+        outputs: {},
+      }),
+      createdBy: userFixtureIds.admin,
+    });
 
     // Re-read to obtain the persisted workflow as the guard would hand it over.
     return (await workflowService.findOne(created.id))!;
@@ -103,6 +118,7 @@ describe('WebhookTriggerService (TypeORM)', () => {
       autoInjectFrom: ['providers'],
       providers: [
         WebhookTriggerService,
+        WorkflowVersionService,
         {
           provide: AgenticService,
           useValue: agenticServiceMock,
@@ -131,9 +147,15 @@ describe('WebhookTriggerService (TypeORM)', () => {
         ],
       },
     });
-    [webhookTriggerService, workflowService, agenticService] = await getMocks([
+    [
+      webhookTriggerService,
+      workflowService,
+      workflowVersionService,
+      agenticService,
+    ] = await getMocks([
       WebhookTriggerService,
       WorkflowService,
+      WorkflowVersionService,
       AgenticService,
     ]);
   });
@@ -378,11 +400,6 @@ describe('WebhookTriggerService (TypeORM)', () => {
       const created = await workflowService.create({
         ...buildWorkflowPayload(),
         type: WorkflowType.manual,
-        inputSchema: {
-          type: 'object',
-          properties: {},
-          additionalProperties: true,
-        },
         webhookTrigger,
         createdBy: userFixtureIds.admin,
       } as any);

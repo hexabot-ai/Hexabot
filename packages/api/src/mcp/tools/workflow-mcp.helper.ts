@@ -105,18 +105,39 @@ export class HexabotWorkflowMcpHelper {
    * workflow of the given type that does not exist yet: a definition refused
    * after its workflow was created would leave the workflow behind.
    *
-   * @throws {BadRequestException} When the YAML is invalid or uses an action
-   * the workflow type cannot run.
+   * @throws {BadRequestException} When the YAML is invalid, uses an action
+   * the workflow type cannot run, or declares `inputs` the type does not
+   * take.
    */
   assertDefinitionCommittable(
     definitionYml: string,
     workflowType: WorkflowType,
   ): void {
     this.assertDefinitionParses(definitionYml);
-    this.workflowVersionService.assertActionsSupported(
+    this.workflowVersionService.assertDefinitionSupported(
       definitionYml,
       workflowType,
     );
+  }
+
+  /**
+   * Refuse the `inputSchema` parameter workflows were created and updated
+   * with until v3.7.0, so that a caller still sending it learns where the
+   * input is declared now instead of being ignored.
+   *
+   * @throws {BadRequestException} When `inputSchema` is sent.
+   */
+  assertNoInputSchemaParameter(args: { inputSchema?: unknown }): void {
+    if (args.inputSchema !== undefined) {
+      throw new BadRequestException(
+        '"inputSchema" is no longer a parameter: a workflow declares its ' +
+          'input in its definition. For a manual workflow, describe the ' +
+          'input with a JSON Schema under "inputs.schema" in definitionYml, ' +
+          'e.g. inputs: { schema: { type: object, properties: { question: ' +
+          '{ type: string } }, required: [question] } }. Conversational and ' +
+          'scheduled workflows take the input of their trigger.',
+      );
+    }
   }
 
   private assertDefinitionParses(definitionYml: string): void {

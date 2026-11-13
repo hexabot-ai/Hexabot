@@ -15,10 +15,10 @@ import {
 import type {
   ConditionalBlock,
   FlowStep,
-  InputField,
   LoopStep as LoopBlock,
   ParallelBlock,
   WorkflowDefinition,
+  WorkflowInputSchema,
 } from './dsl.types';
 import { extractTaskDefinitions as extractTaskDefinitionsFromDefs } from './dsl.types';
 import { issueMessages } from './validation-issue';
@@ -49,70 +49,25 @@ const buildStepId = (path: Array<number | string>, label: string): string => {
 
   return `${pathPart}:${label}`;
 };
-/** Convert workflow input field metadata to a zod schema. */
-const inputFieldToZod = (field: InputField): ZodType => {
-  let schema: ZodType;
 
-  switch (field.type) {
-    case 'string':
-      schema = z.string();
-      break;
-    case 'number':
-      schema = z.number();
-      break;
-    case 'integer':
-      schema = z.int();
-      break;
-    case 'boolean':
-      schema = z.boolean();
-      break;
-    case 'array':
-      schema = z.array(field.items ? inputFieldToZod(field.items) : z.any());
-      break;
-    case 'object': {
-      const properties: Record<string, ZodType> = {};
-      if (field.properties) {
-        for (const [name, child] of Object.entries(field.properties)) {
-          properties[name] = inputFieldToZod(child).optional();
-        }
-      }
-      schema =
-        Object.keys(properties).length > 0
-          ? z.strictObject(properties).partial()
-          : z.record(z.string(), z.any());
-      break;
-    }
-    default:
-      schema = z.any();
-  }
-
-  if (field.enum) {
-    schema = schema.refine(
-      (value) => field.enum?.some((allowed) => allowed === value),
-      {
-        message: `Value must be one of: ${field.enum.join(', ')}`,
-      },
-    );
-  }
-
-  return schema;
-};
-/** Assemble a parser for the workflow top-level input payload. */
-const buildInputParser = (
-  schema?: Record<string, InputField>,
-): ZodType<Record<string, unknown>> => {
-  if (!schema || Object.keys(schema).length === 0) {
-    return z.looseObject({});
-  }
-
-  const shape: Record<string, ZodType> = {};
-
-  for (const [name, field] of Object.entries(schema)) {
-    shape[name] = inputFieldToZod(field).optional();
-  }
-
-  return z.strictObject(shape).partial();
-};
+/**
+ * Build the parser of a workflow's input payload from its `inputs.schema`.
+ *
+ * This is the one conversion from that JSON Schema to a parser: the runner
+ * uses it when a run starts, and a host that checks an input before creating
+ * a run should use it too, so both accept and refuse the same payloads. The
+ * parser applies the schema's `default` values.
+ *
+ * @param schema The JSON Schema under `inputs.schema`, when one is declared.
+ * @returns A parser of the input payload; it accepts any object without a schema.
+ * @throws When the schema is not a JSON Schema zod can read.
+ */
+export const buildWorkflowInputParser = (
+  schema?: WorkflowInputSchema,
+): ZodType<Record<string, unknown>> =>
+  schema
+    ? (z.fromJSONSchema(schema) as ZodType<Record<string, unknown>>)
+    : z.looseObject({});
 /** Compile a raw mapping object into expression-aware value mappings. */
 const compileMapping = (
   values?: Record<string, unknown>,
@@ -282,7 +237,7 @@ export const compileWorkflow = (
   definition: WorkflowDefinition,
   options: WorkflowCompileOptions,
 ): CompiledWorkflow => {
-  const inputParser = buildInputParser(definition.inputs?.schema);
+  const inputParser = buildWorkflowInputParser(definition.inputs?.schema);
   const tasks = compileTasks(definition, options);
   const flow = compileFlowSteps(definition.flow, [], options);
   const outputMapping = compileMapping(definition.outputs, options) ?? {};

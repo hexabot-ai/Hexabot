@@ -34,6 +34,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { EHook } from '@/utils/generics/base-orm.repository';
 import { computeIntegrity, verifyIntegrity } from '@/utils/hmac-integrity';
 import { WorkflowOrmEntity } from '@/workflow/entities/workflow.entity';
+import { upgradeLegacyWorkflowInputs } from '@/workflow/lib/legacy-workflow-inputs';
 import { WorkflowVersionService } from '@/workflow/services/workflow-version.service';
 import { WorkflowService } from '@/workflow/services/workflow.service';
 import { WorkflowType, WorkflowVersionAction } from '@/workflow/types';
@@ -204,10 +205,10 @@ export class WorkflowTransferService {
     credentialPassword?: string,
   ): Promise<WorkflowImportResult> {
     const parsedBundle = this.parseBundle(content);
-    const { bundle, integrityVerified } = await this.decryptCredentialBundle(
-      parsedBundle,
-      credentialPassword,
-    );
+    const { bundle: decryptedBundle, integrityVerified } =
+      await this.decryptCredentialBundle(parsedBundle, credentialPassword);
+    const { bundle, warnings: upgradeWarnings } =
+      this.upgradeLegacyBundle(decryptedBundle);
     this.assertUniqueWorkflowExportIds(bundle);
     const definition =
       this.workflowTransferDefinitionService.parseWithLocalCatalog(
@@ -247,7 +248,7 @@ export class WorkflowTransferService {
             ...importedResources.resources,
             ...importedWorkflows.resources,
           ],
-          warnings: importedResources.warnings,
+          warnings: [...upgradeWarnings, ...importedResources.warnings],
           postCreateEvents: [
             ...importedResources.postCreateEvents,
             ...importedWorkflows.postCreateEvents,
@@ -289,6 +290,55 @@ export class WorkflowTransferService {
     }
 
     return validation.data;
+  }
+
+  /**
+   * Bring the workflows of a bundle exported by v3.6 or earlier to the form
+   * definitions have now: such a bundle carries the input schema of a manual
+   * workflow beside its definition (`workflow.inputSchema`), and `inputs`
+   * as a field map inside it. A bundle already in the new form is returned
+   * unchanged.
+   *
+   * @returns The bundle to import, and what could not be carried over as it
+   * was.
+   */
+  private upgradeLegacyBundle(bundle: WorkflowExportBundle): {
+    bundle: WorkflowExportBundle;
+    warnings: string[];
+  } {
+    const warnings: string[] = [];
+    const upgrade = <
+      T extends {
+        workflow: Omit<WorkflowExportBundle['workflow'], 'exportId'>;
+        definitionYml: string;
+      },
+    >(
+      source: T,
+    ): T => {
+      const { inputSchema, ...workflow } = source.workflow;
+      const upgraded = upgradeLegacyWorkflowInputs(source.definitionYml, {
+        type: workflow.type,
+        inputSchema,
+      });
+      warnings.push(
+        ...upgraded.warnings.map(
+          (warning) => `Workflow "${workflow.name}": ${warning}.`,
+        ),
+      );
+
+      return { ...source, workflow, definitionYml: upgraded.definitionYml };
+    };
+
+    return {
+      bundle: {
+        ...upgrade(bundle),
+        resources: {
+          ...bundle.resources,
+          workflows: bundle.resources.workflows.map(upgrade),
+        },
+      },
+      warnings,
+    };
   }
 
   private async decryptCredentialBundle(
@@ -431,10 +481,7 @@ export class WorkflowTransferService {
       type: workflow.type,
       schedule: workflow.schedule ?? null,
       ...(workflow.type === WorkflowType.manual
-        ? {
-            inputSchema: workflow.inputSchema,
-            webhookTrigger: workflow.webhookTrigger ?? null,
-          }
+        ? { webhookTrigger: workflow.webhookTrigger ?? null }
         : {}),
       layout: {
         x: workflow.x,
@@ -650,7 +697,6 @@ export class WorkflowTransferService {
       description: workflow.description ?? undefined,
       type: workflow.type,
       schedule: workflow.schedule,
-      inputSchema: workflow.inputSchema,
       webhookTrigger: this.remapWebhookTrigger(
         workflow.webhookTrigger,
         credentialIdMap,

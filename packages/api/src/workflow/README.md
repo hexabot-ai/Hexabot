@@ -145,6 +145,48 @@ except two: recovery writes with `recoverExpired`, which first checks that
 the lease really lapsed, and closing a thread fails its runs without any
 token, taking them over from whatever pass held them.
 
+## The input of a run
+
+What a run is started with depends on the workflow type, and nothing about it
+is stored on the workflow record:
+
+- A **conversational** run takes the inbound message and a **scheduled** run
+  its schedule (`conversationalWorkflowInputSchema` and
+  `scheduledWorkflowInputSchema` in `@hexabot-ai/types`). Their definitions
+  cannot declare `inputs`: saving one that does is refused
+  (`assertInputsDeclarable`).
+- A **manual** run takes what its definition declares under `inputs.schema`,
+  a JSON Schema of type `object`, or any object when it declares nothing:
+
+  ```yaml
+  inputs:
+    schema:
+      type: object
+      properties:
+        question: { type: string }
+        pages: { type: integer, default: 1 }
+      required: [question]
+  ```
+
+`resolveWorkflowInputSchema(type, definition)` gives that schema. A full
+workflow carries it as the read-only `inputSchema`, derived from the
+definition of its current version while it is parsed (`workflowFullSchema`),
+so it follows a commit or a restore like the runs do. Plain workflows do not
+carry it: they do not load a definition.
+
+The manual triggers (admin run, webhook, MCP run tool) check the input with
+`WorkflowService.validateManualInput` before anything is created, and answer
+`400` with the fields at fault. It uses the parser the runner starts the run
+with (`buildWorkflowInputParser`), so what it accepts the run accepts, and
+the defaults of the schema reach `$input`. A run started another way, such as
+a `call_workflow` child, is checked by the runner alone: an input it refuses
+fails the run with `WorkflowInputRejectedError`, naming the fields.
+
+Until v3.6 the schema lived on the workflow record and `inputs.schema` was a
+field map. The v3.7.0 migration rewrote every stored version
+(`lib/legacy-workflow-inputs.ts`), and importing a bundle exported before
+does the same.
+
 ## Example 1: a chat message starts a run
 
 A user writes "Hi" in a new conversation. The workflow greets them, then asks
@@ -509,6 +551,9 @@ resume.
   results are delivered and called runs nothing waits on are cancelled.
 - **A type**: a type only one service uses stays in that service; a type
   several services share goes in `types.ts`.
+- **What a workflow type takes as input**: `resolveWorkflowInputSchema` in
+  `@hexabot-ai/types`, which the frontend uses as well, and
+  `assertInputsDeclarable` in `lib/workflow-definition.ts`.
 
 ## Configuration
 

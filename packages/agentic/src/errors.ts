@@ -11,6 +11,21 @@ export class WorkflowCancellationError extends Error {
   }
 }
 
+/**
+ * The input payload passed to `start()` does not match the workflow's
+ * `inputs.schema`. Nothing ran: the runner is left as it was before the call.
+ */
+export class WorkflowInputRejectedError extends Error {
+  /** One `<path>: <message>` line per schema issue. */
+  public readonly issues: string[];
+
+  constructor(issues: string[]) {
+    super(`Workflow input was rejected: ${issues.join('; ')}`);
+    this.name = 'WorkflowInputRejectedError';
+    this.issues = issues;
+  }
+}
+
 /** Base class for every reason a suspended run cannot be resumed. */
 export abstract class WorkflowResumeError extends Error {}
 

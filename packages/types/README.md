@@ -172,6 +172,34 @@ const schema = createWorkflowFullSchema({ parseDefinition });
 const workflow = schema.parse(data);
 ```
 
+### Workflow input schema
+
+The JSON Schema of the input a workflow is run with is not stored. It follows from the workflow type and from the definition, and `resolveWorkflowInputSchema(type, definition)` is the one function that gives it:
+
+- a conversational or scheduled workflow is run with the input of its trigger (`conversationalWorkflowInputSchema`, `scheduledWorkflowInputSchema`), whatever its definition says;
+- a manual workflow is run with the input its definition declares under `inputs.schema` (a JSON Schema of type `object`), or with any object when it declares none.
+
+```ts
+import { resolveWorkflowInputSchema, WorkflowType } from "@hexabot-ai/types";
+
+resolveWorkflowInputSchema(WorkflowType.manual, definition);
+// => definition.inputs.schema, or { type: "object", properties: {}, additionalProperties: {} }
+```
+
+`inputSchema` on a workflow is this value, filled while a full workflow is parsed when `createWorkflowFullSchema` is given a resolver:
+
+```ts
+const schema = createWorkflowFullSchema({
+  parseDefinition,
+  // Called with the workflow type and the parsed current definition
+  // (undefined when the workflow has no version). Its result replaces any
+  // `inputSchema` the parsed value carries.
+  resolveInputSchema: resolveWorkflowInputSchema,
+});
+```
+
+Without a resolver, `inputSchema` is kept as received. It is a field of full workflows only: plain and stub workflows do not carry a definition, so derive it with `resolveWorkflowInputSchema` from the definition at hand.
+
 ## Workflow Transfer Bundles
 
 Workflow import/export contracts are exposed as zod schemas and inferred types:
@@ -196,11 +224,13 @@ strict schema.
 Resource arrays include workflow dependencies such as called workflows, memory
 definitions, MCP servers, credentials, content types, label groups, and labels.
 The root `workflow.exportId` and `resources.workflows` entries preserve
-`call_workflow` references across imports. Manual workflow input schemas and
-webhook trigger settings, including credential references, are also preserved.
-Conversational and scheduled input schemas are omitted and restored from their
-system defaults during import. Newer resource arrays default to empty lists so
-existing version 1 bundles remain importable.
+`call_workflow` references across imports. The input of a manual workflow
+travels in its definition (`inputs.schema`), and its webhook trigger settings,
+including credential references, are preserved. Bundles exported by v3.6 and
+earlier carry that input beside the definition, as `workflow.inputSchema`:
+the field is still accepted, and the import moves it into the definition.
+Newer resource arrays default to empty lists so existing version 1 bundles
+remain importable.
 
 Password-protected exports also contain a password-derived HMAC-SHA-256
 `integrity` value covering the complete bundle. Import results expose

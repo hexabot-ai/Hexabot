@@ -5,6 +5,7 @@
  */
 
 import { Settings } from '@hexabot-ai/agentic';
+import { conversationalWorkflowInputSchema } from '@hexabot-ai/types';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
@@ -12,11 +13,9 @@ import { ExecArgs } from '@/actions';
 import { ActionService } from '@/actions/actions.service';
 import { BaseAction } from '@/actions/base-action';
 import { ConversationalWorkflowContext } from '@/workflow/contexts/conversational-workflow.context';
-import { conversationalWorkflowInputZodSchema } from '@/workflow/schemas/workflow-input-schemas';
 import { WorkflowType } from '@/workflow/types';
 
-export const awaitReplyResumeSchema =
-  conversationalWorkflowInputZodSchema.clone();
+export const awaitReplyResumeSchema = conversationalWorkflowInputSchema.clone();
 
 type AwaitReplyOutput = z.infer<typeof awaitReplyResumeSchema>;
 type AwaitReplySettings = Settings;

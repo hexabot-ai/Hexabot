@@ -83,7 +83,6 @@ describe("ApiClient workflow import/export", () => {
         description: null,
         type: WorkflowType.conversational,
         schedule: null,
-        inputSchema: {},
         builtin: false,
         createdBy: null,
         runAfterMs: 0,

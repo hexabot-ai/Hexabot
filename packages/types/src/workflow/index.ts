@@ -26,8 +26,17 @@ export {
   type Workflow,
   type WorkflowDefinitionParser,
   type WorkflowFull,
+  type WorkflowInputSchemaResolver,
   type WorkflowStub,
 } from "./workflow";
+
+export {
+  conversationalWorkflowInputSchema,
+  resolveWorkflowInputSchema,
+  scheduledWorkflowInputSchema,
+  type ConversationalWorkflowInput,
+  type ScheduledWorkflowInput,
+} from "./workflow-input";
 
 export {
   workflowVersionFullSchema,

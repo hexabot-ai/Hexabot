@@ -89,7 +89,8 @@ describe('Workflow execution', () => {
       },
       inputs: {
         schema: {
-          name: { type: 'string' },
+          type: 'object',
+          properties: { name: { type: 'string' } },
         },
       },
     };
@@ -181,7 +182,8 @@ describe('Workflow execution', () => {
       outputs: { result: '=$output.double_step.doubled' },
       inputs: {
         schema: {
-          value: { type: 'number' },
+          type: 'object',
+          properties: { value: { type: 'number' } },
         },
       },
     };

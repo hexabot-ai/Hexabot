@@ -5,6 +5,7 @@
  */
 
 import {
+  BadRequestException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -232,6 +233,48 @@ describe('HexabotWorkflowRunMcpTools', () => {
         request,
       ),
     ).rejects.toBe(refusal);
+  });
+
+  it('names what the input schema refused, and starts no run', async () => {
+    const details = {
+      formErrors: [],
+      fieldErrors: {
+        question: ['Invalid input: expected string, received undefined'],
+      },
+    };
+    const workflowService = {
+      findOneAndPopulate: jest.fn().mockResolvedValue({
+        id: 'workflow-id',
+        type: WorkflowType.manual,
+        inputSchema: {
+          type: 'object',
+          properties: { question: { type: 'string' } },
+          required: ['question'],
+        },
+      }),
+      validateManualInput: jest.fn().mockImplementation(() => {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Manual workflow input validation failed',
+          details,
+        });
+      }),
+    };
+    const webhookTriggerService = { dispatchTriggerEvent: jest.fn() };
+    const tools = buildWorkflowRunTools({
+      workflowService,
+      webhookTriggerService,
+    });
+
+    await expect(
+      tools.runWorkflow({ workflowId: 'workflow-id', input: {} }, {}, request),
+    ).rejects.toThrow(
+      new BadRequestException(
+        `Manual workflow input validation failed: ${JSON.stringify(details)}`,
+      ),
+    );
+    expect(webhookTriggerService.dispatchTriggerEvent).not.toHaveBeenCalled();
   });
 
   it('searches workflow runs without nested workflow YAML definitions or checkpoints', async () => {

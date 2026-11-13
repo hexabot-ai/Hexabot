@@ -252,6 +252,76 @@ describe('WorkflowVersionService (TypeORM)', () => {
         ).resolves.toEqual(expect.objectContaining({ version: 1 }));
       });
     });
+
+    describe('inputs the workflow type does not take', () => {
+      const definitionYml = [
+        'inputs:',
+        '  schema:',
+        '    type: object',
+        '    properties:',
+        '      question:',
+        '        type: string',
+        'defs: {}',
+        'flow: []',
+        'outputs: {}',
+      ].join('\n');
+      const countVersions = async (workflowId: string) =>
+        await workflowVersionService.count({
+          where: { workflow: { id: workflowId } },
+        });
+
+      it.each([WorkflowType.conversational, WorkflowType.scheduled])(
+        'refuses a %s definition that declares inputs',
+        async (type) => {
+          const workflow = await createWorkflow({ type });
+
+          await expect(
+            workflowVersionService.createSnapshot({
+              workflow: workflow.id,
+              definitionYml,
+              action: WorkflowVersionAction.update,
+              createdBy: userFixtureIds.admin,
+            }),
+          ).rejects.toThrow(
+            new BadRequestException(
+              `A ${type} workflow cannot declare "inputs": its input is ` +
+                'fixed by its trigger. Remove "inputs" from the definition.',
+            ),
+          );
+          expect(await countVersions(workflow.id)).toBe(1);
+        },
+      );
+
+      it('refuses the definition inside a transaction', async () => {
+        const workflow = await createWorkflow();
+        const dataSource = getLastTypeOrmDataSource();
+
+        await expect(
+          dataSource.transaction((manager) =>
+            workflowVersionService.createSnapshotWithManager(manager, {
+              workflow: workflow.id,
+              definitionYml,
+              action: WorkflowVersionAction.create,
+              createdBy: userFixtureIds.admin,
+            }),
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(await countVersions(workflow.id)).toBe(1);
+      });
+
+      it('accepts it in a manual workflow', async () => {
+        const workflow = await createWorkflow({ type: WorkflowType.manual });
+
+        await expect(
+          workflowVersionService.createSnapshot({
+            workflow: workflow.id,
+            definitionYml,
+            action: WorkflowVersionAction.update,
+            createdBy: userFixtureIds.admin,
+          }),
+        ).resolves.toEqual(expect.objectContaining({ version: 1 }));
+      });
+    });
   });
 
   describe('published versions', () => {

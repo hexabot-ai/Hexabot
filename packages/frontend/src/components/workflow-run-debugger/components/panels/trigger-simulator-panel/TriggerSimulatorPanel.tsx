@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { RJSFSchema } from "@rjsf/utils";
+import type { JSONSchema7 as JsonSchema } from "json-schema";
 import {
   CalendarClock,
   Code,
@@ -41,12 +42,18 @@ import { useRunWorkflow } from "../../../hooks/useRunWorkflow";
 
 type TriggerSimulatorPanelProps = {
   workflow?: Workflow;
+  /**
+   * JSON Schema of the input the workflow is run with. A workflow does not
+   * carry it: it follows from its type and its definition.
+   */
+  inputSchema?: JsonSchema;
   formData: Record<string, unknown>;
   onFormDataChange: (data: Record<string, unknown>) => void;
 };
 
 export const TriggerSimulatorPanel = ({
   workflow,
+  inputSchema: workflowInputSchema,
   formData,
   onFormDataChange,
 }: TriggerSimulatorPanelProps) => {
@@ -57,7 +64,7 @@ export const TriggerSimulatorPanel = ({
   const workflowType = workflow?.type;
   const isManualWorkflow = workflowType === WorkflowType.manual;
   const inputSchema = isManualWorkflow
-    ? (workflow?.inputSchema as RJSFSchema | undefined)
+    ? (workflowInputSchema as RJSFSchema | undefined)
     : undefined;
   const hasInputProperties = hasSchemaProperties(inputSchema);
   const isInputValid = useMemo(() => {

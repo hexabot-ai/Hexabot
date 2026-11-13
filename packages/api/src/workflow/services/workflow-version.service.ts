@@ -19,7 +19,10 @@ import { BaseOrmService } from '@/utils/generics/base-orm.service';
 import { WorkflowNewVersionDto } from '../dto/workflow-version.dto';
 import { WorkflowVersionOrmEntity } from '../entities/workflow-version.entity';
 import { WorkflowOrmEntity } from '../entities/workflow.entity';
-import { assertTaskActionsSupported } from '../lib/workflow-definition';
+import {
+  assertInputsDeclarable,
+  assertTaskActionsSupported,
+} from '../lib/workflow-definition';
 import { WorkflowVersionRepository } from '../repositories/workflow-version.repository';
 import { WorkflowType, WorkflowVersionAction } from '../types';
 
@@ -62,7 +65,7 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
     const workflow = params.workflow
       ? await this.workflowService.findOne(params.workflow)
       : null;
-    this.assertActionsSupported(params.definitionYml, workflow?.type);
+    this.assertDefinitionSupported(params.definitionYml, workflow?.type);
     const latestVersion = await this.findOne({
       where: { workflow: { id: params.workflow } },
       order: { version: 'DESC' },
@@ -92,7 +95,7 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
           where: { id: params.workflow },
         })
       : null;
-    this.assertActionsSupported(params.definitionYml, workflow?.type);
+    this.assertDefinitionSupported(params.definitionYml, workflow?.type);
     const latestVersion = await manager.findOne(WorkflowVersionOrmEntity, {
       where: { workflow: { id: params.workflow } },
       order: { version: 'DESC' },
@@ -158,17 +161,18 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
   }
 
   /**
-   * Refuse a definition that uses an action its workflow's type cannot run
-   * (`BaseAction.workflowTypes`), since no run of it could compile. Run by
-   * every snapshot, and by callers that check a definition before creating
-   * its workflow.
+   * Refuse a definition its workflow's type cannot run: one that uses an
+   * action the type does not support (`BaseAction.workflowTypes`), since no
+   * run of it could compile, or one that declares `inputs` although the type
+   * fixes the input. Run by every snapshot, and by callers that check a
+   * definition before creating its workflow.
    *
    * @param definitionYml The definition to save.
    * @param workflowType The type of its workflow; nothing is checked without
    * it, as the version cannot be saved anyway.
-   * @throws {BadRequestException} Listing the offending tasks.
+   * @throws {BadRequestException} Saying what the type does not support.
    */
-  assertActionsSupported(
+  assertDefinitionSupported(
     definitionYml: string,
     workflowType: WorkflowType | undefined,
   ): void {
@@ -180,6 +184,7 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
     }
 
     try {
+      assertInputsDeclarable(parsed.data, workflowType);
       assertTaskActionsSupported(
         parsed.data,
         workflowType,

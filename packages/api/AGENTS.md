@@ -51,6 +51,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot API.
 - Migrations live in `packages/api/src/migration/migrations`; module docs in `packages/api/src/migration/README.md`.
 - CLI migration commands: `pnpm --filter @hexabot-ai/api run cli migration create|migrate`.
 - Seed data runs in non-production via `packages/api/src/seeder.ts` during bootstrap.
+- With `DB_SYNCHRONIZE=true` (the default in the example env files), TypeORM aligns the tables with the entities when the connection opens, before any migration runs: a column removed from an entity is dropped then. A migration that must move data out of such a column cannot rely on finding it. Write the move as a step that is safe to run on every start, call it from `runBeforeSynchronize` (`src/database/before-synchronize.ts`) and from the migration (see `src/migration/lib/workflow-input-schemas.ts`, v3.7.0).
 - On SQLite, do not use `queryRunner.addColumn`/`dropColumn` on tables other tables reference (e.g. `workflow_runs`): they rebuild the table with `DROP TABLE`, and inside the migration transaction foreign keys stay enforced, so `ON DELETE` actions fire. Use a native `ALTER TABLE ... ADD/DROP COLUMN` there.
 
 ## Workflow runs and suspension

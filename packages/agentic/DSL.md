@@ -4,18 +4,47 @@ This document describes the YAML DSL used in `workflow.yml` to orchestrate AI an
 
 ## File layout
 
-- `inputs`: required caller-provided payload. Each key under `schema` declares a JSON schema fragment (`type`, `enum`, `description`, `items`, …).
+- `inputs`: optional description of the payload the caller provides. `inputs.schema` is a JSON Schema of type `object`; see [Workflow inputs](#workflow-inputs).
 - `context`: read-only values injected by the runtime (authenticated user, channel, locale, long-term state, etc.).
 - `defaults`: settings inherited by every task unless overridden (timeouts, retries, and action-specific knobs).
 - `defs`: required root registry for all definitions. Use `kind: task` for executable task defs and other kinds for binding defs.
 - `flow`: ordered execution plan composed of `do`, `parallel`, `conditional`, and `loop` blocks.
 - `outputs`: expressions that expose final artifacts from the run back to the caller.
 
+## Workflow inputs
+
+`inputs.schema` describes the payload a run is started with. It is a standard JSON Schema whose root `type` is `object`; the input fields go under `properties`:
+
+```yaml
+inputs:
+  schema:
+    type: object
+    properties:
+      question:
+        type: string
+        description: "What to answer."
+      pages:
+        type: integer
+        default: 1
+      mode:
+        enum: [fast, thorough]
+    required: [question]
+```
+
+- The payload is checked when the run starts. A payload that does not match is refused before any step runs (`WorkflowInputRejectedError`, which lists each issue as `<path>: <message>`).
+- Fields are optional unless listed under `required`.
+- `default` values are filled in, so `$input.pages` is `1` when the caller left it out.
+- Keys the schema does not declare are kept and reach `$input`. Add `additionalProperties: false` to refuse them.
+- Without `inputs`, or without `inputs.schema`, any object is accepted.
+- The schema is read with zod's `z.fromJSONSchema`, so it supports what that reader supports (`type`, `properties`, `required`, `items`, `enum`, `const`, `default`, `anyOf`/`oneOf`/`allOf`, bounds such as `minimum` or `maxLength`, `format`, `pattern`, local `$ref`). A schema it cannot read fails validation of the workflow.
+
+`inputs.schema` used to be a map of fields (`{ question: { type: string } }`). That form is no longer accepted; move the fields under `properties` and add `type: object`. Every field of such a map was optional and undeclared keys were refused, so `additionalProperties: false` and no `required` keep the same behaviour.
+
 ## Expressions and scopes
 
 - Any string starting with `=` is evaluated as a JSONata expression. All other strings are treated as literals (quoted or plain).
 - Available scopes inside expressions:
-  - `$input`: validated caller inputs.
+  - `$input`: the caller's payload, checked against `inputs.schema` and completed with its `default` values.
   - `$context`: runtime-provided metadata (including any long-term state you injected).
   - `$output.<task>`: raw results produced by previously executed tasks.
   - `$iteration`: loop locals (`item`, `index`) available inside `loop.steps`.

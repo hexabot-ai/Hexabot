@@ -58,13 +58,11 @@ export const DEFAULT_RETRY_SETTINGS = {
   multiplier: 1,
 } as const;
 
-export type InputField = {
-  type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
-  description?: string;
-  enum?: Array<string | number | boolean>;
-  items?: InputField;
-  properties?: Record<string, InputField>;
-};
+/**
+ * JSON Schema of the input payload of a workflow, as written under
+ * `inputs.schema`. Its root `type` is `object`.
+ */
+export type WorkflowInputSchema = Record<string, JsonValue>;
 
 export type ConditionalBranch =
   | { condition: string; steps: FlowStep[] }
@@ -125,46 +123,63 @@ export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   ]),
 );
 
-const InputFieldSchema: z.ZodType<InputField> = z.lazy(() =>
-  z
-    .strictObject({
-      type: z.enum([
-        'string',
-        'number',
-        'integer',
-        'boolean',
-        'array',
-        'object',
-      ]),
-      description: z.string().optional(),
-      enum: z.array(z.union([z.string(), z.number(), z.boolean()])).optional(),
-      items: InputFieldSchema.optional(),
-      properties: z.record(z.string(), InputFieldSchema).optional(),
-    })
-    .superRefine((value, ctx) => {
-      if (value.type === 'array' && !value.items) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Array inputs must declare "items"',
-          path: ['items'],
-        });
-      }
-      if (value.type !== 'array' && value.items) {
-        ctx.addIssue({
-          code: 'custom',
-          message: '"items" is only valid when type is "array"',
-          path: ['items'],
-        });
-      }
-      if (value.type !== 'object' && value.properties) {
-        ctx.addIssue({
-          code: 'custom',
-          message: '"properties" is only valid when type is "object"',
-          path: ['properties'],
-        });
-      }
-    }),
-);
+const isJsonObject = (
+  value: JsonValue,
+): value is { [key: string]: JsonValue } =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+/**
+ * Tell whether `inputs.schema` is written as the field map this DSL used
+ * before JSON Schema (`{ question: { type: string } }`). A JSON Schema has a
+ * string `type` at its root, which a field map never has: each of its values
+ * is a field, an object with its own `type`.
+ */
+const isInputFieldMap = (schema: WorkflowInputSchema): boolean => {
+  const fields = Object.values(schema);
+
+  return (
+    typeof schema.type !== 'string' &&
+    fields.length > 0 &&
+    fields.every((field) => isJsonObject(field) && 'type' in field)
+  );
+};
+const WorkflowInputSchemaSchema: z.ZodType<WorkflowInputSchema> = z
+  .record(z.string(), JsonValueSchema)
+  .superRefine((schema, ctx) => {
+    if (isInputFieldMap(schema)) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Workflow inputs must be described by a JSON Schema, e.g. ' +
+          '{ type: object, properties: { question: { type: string } }, ' +
+          'required: [question] }; a map of fields ' +
+          '({ question: { type: string } }) is no longer supported',
+      });
+
+      return;
+    }
+
+    if (schema.type !== 'object') {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Workflow inputs must be described by a JSON Schema of type ' +
+          '"object"; declare the input fields under "properties"',
+        path: ['type'],
+      });
+
+      return;
+    }
+
+    try {
+      z.fromJSONSchema(schema);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      ctx.addIssue({
+        code: 'custom',
+        message: `Not a valid JSON Schema (${reason})`,
+      });
+    }
+  });
 // Retry policy: exponential backoff per attempt, capped by max_delay_ms, with optional jitter multiplier.
 const RetriesSchema = z.strictObject({
   enabled: z.boolean().optional().meta({
@@ -330,7 +345,7 @@ export const WorkflowMetadataSchema = z.strictObject({
 });
 
 const InputsSchema = z.strictObject({
-  schema: z.record(z.string(), InputFieldSchema).optional(),
+  schema: WorkflowInputSchemaSchema.optional(),
 });
 const DefaultsSchema = z.strictObject({
   settings: SettingsSchema.optional(),

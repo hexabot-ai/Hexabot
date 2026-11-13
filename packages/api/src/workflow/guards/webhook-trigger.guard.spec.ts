@@ -23,10 +23,6 @@ import {
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import type { WebsocketGateway } from '@/websocket/websocket.gateway';
-import {
-  conversationalWorkflowInputJsonSchema,
-  scheduledWorkflowInputJsonSchema,
-} from '@/workflow/schemas/workflow-input-schemas';
 
 import { WorkflowRunService } from '../services/workflow-run.service';
 import { WorkflowService } from '../services/workflow.service';
@@ -67,7 +63,6 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
       description: 'Webhook trigger guard test definition',
       type: WorkflowType.conversational,
       schedule: null,
-      inputSchema: conversationalWorkflowInputJsonSchema,
       createdBy: userFixtureIds.admin,
       direction: DirectionType.HORIZONTAL,
       x: 0,
@@ -84,11 +79,6 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
     const workflow = await workflowService.create({
       ...buildWorkflowPayload(),
       type: WorkflowType.manual,
-      inputSchema: {
-        type: 'object',
-        properties: {},
-        additionalProperties: true,
-      },
       webhookTrigger,
       createdBy: userFixtureIds.admin,
     } as any);
@@ -292,7 +282,6 @@ describe('WebhookTriggerGuard (TypeORM)', () => {
       ...buildWorkflowPayload(),
       type: WorkflowType.scheduled,
       schedule: '*/5 * * * * *',
-      inputSchema: scheduledWorkflowInputJsonSchema,
       createdBy: userFixtureIds.admin,
     });
     createdWorkflowIds.add(scheduled.id);

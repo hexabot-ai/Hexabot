@@ -8,24 +8,44 @@ import {
   BaseSettingsSchema,
   type JsonValue,
   type Settings,
+  type WorkflowInputSchema,
 } from "@hexabot-ai/agentic";
-import { Typography } from "@mui/material";
+import { Divider, Typography } from "@mui/material";
 import type { RJSFSchema } from "@rjsf/utils";
 import type { JSONSchema } from "monaco-yaml";
 import { FC, Fragment, useEffect, useMemo, useState } from "react";
+import { FormProvider, useForm } from "react-hook-form";
 
 import {
   getSchemaDefaults,
   JsonSchemaForm,
 } from "@/app-components/inputs/JsonSchemaForm";
+import {
+  JsonSchemaObjectBuilder,
+  type SchemaNodeForm,
+} from "@/app-components/inputs/JsonSchemaObjectBuilder";
 import { useTranslate } from "@/hooks/useTranslate";
 import { ComponentFormProps } from "@/types/common/dialogs.types";
 
 import { buildSettingsUiSchema } from "../../../utils/settings-ui-schema.utils";
+import {
+  readWorkflowInputSchema,
+  writeWorkflowInputSchema,
+  type WorkflowInputsChange,
+} from "../../../utils/workflow-input-schema.utils";
 
 type WorkflowSettingsFormPreset = {
-  onSave: (settings: Settings) => void;
+  /**
+   * @param settings The default settings of the workflow.
+   * @param inputs What `inputs.schema` becomes, when the form changed it.
+   */
+  onSave: (settings: Settings, inputs?: WorkflowInputsChange) => void;
   saveDisabled?: boolean;
+  /**
+   * Set for a workflow that declares its input (a manual one), with the
+   * schema its definition holds: the form then edits it as well.
+   */
+  inputs?: { schema?: WorkflowInputSchema };
 };
 
 const WORKFLOW_SETTINGS_SCHEMA = BaseSettingsSchema.toJSONSchema({
@@ -96,6 +116,13 @@ export const WorkflowSettingsForm: FC<
   >(() => buildWorkflowSettingsState(settings, defaults).passthroughSettings);
   const [hasVisibleErrors, setHasVisibleErrors] = useState(false);
   const saveDisabled = presetValues?.saveDisabled ?? false;
+  const declaresInputs = presetValues?.inputs !== undefined;
+  const declaredInputSchema = presetValues?.inputs?.schema;
+  const inputsForm = useForm<{ inputSchema: SchemaNodeForm }>({
+    defaultValues: {
+      inputSchema: readWorkflowInputSchema(declaredInputSchema),
+    },
+  });
 
   useEffect(() => {
     const nextState = buildWorkflowSettingsState(settings, defaults);
@@ -110,11 +137,26 @@ export const WorkflowSettingsForm: FC<
       return;
     }
 
-    presetValues.onSave({
+    const nextSettings: Settings = {
       ...passthroughSettings,
       ...(settingsData as Settings),
-    });
-    rest.onSuccess?.();
+    };
+
+    if (!declaresInputs) {
+      presetValues.onSave(nextSettings);
+      rest.onSuccess?.();
+
+      return;
+    }
+
+    // Runs the checks of the input fields (a name, used once) first.
+    void inputsForm.handleSubmit(({ inputSchema }) => {
+      presetValues.onSave(
+        nextSettings,
+        writeWorkflowInputSchema(inputSchema, declaredInputSchema),
+      );
+      rest.onSuccess?.();
+    })();
   };
 
   return (
@@ -139,6 +181,21 @@ export const WorkflowSettingsForm: FC<
         enableJsonataTextWidget={false}
         idPrefix="workflow-default-settings"
       />
+      {declaresInputs ? (
+        <>
+          <Divider sx={{ my: 2 }} />
+          <FormProvider {...inputsForm}>
+            <JsonSchemaObjectBuilder
+              name="inputSchema"
+              label={t("label.input_schema", { defaultValue: "Input schema" })}
+              description={t("message.workflow_input_schema_description", {
+                defaultValue:
+                  "Define the input this workflow accepts when it runs. It is saved in the workflow definition, under inputs.schema.",
+              })}
+            />
+          </FormProvider>
+        </>
+      ) : null}
     </Wrapper>
   );
 };

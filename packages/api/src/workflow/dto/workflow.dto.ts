@@ -6,6 +6,7 @@
 
 import {
   createWorkflowFullSchema as createTypesWorkflowFullSchema,
+  resolveWorkflowInputSchema,
   WebhookTriggerConfig,
   webhookTriggerSchema,
   workflowSchema,
@@ -25,8 +26,6 @@ import {
   IsString,
   ValidateIf,
 } from 'class-validator';
-import { JSONSchema7 as JsonSchema } from 'json-schema';
-import { z } from 'zod';
 
 import { Validate } from '@/utils';
 import { IsUUIDv4 } from '@/utils/decorators/is-uuid.decorator';
@@ -38,9 +37,10 @@ import { DirectionType, WorkflowType } from '../types';
 
 export const workflowFullSchema = createTypesWorkflowFullSchema({
   parseDefinition: parseWorkflowDefinition,
+  // `inputSchema` is not stored: a full workflow gets it from its type and
+  // the definition of its current version.
+  resolveInputSchema: resolveWorkflowInputSchema,
 });
-
-const WorkflowInputSchemaValidator = z.looseObject({});
 
 export class WorkflowCreateDto {
   @ApiProperty({ description: 'Workflow name', type: String })
@@ -72,15 +72,6 @@ export class WorkflowCreateDto {
   @IsString()
   @Validate(NestCronSchema)
   schedule?: string | null;
-
-  @ApiPropertyOptional({
-    description:
-      'JSON Schema for workflow input. Editable only for manual workflows.',
-    type: Object,
-  })
-  @IsOptional()
-  @Validate(WorkflowInputSchemaValidator)
-  inputSchema?: JsonSchema;
 
   @ApiPropertyOptional({
     description:

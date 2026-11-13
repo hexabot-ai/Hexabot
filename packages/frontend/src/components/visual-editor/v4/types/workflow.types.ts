@@ -19,6 +19,7 @@ import type { Workflow } from "@hexabot-ai/types";
 import type { Cancelable } from "@mui/utils/debounce";
 import type { UseMutateFunction } from "@tanstack/react-query";
 import type { ResizeControlDirection } from "@xyflow/system";
+import type { JSONSchema7 as JsonSchema } from "json-schema";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 
 import { EntityType } from "@/services/types";
@@ -114,6 +115,11 @@ export interface IWorkflowContext {
   addParallelStep: (insertPath?: FlowStepPath | null) => void;
   removeStepAtPath: (stepPath: FlowStepPath, nodeId?: string) => void;
   definition?: WorkflowDefinition;
+  /**
+   * JSON Schema of the input the workflow is run with, as the definition
+   * being edited gives it (see `useWorkflowInputSchema`).
+   */
+  inputSchema?: JsonSchema;
   flow?: CompiledStep[];
   definitionStatus: WorkflowDefinitionStatus;
   definitionIssues: WorkflowIssue[];

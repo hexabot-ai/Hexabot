@@ -77,7 +77,7 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_workflow_get',
     description:
-      'Read a Hexabot workflow with compact version metadata, excluding YAML definition bodies.',
+      'Read a Hexabot workflow with compact version metadata, excluding YAML definition bodies. inputSchema is the JSON Schema of the input a run takes: it follows from the workflow type and, for a manual workflow, from inputs.schema in the current definition.',
     parameters: z.object({
       id: uuidSchema,
     }),
@@ -107,7 +107,7 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_workflow_create',
     description:
-      'Create a Hexabot workflow. Optionally commit an initial workflow definition YAML; if it is refused, no workflow is created, so the call can be retried with a fixed definition.',
+      'Create a Hexabot workflow. Optionally commit an initial workflow definition YAML; if it is refused, no workflow is created, so the call can be retried with a fixed definition. A manual workflow declares the input of its runs in the definition, under inputs.schema, as a JSON Schema of type object (properties, required, default, ...); without it, a run takes any object. Conversational and scheduled workflows take the input of their trigger and cannot declare inputs.',
     parameters: z.object({
       ...workflowPayloadSchema,
       name: z.string().min(1),
@@ -134,7 +134,13 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
     request?: HexabotMcpRequest,
   ) {
     const actorId = this.getActorId(request);
-    const { definitionYml, versionMessage, ...workflowPayload } = args;
+    this.workflowHelper.assertNoInputSchemaParameter(args);
+    const {
+      definitionYml,
+      versionMessage,
+      inputSchema: _inputSchema,
+      ...workflowPayload
+    } = args;
     if (definitionYml) {
       this.workflowHelper.assertDefinitionCommittable(
         definitionYml,
@@ -165,7 +171,7 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   @Tool({
     name: 'hexabot_workflow_update',
     description:
-      'Update workflow metadata. Optionally commit a new workflow definition YAML version; if it is refused, nothing is changed.',
+      'Update workflow metadata. Optionally commit a new workflow definition YAML version; if it is refused, nothing is changed. To change the input of a manual workflow, commit a definition with another inputs.schema (a JSON Schema of type object).',
     parameters: z.object({
       id: uuidSchema,
       ...workflowPayloadSchema,
@@ -178,12 +184,20 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
       id: string;
       definitionYml?: string;
       versionMessage?: string;
+      inputSchema?: unknown;
     } & Record<string, unknown>,
     _context: unknown,
     request?: HexabotMcpRequest,
   ) {
     const actorId = this.getActorId(request);
-    const { id, definitionYml, versionMessage, ...updates } = args;
+    this.workflowHelper.assertNoInputSchemaParameter(args);
+    const {
+      id,
+      definitionYml,
+      versionMessage,
+      inputSchema: _inputSchema,
+      ...updates
+    } = args;
     const workflow = await this.workflowHelper.requireWorkflow(id);
     if (definitionYml) {
       this.workflowHelper.assertDefinitionCommittable(

@@ -34,7 +34,7 @@ import {
 import { WorkflowRunner } from './workflow-runner';
 import type { CompiledWorkflow, WorkflowRunOptions } from './workflow-types';
 
-export { compileWorkflow } from './workflow-compiler';
+export { buildWorkflowInputParser, compileWorkflow } from './workflow-compiler';
 
 export { WorkflowEventEmitter } from './workflow-event-emitter';
 
