@@ -32,7 +32,8 @@ const sentFormats = [
   'carousel',
   'attachment',
 ] as const;
-const sentMessageSchema = z.object({
+
+export const sentMessageSchema = z.object({
   mid: z.string().optional(),
   channel: z.string(),
   type: z.enum(sentFormats),

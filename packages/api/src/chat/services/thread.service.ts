@@ -248,6 +248,24 @@ export class ThreadService extends BaseOrmService<ThreadOrmEntity> {
     return latestOpen;
   }
 
+  /**
+   * Find the thread of a message sent to a subscriber outside a conversation
+   * (a notification): their latest open thread, or a new one on their source.
+   * A closed thread is never reused.
+   *
+   * Unlike `resolveThreadForIncoming`, an open thread is used however long
+   * it stayed inactive: sending the message is what refreshes its activity.
+   *
+   * @param subscriberId - Subscriber the message is sent to.
+   * @returns The thread to send the message on.
+   */
+  async resolveThreadForOutgoing(subscriberId: string): Promise<Thread> {
+    const latestOpen =
+      await this.repository.findLatestOpenThreadForSubscriber(subscriberId);
+
+    return latestOpen ?? (await this.createThread(subscriberId));
+  }
+
   async resolveOrCreateThread({
     subscriberId,
     explicitThreadId,

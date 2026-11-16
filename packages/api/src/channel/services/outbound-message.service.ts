@@ -116,6 +116,31 @@ export class OutboundMessageService {
     return await this.send(thread, recipient, envelope, options);
   }
 
+  /**
+   * Send a message to a subscriber on their latest open thread, or on a new
+   * one when they have none (`ThreadService.resolveThreadForOutgoing`).
+   *
+   * @param subscriberId - Subscriber to send the message to.
+   * @param envelope - Message to send.
+   * @param options - Who sends the message, and what it answers.
+   * @returns The sent message's id, with its thread, recipient and channel.
+   * @throws {OutboundMessageRefusedError} When the subscriber or their
+   * channel is missing; no thread is opened then.
+   */
+  async sendToSubscriber(
+    subscriberId: string,
+    envelope: StdOutgoingMessage,
+    options: OutboundMessageOptions = {},
+  ): Promise<SentOutboundMessage> {
+    const recipient = await this.findRecipient(subscriberId);
+    const { id } = await this.threadService.resolveThreadForOutgoing(
+      recipient.subscriber.id,
+    );
+    const thread = await this.findThread(id);
+
+    return await this.send(thread, recipient, envelope, options);
+  }
+
   /** Load a thread with its subscriber and source. */
   private async findThread(threadId: string): Promise<ThreadFull> {
     const thread = await this.threadService.findOneAndPopulate(threadId);

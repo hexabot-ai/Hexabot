@@ -8,6 +8,7 @@ import {
   Message,
   OutgoingMessageType,
   StdOutgoingMessage,
+  Thread,
   ThreadFull,
 } from '@hexabot-ai/types';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -176,6 +177,77 @@ describe('OutboundMessageService (TypeORM)', () => {
       'channel is down',
     );
     expect(emitAsync).not.toHaveBeenCalled();
+  });
+
+  describe('sendToSubscriber', () => {
+    let resolveThreadForOutgoing: jest.SpyInstance;
+
+    beforeEach(() => {
+      resolveThreadForOutgoing = jest
+        .spyOn(threadService, 'resolveThreadForOutgoing')
+        .mockResolvedValue({ id: thread.id } as Thread);
+    });
+
+    it('sends the message on the thread resolved for the subscriber', async () => {
+      const sent = await service.sendToSubscriber(
+        thread.subscriber.id,
+        envelope,
+        { origin: 'spec' },
+      );
+
+      expect(resolveThreadForOutgoing).toHaveBeenCalledWith(
+        thread.subscriber.id,
+      );
+      const [event, sentEnvelope] = sendMessage.mock.calls[0] as [
+        MessageInboundEvent,
+        StdOutgoingMessage,
+      ];
+      expect(sentEnvelope).toBe(envelope);
+      expect(event.getInitiator().id).toBe(thread.subscriber.id);
+      expect(event.getThreadId()).toBe(thread.id);
+      expect(event.getSourceId()).toBe(thread.source.id);
+      expect(event.getRaw()).toEqual({ source: 'spec' });
+      expect(emitAsync).toHaveBeenCalledWith(
+        'hook:chatbot:sent',
+        expect.objectContaining({
+          mid: 'mid-sent',
+          recipient: thread.subscriber.id,
+          thread: thread.id,
+        }),
+      );
+      expect(sent).toMatchObject({
+        mid: 'mid-sent',
+        thread: { id: thread.id },
+        recipient: { id: thread.subscriber.id },
+      });
+    });
+
+    it.each([
+      [
+        'who does not exist',
+        'subscriber_not_found',
+        () => jest.spyOn(subscriberService, 'findOne').mockResolvedValue(null),
+      ],
+      [
+        'whose channel is not registered',
+        'channel_unavailable',
+        () => channelRegistry.findChannel.mockReturnValue(undefined),
+      ],
+    ])(
+      'refuses a subscriber %s without opening a thread',
+      async (_case, code, arrange) => {
+        arrange();
+
+        const error = await service
+          .sendToSubscriber(thread.subscriber.id, envelope)
+          .catch((err: unknown) => err);
+
+        expect(error).toBeInstanceOf(OutboundMessageRefusedError);
+        expect(error).toMatchObject({ code });
+        expect(resolveThreadForOutgoing).not.toHaveBeenCalled();
+        expect(sendMessage).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('refusals', () => {
