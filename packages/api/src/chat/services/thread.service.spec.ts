@@ -320,6 +320,49 @@ describe('ThreadService', () => {
     });
   });
 
+  describe('resolveThreadForOutgoing', () => {
+    it('uses the latest open thread, however long it stayed inactive', async () => {
+      const latestOpen = createThread({
+        id: 'thread-open',
+        lastMessageAt: new Date('2020-01-01T00:00:00.000Z'),
+      });
+      repository.findLatestOpenThreadForSubscriber.mockResolvedValue(
+        latestOpen,
+      );
+
+      const resolved = await service.resolveThreadForOutgoing('sub-1');
+
+      expect(resolved).toEqual(latestOpen);
+      expect(repository.findLatestOpenThreadForSubscriber).toHaveBeenCalledWith(
+        'sub-1',
+      );
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(repository.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('opens a thread on the source of a subscriber without an open one', async () => {
+      const created = createThread({ id: 'thread-created' });
+      repository.findLatestOpenThreadForSubscriber.mockResolvedValue(null);
+      repository.findLatestThreadForSubscriber.mockResolvedValue(
+        createThread({ id: 'thread-closed', status: 'closed' }),
+      );
+      repository.create.mockResolvedValue(created);
+
+      const resolved = await service.resolveThreadForOutgoing('sub-1');
+
+      expect(resolved).toEqual(created);
+      expect(repository.create).toHaveBeenCalledTimes(1);
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscriber: 'sub-1',
+          source: 'source-1',
+          status: 'open',
+          title: null,
+        }),
+      );
+    });
+  });
+
   describe('resolveThreadForRead', () => {
     it('creates a thread when none exists', async () => {
       const created = createThread({ id: 'thread-created' });

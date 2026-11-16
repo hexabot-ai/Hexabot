@@ -9,6 +9,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AttachmentModule } from '@/attachment/attachment.module';
 import { ChatModule } from '@/chat/chat.module';
 import { ThreadOrmEntity } from '@/chat/entities/thread.entity';
 import { CmsModule } from '@/cms/cms.module';
@@ -71,6 +72,8 @@ import { WORKFLOW_CALL_SERVICE } from './types';
     ]),
     forwardRef(() => CmsModule),
     forwardRef(() => ChatModule),
+    // Runtime contexts hand AttachmentService to actions (`context.services`).
+    AttachmentModule,
     UserModule,
     JwtModule.register({}),
   ],

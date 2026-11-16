@@ -10,12 +10,29 @@ import {
   WorkflowRunFull,
 } from '@hexabot-ai/types';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Test } from '@nestjs/testing';
 
-import { MemoryScope, WorkflowType } from '@/workflow/types';
+import { ActionService } from '@/actions/actions.service';
+import { AttachmentService } from '@/attachment/services/attachment.service';
+import { MessageService } from '@/chat/services/message.service';
+import { SubscriberService } from '@/chat/services/subscriber.service';
+import { ContentTypeService } from '@/cms/services/content-type.service';
+import { ContentService } from '@/cms/services/content.service';
+import { I18nService } from '@/i18n/services/i18n.service';
+import { LoggerService } from '@/logger/logger.service';
+import { SettingService } from '@/setting/services/setting.service';
+import { CredentialService } from '@/user/services/credential.service';
+import {
+  MemoryScope,
+  WORKFLOW_CALL_SERVICE,
+  WorkflowType,
+} from '@/workflow/types';
 
 import { TriggerEventWrapper } from '../lib/trigger-event-wrapper';
+import { McpClientPoolService } from '../services/mcp-client-pool.service';
 import { MemoryStore } from '../utils/memory-store';
 
+import { ManualWorkflowContext } from './manual-workflow.context';
 import { WorkflowRuntimeContext } from './workflow-runtime.context';
 
 class TestEventWrapper extends TriggerEventWrapper {
@@ -132,5 +149,39 @@ describe('WorkflowRuntimeContext', () => {
       LABEL_ID_B,
     ]);
     expect(context.state.initiator).not.toBe(event.getInitiator());
+  });
+
+  it('hands the services it is injected with to actions', async () => {
+    const tokens = {
+      i18n: I18nService,
+      settings: SettingService,
+      logger: LoggerService,
+      content: ContentService,
+      contentType: ContentTypeService,
+      attachment: AttachmentService,
+      message: MessageService,
+      subscriber: SubscriberService,
+      actions: ActionService,
+      credentials: CredentialService,
+      mcp: McpClientPoolService,
+      agentic: WORKFLOW_CALL_SERVICE,
+    };
+    const stubs = Object.fromEntries(
+      Object.keys(tokens).map((name) => [name, { name }]),
+    );
+    const module = await Test.createTestingModule({
+      providers: [
+        ManualWorkflowContext,
+        { provide: EventEmitter2, useValue: {} },
+        ...Object.entries(tokens).map(([name, provide]) => ({
+          provide,
+          useValue: stubs[name],
+        })),
+      ],
+    }).compile();
+    const context = await module.resolve(ManualWorkflowContext);
+
+    expect(context.services).toEqual(stubs);
+    await module.close();
   });
 });

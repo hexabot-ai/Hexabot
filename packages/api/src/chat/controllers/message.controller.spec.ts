@@ -5,10 +5,13 @@
  */
 
 import { Message, MessageFull } from '@hexabot-ai/types';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
-import { ChannelService } from '@/channel/channel.service';
+import {
+  OutboundMessageRefusedError,
+  OutboundMessageService,
+} from '@/channel/services/outbound-message.service';
 import { MessageService } from '@/chat/services/message.service';
-import { SubscriberService } from '@/chat/services/subscriber.service';
 import {
   installMessageFixturesTypeOrm,
   messageFixtures,
@@ -27,13 +30,8 @@ describe('MessageController (TypeORM)', () => {
   let referencePlain: Message;
   let referencePopulated: MessageFull;
 
-  const subscriberServiceMock: Partial<SubscriberService> = {
-    findOne: jest.fn(),
-    findOneAndPopulate: jest.fn(),
-  };
-  const channelServiceMock: Partial<ChannelService> = {
-    findChannel: jest.fn(),
-    getChannelHandler: jest.fn(),
+  const outboundMessageServiceMock = {
+    sendToThread: jest.fn(),
   };
   const websocketGatewayMock = {
     joinSockets: jest.fn(),
@@ -47,12 +45,8 @@ describe('MessageController (TypeORM)', () => {
       controllers: [MessageController],
       providers: [
         {
-          provide: SubscriberService,
-          useValue: subscriberServiceMock,
-        },
-        {
-          provide: ChannelService,
-          useValue: channelServiceMock,
+          provide: OutboundMessageService,
+          useValue: outboundMessageServiceMock,
         },
         {
           provide: WEBSOCKET_GATEWAY,
@@ -145,74 +139,91 @@ describe('MessageController (TypeORM)', () => {
   });
 
   describe('create', () => {
-    it('requires thread id in send payload', async () => {
-      const req = {
-        session: {
-          passport: {
-            user: { id: 'user-1' },
-          },
+    const req = {
+      session: {
+        passport: {
+          user: { id: 'user-1' },
         },
-      } as any;
-
-      await expect(
-        messageController.create(
-          {
-            message: { text: 'Hello' } as any,
-          } as any,
-          req,
-        ),
-      ).rejects.toThrow('MessageController send : thread id is required');
-    });
-
-    it('sends message using thread-first payload and emits sent event', async () => {
-      const thread = referencePopulated.thread;
-      const subscriber =
-        referencePopulated.sender ?? referencePopulated.recipient;
-      if (!thread || !subscriber) {
-        throw new Error(
-          'Expected reference message to include thread and subscriber',
-        );
-      }
-      const sendMessage = jest.fn().mockResolvedValue({ mid: 'mid-created' });
-      const emitSpy = jest.spyOn(
-        (messageController as any).eventEmitter,
-        'emit',
-      );
-      const req = {
-        session: {
-          passport: {
-            user: { id: 'user-1' },
-          },
-        },
-      } as any;
-
-      (subscriberServiceMock.findOne as jest.Mock).mockResolvedValue(
-        subscriber,
-      );
-      (channelServiceMock.findChannel as jest.Mock).mockReturnValue(true);
-      (channelServiceMock.getChannelHandler as jest.Mock).mockReturnValue({
-        sendMessage,
-      });
-
-      const result = await messageController.create(
+      },
+    } as any;
+    const message = { type: 'text', data: { text: 'Hello from the Inbox' } };
+    const send = () =>
+      messageController.create(
         {
-          thread: thread.id,
-          inReplyTo: referencePlain.mid ?? undefined,
-          message: { text: 'Hello from thread API' } as any,
+          thread: referencePlain.thread,
+          inReplyTo: 'mid-1',
+          message,
         } as any,
         req,
       );
 
-      expect(result).toEqual({ success: true });
-      expect(sendMessage).toHaveBeenCalledTimes(1);
-      expect(emitSpy).toHaveBeenCalledWith(
-        'hook:chatbot:sent',
-        expect.objectContaining({
-          mid: 'mid-created',
-          recipient: subscriber.id,
-          thread: thread.id,
-        }),
+    it('requires thread id in send payload', async () => {
+      await expect(
+        messageController.create({ message } as any, req),
+      ).rejects.toThrow('MessageController send : thread id is required');
+      expect(outboundMessageServiceMock.sendToThread).not.toHaveBeenCalled();
+    });
+
+    it('sends the message on the thread as the authenticated user', async () => {
+      outboundMessageServiceMock.sendToThread.mockResolvedValue({
+        mid: 'mid-created',
+      });
+
+      await expect(send()).resolves.toEqual({ success: true });
+      expect(outboundMessageServiceMock.sendToThread).toHaveBeenCalledTimes(1);
+      expect(outboundMessageServiceMock.sendToThread).toHaveBeenCalledWith(
+        referencePlain.thread,
+        message,
+        {
+          inReplyTo: 'mid-1',
+          sentBy: 'user-1',
+          origin: 'message-controller',
+        },
       );
+    });
+
+    it.each([
+      ['thread_not_found', 'Thread with ID x not found', NotFoundException],
+      [
+        'subscriber_not_found',
+        'Subscriber with ID x not found',
+        NotFoundException,
+      ],
+      [
+        'channel_unavailable',
+        'Subscriber channel not found',
+        BadRequestException,
+      ],
+      [
+        'recipient_unreachable',
+        'Subscriber foreign ID is missing',
+        BadRequestException,
+      ],
+    ] as const)(
+      'answers a %s refusal with its reason',
+      async (code, reason, exception) => {
+        outboundMessageServiceMock.sendToThread.mockRejectedValue(
+          new OutboundMessageRefusedError(code, reason),
+        );
+
+        const error = await send().catch((err: unknown) => err);
+
+        expect(error).toBeInstanceOf(exception);
+        expect(error).toMatchObject({ message: reason });
+      },
+    );
+
+    it('hides why the channel failed to send the message', async () => {
+      outboundMessageServiceMock.sendToThread.mockRejectedValue(
+        new Error('channel is down'),
+      );
+
+      const error = await send().catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({
+        message: 'MessageController send : unable to send message',
+      });
     });
   });
 });

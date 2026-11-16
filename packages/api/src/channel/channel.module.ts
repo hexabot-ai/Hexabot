@@ -25,6 +25,7 @@ import { SourceRepository } from './repositories/source.repository';
 import { ChannelAttachmentService } from './services/channel-attachment.service';
 import { ChannelDownloadService } from './services/channel-download.service';
 import { ChannelRegistry } from './services/channel-registry.service';
+import { OutboundMessageService } from './services/outbound-message.service';
 import { SourceService } from './services/source.service';
 import { SubscriberResolver } from './services/subscriber-resolver.service';
 import { SourceController } from './source.controller';
@@ -64,7 +65,13 @@ import { WebhookController } from './webhook.controller';
     ChannelAttachmentService,
     ChannelDownloadService,
     SubscriberResolver,
+    OutboundMessageService,
   ],
-  exports: [ChannelService, SourceService, ChannelRegistry],
+  exports: [
+    ChannelService,
+    SourceService,
+    ChannelRegistry,
+    OutboundMessageService,
+  ],
 })
 export class ChannelModule {}

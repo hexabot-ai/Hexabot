@@ -96,6 +96,7 @@ Use this file as the entrypoint for AI coding agents working on the Hexabot API.
 - Dynamic providers are resolved during bootstrap via `nestjs-dynamic-providers` before app creation.
 - Extension cleanup runs on application bootstrap in `packages/api/src/extension/extension.module.ts`.
 - Use extension settings instead of hardcoded behavior when adding new channel/action/helper behavior.
+- Actions reach application services through `context.services` (`WorkflowRuntimeContext`): `i18n`, `settings`, `logger`, `content`, `contentType`, `attachment`, `message`, `subscriber`, `actions`, `credentials`, `mcp`, `agentic`. Dynamic actions are providers of the global `ActionsModule`: their constructors can only inject what a global module exports, so a service of another module (e.g. `AttachmentService`, to read an attachment's file with `readAsBuffer`/`readAsStream`) is handed to them through the context, whose module (`WorkflowModule`) imports it.
 - An action's `workflowTypes` is enforced, not only a catalog filter: `WorkflowVersionService` refuses (`400`) a version whose tasks use an action its workflow's type cannot run, and `WorkflowCompiler` refuses to compile one, which covers versions saved before that check (`assertTaskActionsSupported`, `src/workflow/lib/workflow-definition.ts`). An action without `workflowTypes` runs in any workflow.
 - Channel/helper runtime setting group keys and settings hook namespaces must match the extension `name` (kebab-case).
 
