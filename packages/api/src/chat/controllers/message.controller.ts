@@ -4,15 +4,7 @@
  * Full terms: see LICENSE.md.
  */
 
-import { randomUUID } from 'crypto';
-
-import {
-  Message,
-  MessageFull,
-  Thread,
-  IncomingMessageType,
-  OutgoingMessage,
-} from '@hexabot-ai/types';
+import { Message, MessageFull } from '@hexabot-ai/types';
 import {
   BadRequestException,
   Body,
@@ -26,13 +18,11 @@ import {
 import { Request } from 'express';
 import { FindManyOptions } from 'typeorm';
 
-import { ChannelService } from '@/channel/channel.service';
 import {
-  ChannelInboundEventContext,
-  SyntheticMessageInboundEvent,
-} from '@/channel/lib/inbound-events';
-import { ChannelName } from '@/channel/types';
-import { BaseOrmEntity } from '@/database/entities/base.entity';
+  OutboundMessageRefusalCode,
+  OutboundMessageRefusedError,
+  OutboundMessageService,
+} from '@/channel/services/outbound-message.service';
 import { UuidParam } from '@/utils';
 import { BaseOrmController } from '@/utils/generics/base-orm.controller';
 import { PopulatePipe } from '@/utils/pipes/populate.pipe';
@@ -41,16 +31,18 @@ import { TypeOrmSearchFilterPipe } from '@/utils/pipes/typeorm-search-filter.pip
 import { MessageSendDto } from '../dto/message.dto';
 import { MessageOrmEntity } from '../entities/message.entity';
 import { MessageService } from '../services/message.service';
-import { SubscriberService } from '../services/subscriber.service';
-import { ThreadService } from '../services/thread.service';
+
+/** Refusals of a send that mean its thread or recipient does not exist. */
+const NOT_FOUND_REFUSALS: ReadonlySet<OutboundMessageRefusalCode> = new Set([
+  'thread_not_found',
+  'subscriber_not_found',
+]);
 
 @Controller('message')
 export class MessageController extends BaseOrmController<MessageOrmEntity> {
   constructor(
     private readonly messageService: MessageService,
-    private readonly subscriberService: SubscriberService,
-    private readonly threadService: ThreadService,
-    private readonly channelService: ChannelService,
+    private readonly outboundMessageService: OutboundMessageService,
   ) {
     super(messageService);
   }
@@ -118,96 +110,28 @@ export class MessageController extends BaseOrmController<MessageOrmEntity> {
       );
     }
 
-    const thread = await this.threadService.findOneAndPopulate(
-      messageDto.thread,
-    );
-    if (!thread?.subscriber) {
-      this.logger.warn(`Unable to find thread by id ${messageDto.thread}`);
-      throw new NotFoundException(
-        `Thread with ID ${messageDto.thread} not found`,
-      );
-    }
-
-    const subscriber = await this.subscriberService.findOne(
-      thread.subscriber.id,
-    );
-    if (!subscriber) {
-      this.logger.warn(
-        `Unable to find subscriber by id ${thread.subscriber.id}`,
-      );
-      throw new NotFoundException(
-        `Subscriber with ID ${thread.subscriber.id} not found`,
-      );
-    }
-
-    const channelData = subscriber.channel;
-    const channelName = channelData.name;
-    if (!channelName || !this.channelService.findChannel(channelName)) {
-      throw new BadRequestException(`Subscriber channel not found`);
-    }
-    if (!subscriber.foreignId) {
-      throw new BadRequestException(`Subscriber foreign ID is missing`);
-    }
-
-    const envelope = messageDto.message;
-    const latestMessageId = messageDto.inReplyTo
-      ? messageDto.inReplyTo
-      : (
-          await this.messageService.findLastMessages(
-            { id: thread.id } as Thread,
-            1,
-          )
-        ).at(0)?.mid;
-    const typedChannelName = channelName as ChannelName;
-    const channelHandler =
-      this.channelService.getChannelHandler(typedChannelName);
-    const eventContext = new ChannelInboundEventContext<
-      ChannelName,
-      Record<string, unknown>,
-      Record<string, unknown>
-    >(
-      typedChannelName,
-      {
-        source: 'message-controller',
-      },
-      (channelData.data ?? {}) as Record<string, unknown>,
-      new Date(),
-      latestMessageId ?? randomUUID(),
-      subscriber.foreignId,
-      null,
-    );
-    const event = new SyntheticMessageInboundEvent<
-      ChannelName,
-      Record<string, unknown>
-    >(
-      eventContext,
-      { type: IncomingMessageType.text, data: { text: '' } },
-      IncomingMessageType.text,
-      channelHandler,
-    );
-
-    event.setInitiator(subscriber);
-    event.setThreadId(thread.id);
-    event.setSourceContext(thread.source.id, thread.source.settings);
     try {
-      const { mid } = await channelHandler.sendMessage(event, envelope, {});
-      // Trigger sent message event
-      const sentMessage: Omit<OutgoingMessage, keyof BaseOrmEntity> = {
-        mid,
-        recipient: subscriber.id,
-        thread: thread.id,
-        message: messageDto.message,
-        sentBy: req.session.passport?.user?.id,
-        read: false,
-        delivery: false,
-        handover: false,
-      };
-      this.eventEmitter.emit('hook:chatbot:sent', sentMessage);
+      await this.outboundMessageService.sendToThread(
+        messageDto.thread,
+        messageDto.message,
+        {
+          inReplyTo: messageDto.inReplyTo,
+          sentBy: req.session.passport?.user?.id,
+          origin: 'message-controller',
+        },
+      );
 
       return {
         success: true,
       };
     } catch (err) {
+      if (err instanceof OutboundMessageRefusedError) {
+        this.logger.warn(err.message);
+        throw NOT_FOUND_REFUSALS.has(err.code)
+          ? new NotFoundException(err.message)
+          : new BadRequestException(err.message);
+      }
+
       this.logger.debug('Unable to send message', err);
       throw new BadRequestException(
         'MessageController send : unable to send message',

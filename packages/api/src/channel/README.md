@@ -29,6 +29,13 @@ At request time:
 4. Inbound payloads are decoded into `ChannelInboundEvent` instances.
 5. Events are emitted through `ChannelEventBus` to the chatbot/workflow pipeline.
 
+## Sending Without an Inbound Event
+
+Channels send in reply to an event (`handler.sendMessage(event, envelope, options)`). `OutboundMessageService`, exported by the global `ChannelModule`, covers the senders that have none, such as an admin writing from the Inbox (`POST /message`):
+
+- `sendToThread(threadId, envelope, { inReplyTo?, sentBy?, origin? })` builds a `SyntheticMessageInboundEvent` from the thread, its subscriber and its source as they are now, sends the envelope through the subscriber's channel, then emits `hook:chatbot:sent` and waits for it, so the message is in the thread once it returns. It resolves to `{ mid, channel, thread, recipient }`.
+- It throws `OutboundMessageRefusedError` (`code`: `thread_not_found`, `subscriber_not_found`, `channel_unavailable`, `recipient_unreachable`) before anything is sent. An error of the channel itself is thrown as is, and nothing is logged in the thread.
+
 ## HTTP Surface
 
 `WebhookController` is mounted at `/webhook` (effective path is `/api/webhook/*` because of the global `/api` prefix):
