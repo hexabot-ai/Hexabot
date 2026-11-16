@@ -10,6 +10,7 @@ import { forwardRef, Inject, Injectable, Scope } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { ActionService } from '@/actions/actions.service';
+import { AttachmentService } from '@/attachment/services/attachment.service';
 import { MessageService } from '@/chat/services/message.service';
 import { SubscriberService } from '@/chat/services/subscriber.service';
 import { ContentTypeService } from '@/cms/services/content-type.service';
@@ -63,6 +64,9 @@ export abstract class WorkflowRuntimeContext<
   @Inject(ActionService)
   protected readonly actionService: ActionService;
 
+  @Inject(AttachmentService)
+  protected readonly attachment: AttachmentService;
+
   @Inject(CredentialService)
   protected readonly credentialService: CredentialService;
 
@@ -85,6 +89,7 @@ export abstract class WorkflowRuntimeContext<
       logger: this.logger,
       content: this.content,
       contentType: this.contentType,
+      attachment: this.attachment,
       message: this.message,
       subscriber: this.subscriber,
       actions: this.actionService,
