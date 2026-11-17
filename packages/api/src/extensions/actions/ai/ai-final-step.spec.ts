@@ -11,6 +11,17 @@ import {
   buildFinalStepMessages,
 } from './ai-final-step';
 
+describe('AI_FINAL_STEP_INSTRUCTION', () => {
+  // Without it, Claude on Bedrock announced a required tool call it could no
+  // longer make ("I will save a summary first") in 18 of 18 runs; with it, in
+  // 0 of 12.
+  it('asks the reply not to claim an action that needs a tool', () => {
+    expect(AI_FINAL_STEP_INSTRUCTION).toMatch(
+      /Do not say that you did, or are about to do, anything that needs a tool\.$/,
+    );
+  });
+});
+
 describe('buildFinalStepMessages', () => {
   const HEADING = 'Results of the tools you called for this request:';
   const searchCall = (toolCallId: string, query: string) => ({

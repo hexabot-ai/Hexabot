@@ -36,6 +36,8 @@ A model that used tools on every step before the last one has to answer on it, w
 
 The last step cannot call a tool, but like any model call it can return nothing (a content filter, an output token limit), so an empty `text` is still possible.
 
+A tool call the instructions require before the answer, such as saving to memory, may therefore never happen: a model that spent its steps on other tools reaches the last step without having made it, and is asked not to claim it did. When the workflow depends on that call, make it a step of the workflow after the action, or check `tool_calls`.
+
 With `stop_step_count: 1` there is no step for the answer: `step_limit_reached` is `true` when the single step ended on a tool call, no warning is logged since that is what the workflow asked for, and `ai_generate_object` and `ai_infer_object` throw an error naming the limit, as they have no object to return.
 
 ### How the last step is built
@@ -46,6 +48,6 @@ So the last step gets a rewritten copy of the conversation (`buildFinalStepMessa
 
 - Each tool result becomes text, with the name of its tool and the input of its call, in a user message.
 - The model's own messages keep their text only.
-- The conversation ends on a user message that asks for the final reply (`AI_FINAL_STEP_INSTRUCTION`). The system prompt is not changed.
+- The conversation ends on a user message that asks for the final reply (`AI_FINAL_STEP_INSTRUCTION`), without claiming any action that needs a tool. The system prompt is not changed.
 
 Only that model call sees the rewritten copy.

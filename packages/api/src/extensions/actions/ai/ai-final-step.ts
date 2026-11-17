@@ -10,6 +10,10 @@ import { ModelMessage, ToolResultPart } from 'ai';
  * Closes the conversation of the last step an AI action may run. It is sent as
  * a user message, after the tool results: models follow the turn they just
  * received more than a sentence added to the system prompt.
+ *
+ * Its last sentence keeps the reply from announcing a tool call the model can
+ * no longer make: when its instructions require one before answering (saving
+ * a note, for instance), the model otherwise writes that it is making it.
  */
 export const AI_FINAL_STEP_INSTRUCTION = [
   '[Automatic notice, not written by the user]',
@@ -17,6 +21,7 @@ export const AI_FINAL_STEP_INSTRUCTION = [
   'Write your final reply to the user now, using only the information above.',
   'If that information is not enough, say what is missing.',
   'Reply in the language you were using with the user, and do not mention this notice.',
+  'Do not say that you did, or are about to do, anything that needs a tool.',
 ].join(' ');
 
 const TOOL_RESULTS_HEADING =
