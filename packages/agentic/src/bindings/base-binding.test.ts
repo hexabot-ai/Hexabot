@@ -329,6 +329,68 @@ describe('validateAndResolveBindings', () => {
       ).toEqual([]);
     });
 
+    describe('of a def that names an action', () => {
+      // Like most actions of the API, this one refuses keys it does not own.
+      const actions = {
+        http: {
+          settingSchema: z.strictObject({ method: z.string().optional() }),
+        },
+      };
+      const fetchDef = (settings: Record<string, unknown>) => ({
+        fetch: { kind: 'tools', action: 'http', settings },
+      });
+
+      it('takes timeout_ms and retries as execution settings, as the action run does', () => {
+        expect(
+          codes(
+            fetchDef({
+              method: 'GET',
+              timeout_ms: 5000,
+              retries: { max_attempts: 2 },
+            }),
+            { bindingKinds: kinds, actions },
+          ),
+        ).toEqual([]);
+      });
+
+      it('checks the execution settings, even when the action declares no settings schema', () => {
+        const settings = { timeout_ms: -1, retries: { max_attempts: 0 } };
+        const paths = (options: object) =>
+          validate(fetchDef(settings), options).issues.map(
+            ({ code, path }) => ({ code, path }),
+          );
+        const expected = [
+          {
+            code: 'binding_settings',
+            path: ['defs', 'fetch', 'settings', 'timeout_ms'],
+          },
+          {
+            code: 'binding_settings',
+            path: ['defs', 'fetch', 'settings', 'retries', 'max_attempts'],
+          },
+        ];
+
+        expect(paths({ bindingKinds: kinds, actions })).toEqual(expected);
+        expect(paths({ bindingKinds: kinds, actions: { http: {} } })).toEqual(
+          expected,
+        );
+      });
+
+      it('refuses a key that is neither an execution setting nor the action’s', () => {
+        expect(
+          codes(fetchDef({ metod: 'GET', timeout_ms: 5000 }), {
+            bindingKinds: kinds,
+            actions,
+          }),
+        ).toEqual([
+          {
+            code: 'binding_settings',
+            message: 'defs.fetch.settings.<root>: Unrecognized key: "metod"',
+          },
+        ]);
+      });
+    });
+
     it('locates settings issues on the root of the settings', () => {
       expect(
         validate({ gpt: { kind: 'model', settings: 'gpt' } }).issues,

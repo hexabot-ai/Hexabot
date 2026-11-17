@@ -7,6 +7,10 @@
 import { z } from 'zod';
 
 import {
+  BaseSettingsSchema,
+  splitExecutionSettings,
+} from '../execution-settings';
+import {
   toValidationIssues,
   type WorkflowValidationIssue,
 } from '../validation-issue';
@@ -288,6 +292,30 @@ const actionPolicyIssues = (
   return [];
 };
 /**
+ * Check the settings a def hands to its action as `AbstractAction.run` reads
+ * them: the execution settings (`timeout_ms`, `retries`) against
+ * `BaseSettingsSchema`, the others against the action's own schema.
+ */
+const actionSettingsIssues = (
+  defName: string,
+  settings: unknown,
+  action: BindingValidationActionMetadata,
+): WorkflowValidationIssue[] => {
+  const { execution, own } = splitExecutionSettings(settings);
+  const executionParsed = BaseSettingsSchema.safeParse(execution);
+  // `?.` on `safeParse` too: hosts may pass serialized schemas.
+  const ownParsed = action.settingSchema?.safeParse?.(own);
+
+  return [
+    ...(executionParsed.success
+      ? []
+      : toBindingSettingsIssues(executionParsed.error.issues, defName)),
+    ...(ownParsed && !ownParsed.success
+      ? toBindingSettingsIssues(ownParsed.error.issues, defName)
+      : []),
+  ];
+};
+/**
  * Check the kind, action and settings of one def. Settings that match the
  * kind's schema are recorded in `parsedSettings`, for mounting.
  */
@@ -333,14 +361,11 @@ const validateDef = (
 
   parsedSettings.set(defName, parsed.data);
 
-  // `?.` on `safeParse` too: hosts may pass serialized schemas.
-  const actionParsed = definition.action
-    ? findAction(actions, definition.action)?.settingSchema?.safeParse?.(
-        definition.settings,
-      )
+  const action = definition.action
+    ? findAction(actions, definition.action)
     : undefined;
-  if (actionParsed && !actionParsed.success) {
-    issues.push(...toBindingSettingsIssues(actionParsed.error.issues, defName));
+  if (action) {
+    issues.push(...actionSettingsIssues(defName, definition.settings, action));
   }
 
   return issues;

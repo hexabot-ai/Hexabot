@@ -2,6 +2,22 @@
 
 `ai_agent`, `ai_generate_text`, `ai_generate_reply`, `ai_generate_object` and `ai_infer_object` call a language model through the Vercel AI SDK. They share their settings (`aiCommonSettingsSchema`) and the tool loop described here.
 
+## Tool settings
+
+A `kind: tools` def runs its `action` with the def's `settings` each time the model calls the tool. As on a task, `timeout_ms` and `retries` apply to each call, and the other keys must match the action's settings:
+
+```yaml
+defs:
+  fetch_page:
+    kind: tools
+    action: http_request
+    settings:
+      timeout_ms: 10000
+      retries: { max_attempts: 2 }
+```
+
+Unlike a task, a tool def does not inherit `defaults.settings`.
+
 ## Step limit
 
 When tools are bound (`tools`, `mcp` or `memory` bindings), the model works in steps. A step is one model call: the model either answers, which ends the action, or calls tools, whose results feed the next step. Several tool calls made in the same step count as one step.
