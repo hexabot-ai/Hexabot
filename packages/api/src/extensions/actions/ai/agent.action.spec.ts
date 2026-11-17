@@ -10,7 +10,7 @@ import { ActionService } from '@/actions/actions.service';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import { AiAgentAction } from './agent.action';
-import { AI_LAST_STEP_INSTRUCTION } from './ai-base.action';
+import { AI_FINAL_STEP_INSTRUCTION } from './ai-final-step';
 
 jest.mock('ai', () => {
   const generateFn = jest.fn();
@@ -221,9 +221,14 @@ describe('AiAgentAction', () => {
       'translate',
     ]);
     expect(stepCountIsMock).toHaveBeenCalledWith(10);
-    expect((agentOptions.prepareStep as any)({ stepNumber: 8 })).toEqual({});
-    expect((agentOptions.prepareStep as any)({ stepNumber: 9 })).toEqual({
-      system: `system prompt\n\n${AI_LAST_STEP_INSTRUCTION}`,
+    expect(
+      (agentOptions.prepareStep as any)({ stepNumber: 8, messages: [] }),
+    ).toEqual({});
+    expect(
+      (agentOptions.prepareStep as any)({ stepNumber: 9, messages: [] }),
+    ).toEqual({
+      messages: [{ role: 'user', content: AI_FINAL_STEP_INSTRUCTION }],
+      activeTools: [],
     });
     await (agentOptions.tools as any).search.execute({ query: 'hello' });
     expect(toolRun).toHaveBeenCalledWith(
@@ -441,50 +446,77 @@ describe('AiAgentAction', () => {
     ).toBe(true);
   });
 
-  it('reports a run the step limit ended on a tool call', async () => {
-    const provider = Object.assign(
-      jest.fn().mockReturnValue('model-instance'),
-      { languageModel: jest.fn() },
-    );
-    const context = createContext({
-      actions: {
-        get: jest.fn().mockReturnValue({
-          description: 'demo tool',
-          inputSchema: {},
-          outputSchema: {},
-          run: jest.fn(),
-        }),
-      },
-    });
+  describe('step limit', () => {
     const searchStep = {
       toolCalls: [{ toolName: 'search' }],
       toolResults: [],
     };
+    const answerStep = { toolCalls: [], toolResults: [] };
+    const runWithTwoSteps = (generated: Record<string, unknown>) => {
+      const provider = Object.assign(
+        jest.fn().mockReturnValue('model-instance'),
+        { languageModel: jest.fn() },
+      );
+      const context = createContext({
+        actions: {
+          get: jest.fn().mockReturnValue({
+            description: 'demo tool',
+            inputSchema: {},
+            outputSchema: {},
+            run: jest.fn(),
+          }),
+        },
+      });
 
-    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
-    toolLoopAgentGenerateMock.mockResolvedValue({
-      text: '',
-      finishReason: 'tool-calls',
-      rawFinishReason: 'tool_use',
-      steps: [searchStep, searchStep],
-    } as any);
+      jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+      toolLoopAgentGenerateMock.mockResolvedValue(generated as any);
 
-    const result = await action.execute({
-      input: { input_mode: 'prompt' as const, prompt: 'Search twice' },
-      settings: { timeout_ms: 0, retries: defaultRetries, stop_step_count: 2 },
-      context,
-      bindings: {
-        ...createModelBindings(),
-        tools: { search: { action: 'search_action' } },
-      },
+      return action.execute({
+        input: { input_mode: 'prompt' as const, prompt: 'Search twice' },
+        settings: {
+          timeout_ms: 0,
+          retries: defaultRetries,
+          stop_step_count: 2,
+        },
+        context,
+        bindings: {
+          ...createModelBindings(),
+          tools: { search: { action: 'search_action' } },
+        },
+      });
+    };
+
+    it('reports an answer written on the last step, and warns', async () => {
+      const result = await runWithTwoSteps({
+        text: 'We open at 9.',
+        finishReason: 'stop',
+        rawFinishReason: 'end_turn',
+        steps: [searchStep, answerStep],
+      });
+
+      expect(result.text).toBe('We open at 9.');
+      expect(result.step_limit_reached).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Model "gpt-4o-mini" used every step of the ai_agent action and answered on the last one without tools',
+        { step_count: 2 },
+      );
     });
 
-    expect(result.text).toBe('');
-    expect(result.step_limit_reached).toBe(true);
-    expect(logger.warn).toHaveBeenCalledWith(
-      'Model "gpt-4o-mini" reached the step limit of the ai_agent action without a final answer',
-      { step_count: 2 },
-    );
+    it('reports a run the step limit ended on a tool call', async () => {
+      const result = await runWithTwoSteps({
+        text: '',
+        finishReason: 'tool-calls',
+        rawFinishReason: 'tool_use',
+        steps: [searchStep, searchStep],
+      });
+
+      expect(result.text).toBe('');
+      expect(result.step_limit_reached).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Model "gpt-4o-mini" reached the step limit of the ai_agent action without a final answer',
+        { step_count: 2 },
+      );
+    });
   });
 
   it('loads MCP tools and merges them with action tools', async () => {

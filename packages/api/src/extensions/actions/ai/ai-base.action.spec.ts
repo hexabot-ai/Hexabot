@@ -17,12 +17,12 @@ import { RuntimeBindings } from '@/bindings/runtime-bindings';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
 import {
-  AI_LAST_STEP_INSTRUCTION,
   AiBaseAction,
   AiCommonSettings,
   LanguageModelProvider,
   ProviderInitOptions,
 } from './ai-base.action';
+import { AI_FINAL_STEP_INSTRUCTION } from './ai-final-step';
 import { DEFAULT_AI_STOP_STEP_COUNT } from './ai-schemas';
 
 jest.mock('@ai-sdk/openai', () => ({
@@ -1165,12 +1165,21 @@ describe('AiBaseAction', () => {
   describe('buildStopWhen', () => {
     const tools = { search: {} };
     const stepsOf = (count: number) => ({ steps: new Array(count).fill({}) });
+    const messages = [{ role: 'user', content: 'When do you open?' }];
     const prepare = (
       prepareStep: ReturnType<
         TestAiBaseAction['buildStopWhenPublic']
       >['prepareStep'],
       stepNumber: number,
-    ) => prepareStep?.({ stepNumber } as any);
+    ) => prepareStep?.({ stepNumber, messages } as any);
+    /** What the last step gets: no tools, and a conversation closed on the instruction. */
+    const answerOnly = {
+      messages: [
+        ...messages,
+        { role: 'user', content: AI_FINAL_STEP_INSTRUCTION },
+      ],
+      activeTools: [],
+    };
 
     it('sets no limit when no tool is bound', () => {
       expect(action.buildStopWhenPublic({})).toEqual({
@@ -1200,26 +1209,42 @@ describe('AiBaseAction', () => {
       expect(stopWhen(stepsOf(DEFAULT_AI_STOP_STEP_COUNT))).toBe(true);
     });
 
-    it('asks for the answer on the last step only, keeping the system prompt', () => {
+    it('takes the tools away on the last step only, and leaves the system prompt alone', () => {
       const { prepareStep } = action.buildStopWhenPublic(
         { stop_step_count: 3 },
         tools,
-        'Be brief.',
       );
 
       expect(prepare(prepareStep, 0)).toEqual({});
       expect(prepare(prepareStep, 1)).toEqual({});
-      expect(prepare(prepareStep, 2)).toEqual({
-        system: `Be brief.\n\n${AI_LAST_STEP_INSTRUCTION}`,
-      });
+      expect(prepare(prepareStep, 2)).toEqual(answerOnly);
     });
 
-    it('asks for the answer on the last default step without a system prompt', () => {
+    it('takes the tools away on the last default step', () => {
       const { prepareStep } = action.buildStopWhenPublic({}, tools);
 
       expect(prepare(prepareStep, DEFAULT_AI_STOP_STEP_COUNT - 2)).toEqual({});
-      expect(prepare(prepareStep, DEFAULT_AI_STOP_STEP_COUNT - 1)).toEqual({
-        system: AI_LAST_STEP_INSTRUCTION,
+      expect(prepare(prepareStep, DEFAULT_AI_STOP_STEP_COUNT - 1)).toEqual(
+        answerOnly,
+      );
+    });
+
+    it('adds the last step instructions after the built-in ones', () => {
+      const { prepareStep } = action.buildStopWhenPublic(
+        { stop_step_count: 2, last_step_instructions: 'Offer a callback.' },
+        tools,
+      );
+
+      expect(prepare(prepareStep, 0)).toEqual({});
+      expect(prepare(prepareStep, 1)).toEqual({
+        messages: [
+          ...messages,
+          {
+            role: 'user',
+            content: `${AI_FINAL_STEP_INSTRUCTION}\n\nOffer a callback.`,
+          },
+        ],
+        activeTools: [],
       });
     });
 
@@ -1260,11 +1285,29 @@ describe('AiBaseAction', () => {
       ).toBe(true);
     });
 
-    it('is false when the model answered', () => {
+    it('is true when the model answered on the step reserved for the answer', () => {
       expect(
         action.isStepLimitReachedPublic(
           { finishReason: 'stop', steps: [step('search'), step()] },
-          { stepCount: 2 },
+          { stepCount: 2, answersOnLastStep: true },
+        ),
+      ).toBe(true);
+    });
+
+    it('is false when the model answered before the step reserved for the answer', () => {
+      expect(
+        action.isStepLimitReachedPublic(
+          { finishReason: 'stop', steps: [step('search'), step()] },
+          { stepCount: 3, answersOnLastStep: true },
+        ),
+      ).toBe(false);
+    });
+
+    it('is false when the model answered and no step is reserved for the answer', () => {
+      expect(
+        action.isStepLimitReachedPublic(
+          { finishReason: 'stop', steps: [step()] },
+          { stepCount: 1 },
         ),
       ).toBe(false);
     });

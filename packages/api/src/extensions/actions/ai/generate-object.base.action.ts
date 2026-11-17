@@ -66,7 +66,13 @@ export abstract class AiGenerateObjectBaseAction<
       ...(prepareStep ? { prepareStep } : {}),
     });
     const stepLimitReached = isStepLimitReached(result);
-    const object = this.readObject(result, stepLimitReached, stepCount);
+    const object = this.readObject(
+      result,
+      // The limit only explains a missing object when it ended the run on a
+      // tool call; a last step cut short otherwise keeps its own error.
+      stepLimitReached && result.finishReason === 'tool-calls',
+      stepCount,
+    );
     const reasoning = this.extractReasoning(result);
 
     return {

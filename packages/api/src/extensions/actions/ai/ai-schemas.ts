@@ -222,7 +222,7 @@ export const aiCommonSettingsSchema = z.strictObject({
     .optional()
     .meta({
       title: 'Max steps',
-      description: `Maximum number of model calls when tools are bound; each call can run several tools. Defaults to ${DEFAULT_AI_STOP_STEP_COUNT}. When more than one step is allowed, the last one is reserved for the final answer.`,
+      description: `Maximum number of model calls when tools are bound; each call can run several tools. Defaults to ${DEFAULT_AI_STOP_STEP_COUNT}. When more than one step is allowed, the last one is reserved for the final answer and has no tools.`,
       'ui:options': {
         hideUntilAdded: true,
       },
@@ -235,6 +235,20 @@ export const aiCommonSettingsSchema = z.strictObject({
     .meta({
       title: 'Stop tool call',
       description: 'Stop when the specified tool call is triggered.',
+      'ui:options': {
+        hideUntilAdded: true,
+      },
+    }),
+  last_step_instructions: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .meta({
+      title: 'Last step instructions',
+      description:
+        'Instructions added after the built-in ones on the step reserved for the final answer, when the model used every other step to call tools. Use them to shape that answer, for instance to offer a hand-over to a human.',
+      'ui:widget': 'textarea',
       'ui:options': {
         hideUntilAdded: true,
       },
