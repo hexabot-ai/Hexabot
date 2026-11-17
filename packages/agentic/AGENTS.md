@@ -24,7 +24,7 @@ Use this file as the predictable entrypoint for AI coding agents working on the 
 - Expressions: any string starting with `=` is JSONata; everything else is literal. Scopes: `$input`, `$context`, `$output`, `$iteration` (`item`, `index`), `$accumulator`.
 - Flow primitives: `do` (single task def reference), `parallel` (`strategy: wait_all|wait_any`), `conditional` (first truthy branch wins; optional `else`), `loop` with required `type` discriminator (`for_each` or `while`), optional `accumulate`, and `max_concurrency` hint on `for_each` loops.
 - Defs: `defs.<name>` is the only root registry. `kind: task` defs execute actions (`action`, optional `inputs`/`settings`/`bindings`), non-task defs require `settings` and may also declare nested `bindings`.
-- Bindings: any def may declare `bindings`; validation is recursive and enforces cardinality, kind matching, duplicates, cycles, and allowlists from `action.supportedBindings` or `kind.supportedBindings`.
+- Bindings: any def may declare `bindings`; validation is recursive and enforces cardinality, kind matching, duplicates, cycles, and allowlists from `action.supportedBindings` or `kind.supportedBindings`. A non-task def that names a catalog action has its `settings` checked as `AbstractAction.run` reads them (`splitExecutionSettings`, `src/execution-settings.ts`): `timeout_ms`/`retries` against `BaseSettingsSchema`, the rest against the action's `settingSchema`.
 - Outputs: required map evaluated after the flow; values are expressions that usually reference `$output.<task>.*`.
 
 ## Runtime architecture (TS)

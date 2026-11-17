@@ -43,6 +43,7 @@ import {
   WebhookTokenResult,
   WebhookTriggerService,
 } from '../services/webhook-trigger.service';
+import { WorkflowVersionService } from '../services/workflow-version.service';
 import { WorkflowService } from '../services/workflow.service';
 import { WorkflowType } from '../types';
 
@@ -54,6 +55,7 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
     private readonly actionService: ActionService,
     private readonly runtimeBindingsService: RuntimeBindingsService,
     private readonly i18nService: I18nService,
+    private readonly workflowVersionService: WorkflowVersionService,
   ) {
     super(workflowService);
   }
@@ -205,7 +207,8 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
   }
 
   /**
-   * Publishes the current workflow version.
+   * Publishes the current workflow version, unless its definition is invalid
+   * against the registered actions and binding kinds (`400`).
    *
    * @param id - The workflow ID.
    * @param req - Express request containing the authenticated session.
@@ -235,6 +238,11 @@ export class WorkflowController extends BaseOrmController<WorkflowOrmEntity> {
         'Workflow must have a current version to be published',
       );
     }
+
+    await this.workflowVersionService.assertPublishable(
+      workflow.currentVersion,
+      workflow.type,
+    );
 
     return await this.workflowService.updateOne(id, {
       publishedVersion: workflow.currentVersion,

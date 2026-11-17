@@ -4,7 +4,6 @@
  * Full terms: see LICENSE.md.
  */
 
-import { validateWorkflow } from '@hexabot-ai/agentic';
 import { WorkflowVersion } from '@hexabot-ai/types';
 import {
   BadRequestException,
@@ -22,6 +21,7 @@ import { WorkflowOrmEntity } from '../entities/workflow.entity';
 import {
   assertInputsDeclarable,
   assertTaskActionsSupported,
+  parseWorkflowDefinition,
 } from '../lib/workflow-definition';
 import { WorkflowVersionRepository } from '../repositories/workflow-version.repository';
 import { WorkflowType, WorkflowVersionAction } from '../types';
@@ -161,39 +161,61 @@ export class WorkflowVersionService extends BaseOrmService<WorkflowVersionOrmEnt
   }
 
   /**
-   * Refuse a definition its workflow's type cannot run: one that uses an
-   * action the type does not support (`BaseAction.workflowTypes`), since no
-   * run of it could compile, or one that declares `inputs` although the type
-   * fixes the input. Run by every snapshot, and by callers that check a
-   * definition before creating its workflow.
+   * Refuse a definition that no run could compile: one that is invalid
+   * against the registered actions and binding kinds, as `WorkflowCompiler`
+   * checks it (missing actions, action inputs and settings, supported
+   * bindings), one that uses an action its workflow's type does not support
+   * (`BaseAction.workflowTypes`), or one that declares `inputs` although the
+   * type fixes the input. Run by every snapshot, by publishing, and by
+   * callers that check a definition before creating its workflow.
    *
    * @param definitionYml The definition to save.
-   * @param workflowType The type of its workflow; nothing is checked without
-   * it, as the version cannot be saved anyway.
-   * @throws {BadRequestException} Saying what the type does not support.
+   * @param workflowType The type of its workflow; the checks of the type are
+   * skipped without it, as the version cannot be saved anyway.
+   * @throws {BadRequestException} Listing the issues of the definition, or
+   * saying what the type does not support.
    */
   assertDefinitionSupported(
     definitionYml: string,
     workflowType: WorkflowType | undefined,
   ): void {
-    // A definition that does not parse is refused by the YAML validation of
-    // the callers.
-    const parsed = validateWorkflow(definitionYml);
-    if (!workflowType || !parsed.success) {
-      return;
-    }
+    const actions = this.actionService.getRegistry();
 
     try {
-      assertInputsDeclarable(parsed.data, workflowType);
-      assertTaskActionsSupported(
-        parsed.data,
-        workflowType,
-        this.actionService.getRegistry(),
-      );
+      const definition = parseWorkflowDefinition(definitionYml, { actions });
+      if (workflowType) {
+        assertInputsDeclarable(definition, workflowType);
+        assertTaskActionsSupported(definition, workflowType, actions);
+      }
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  /**
+   * Refuse to publish a workflow whose current version no run could compile
+   * (see `assertDefinitionSupported`). Saving refuses such a version too;
+   * this covers the versions saved before that check, and the actions or
+   * binding kinds uninstalled since.
+   *
+   * @param versionId The current version of the workflow to publish.
+   * @param workflowType The type of the workflow.
+   * @throws {NotFoundException} When the version does not exist.
+   * @throws {BadRequestException} When the definition cannot run.
+   */
+  async assertPublishable(
+    versionId: string,
+    workflowType: WorkflowType,
+  ): Promise<void> {
+    const version = await this.findOne(versionId);
+    if (!version) {
+      throw new NotFoundException(
+        `Workflow version with ID ${versionId} not found`,
+      );
+    }
+
+    this.assertDefinitionSupported(version.definitionYml, workflowType);
   }
 }

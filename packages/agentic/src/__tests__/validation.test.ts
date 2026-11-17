@@ -761,6 +761,17 @@ describe('validateWorkflow', () => {
         validateWorkflow(buildWorkflow({ include_inactive: false }), options)
           .success,
       ).toBe(true);
+      // The action runs with these, as a task's action does.
+      expect(
+        validateWorkflow(
+          buildWorkflow({
+            include_inactive: false,
+            timeout_ms: 5000,
+            retries: { max_attempts: 2 },
+          }),
+          options,
+        ).success,
+      ).toBe(true);
     });
 
     it('ignores serialized action schemas during binding validation', () => {

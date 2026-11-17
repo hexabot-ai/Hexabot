@@ -16,10 +16,12 @@ import { resolveWorkflowInputSchema, Workflow } from '@hexabot-ai/types';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { JSONSchema7 as JsonSchema } from 'json-schema';
 
+import { ActionService } from '@/actions/actions.service';
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
+import { registerNoopActions } from '@/utils/test/noop-actions';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
@@ -120,6 +122,7 @@ describe('WorkflowService (TypeORM)', () => {
       WorkflowRunService,
       WorkflowRepository,
     ]);
+    registerNoopActions(testing.module.get(ActionService), ['greet']);
   });
 
   beforeEach(async () => {

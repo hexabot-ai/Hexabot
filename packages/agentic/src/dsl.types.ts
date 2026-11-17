@@ -10,7 +10,10 @@ import { z } from 'zod';
 
 import type { BindingKindSchemas } from './bindings/base-binding';
 import { validateAndResolveBindings } from './bindings/base-binding';
-import { isRecord } from './utils/clone';
+import {
+  BaseSettingsSchema,
+  splitExecutionSettings,
+} from './execution-settings';
 import { collectTaskReferences } from './utils/flow-steps';
 import { SNAKE_CASE_REGEX } from './utils/naming';
 import { getValueAtPath } from './utils/object-path';
@@ -45,18 +48,11 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-// Per-action timeout in milliseconds; 0 disables the timeout wrapper.
-export const DEFAULT_TIMEOUT_MS = 0;
-
-// Retry defaults: disabled with 3 attempts and exponential backoff starting at 25ms, capped at 10s, no jitter.
-export const DEFAULT_RETRY_SETTINGS = {
-  enabled: false,
-  max_attempts: 3,
-  backoff_ms: 25,
-  max_delay_ms: 10_000,
-  jitter: 0,
-  multiplier: 1,
-} as const;
+export {
+  BaseSettingsSchema,
+  DEFAULT_RETRY_SETTINGS,
+  DEFAULT_TIMEOUT_MS,
+} from './execution-settings';
 
 /**
  * JSON Schema of the input payload of a workflow, as written under
@@ -180,59 +176,6 @@ const WorkflowInputSchemaSchema: z.ZodType<WorkflowInputSchema> = z
       });
     }
   });
-// Retry policy: exponential backoff per attempt, capped by max_delay_ms, with optional jitter multiplier.
-const RetriesSchema = z.strictObject({
-  enabled: z.boolean().optional().meta({
-    title: 'Enabled',
-    description:
-      'Enable retry attempts when an action fails (disabled = no retries).',
-  }),
-  max_attempts: z
-    .int()
-    .min(1)
-    .default(DEFAULT_RETRY_SETTINGS.max_attempts)
-    .meta({
-      title: 'Max Attempts',
-      description: 'Total number of attempts before giving up.',
-    }),
-  backoff_ms: z.int().min(0).default(DEFAULT_RETRY_SETTINGS.backoff_ms).meta({
-    title: 'Initial Backoff (ms)',
-    description: 'Delay in milliseconds before the first retry.',
-  }),
-  max_delay_ms: z
-    .int()
-    .min(0)
-    .default(DEFAULT_RETRY_SETTINGS.max_delay_ms)
-    .meta({
-      title: 'Max Delay (ms)',
-      description: 'Maximum delay cap in milliseconds between retries.',
-    }),
-  jitter: z.number().min(0).default(DEFAULT_RETRY_SETTINGS.jitter).meta({
-    title: 'Jitter',
-    description: 'Randomization factor applied to retry delays (0 = none).',
-  }),
-  multiplier: z
-    .number()
-    .min(1)
-    .default(DEFAULT_RETRY_SETTINGS.multiplier)
-    .meta({
-      title: 'Backoff Multiplier',
-      description: 'Multiplier applied to the delay after each retry.',
-    }),
-});
-
-// Shared execution settings applied to every action invocation.
-export const BaseSettingsSchema = z.strictObject({
-  timeout_ms: z.int().nonnegative().optional().meta({
-    title: 'Timeout (ms)',
-    description:
-      'Maximum runtime in milliseconds for a single action invocation (0 = disabled).',
-  }),
-  retries: RetriesSchema.optional().meta({
-    title: 'Retries',
-    description: 'Retry policy applied when an action fails.',
-  }),
-});
 
 export const SettingsSchema = BaseSettingsSchema.catchall(JsonValueSchema);
 
@@ -407,18 +350,6 @@ export const extractTaskDefinitions = (defs: DefDefinitions): TaskDefinitions =>
     return tasks;
   }, {});
 
-const EXECUTION_SETTING_KEYS = new Set(Object.keys(BaseSettingsSchema.shape));
-const extractActionSettings = (settings: unknown): Record<string, unknown> => {
-  if (!isRecord(settings)) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(settings).filter(
-      ([key]) => !EXECUTION_SETTING_KEYS.has(key),
-    ),
-  );
-};
 const toActionSchemaIssues = ({
   actionName,
   code,
@@ -505,7 +436,7 @@ const validateTaskActionSchemas = (
         ...toActionSchemaIssues({
           actionName: task.action,
           code: 'action_settings',
-          payload: extractActionSettings(effectiveSettings),
+          payload: splitExecutionSettings(effectiveSettings).own,
           schema: action.settingSchema,
           section: 'settings',
           taskId,

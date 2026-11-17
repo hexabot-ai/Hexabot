@@ -41,12 +41,14 @@ import {
   messagingWorkflowFixtures,
 } from '@/utils/test/fixtures/workflow';
 import { I18nServiceProvider } from '@/utils/test/providers/i18n-service.provider';
+import { getLastTypeOrmDataSource } from '@/utils/test/test';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 import type { WebsocketGateway } from '@/websocket/websocket.gateway';
 
 import { ManualWorkflowContext } from '../contexts/manual-workflow.context';
 import { WorkflowUpdateDto } from '../dto/workflow.dto';
+import { WorkflowVersionOrmEntity } from '../entities/workflow-version.entity';
 import {
   ManualEventWrapper,
   ScheduledEventWrapper,
@@ -762,6 +764,51 @@ describe('WorkflowController (TypeORM)', () => {
           'Workflow must have a current version to be published',
         ),
       );
+    });
+
+    it('does not publish a current version that cannot run', async () => {
+      const created = await workflowService.create({
+        ...buildWorkflowPayload(),
+        createdBy: userFixtureIds.admin,
+      });
+      createdWorkflowIds.add(created.id);
+      // Saved before saving checked the registered actions.
+      const versionRepository = getLastTypeOrmDataSource().getRepository(
+        WorkflowVersionOrmEntity,
+      );
+      const version = await versionRepository.save(
+        versionRepository.create({
+          workflow: { id: created.id },
+          version: 1,
+          definitionYml: [
+            'defs:',
+            '  ask:',
+            '    kind: task',
+            '    action: not_installed',
+            'flow:',
+            '  - do: ask',
+            'outputs: {}',
+          ].join('\n'),
+          action: WorkflowVersionAction.update,
+        }),
+      );
+      await workflowService.updateOne(created.id, {
+        currentVersion: version.id,
+      });
+
+      await expect(
+        workflowController.publish(created.id, {
+          session: { passport: { user: { id: userFixtureIds.admin } } },
+        } as any),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Invalid workflow YAML: defs.ask.action: No action implementation ' +
+            'provided for "not_installed".',
+        ),
+      );
+      const after = await workflowService.findOne(created.id);
+
+      expect(after?.publishedVersion ?? null).toBeNull();
     });
   });
 

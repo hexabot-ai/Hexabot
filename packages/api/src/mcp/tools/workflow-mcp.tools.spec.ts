@@ -46,6 +46,7 @@ const creator = {
 const defaultWorkflowVersionService = () => ({
   commit: jest.fn(),
   restoreVersion: jest.fn(),
+  assertPublishable: jest.fn().mockResolvedValue(undefined),
 });
 const buildWorkflowHelper = (
   workflowService: Record<string, unknown>,
@@ -271,6 +272,7 @@ describe('HexabotWorkflowMcpTools', () => {
     const workflowService = {
       findOne: jest.fn().mockResolvedValue({
         id: 'workflow-id',
+        type: WorkflowType.manual,
         currentVersion: 'current-version-id',
       }),
       updateOne: jest.fn().mockResolvedValue({
@@ -280,7 +282,11 @@ describe('HexabotWorkflowMcpTools', () => {
       }),
       findOneAndPopulate: jest.fn().mockResolvedValue(publishedWorkflow),
     };
-    const tools = buildWorkflowTools({ workflowService });
+    const workflowVersionService = defaultWorkflowVersionService();
+    const tools = buildWorkflowTools({
+      workflowService,
+      workflowVersionService,
+    });
 
     await expect(tools.publishWorkflow({ id: 'workflow-id' })).resolves.toEqual(
       expect.objectContaining({
@@ -291,9 +297,40 @@ describe('HexabotWorkflowMcpTools', () => {
         publishedVersionId: 'current-version-id',
       }),
     );
+    expect(workflowVersionService.assertPublishable).toHaveBeenCalledWith(
+      'current-version-id',
+      WorkflowType.manual,
+    );
     expect(workflowService.updateOne).toHaveBeenCalledWith('workflow-id', {
       publishedVersion: 'current-version-id',
     });
+  });
+
+  it('does not publish a current version that cannot run', async () => {
+    const workflowService = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'workflow-id',
+        type: WorkflowType.manual,
+        currentVersion: 'current-version-id',
+      }),
+      updateOne: jest.fn(),
+    };
+    const refusal = new BadRequestException(
+      'Invalid workflow YAML: defs.fetch.settings.<root>: Unrecognized key: "metod"',
+    );
+    const workflowVersionService = {
+      ...defaultWorkflowVersionService(),
+      assertPublishable: jest.fn().mockRejectedValue(refusal),
+    };
+    const tools = buildWorkflowTools({
+      workflowService,
+      workflowVersionService,
+    });
+
+    await expect(tools.publishWorkflow({ id: 'workflow-id' })).rejects.toBe(
+      refusal,
+    );
+    expect(workflowService.updateOne).not.toHaveBeenCalled();
   });
 
   it('unpublishes the workflow without changing the current version', async () => {

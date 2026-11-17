@@ -8,19 +8,34 @@ import {
   extractTaskDefinitions,
   issueMessages,
   validateWorkflow,
+  ValidateWorkflowOptions,
   WorkflowDefinition,
 } from '@hexabot-ai/agentic';
 import { WorkflowType } from '@hexabot-ai/types';
 
 import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
 
+/**
+ * Parse and validate a workflow definition against the registered binding
+ * kinds.
+ *
+ * @param definitionYaml The definition, as YAML.
+ * @param options.actions The registered actions, by name. With them, the
+ * definition is also checked against the action catalog (missing actions,
+ * action inputs and settings, supported bindings), as compiling it does:
+ * pass them wherever a definition is saved, so that what is saved can run.
+ * Without them, only what the YAML says on its own is checked. Actions are
+ * checked against the workflow type by `assertTaskActionsSupported`, where
+ * the workflow is known.
+ * @throws When the definition is invalid, listing every issue.
+ */
 export const parseWorkflowDefinition = (
   definitionYaml: string,
+  options: Pick<ValidateWorkflowOptions, 'actions'> = {},
 ): WorkflowDefinition => {
-  // Actions are checked against the workflow type by
-  // `assertTaskActionsSupported`, where the workflow is known.
   const validation = validateWorkflow(definitionYaml, {
     bindingKinds: RuntimeBindingsService.getRegistry(),
+    actions: options.actions,
   });
 
   if (!validation.success) {

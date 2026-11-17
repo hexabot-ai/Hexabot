@@ -78,7 +78,8 @@ Example: `defs.understand_request` calls an LLM with a system prompt, user query
   - every referenced def must exist;
   - the referenced def `kind` must exactly match the task binding key;
   - duplicate refs in a single binding list are rejected;
-  - workflows that use `defs`/`bindings` require a non-empty `bindingKinds` registry at compile/validation time.
+  - workflows that use `defs`/`bindings` require a non-empty `bindingKinds` registry at compile/validation time;
+  - the `settings` of a non-task def must match its kind's schema. When the def names an action found in the `actions` catalog, they are also that action's settings and are checked as a task's are: `timeout_ms` and `retries` against the execution settings, the other keys against the action's `settingSchema`. Unlike a task, the def does not inherit `defaults.settings`.
 - Runtime mounting:
   - `multiple: true` kinds mount as `{ [kind]: { [defName]: parsedPayload } }`;
   - `multiple: false` kinds mount as `{ [kind]: parsedPayload }`;

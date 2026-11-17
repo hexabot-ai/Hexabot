@@ -10,12 +10,14 @@ import { Workflow as WorkflowHelper } from '@hexabot-ai/agentic';
 import { INestApplication, NotFoundException } from '@nestjs/common';
 import request from 'supertest';
 
+import { ActionService } from '@/actions/actions.service';
 import { LoggerService } from '@/logger/logger.service';
 import { userFixtureIds } from '@/utils/test/fixtures/user';
 import {
   installMessagingWorkflowFixturesTypeOrm,
   installScheduledWorkflowFixturesTypeOrm,
 } from '@/utils/test/fixtures/workflow';
+import { registerNoopActions } from '@/utils/test/noop-actions';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
@@ -64,7 +66,7 @@ describe('WorkflowVersionController (TypeORM)', () => {
   };
 
   beforeAll(async () => {
-    const { getMocks } = await buildTestingMocks({
+    const { getMocks, module } = await buildTestingMocks({
       autoInjectFrom: ['controllers'],
       controllers: [WorkflowVersionController],
       providers: [
@@ -85,6 +87,7 @@ describe('WorkflowVersionController (TypeORM)', () => {
       WorkflowService,
       WorkflowVersionService,
     ]);
+    registerNoopActions(module.get(ActionService), ['send_text_message']);
     logger = controller.logger;
   });
 

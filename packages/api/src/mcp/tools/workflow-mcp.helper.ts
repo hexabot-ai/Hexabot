@@ -140,6 +140,22 @@ export class HexabotWorkflowMcpHelper {
     }
   }
 
+  /**
+   * Run the checks publishing runs on a workflow's current version: the ones
+   * saving runs, which versions saved before them may fail.
+   *
+   * @throws {BadRequestException} When the definition cannot run.
+   */
+  async assertPublishable(
+    versionId: string,
+    workflowType: WorkflowType,
+  ): Promise<void> {
+    await this.workflowVersionService.assertPublishable(
+      versionId,
+      workflowType,
+    );
+  }
+
   private assertDefinitionParses(definitionYml: string): void {
     try {
       parseWorkflowDefinition(definitionYml);
