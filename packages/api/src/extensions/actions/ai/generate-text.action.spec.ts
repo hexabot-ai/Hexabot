@@ -9,7 +9,7 @@ import { generateText, hasToolCall, stepCountIs } from 'ai';
 import { ActionService } from '@/actions/actions.service';
 import { WorkflowRuntimeContext } from '@/workflow/contexts/workflow-runtime.context';
 
-import { AI_LAST_STEP_INSTRUCTION } from './ai-base.action';
+import { AI_FINAL_STEP_INSTRUCTION } from './ai-final-step';
 import { AiGenerateTextAction } from './generate-text.action';
 
 jest.mock('ai', () => ({
@@ -112,6 +112,7 @@ describe('AiGenerateTextAction', () => {
     generateTextMock.mockResolvedValue({
       text: 'Generated text',
       finishReason: 'stop',
+      steps: [],
       usage: {
         inputTokens: 10,
         inputTokenDetails: {
@@ -273,6 +274,7 @@ describe('AiGenerateTextAction', () => {
     generateTextMock.mockResolvedValue({
       text: 'Generated text',
       finishReason: 'stop',
+      steps: [],
       request: { foo: 'req' },
       response: { status: 200 },
       providerMetadata: {},
@@ -346,6 +348,7 @@ describe('AiGenerateTextAction', () => {
     generateTextMock.mockResolvedValue({
       text: 'Generated text',
       finishReason: 'stop',
+      steps: [],
       request: { foo: 'req' },
       response: { status: 200 },
       providerMetadata: {},
@@ -372,9 +375,10 @@ describe('AiGenerateTextAction', () => {
     expect(typeof stopWhen).toBe('function');
     expect(stopWhen({ steps: new Array(10).fill({}) })).toBe(true);
     expect(stopWhen({ steps: new Array(9).fill({}) })).toBe(false);
-    expect(callArgs.prepareStep({ stepNumber: 8 })).toEqual({});
-    expect(callArgs.prepareStep({ stepNumber: 9 })).toEqual({
-      system: AI_LAST_STEP_INSTRUCTION,
+    expect(callArgs.prepareStep({ stepNumber: 8, messages: [] })).toEqual({});
+    expect(callArgs.prepareStep({ stepNumber: 9, messages: [] })).toEqual({
+      messages: [{ role: 'user', content: AI_FINAL_STEP_INSTRUCTION }],
+      activeTools: [],
     });
     expect(result.step_limit_reached).toBe(false);
     expect(logger.warn).not.toHaveBeenCalled();
@@ -413,6 +417,7 @@ describe('AiGenerateTextAction', () => {
     generateTextMock.mockResolvedValue({
       text: 'Generated text',
       finishReason: 'stop',
+      steps: [],
       request: { foo: 'req' },
       response: { status: 200 },
       providerMetadata: {},
@@ -490,6 +495,39 @@ describe('AiGenerateTextAction', () => {
       return { output, callArgs: generateTextMock.mock.calls[0][0] as any };
     };
     const searchStep = { toolCalls: [{ toolName: 'search' }] };
+
+    it('reports an answer written on the last step, and warns', async () => {
+      const { output } = await runWithSearchTool(
+        { stop_step_count: 2 },
+        {
+          text: 'We open at 9.',
+          finishReason: 'stop',
+          steps: [searchStep, { toolCalls: [] }],
+        },
+      );
+
+      expect(output.text).toBe('We open at 9.');
+      expect(output.step_limit_reached).toBe(true);
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Model "gpt-4o-mini" used every step of the ai_generate_text action and answered on the last one without tools',
+        { step_count: 2 },
+      );
+    });
+
+    it('does not report an answer written before the last step', async () => {
+      const { output } = await runWithSearchTool(
+        { stop_step_count: 3 },
+        {
+          text: 'We open at 9.',
+          finishReason: 'stop',
+          steps: [searchStep, { toolCalls: [] }],
+        },
+      );
+
+      expect(output.step_limit_reached).toBe(false);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
 
     it('reports a run the limit ended on a tool call, and warns', async () => {
       const { output } = await runWithSearchTool(
@@ -574,6 +612,7 @@ describe('AiGenerateTextAction', () => {
     generateTextMock.mockResolvedValue({
       text: 'Generated text',
       finishReason: 'stop',
+      steps: [],
       request: { foo: 'req' },
       response: { status: 200 },
       providerMetadata: {},

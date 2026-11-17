@@ -222,7 +222,7 @@ export const aiCommonSettingsSchema = z.strictObject({
     .optional()
     .meta({
       title: 'Max steps',
-      description: `Maximum number of model calls when tools are bound; each call can run several tools. Defaults to ${DEFAULT_AI_STOP_STEP_COUNT}. When more than one step is allowed, the last one is reserved for the final answer.`,
+      description: `Maximum number of model calls when tools are bound; each call can run several tools. Defaults to ${DEFAULT_AI_STOP_STEP_COUNT}. When more than one step is allowed, the last one is reserved for the final answer and has no tools.`,
       'ui:options': {
         hideUntilAdded: true,
       },

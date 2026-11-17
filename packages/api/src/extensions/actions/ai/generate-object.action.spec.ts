@@ -308,6 +308,15 @@ describe('AiGenerateObjectAction', () => {
         run({}, { finishReason: 'length', steps: [searchStep] }),
       ).rejects.toBe(noOutput);
     });
+
+    it('rethrows the error of the AI SDK when the last step was cut short for another reason', async () => {
+      await expect(
+        run(
+          { stop_step_count: 2 },
+          { finishReason: 'length', steps: [searchStep, { toolCalls: [] }] },
+        ),
+      ).rejects.toBe(noOutput);
+    });
   });
 
   it('throws when the model binding is missing', async () => {
