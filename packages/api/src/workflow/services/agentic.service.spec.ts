@@ -275,6 +275,11 @@ describe('AgenticService (TypeORM)', () => {
       createdBy: initiator.id,
     });
 
+    // Saving checks the tasks of the definition against the registry.
+    actionServiceMock.getRegistry.mockReturnValueOnce({
+      send_text_message: {},
+      send_quick_replies: {},
+    });
     await workflowVersionService.commit({
       workflow: created.id,
       definitionYml: AgenticWorkflow.stringifyDefinition(

@@ -17,11 +17,13 @@ import { Workflow } from '@hexabot-ai/types';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DataSource } from 'typeorm';
 
+import { ActionService } from '@/actions/actions.service';
 import { config } from '@/config';
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
+import { registerNoopActions } from '@/utils/test/noop-actions';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
@@ -224,6 +226,7 @@ describe('WorkflowRunRecoveryService (TypeORM)', () => {
       WorkflowVersionService,
       EventEmitter2,
     ]);
+    registerNoopActions(testing.module.get(ActionService), ['greet']);
   });
 
   beforeEach(async () => {

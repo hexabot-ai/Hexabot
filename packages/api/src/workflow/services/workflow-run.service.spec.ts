@@ -18,11 +18,13 @@ import {
 import { Workflow, WorkflowRun, WorkflowRunFull } from '@hexabot-ai/types';
 import { DataSource } from 'typeorm';
 
+import { ActionService } from '@/actions/actions.service';
 import { config } from '@/config';
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
 } from '@/utils/test/fixtures/user';
+import { registerNoopActions } from '@/utils/test/noop-actions';
 import { buildTestingMocks } from '@/utils/test/utils';
 import { WEBSOCKET_GATEWAY } from '@/websocket/tokens';
 
@@ -182,6 +184,7 @@ describe('WorkflowRunService (TypeORM)', () => {
       WorkflowRunRepository,
       WorkflowVersionService,
     ]);
+    registerNoopActions(testing.module.get(ActionService), ['greet']);
   });
 
   beforeEach(async () => {

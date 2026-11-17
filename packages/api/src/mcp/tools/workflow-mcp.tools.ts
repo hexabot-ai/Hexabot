@@ -228,7 +228,8 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
   @McpPermission('workflow', Action.UPDATE)
   @Tool({
     name: 'hexabot_workflow_publish',
-    description: 'Publish the current workflow version.',
+    description:
+      'Publish the current workflow version. Refused when its definition does not validate against the installed actions and binding kinds (as hexabot_workflow_yaml_validate reports).',
     parameters: z.object({
       id: uuidSchema,
     }),
@@ -244,6 +245,10 @@ export class HexabotWorkflowMcpTools extends HexabotMcpToolBase {
       );
     }
 
+    await this.workflowHelper.assertPublishable(
+      workflow.currentVersion,
+      workflow.type,
+    );
     await this.workflowService.updateOne(args.id, {
       publishedVersion: workflow.currentVersion,
     });

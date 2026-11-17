@@ -11,10 +11,12 @@ import {
   DEFAULT_TIMEOUT_MS,
   validateWorkflow,
 } from '@hexabot-ai/agentic';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { z } from 'zod';
 
 import { ActionService } from '@/actions/actions.service';
+import { RuntimeBindingsService } from '@/bindings/runtime-bindings.service';
 import {
   installUserFixturesTypeOrm,
   userFixtureIds,
@@ -28,6 +30,10 @@ import { WorkflowOrmEntity } from '../entities/workflow.entity';
 import { WorkflowType, WorkflowVersionAction } from '../types';
 
 import { WorkflowVersionService } from './workflow-version.service';
+
+/** A valid definition; `marker` makes the YAML, and so its checksum, unique. */
+const emptyDefinitionYml = (marker = '') =>
+  `${marker ? `# ${marker}\n` : ''}defs: {}\nflow: []\noutputs: {}\n`;
 
 describe('WorkflowVersionService (TypeORM)', () => {
   let workflowVersionService: WorkflowVersionService;
@@ -71,6 +77,24 @@ describe('WorkflowVersionService (TypeORM)', () => {
     jest.clearAllMocks();
     jest.useRealTimers();
   });
+  const countVersions = async (workflowId: string) =>
+    await workflowVersionService.count({
+      where: { workflow: { id: workflowId } },
+    });
+  const unregisteredActionYml = [
+    'defs:',
+    '  ask:',
+    '    kind: task',
+    '    action: not_installed',
+    'flow:',
+    '  - do: ask',
+    'outputs: {}',
+  ].join('\n');
+  const unregisteredActionError = new BadRequestException(
+    'Invalid workflow YAML: defs.ask.action: No action implementation ' +
+      'provided for "not_installed".',
+  );
+
   describe('createSnapshot', () => {
     it('creates a blank version with global defaults when workflow is created', async () => {
       const workflow = await createWorkflow();
@@ -131,7 +155,7 @@ describe('WorkflowVersionService (TypeORM)', () => {
 
     it('creates the first version when none exist', async () => {
       const workflow = await createWorkflow();
-      const definitionYml = 'version: 1';
+      const definitionYml = emptyDefinitionYml();
       const created = await workflowVersionService.createSnapshot({
         workflow: workflow.id,
         definitionYml,
@@ -152,14 +176,14 @@ describe('WorkflowVersionService (TypeORM)', () => {
 
     it('increments version and maps parent/creator fields', async () => {
       const workflow = await createWorkflow();
-      const initialDefinition = 'version: 1';
+      const initialDefinition = emptyDefinitionYml('v1');
       const initial = await workflowVersionService.createSnapshot({
         workflow: workflow.id,
         definitionYml: initialDefinition,
         action: WorkflowVersionAction.create,
         createdBy: userFixtureIds.admin,
       });
-      const updatedDefinition = 'version: 2';
+      const updatedDefinition = emptyDefinitionYml('v2');
       const created = await workflowVersionService.createSnapshot({
         workflow: workflow.id,
         definitionYml: updatedDefinition,
@@ -188,10 +212,6 @@ describe('WorkflowVersionService (TypeORM)', () => {
         '  - do: ask',
         'outputs: {}',
       ].join('\n');
-      const countVersions = async (workflowId: string) =>
-        await workflowVersionService.count({
-          where: { workflow: { id: workflowId } },
-        });
 
       beforeEach(() => {
         jest.spyOn(ActionService.prototype, 'getRegistry').mockReturnValue({
@@ -265,10 +285,6 @@ describe('WorkflowVersionService (TypeORM)', () => {
         'flow: []',
         'outputs: {}',
       ].join('\n');
-      const countVersions = async (workflowId: string) =>
-        await workflowVersionService.count({
-          where: { workflow: { id: workflowId } },
-        });
 
       it.each([WorkflowType.conversational, WorkflowType.scheduled])(
         'refuses a %s definition that declares inputs',
@@ -322,6 +338,110 @@ describe('WorkflowVersionService (TypeORM)', () => {
         ).resolves.toEqual(expect.objectContaining({ version: 1 }));
       });
     });
+
+    describe('definitions checked against the registered actions', () => {
+      // A tool an AI action lets the model call, as in the API.
+      const toolDefinitionYml = (settings: string) =>
+        [
+          'defs:',
+          '  fetch_page:',
+          '    kind: tools',
+          '    action: http_get',
+          `    settings: ${settings}`,
+          '  answer:',
+          '    kind: task',
+          '    action: ai_answer',
+          '    bindings:',
+          '      tools: [fetch_page]',
+          'flow:',
+          '  - do: answer',
+          'outputs: {}',
+        ].join('\n');
+      const saveDefinition = async (definitionYml: string) => {
+        const workflow = await createWorkflow();
+        const saved = workflowVersionService.createSnapshot({
+          workflow: workflow.id,
+          definitionYml,
+          action: WorkflowVersionAction.update,
+          createdBy: userFixtureIds.admin,
+        });
+
+        return { workflow, saved };
+      };
+
+      beforeEach(() => {
+        jest.spyOn(ActionService.prototype, 'getRegistry').mockReturnValue({
+          // Strict, like most action settings.
+          http_get: {
+            settingSchema: z.strictObject({
+              method: z.enum(['GET', 'POST']).optional(),
+            }),
+          },
+          ai_answer: { supportedBindings: ['tools'] },
+        } as any);
+        jest.spyOn(RuntimeBindingsService, 'getRegistry').mockReturnValue({
+          tools: {
+            schema: z.record(z.string(), z.unknown()),
+            multiple: true,
+            actionPolicy: 'required',
+          },
+        } as any);
+      });
+
+      afterEach(() => {
+        jest.restoreAllMocks();
+      });
+
+      it('accepts the timeout and retries of a tool, which its action runs with', async () => {
+        const { saved } = await saveDefinition(
+          toolDefinitionYml(
+            '{ method: GET, timeout_ms: 10000, retries: { max_attempts: 2 } }',
+          ),
+        );
+
+        await expect(saved).resolves.toEqual(
+          expect.objectContaining({ version: 1 }),
+        );
+      });
+
+      it('refuses a setting the action of a tool does not take', async () => {
+        const { workflow, saved } = await saveDefinition(
+          toolDefinitionYml('{ metod: GET }'),
+        );
+
+        await expect(saved).rejects.toThrow(
+          new BadRequestException(
+            'Invalid workflow YAML: defs.fetch_page.settings.<root>: ' +
+              'Unrecognized key: "metod"',
+          ),
+        );
+        expect(await countVersions(workflow.id)).toBe(1);
+      });
+
+      it('refuses a task whose action is not registered', async () => {
+        const { workflow, saved } = await saveDefinition(unregisteredActionYml);
+
+        await expect(saved).rejects.toThrow(unregisteredActionError);
+        expect(await countVersions(workflow.id)).toBe(1);
+      });
+
+      it('refuses it inside a transaction', async () => {
+        const workflow = await createWorkflow();
+        const dataSource = getLastTypeOrmDataSource();
+
+        await expect(
+          dataSource.transaction((manager) =>
+            workflowVersionService.createSnapshotWithManager(manager, {
+              workflow: workflow.id,
+              definitionYml: unregisteredActionYml,
+              action: WorkflowVersionAction.create,
+              createdBy: userFixtureIds.admin,
+            }),
+          ),
+        ).rejects.toThrow(unregisteredActionError);
+        expect(await countVersions(workflow.id)).toBe(1);
+      });
+    });
   });
 
   describe('published versions', () => {
@@ -339,7 +459,7 @@ describe('WorkflowVersionService (TypeORM)', () => {
       const workflow = await createWorkflow();
       await workflowVersionService.createSnapshot({
         workflow: workflow.id,
-        definitionYml: 'version: 1',
+        definitionYml: emptyDefinitionYml(),
         action: WorkflowVersionAction.update,
         createdBy: userFixtureIds.admin,
       });
@@ -349,6 +469,50 @@ describe('WorkflowVersionService (TypeORM)', () => {
       });
 
       expect(stored?.publishedVersion ?? null).toBeNull();
+    });
+  });
+
+  describe('assertPublishable', () => {
+    it('accepts a version that runs', async () => {
+      const workflow = await createWorkflow();
+      const version = await workflowVersionService.createSnapshot({
+        workflow: workflow.id,
+        definitionYml: emptyDefinitionYml(),
+        action: WorkflowVersionAction.update,
+        createdBy: userFixtureIds.admin,
+      });
+
+      await expect(
+        workflowVersionService.assertPublishable(version.id, workflow.type),
+      ).resolves.toBeUndefined();
+    });
+
+    it('refuses a version saved before saving checked the registered actions', async () => {
+      const workflow = await createWorkflow();
+      const versionRepository = getLastTypeOrmDataSource().getRepository(
+        WorkflowVersionOrmEntity,
+      );
+      const version = await versionRepository.save(
+        versionRepository.create({
+          workflow: { id: workflow.id },
+          version: 1,
+          definitionYml: unregisteredActionYml,
+          action: WorkflowVersionAction.update,
+        }),
+      );
+
+      await expect(
+        workflowVersionService.assertPublishable(version.id, workflow.type),
+      ).rejects.toThrow(unregisteredActionError);
+    });
+
+    it('reports a version that does not exist', async () => {
+      await expect(
+        workflowVersionService.assertPublishable(
+          randomUUID(),
+          WorkflowType.manual,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });
