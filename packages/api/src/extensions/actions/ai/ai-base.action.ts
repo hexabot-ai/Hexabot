@@ -738,6 +738,7 @@ export abstract class AiBaseAction<
     settings: Partial<{
       stop_step_count: number;
       stop_tool_call: string;
+      last_step_instructions: string;
     }>,
     tools?: Record<string, unknown>,
   ): {
@@ -783,7 +784,10 @@ export abstract class AiBaseAction<
         ? ({ stepNumber, messages }) =>
             stepNumber === resolvedStepCount - 1
               ? {
-                  messages: buildFinalStepMessages(messages),
+                  messages: buildFinalStepMessages(
+                    messages,
+                    settings.last_step_instructions,
+                  ),
                   activeTools: [],
                 }
               : {}

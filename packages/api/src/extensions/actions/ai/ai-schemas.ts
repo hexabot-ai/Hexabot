@@ -239,6 +239,20 @@ export const aiCommonSettingsSchema = z.strictObject({
         hideUntilAdded: true,
       },
     }),
+  last_step_instructions: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .meta({
+      title: 'Last step instructions',
+      description:
+        'Instructions added after the built-in ones on the step reserved for the final answer, when the model used every other step to call tools. Use them to shape that answer, for instance to offer a hand-over to a human.',
+      'ui:widget': 'textarea',
+      'ui:options': {
+        hideUntilAdded: true,
+      },
+    }),
 });
 
 export const jsonSchemaInput = z.record(z.string(), JsonValueSchema);

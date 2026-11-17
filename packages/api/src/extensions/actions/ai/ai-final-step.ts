@@ -93,9 +93,13 @@ const renderResults = (
  * them, or drop them, when a call declares no tools. Assistant messages keep
  * their text only, so the conversation never ends on an assistant turn, which
  * recent models refuse as a prefill.
+ *
+ * `extraInstructions` (the `last_step_instructions` setting) are added after
+ * the instruction, never in its place.
  */
 export function buildFinalStepMessages(
   messages: ModelMessage[],
+  extraInstructions?: string,
 ): ModelMessage[] {
   const inputs = new Map<string, unknown>();
   const rewritten: ModelMessage[] = [];
@@ -145,7 +149,11 @@ export function buildFinalStepMessages(
     }
   }
 
-  flush(AI_FINAL_STEP_INSTRUCTION);
+  flush(
+    [AI_FINAL_STEP_INSTRUCTION, extraInstructions?.trim()]
+      .filter(Boolean)
+      .join('\n\n'),
+  );
 
   return rewritten;
 }

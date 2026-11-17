@@ -222,6 +222,25 @@ describe('AI actions step limit', () => {
       expect(result.tool_results).toHaveLength(1);
     });
 
+    it('adds the last step instructions to the last step only', async () => {
+      const model = searchingWhileItCan();
+
+      await runAgent(model, {
+        stop_step_count: 2,
+        last_step_instructions: 'Offer a callback.',
+      });
+      const [first, last] = model.doGenerateCalls;
+
+      expect(closingUserText(last)).toMatch(/Open from 9 to 5\./);
+      expect(
+        closingUserText(last).endsWith(
+          `${AI_FINAL_STEP_INSTRUCTION}\n\nOffer a callback.`,
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(first.prompt)).not.toContain('Offer a callback.');
+      expect([first, last].map(systemOf)).toEqual(['Be brief.', 'Be brief.']);
+    });
+
     it('reports a run that still ends on a tool call', async () => {
       const result = await runAgent(scriptedToAlwaysSearch(), {
         stop_step_count: 3,

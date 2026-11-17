@@ -10,6 +10,7 @@ import {
   DEFAULT_AI_PROMPT,
   DEFAULT_AI_SYSTEM_PROMPT,
   aiAgentInputSchema,
+  aiAgentSettingsSchema,
   aiGenerateObjectInputSchema,
   aiGenerateObjectSettingsSchema,
   aiGenerateReplyInputSchema,
@@ -215,6 +216,35 @@ describe('ai generation settings schemas', () => {
     expect(result.error?.issues).toContainEqual(
       expect.objectContaining({ path: ['output_schema'] }),
     );
+  });
+
+  describe('last_step_instructions', () => {
+    const objectSettings = { output_schema: { type: 'object' } };
+
+    it.each([
+      ['ai_agent', aiAgentSettingsSchema, {}],
+      ['ai_generate_text', aiGenerateTextSettingsSchema, {}],
+      ['ai_generate_reply', aiGenerateReplySettingsSchema, {}],
+      ['ai_generate_object', aiGenerateObjectSettingsSchema, objectSettings],
+      ['ai_infer_object', aiInferObjectSettingsSchema, objectSettings],
+    ])('is accepted, trimmed, by %s', (_name, schema, required) => {
+      const result = schema.safeParse({
+        ...required,
+        last_step_instructions: '  Offer a callback.  ',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data).toMatchObject({
+        last_step_instructions: 'Offer a callback.',
+      });
+    });
+
+    it('rejects blank instructions', () => {
+      expect(
+        aiGenerateTextSettingsSchema.safeParse({ last_step_instructions: ' ' })
+          .success,
+      ).toBe(false);
+    });
   });
 });
 

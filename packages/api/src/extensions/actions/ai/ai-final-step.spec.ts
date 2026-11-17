@@ -199,4 +199,34 @@ describe('buildFinalStepMessages', () => {
       { role: 'user', content: AI_FINAL_STEP_INSTRUCTION },
     ]);
   });
+
+  it('adds extra instructions after the instruction, never in its place', () => {
+    const rewritten = buildFinalStepMessages(
+      [
+        { role: 'user', content: 'When do you open?' },
+        { role: 'assistant', content: [searchCall('call-1', 'opening hours')] },
+        searchResult('call-1', { type: 'text', value: 'Open from 9 to 5.' }),
+      ],
+      '  Offer a callback.  ',
+    );
+
+    expect(rewritten).toHaveLength(2);
+    expect(lastOf(rewritten).content).toBe(
+      [
+        HEADING,
+        '<tool_result tool="search">\n<input>{"query":"opening hours"}</input>\n<output>Open from 9 to 5.</output>\n</tool_result>',
+        AI_FINAL_STEP_INSTRUCTION,
+        'Offer a callback.',
+      ].join('\n\n'),
+    );
+  });
+
+  it('ignores blank extra instructions', () => {
+    expect(
+      buildFinalStepMessages([{ role: 'user', content: 'Hello' }], '   '),
+    ).toEqual([
+      { role: 'user', content: 'Hello' },
+      { role: 'user', content: AI_FINAL_STEP_INSTRUCTION },
+    ]);
+  });
 });

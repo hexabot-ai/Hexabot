@@ -1229,6 +1229,25 @@ describe('AiBaseAction', () => {
       );
     });
 
+    it('adds the last step instructions after the built-in ones', () => {
+      const { prepareStep } = action.buildStopWhenPublic(
+        { stop_step_count: 2, last_step_instructions: 'Offer a callback.' },
+        tools,
+      );
+
+      expect(prepare(prepareStep, 0)).toEqual({});
+      expect(prepare(prepareStep, 1)).toEqual({
+        messages: [
+          ...messages,
+          {
+            role: 'user',
+            content: `${AI_FINAL_STEP_INSTRUCTION}\n\nOffer a callback.`,
+          },
+        ],
+        activeTools: [],
+      });
+    });
+
     it('leaves a single step its tools', () => {
       const { prepareStep, stepCount } = action.buildStopWhenPublic(
         { stop_step_count: 1 },
