@@ -238,7 +238,11 @@ const embed = HexabotWidget.config({
   apiUrl: "http://localhost:3000",
   channel: "web",
   sourceId: "replace-with-source-id",
-  onMessage: (message) => console.log(message.direction, message),
+  onMessage: (message) => {
+    if (message.direction === HexabotWidget.Direction.received) {
+      console.log("Bot replied", message);
+    }
+  },
   onConnectionChange: (state) => {
     if (state === HexabotWidget.ConnectionState.error) {
       console.warn("Chat unavailable");
@@ -249,8 +253,9 @@ const embed = HexabotWidget.config({
 
 `onMessage` receives each message the socket delivers, sent or received. It
 does not replay the history loaded on connect, which `useChat().messages`
-holds. `onConnectionChange` receives a `ConnectionState` on mount and on every
-change, with the meanings listed under
+holds. `message.direction` is a `Direction`: `received` for the bot's
+messages, `sent` for the visitor's. `onConnectionChange` receives a
+`ConnectionState` on mount and on every change, with the meanings listed under
 [Custom Composer and Chat API](#custom-composer-and-chat-api).
 
 ## Embed Chat Widget

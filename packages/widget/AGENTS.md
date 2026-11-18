@@ -15,7 +15,7 @@ Typical agent work in this package includes:
 
 Key paths in `packages/widget`:
 
-- `src/index.tsx`: Vite library entry and public package surface (`config`, `ChatWidget`, `UiChatWidget`, `useChat`, `ConnectionState`). Renders with the host page's own React/ReactDOM (loaded as globals), not a bundled copy.
+- `src/index.tsx`: Vite library entry and public package surface (`config`, `ChatWidget`, `UiChatWidget`, `useChat`, `ConnectionState`, `Direction`). Renders with the host page's own React/ReactDOM (loaded as globals), not a bundled copy.
 - `src/ChatWidget.tsx`: Main widget component, composed by `src/index.tsx`.
 - `src/UiChatWidget.tsx`: Alternate/customizable widget composition entry.
 - `src/main.tsx`: Local dev/demo app entry for Vite.

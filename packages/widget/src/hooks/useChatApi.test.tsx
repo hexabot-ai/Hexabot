@@ -13,6 +13,7 @@ import {
   type ChatApi,
   type Config,
   ConnectionState,
+  Direction,
   UiChatWidget,
   useChat,
 } from "../index";
@@ -312,7 +313,7 @@ describe("config callbacks", () => {
 
     expect(onMessage).toHaveBeenCalledTimes(1);
     expect(onMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ mid: "m-1", direction: "received" }),
+      expect.objectContaining({ mid: "m-1", direction: Direction.received }),
     );
     expect(onConnectionChange.mock.calls).toEqual([
       [ConnectionState.notConnectedYet],
