@@ -163,9 +163,11 @@ interface ChatContextType {
   outgoingMessageState: OutgoingMessageState;
   setOutgoingMessageState: (state: OutgoingMessageState) => void;
 
-  /** Whether the chat can be used: see `ConnectionState`. */
+  /**
+   * Whether the chat can be used: see `ConnectionState`. Only the provider
+   * sets it, from the socket's events and the server's answers.
+   */
   connectionState: ConnectionState;
-  setConnectionState: (state: ConnectionState) => void;
 
   /**
    * Array of messages exchanged in the chat.
@@ -236,6 +238,11 @@ interface ChatContextType {
   ) => Promise<SubscribeResponse | undefined>;
   profile?: SubscriberFull;
   sendGetStarted: (foreign_id: string) => Promise<void>;
+  /**
+   * Drops the socket and connects again, so the server sends its settings
+   * and the session anew. Joins the reconnect already in flight, if any.
+   */
+  reconnect: () => Promise<void>;
 }
 
 const defaultCtx: ChatContextType = {
@@ -251,7 +258,6 @@ const defaultCtx: ChatContextType = {
   outgoingMessageState: 0,
   setOutgoingMessageState: () => {},
   connectionState: 0,
-  setConnectionState: () => {},
   messages: [],
   setMessages: () => {},
   suggestions: [],
@@ -274,6 +280,7 @@ const defaultCtx: ChatContextType = {
       "ChatProvider.sendGetStarted is not available outside provider",
     );
   },
+  reconnect: async () => {},
 };
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 const ChatProvider: React.FC<{
@@ -464,6 +471,29 @@ const ChatProvider: React.FC<{
 
     return pendingSubscription.current;
   };
+  // Set while `reconnect()` drops and reopens the socket: the manager's
+  // `close` and `open` it causes would flash `disconnected` and
+  // `notConnectedYet` before the server's settings settle the state.
+  const reconnecting = useRef(false);
+  const requestReconnect = async () => {
+    setConnectionState(ConnectionState.tryingToConnect);
+    reconnecting.current = true;
+    const reconnected = await socket.forceReconnect().catch(() => false);
+
+    reconnecting.current = false;
+
+    if (!reconnected) {
+      setConnectionState(ConnectionState.disconnected);
+    }
+  };
+  const pendingReconnect = useRef<Promise<void>>(undefined);
+  const reconnect = () => {
+    pendingReconnect.current ??= requestReconnect().finally(() => {
+      pendingReconnect.current = undefined;
+    });
+
+    return pendingReconnect.current;
+  };
   const sendGetStarted = async (foreign_id: string) => {
     await handleSend({
       data: {
@@ -506,8 +536,9 @@ const ChatProvider: React.FC<{
     socket.disconnect();
   });
 
+  // Another tab subscribed the visitor: reconnecting picks up the session.
   useSubscribeBroadcastChannel("subscribed", () => {
-    socket.forceReconnect();
+    void reconnect();
   });
 
   useSubscribe("error", ({ message, statusCode }: SocketErrorResponse) => {
@@ -543,10 +574,14 @@ const ChatProvider: React.FC<{
   useEffect(() => {
     // Until the server's settings tell whether the chat can be used.
     const startConnection = () => {
-      setConnectionState(ConnectionState.notConnectedYet);
+      if (!reconnecting.current) {
+        setConnectionState(ConnectionState.notConnectedYet);
+      }
     };
     const endConnection = () => {
-      setConnectionState(ConnectionState.disconnected);
+      if (!reconnecting.current) {
+        setConnectionState(ConnectionState.disconnected);
+      }
     };
 
     socket.io.on("open", startConnection);
@@ -580,7 +615,6 @@ const ChatProvider: React.FC<{
     outgoingMessageState,
     setOutgoingMessageState,
     connectionState,
-    setConnectionState: updateConnectionState,
     messages: messages.sort(
       (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
     ),
@@ -601,6 +635,7 @@ const ChatProvider: React.FC<{
     handleSubscription,
     profile,
     sendGetStarted,
+    reconnect,
   };
 
   return (

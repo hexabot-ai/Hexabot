@@ -105,3 +105,41 @@ describe("SocketIoClient requests", () => {
     expect(ioSocket.emitWithAck).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("SocketIoClient forceReconnect", () => {
+  let client: SocketIoClient;
+  // Plays the socket's answer to the next `connect()`.
+  const answerConnectWith = (event: "connect" | "connect_error") => {
+    ioSocket.connect.mockImplementationOnce(() => {
+      const [, listener] = ioSocket.once.mock.calls.find(
+        ([name]) => name === event,
+      )!;
+
+      listener(new Error("xhr poll error"));
+    });
+  };
+
+  beforeEach(() => {
+    ioSocket.connected = false;
+    ioSocket.once.mockReset();
+    ioSocket.connect.mockReset();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    client = new SocketIoClient("http://localhost:4000/api", {}, {});
+  });
+
+  it("resolves to true once the socket connects", async () => {
+    answerConnectWith("connect");
+
+    await expect(client.forceReconnect()).resolves.toBe(true);
+  });
+
+  it("resolves to false when the socket cannot connect", async () => {
+    answerConnectWith("connect_error");
+
+    await expect(client.forceReconnect()).resolves.toBe(false);
+  });
+
+  it("resolves to false when the socket does not connect in time", async () => {
+    await expect(client.forceReconnect(1)).resolves.toBe(false);
+  });
+});

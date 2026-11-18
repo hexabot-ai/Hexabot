@@ -40,7 +40,8 @@ export const createFakeSocket = () => {
     io: { on: manager.on, off: manager.off },
     connect: vi.fn(),
     disconnect: vi.fn(),
-    forceReconnect: vi.fn(async () => {}),
+    /** Resolves to whether the socket came back. */
+    forceReconnect: vi.fn(async () => true),
     get: vi.fn(),
     post: vi.fn(async () => ({ statusCode: 200, body: {} })),
   };

@@ -9,7 +9,6 @@ import React from "react";
 
 import { useTranslation } from "../hooks/useTranslation";
 import { useChat } from "../providers/ChatProvider";
-import { useSocket } from "../providers/SocketProvider";
 import { ConnectionState } from "../types/state.types";
 
 import { LoadingComponent } from "./LoadingComponent";
@@ -20,12 +19,9 @@ const Template: React.FC<{ name: string; Icon: LucideIcon }> = ({
   Icon,
 }) => {
   const { t } = useTranslation();
-  const { connectionState, setConnectionState } = useChat();
-  const { socket } = useSocket();
+  const { connectionState, reconnect } = useChat();
   const handleClick = () => {
-    setConnectionState(ConnectionState.tryingToConnect);
-
-    socket.forceReconnect();
+    void reconnect();
   };
   const loading = connectionState === ConnectionState.tryingToConnect;
 

@@ -362,6 +362,20 @@ describe("connection state", () => {
         }),
       ),
     );
+  // A send the server does not acknowledge, which only shows in the state.
+  const failSend = async () => {
+    fake.mock.post.mockRejectedValueOnce(new Error("operation has timed out"));
+    await act(() => api.sendText("Hello"));
+  };
+  // As socket.io-client does to a connected socket that is dropped and
+  // reopened. Armed after mounting, which reconnects the socket too.
+  const armReconnect = () =>
+    fake.mock.forceReconnect.mockClear().mockImplementation(async () => {
+      fake.emitIo("close");
+      fake.emitIo("open");
+
+      return true;
+    });
   const typeInto = (input: HTMLInputElement, value: string) => {
     Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
@@ -524,5 +538,99 @@ describe("connection state", () => {
 
     expect(api.connectionState).toBe(ConnectionState.error);
     expect(find(".hb-chat--error-button")).not.toBeNull();
+  });
+
+  it("reconnects and restores the session without flashing a disconnect", async () => {
+    await render();
+    await act(async () => fake.emitIo("open"));
+    await restoreSession();
+    await failSend();
+    armReconnect();
+
+    expect(api.connectionState).toBe(ConnectionState.error);
+
+    onConnectionChange.mockClear();
+    await act(() => api.reconnect());
+
+    expect(fake.mock.forceReconnect).toHaveBeenCalledTimes(1);
+    expect(api.connectionState).toBe(ConnectionState.tryingToConnect);
+
+    await restoreSession();
+
+    expect(api.connectionState).toBe(ConnectionState.connected);
+    expect(reported()).toEqual([
+      ConnectionState.tryingToConnect,
+      ConnectionState.connected,
+    ]);
+  });
+
+  it("reconnects to the pre-chat form when the server has no subscriber", async () => {
+    await render();
+    await act(async () => fake.emitIo("open"));
+    await act(async () => fake.emit("settings", createChannelSettings()));
+    armReconnect();
+    await act(() => api.reconnect());
+    await act(async () => fake.emit("settings", createChannelSettings()));
+
+    expect(api.connectionState).toBe(ConnectionState.notConnectedYet);
+    expect(find(".user-subscription")).not.toBeNull();
+  });
+
+  it("is disconnected when the socket does not come back", async () => {
+    await render();
+    await act(async () => fake.emitIo("open"));
+    await restoreSession();
+    fake.mock.forceReconnect.mockResolvedValue(false);
+    await act(() => api.reconnect());
+
+    expect(api.connectionState).toBe(ConnectionState.disconnected);
+  });
+
+  it("runs one reconnect at a time", async () => {
+    let reconnected: (value: boolean) => void = () => {};
+
+    await render();
+    fake.mock.forceReconnect.mockClear().mockReturnValue(
+      new Promise((resolve) => {
+        reconnected = resolve;
+      }),
+    );
+
+    let first: Promise<void> | undefined;
+    let second: Promise<void> | undefined;
+
+    await act(async () => {
+      first = api.reconnect();
+      second = api.reconnect();
+    });
+
+    expect(second).toBe(first);
+
+    await act(async () => {
+      reconnected(true);
+      await first;
+    });
+
+    expect(fake.mock.forceReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the error screen's retry button reconnect", async () => {
+    await render();
+    await act(async () => fake.emitIo("open"));
+    await restoreSession();
+    await failSend();
+    armReconnect();
+    await act(async () => {
+      find<HTMLButtonElement>(".hb-chat--error-button")!.click();
+    });
+
+    expect(fake.mock.forceReconnect).toHaveBeenCalledTimes(1);
+    expect(api.connectionState).toBe(ConnectionState.tryingToConnect);
+    expect(find(".hb-chat--attempt-reconnect")).not.toBeNull();
+
+    await restoreSession();
+
+    expect(api.connectionState).toBe(ConnectionState.connected);
+    expect(find(".hb-user-input")).not.toBeNull();
   });
 });

@@ -143,8 +143,9 @@ export class SocketIoClient {
 
   /**
    * Reconnects the socket client using mutex across tabs.
+   * @returns Whether the socket connected within `timeoutMs`
    */
-  public async forceReconnect(timeoutMs = 10_000) {
+  public async forceReconnect(timeoutMs = 10_000): Promise<boolean> {
     const run = async () => {
       const socket = this.socket;
 
@@ -189,9 +190,13 @@ export class SocketIoClient {
             socket.connect();
           }
         });
+
+        return true;
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn(err);
+
+        return false;
       } finally {
         clearTimeout(timer);
         off.forEach((fn) => fn());
@@ -201,11 +206,11 @@ export class SocketIoClient {
 
     if (locks?.request) {
       // Keep it exclusive but guaranteed to release via timeout/error handling
-      await locks.request("ws_connection", { mode: "exclusive" }, run);
-    } else {
-      // Fallback when Web Locks isn’t supported
-      await run();
+      return await locks.request("ws_connection", { mode: "exclusive" }, run);
     }
+
+    // Fallback when Web Locks isn’t supported
+    return await run();
   }
 
   /**

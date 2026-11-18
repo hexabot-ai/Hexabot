@@ -21,11 +21,11 @@ export enum ConnectionState {
   notConnectedYet = 0,
   /** Not set by the widget. */
   wantToConnect = 1,
-  /** A subscription or a reconnect is under way. */
+  /** A subscription or a `reconnect()` is under way. */
   tryingToConnect = 2,
   /** The visitor is subscribed and the server serves them on this socket. */
   connected = 3,
-  /** A subscription or a send failed. The Retry button recovers. */
+  /** A subscription or a send failed. `reconnect()` recovers. */
   error = 4,
 }
 
