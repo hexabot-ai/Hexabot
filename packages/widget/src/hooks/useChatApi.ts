@@ -32,6 +32,7 @@ import { useTranslation } from "./useTranslation";
 export type ChatApi = {
   /** The conversation, oldest first. */
   messages: UiMessage[];
+  /** `connected` once the chat can be used. See `ConnectionState`. */
   connectionState: ConnectionState;
   /** The subscribed visitor, once known. */
   profile?: SubscriberFull;
@@ -51,6 +52,15 @@ export type ChatApi = {
    * GET_STARTED postback. Missing names fall back to the API defaults.
    */
   subscribe: (profile?: ConfigProfile) => Promise<void>;
+  /**
+   * Drops the socket and connects again, as the error screen's Retry button
+   * does. `connectionState` stays `tryingToConnect` until the server answers:
+   * `connected` when it restores the visitor's session, `notConnectedYet`
+   * when the visitor still has to subscribe. A socket that does not come
+   * back leaves it `disconnected`. Resolves once the socket is back or the
+   * attempt failed; never rejects.
+   */
+  reconnect: () => Promise<void>;
   sendText: (text: string) => Promise<void>;
   /** Rejects without sending a file the source does not accept. */
   sendFile: (file: File) => Promise<void>;
@@ -76,8 +86,10 @@ export const useChatApi = (): ChatApi => {
     isOpen,
     open: () => setIsOpen(true),
     close: () => setIsOpen(false),
-    subscribe: (profile) =>
-      chat.handleSubscription(profile?.firstName, profile?.lastName),
+    subscribe: async (profile) => {
+      await chat.handleSubscription(profile?.firstName, profile?.lastName);
+    },
+    reconnect: chat.reconnect,
     sendText: (text) =>
       send({ data: { type: Web.InboundMessageType.text, data: { text } } }),
     sendFile: async (file) => {

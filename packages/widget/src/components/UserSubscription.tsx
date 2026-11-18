@@ -4,93 +4,33 @@
  * Full terms: see LICENSE.md.
  */
 
-import React, { useCallback, useState } from "react";
+import React, { useState } from "react";
 
 import { useTranslation } from "../hooks/useTranslation";
-import { preprocessMessages, useChat } from "../providers/ChatProvider";
-import { useConfig } from "../providers/ConfigProvider";
+import { useChat } from "../providers/ChatProvider";
 import { useSettings } from "../providers/SettingsProvider";
-import { useSocket } from "../providers/SocketProvider";
 import { ConnectionState } from "../types/state.types";
-import { SocketIoClientError } from "../utils/SocketIoClientError";
 import "./UserSubscription.scss";
 
 const UserSubscription: React.FC = () => {
   const { t } = useTranslation();
-  const { socketErrorHandlers } = useSocket();
-  const { socket } = useSocket();
   const settings = useSettings();
-  const { apiUrl } = useConfig();
-  const {
-    setMessages,
-    connectionState,
-    setConnectionState,
-    participants,
-    setParticipants,
-    setSuggestions,
-    subscribe,
-    sendGetStarted,
-  } = useChat();
+  const { connectionState, handleSubscription, sendGetStarted } = useChat();
   const [firstName, setFirstName] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
-  const handleSubmit = useCallback(
-    async ({
-      event,
-      first_name = "",
-      last_name = "",
-    }: {
-      event?: React.FormEvent<HTMLFormElement>;
-      first_name?: string;
-      last_name?: string;
-    }) => {
-      event?.preventDefault();
-      try {
-        setConnectionState(ConnectionState.tryingToConnect);
-        const { messages, profile } = await subscribe(
-          first_name || firstName,
-          last_name || lastName,
-        );
-        const { quickReplies, arrangedMessages, participantsList } =
-          preprocessMessages(messages, participants, profile, apiUrl);
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const subscription = await handleSubscription(firstName, lastName);
 
-        setSuggestions(quickReplies);
-        setMessages(arrangedMessages);
-        setParticipants(participantsList);
-        if (messages.length === 0) {
-          await sendGetStarted(profile.foreignId);
-        }
-        setConnectionState(ConnectionState.connected);
-      } catch (error) {
-        if (
-          error instanceof SocketIoClientError &&
-          socketErrorHandlers?.[error.statusCode]
-        ) {
-          socketErrorHandlers[error.statusCode](error);
-        } else {
-          setConnectionState(ConnectionState.error);
-          // eslint-disable-next-line no-console
-          console.error("Unable to subscribe user", error);
-        }
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      firstName,
-      lastName,
-      participants,
-      setConnectionState,
-      setMessages,
-      setParticipants,
-      socket,
-    ],
-  );
+    // Starts the conversation, unless the visitor already has one.
+    if (subscription?.messages.length === 0) {
+      await sendGetStarted(subscription.profile.foreignId);
+    }
+  };
 
   return (
     <div className="user-subscription-wrapper">
-      <form
-        className="user-subscription"
-        onSubmit={(event) => handleSubmit({ event })}
-      >
+      <form className="user-subscription" onSubmit={handleSubmit}>
         <div className="user-subscription-title">
           {settings.greetingMessage}
         </div>

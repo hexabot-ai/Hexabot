@@ -174,8 +174,47 @@ export function SupportChat() {
   `isOpen`, with `open()` and `close()` for the window.
 - `subscribe(profile?)`, which subscribes like the name form but sends no
   `GET_STARTED` postback.
+- `reconnect()`, which drops the socket and connects again, as the error
+  screen's Retry button does.
 - `sendText(text)`, `sendFile(file)`, `sendPostback(payload, title)`, and
   `sendQuickReply(suggestion)`.
+
+`connectionState` is `ConnectionState.connected` when the chat can be used:
+the visitor is subscribed and the server serves them on the socket. The other
+states are:
+
+| State             | Meaning                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `notConnectedYet` | The server has not answered the socket yet, or the visitor has not subscribed (pre-chat).         |
+| `tryingToConnect` | A subscription or a `reconnect()` is under way.                                                   |
+| `disconnected`    | The socket dropped. It reconnects on its own and returns to `connected` once the session is back. |
+| `error`           | A subscription or a send failed. Call `reconnect()` to recover.                                   |
+
+A host's status line needs no other signal:
+
+```tsx
+import { ConnectionState, useChat } from "@hexabot-ai/widget";
+
+function Status() {
+  const { connectionState, reconnect } = useChat();
+
+  switch (connectionState) {
+    case ConnectionState.connected:
+      return null;
+    case ConnectionState.disconnected:
+    case ConnectionState.error:
+      return <button onClick={() => reconnect()}>Retry</button>;
+    default:
+      return <span>Connecting…</span>;
+  }
+}
+```
+
+During `reconnect()`, `connectionState` stays `tryingToConnect` until the
+server answers: `connected` when it restores the visitor's session,
+`notConnectedYet` when the visitor still has to subscribe, and `disconnected`
+when the socket does not come back. `reconnect()` resolves once the socket is
+back or the attempt failed, and never rejects.
 
 `menu` holds the source's persistent menu even when the source's "Persistent
 menu" setting is off. That setting only hides the widget's menu button, so a
@@ -199,7 +238,11 @@ const embed = HexabotWidget.config({
   apiUrl: "http://localhost:3000",
   channel: "web",
   sourceId: "replace-with-source-id",
-  onMessage: (message) => console.log(message.direction, message),
+  onMessage: (message) => {
+    if (message.direction === HexabotWidget.Direction.received) {
+      console.log("Bot replied", message);
+    }
+  },
   onConnectionChange: (state) => {
     if (state === HexabotWidget.ConnectionState.error) {
       console.warn("Chat unavailable");
@@ -210,8 +253,10 @@ const embed = HexabotWidget.config({
 
 `onMessage` receives each message the socket delivers, sent or received. It
 does not replay the history loaded on connect, which `useChat().messages`
-holds. `onConnectionChange` receives a `ConnectionState` on mount and on every
-change.
+holds. `message.direction` is a `Direction`: `received` for the bot's
+messages, `sent` for the visitor's. `onConnectionChange` receives a
+`ConnectionState` on mount and on every change, with the meanings listed under
+[Custom Composer and Chat API](#custom-composer-and-chat-api).
 
 ## Embed Chat Widget
 
