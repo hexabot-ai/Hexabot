@@ -32,6 +32,7 @@ import { useTranslation } from "./useTranslation";
 export type ChatApi = {
   /** The conversation, oldest first. */
   messages: UiMessage[];
+  /** `connected` once the chat can be used. See `ConnectionState`. */
   connectionState: ConnectionState;
   /** The subscribed visitor, once known. */
   profile?: SubscriberFull;
@@ -76,8 +77,9 @@ export const useChatApi = (): ChatApi => {
     isOpen,
     open: () => setIsOpen(true),
     close: () => setIsOpen(false),
-    subscribe: (profile) =>
-      chat.handleSubscription(profile?.firstName, profile?.lastName),
+    subscribe: async (profile) => {
+      await chat.handleSubscription(profile?.firstName, profile?.lastName);
+    },
     sendText: (text) =>
       send({ data: { type: Web.InboundMessageType.text, data: { text } } }),
     sendFile: async (file) => {

@@ -18,7 +18,7 @@ import { TranslationProvider } from "./providers/TranslationProvider";
 import WidgetProvider, { WidgetContextType } from "./providers/WidgetProvider";
 import { Config } from "./types/config.types";
 import { SocketErrorHandlers } from "./types/message.types";
-import { ChatScreen, ConnectionState } from "./types/state.types";
+import { ChatScreen } from "./types/state.types";
 
 type UiChatWidgetProps = PropsWithChildren<{
   CustomLauncher?: (props: { widget: WidgetContextType }) => ReactElement;
@@ -61,9 +61,7 @@ function UiChatWidget({
                   defaultScreen={ChatScreen.CHAT}
                   defaultIsOpen={defaultIsOpen}
                 >
-                  <ChatProvider
-                    defaultConnectionState={ConnectionState.connected}
-                  >
+                  <ChatProvider>
                     <Launcher
                       CustomLauncher={CustomLauncher}
                       CustomHeader={CustomHeader}

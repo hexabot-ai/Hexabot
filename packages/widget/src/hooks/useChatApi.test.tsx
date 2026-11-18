@@ -114,6 +114,9 @@ describe("useChat", () => {
     await render(
       <UiChatWidget config={config} defaultIsOpen CustomComposer={Composer} />,
     );
+    await act(async () =>
+      fake.emit("settings", createChannelSettings({ profile: subscriber })),
+    );
 
     expect(find(".hb-user-input")).toBeNull();
 
@@ -300,6 +303,9 @@ describe("config callbacks", () => {
       );
     });
     await act(async () => fake.emitIo("open"));
+    await act(async () =>
+      fake.emit("settings", createChannelSettings({ profile: subscriber })),
+    );
     await act(async () => fake.emit("message", botMessage("m-1")));
     await act(async () => fake.emit("message", botMessage("m-1")));
     await act(async () => fake.emitIo("close"));
@@ -309,9 +315,214 @@ describe("config callbacks", () => {
       expect.objectContaining({ mid: "m-1", direction: "received" }),
     );
     expect(onConnectionChange.mock.calls).toEqual([
-      [ConnectionState.connected],
       [ConnectionState.notConnectedYet],
+      [ConnectionState.connected],
       [ConnectionState.disconnected],
     ]);
+  });
+});
+
+describe("connection state", () => {
+  let container: HTMLDivElement;
+  let root: Root | undefined;
+  let api: ChatApi;
+  const onConnectionChange = vi.fn<(state: ConnectionState) => void>();
+  const Probe = ({ onRender }: { onRender: (chat: ChatApi) => void }) => {
+    onRender(useChat());
+
+    return null;
+  };
+  const render = async (props: Partial<Config> = {}) => {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(
+        <UiChatWidget
+          config={{ ...config, ...props, onConnectionChange }}
+          defaultIsOpen
+        >
+          <Probe
+            onRender={(chat) => {
+              api = chat;
+            }}
+          />
+        </UiChatWidget>,
+      );
+    });
+  };
+  const find = <T extends Element = Element>(selector: string) =>
+    container.querySelector<T>(selector);
+  const reported = () => onConnectionChange.mock.calls.map(([state]) => state);
+  const restoreSession = () =>
+    act(async () =>
+      fake.emit(
+        "settings",
+        createChannelSettings({
+          profile: subscriber,
+          messages: [botMessage("m-1")],
+        }),
+      ),
+    );
+  const typeInto = (input: HTMLInputElement, value: string) => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const submitNameForm = async () => {
+    const [first, last] = container.querySelectorAll<HTMLInputElement>(
+      ".user-subscription-form-input",
+    );
+
+    await act(async () => {
+      typeInto(first, "Ada");
+      typeInto(last, "Lovelace");
+    });
+    await act(async () => {
+      find<HTMLButtonElement>(".user-subscription-form-button-submit")!.click();
+    });
+  };
+
+  beforeEach(() => {
+    fake = createFakeSocket();
+    onConnectionChange.mockReset();
+    sessionStorage.clear();
+    Element.prototype.scrollTo = () => {};
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    container = document.createElement("div");
+    document.body.appendChild(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root?.unmount();
+    });
+    root = undefined;
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it("is connected once the server restores the session after a reload", async () => {
+    await render();
+    await act(async () => fake.emitIo("open"));
+
+    expect(api.connectionState).toBe(ConnectionState.notConnectedYet);
+
+    await restoreSession();
+
+    expect(api.connectionState).toBe(ConnectionState.connected);
+    expect(fake.mock.get).not.toHaveBeenCalled();
+    expect(reported()).toEqual([
+      ConnectionState.notConnectedYet,
+      ConnectionState.connected,
+    ]);
+  });
+
+  it("is connected again once the server restores the session after a drop", async () => {
+    await render();
+    await act(async () => fake.emitIo("open"));
+    await restoreSession();
+    await act(async () => fake.emitIo("close"));
+    await act(async () => fake.emitIo("reconnect_error"));
+    await act(async () => {
+      fake.emitIo("open");
+      fake.emitIo("reconnect");
+    });
+
+    expect(api.connectionState).toBe(ConnectionState.notConnectedYet);
+
+    await restoreSession();
+
+    expect(api.connectionState).toBe(ConnectionState.connected);
+    expect(reported()).toEqual([
+      ConnectionState.notConnectedYet,
+      ConnectionState.connected,
+      ConnectionState.disconnected,
+      ConnectionState.notConnectedYet,
+      ConnectionState.connected,
+    ]);
+  });
+
+  it("is not connected while the pre-chat form waits for the visitor", async () => {
+    await render();
+    await act(async () => fake.emitIo("open"));
+    await act(async () => fake.emit("settings", createChannelSettings()));
+
+    expect(find(".user-subscription")).not.toBeNull();
+    expect(api.connectionState).toBe(ConnectionState.notConnectedYet);
+    expect(reported()).toEqual([ConnectionState.notConnectedYet]);
+  });
+
+  it("is connected once a silent subscription succeeds", async () => {
+    let answer: (response: unknown) => void = () => {};
+
+    fake.mock.get.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    await render({ profile: { firstName: "Ada", lastName: "Lovelace" } });
+    await act(async () => fake.emitIo("open"));
+    await act(async () => fake.emit("settings", createChannelSettings()));
+
+    expect(api.connectionState).toBe(ConnectionState.tryingToConnect);
+
+    await act(async () =>
+      answer({ statusCode: 200, body: { profile: subscriber, messages: [] } }),
+    );
+
+    expect(api.connectionState).toBe(ConnectionState.connected);
+    expect(reported()).toEqual([
+      ConnectionState.notConnectedYet,
+      ConnectionState.tryingToConnect,
+      ConnectionState.connected,
+    ]);
+  });
+
+  it("is connected once the name form subscribes the visitor", async () => {
+    fake.mock.get.mockResolvedValue({
+      statusCode: 200,
+      body: { profile: subscriber, messages: [] },
+    });
+
+    await render();
+    await act(async () => fake.emitIo("open"));
+    await act(async () => fake.emit("settings", createChannelSettings()));
+    await submitNameForm();
+
+    expect(fake.mock.get).toHaveBeenCalledWith(
+      `${webhookUrl}?first_name=Ada&last_name=Lovelace`,
+    );
+    expect(fake.mock.post).toHaveBeenCalledWith(webhookUrl, {
+      data: expect.objectContaining({
+        type: "postback",
+        data: expect.objectContaining({ payload: "GET_STARTED" }),
+        author: "visitor-1",
+      }),
+    });
+    expect(find(".hb-user-input")).not.toBeNull();
+    expect(api.connectionState).toBe(ConnectionState.connected);
+    expect(reported()).toEqual([
+      ConnectionState.notConnectedYet,
+      ConnectionState.tryingToConnect,
+      ConnectionState.connected,
+    ]);
+  });
+
+  it("keeps the error when the name form's GET_STARTED postback fails", async () => {
+    fake.mock.get.mockResolvedValue({
+      statusCode: 200,
+      body: { profile: subscriber, messages: [] },
+    });
+    fake.mock.post.mockRejectedValueOnce(new Error("operation has timed out"));
+
+    await render();
+    await act(async () => fake.emitIo("open"));
+    await act(async () => fake.emit("settings", createChannelSettings()));
+    await submitNameForm();
+
+    expect(api.connectionState).toBe(ConnectionState.error);
+    expect(find(".hb-chat--error-button")).not.toBeNull();
   });
 });

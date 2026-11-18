@@ -163,14 +163,7 @@ interface ChatContextType {
   outgoingMessageState: OutgoingMessageState;
   setOutgoingMessageState: (state: OutgoingMessageState) => void;
 
-  /**
-   * Represents the connection state of the chat.
-   * -1 = Disconnected
-   * 0 = Not connected yet
-   * 1 = Want to connect
-   * 2 = Trying to connect
-   * 3 = Connected
-   */
+  /** Whether the chat can be used: see `ConnectionState`. */
   connectionState: ConnectionState;
   setConnectionState: (state: ConnectionState) => void;
 
@@ -233,18 +226,15 @@ interface ChatContextType {
   }) => Promise<void>;
 
   /**
-   * Function called to trigger a get request to subscribe :
-   * 1. Send user informations (firstname and lastname)
-   * 2. Get messaging history and the full subscriber object
-   * @param firstName
-   * @param lastName
+   * Subscribes the visitor under these names, then loads the history and the
+   * full subscriber. Joins the subscription already in flight, if any.
+   * @returns The server's answer, or `undefined` when the subscription failed
    */
-  handleSubscription: (firstName?: string, lastName?: string) => Promise<void>;
+  handleSubscription: (
+    firstName?: string,
+    lastName?: string,
+  ) => Promise<SubscribeResponse | undefined>;
   profile?: SubscriberFull;
-  subscribe: (
-    first_name?: string,
-    last_name?: string,
-  ) => Promise<SubscribeResponse>;
   sendGetStarted: (foreign_id: string) => Promise<void>;
 }
 
@@ -277,11 +267,8 @@ const defaultCtx: ChatContextType = {
   file: null,
   setFile: () => {},
   send: async () => {},
-  handleSubscription: async () => {},
+  handleSubscription: async () => undefined,
   profile: undefined,
-  subscribe: async () => {
-    throw new Error("ChatProvider.subscribe is not available outside provider");
-  },
   sendGetStarted: async () => {
     throw new Error(
       "ChatProvider.sendGetStarted is not available outside provider",
@@ -291,10 +278,9 @@ const defaultCtx: ChatContextType = {
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 const ChatProvider: React.FC<{
   wantToConnect?: () => void;
-  defaultConnectionState?: ConnectionState;
   children: ReactNode;
   socketErrorHandlers?: SocketErrorHandlers;
-}> = ({ wantToConnect, defaultConnectionState = 0, children }) => {
+}> = ({ wantToConnect, children }) => {
   const { postMessage } = useBroadcastChannel();
   const config = useConfig();
   const settings = useSettings();
@@ -305,7 +291,7 @@ const ChatProvider: React.FC<{
     defaultCtx.participants,
   );
   const [connectionState, setConnectionState] = useState<ConnectionState>(
-    defaultConnectionState,
+    ConnectionState.notConnectedYet,
   );
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [newMessagesCount, updateNewMessagesCount] = useState<number>(
@@ -435,7 +421,10 @@ const ChatProvider: React.FC<{
         setSuggestions(quickReplies);
         setMessages(arrangedMessages);
         setParticipants(participantsList);
-        setConnectionState(ConnectionState.connected);
+        // The subscribe request put this socket in the visitor's room.
+        updateConnectionState(ConnectionState.connected);
+
+        return body;
       } catch (error) {
         if (
           error instanceof SocketIoClientError &&
@@ -447,6 +436,8 @@ const ChatProvider: React.FC<{
           // eslint-disable-next-line no-console
           console.error("Unable to subscribe user", error);
         }
+
+        return undefined;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -459,7 +450,8 @@ const ChatProvider: React.FC<{
       socket,
     ],
   );
-  const pendingSubscription = useRef<Promise<void>>(undefined);
+  const pendingSubscription =
+    useRef<Promise<SubscribeResponse | undefined>>(undefined);
   // The server sends `settings` again on every reconnect, which would start
   // a second silent subscription while the first waits for the socket.
   const handleSubscription = (firstName?: string, lastName?: string) => {
@@ -471,15 +463,6 @@ const ChatProvider: React.FC<{
     });
 
     return pendingSubscription.current;
-  };
-  const subscribe = async (first_name: string = "", last_name: string = "") => {
-    const { body } = await socket.get<SubscribeResponse>(
-      getWebhookUrl({ first_name, last_name }),
-    );
-
-    setProfile(body.profile);
-
-    return body;
   };
   const sendGetStarted = async (foreign_id: string) => {
     await handleSend({
@@ -533,22 +516,32 @@ const ChatProvider: React.FC<{
     socketErrorHandlers?.[statusCode](err);
   });
 
+  // The server's answer to each socket connection, reconnects included.
   useSubscribe("settings", ({ profile, messages = [] }: ChannelSettings) => {
-    setProfile(profile);
-
-    if (!profile && subscribesSilently(config)) {
-      handleSubscription(config.profile?.firstName, config.profile?.lastName);
-    }
-
     const { quickReplies, arrangedMessages, participantsList } =
       preprocessMessages(messages, participants, profile, config.apiUrl);
 
+    setProfile(profile);
     setSuggestions(quickReplies);
     setMessages(arrangedMessages);
     setParticipants(participantsList);
+
+    if (profile) {
+      // The session had a subscriber: the server put this socket in their room.
+      updateConnectionState(ConnectionState.connected);
+    } else if (subscribesSilently(config)) {
+      void handleSubscription(
+        config.profile?.firstName,
+        config.profile?.lastName,
+      );
+    } else {
+      // The pre-chat screen waits for the visitor.
+      setConnectionState(ConnectionState.notConnectedYet);
+    }
   });
 
   useEffect(() => {
+    // Until the server's settings tell whether the chat can be used.
     const startConnection = () => {
       setConnectionState(ConnectionState.notConnectedYet);
     };
@@ -607,7 +600,6 @@ const ChatProvider: React.FC<{
     setMessage,
     handleSubscription,
     profile,
-    subscribe,
     sendGetStarted,
   };
 

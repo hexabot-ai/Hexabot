@@ -177,6 +177,17 @@ export function SupportChat() {
 - `sendText(text)`, `sendFile(file)`, `sendPostback(payload, title)`, and
   `sendQuickReply(suggestion)`.
 
+`connectionState` is `ConnectionState.connected` when the chat can be used:
+the visitor is subscribed and the server serves them on the socket. The other
+states are:
+
+| State             | Meaning                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `notConnectedYet` | The server has not answered the socket yet, or the visitor has not subscribed (pre-chat).         |
+| `tryingToConnect` | A subscription or a reconnect is under way.                                                       |
+| `disconnected`    | The socket dropped. It reconnects on its own and returns to `connected` once the session is back. |
+| `error`           | A subscription or a send failed. The error screen's Retry button recovers.                        |
+
 `menu` holds the source's persistent menu even when the source's "Persistent
 menu" setting is off. That setting only hides the widget's menu button, so a
 host can render the menu its own way and send items with `sendPostback`.
@@ -211,7 +222,8 @@ const embed = HexabotWidget.config({
 `onMessage` receives each message the socket delivers, sent or received. It
 does not replay the history loaded on connect, which `useChat().messages`
 holds. `onConnectionChange` receives a `ConnectionState` on mount and on every
-change.
+change, with the meanings listed under
+[Custom Composer and Chat API](#custom-composer-and-chat-api).
 
 ## Embed Chat Widget
 

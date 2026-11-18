@@ -102,8 +102,9 @@ describe("UiChatWidget", () => {
       </UiChatWidget>,
     );
 
+    // Not `connected`: the chat cannot be used before the server answers.
     expect(find("[data-testid='probe']")?.getAttribute("data-state")).toBe(
-      String(ConnectionState.connected),
+      String(ConnectionState.notConnectedYet),
     );
   });
 
@@ -146,7 +147,10 @@ describe("UiChatWidget", () => {
     it("shows for a source with a persistent menu", async () => {
       await render(<UiChatWidget config={config} defaultIsOpen />);
       await act(async () =>
-        fake.emit("settings", createChannelSettings({ menu })),
+        fake.emit(
+          "settings",
+          createChannelSettings({ menu, profile: subscriber }),
+        ),
       );
 
       expect(find(".hb-user-input--menu")).not.toBeNull();
@@ -157,7 +161,11 @@ describe("UiChatWidget", () => {
       await act(async () =>
         fake.emit(
           "settings",
-          createChannelSettings({ menu, persistent_menu: false }),
+          createChannelSettings({
+            menu,
+            persistent_menu: false,
+            profile: subscriber,
+          }),
         ),
       );
 
@@ -167,14 +175,38 @@ describe("UiChatWidget", () => {
 
     it("shows from settings an older widget saved in the session", async () => {
       const scope = encodeURIComponent(`${config.apiUrl}::${config.sourceId}`);
+      let subscribe: () => Promise<unknown> = async () => undefined;
+      const Probe = ({
+        onRender,
+      }: {
+        onRender: (chat: ReturnType<typeof useChat>) => void;
+      }) => {
+        onRender(useChat());
+
+        return null;
+      };
 
       // As 3.6.0 cached them, without `showMenu`.
       sessionStorage.setItem(
         `hexabot:widget:settings:${scope}`,
         JSON.stringify({ menu, showEmoji: false, allowedUploadTypes: [] }),
       );
+      fake.mock.get.mockResolvedValue({
+        statusCode: 200,
+        body: { profile: subscriber, messages: [] },
+      });
 
-      await render(<UiChatWidget config={config} defaultIsOpen />);
+      await render(
+        <UiChatWidget config={config} defaultIsOpen>
+          <Probe
+            onRender={(chat) => {
+              subscribe = chat.handleSubscription;
+            }}
+          />
+        </UiChatWidget>,
+      );
+      // Shows the input without the server's settings, which replace the cache.
+      await act(() => subscribe());
 
       expect(find(".hb-user-input--menu")).not.toBeNull();
     });

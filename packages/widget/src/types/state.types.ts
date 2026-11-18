@@ -10,12 +10,22 @@ export enum OutgoingMessageState {
   uploading = 2,
 }
 
+/** Whether the chat can be used, as `useChat()` and `onConnectionChange` report it. */
 export enum ConnectionState {
+  /** The socket dropped. socket.io reconnects it on its own. */
   disconnected = -1,
+  /**
+   * The chat cannot be used yet: the server has not answered the socket, or
+   * the visitor has not subscribed (the pre-chat screen).
+   */
   notConnectedYet = 0,
+  /** Not set by the widget. */
   wantToConnect = 1,
+  /** A subscription or a reconnect is under way. */
   tryingToConnect = 2,
+  /** The visitor is subscribed and the server serves them on this socket. */
   connected = 3,
+  /** A subscription or a send failed. The Retry button recovers. */
   error = 4,
 }
 
