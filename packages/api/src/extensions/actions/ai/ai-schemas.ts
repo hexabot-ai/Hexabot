@@ -316,6 +316,7 @@ export const aiAgentOutputSchema = z.object({
   sources: z.array(z.any()).optional(),
   tool_calls: z.array(z.any()).optional(),
   tool_results: z.array(z.any()).optional(),
+  tool_errors: z.array(z.any()).optional(),
   finish_reason: z.string().optional(),
   raw_finish_reason: z.string().optional(),
   step_limit_reached: z.boolean().optional(),

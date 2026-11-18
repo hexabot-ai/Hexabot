@@ -156,6 +156,7 @@ describe('AiAgentAction', () => {
       steps: [
         {
           id: 'step-1',
+          content: [],
           toolCalls: [{ toolName: 'search', args: {} }],
           toolResults: [{ toolName: 'search', result: { value: 1 } }],
         },
@@ -249,6 +250,7 @@ describe('AiAgentAction', () => {
       sources: [{ id: '1', title: 'source' }],
       tool_calls: [{ toolName: 'search', args: {} }],
       tool_results: [{ toolName: 'search', result: { value: 1 } }],
+      tool_errors: [],
       finish_reason: 'stop',
       raw_finish_reason: 'stop',
       step_limit_reached: false,
@@ -283,6 +285,7 @@ describe('AiAgentAction', () => {
       steps: [
         {
           id: 'step-1',
+          content: [],
           toolCalls: [{ toolName: 'search', args: {} }],
           toolResults: [{ toolName: 'search', result: { value: 1 } }],
         },
@@ -342,6 +345,7 @@ describe('AiAgentAction', () => {
       text: 'Agent reply',
       finishReason: 'stop',
       rawFinishReason: 'stop',
+      content: [],
       steps: [],
     } as any);
 
@@ -413,6 +417,7 @@ describe('AiAgentAction', () => {
       text: 'Done',
       finishReason: 'tool-calls',
       rawFinishReason: 'tool-calls',
+      content: [],
       steps: [],
     } as any);
 
@@ -446,12 +451,79 @@ describe('AiAgentAction', () => {
     ).toBe(true);
   });
 
+  it('stores the message of a failed tool call, as the model got it', async () => {
+    // AI SDK steps are class instances whose derived fields are getters.
+    class StepStub {
+      constructor(readonly content: Record<string, unknown>[]) {}
+
+      get toolCalls() {
+        return this.content.filter((part) => part.type === 'tool-call');
+      }
+    }
+    const toolCall = {
+      type: 'tool-call',
+      toolCallId: 'call-1',
+      toolName: 'search',
+      input: { query: 'opening hours' },
+    };
+    const failedCall = {
+      type: 'tool-error',
+      toolCallId: 'call-1',
+      toolName: 'search',
+      input: { query: 'opening hours' },
+      error: new Error('Step execution exceeded timeout of 1ms'),
+    };
+    const providerFailedCall = {
+      type: 'tool-error',
+      toolCallId: 'call-2',
+      toolName: 'web_search',
+      input: {},
+      providerExecuted: true,
+      error: { errorCode: 'max_uses_exceeded' },
+    };
+    const content = [toolCall, failedCall, providerFailedCall];
+    const provider = Object.assign(
+      jest.fn().mockReturnValue('model-instance'),
+      { languageModel: jest.fn() },
+    );
+
+    jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
+    toolLoopAgentGenerateMock.mockResolvedValue({
+      text: '',
+      content,
+      finishReason: 'tool-calls',
+      rawFinishReason: 'tool_use',
+      steps: [new StepStub(content)],
+    } as any);
+
+    const result = await action.execute({
+      input: { input_mode: 'prompt' as const, prompt: 'When do you open?' },
+      settings: { timeout_ms: 0, retries: defaultRetries },
+      context: createContext({ actions: { get: jest.fn() } }),
+      bindings: createModelBindings(),
+    });
+    const storedContent = [
+      toolCall,
+      { ...failedCall, error: 'Step execution exceeded timeout of 1ms' },
+      providerFailedCall,
+    ];
+
+    expect(result.content).toEqual(storedContent);
+    expect(result.steps).toEqual([{ content: storedContent }]);
+    expect(result.tool_errors).toEqual([storedContent[1], providerFailedCall]);
+    // The run reads its steps as they are stored.
+    expect(result.steps).toStrictEqual(
+      JSON.parse(JSON.stringify(result.steps)),
+    );
+  });
+
   describe('step limit', () => {
     const searchStep = {
+      content: [],
       toolCalls: [{ toolName: 'search' }],
       toolResults: [],
     };
-    const answerStep = { toolCalls: [], toolResults: [] };
+    const answerStep = { content: [], toolCalls: [], toolResults: [] };
     const runWithTwoSteps = (generated: Record<string, unknown>) => {
       const provider = Object.assign(
         jest.fn().mockReturnValue('model-instance'),
@@ -469,7 +541,10 @@ describe('AiAgentAction', () => {
       });
 
       jest.spyOn(action as any, 'loadProvider').mockResolvedValue(provider);
-      toolLoopAgentGenerateMock.mockResolvedValue(generated as any);
+      toolLoopAgentGenerateMock.mockResolvedValue({
+        content: [],
+        ...generated,
+      } as any);
 
       return action.execute({
         input: { input_mode: 'prompt' as const, prompt: 'Search twice' },
@@ -556,6 +631,7 @@ describe('AiAgentAction', () => {
       text: 'Done',
       finishReason: 'stop',
       rawFinishReason: 'stop',
+      content: [],
       steps: [],
     } as any);
 
