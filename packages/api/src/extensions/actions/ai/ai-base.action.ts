@@ -146,7 +146,8 @@ export abstract class AiBaseAction<
     return (
       providerId === 'openai' ||
       providerId === 'gateway' ||
-      providerId === 'litellm'
+      providerId === 'litellm' ||
+      providerId === 'orcarouter'
     );
   }
 
@@ -178,6 +179,14 @@ export abstract class AiBaseAction<
         ...options,
         name: providerId,
         baseURL: options.baseURL,
+      });
+    }
+
+    if (providerId === 'orcarouter') {
+      return createOpenAICompatible({
+        ...options,
+        name: 'orcarouter',
+        baseURL: options.baseURL ?? 'https://api.orcarouter.ai/v1',
       });
     }
 
