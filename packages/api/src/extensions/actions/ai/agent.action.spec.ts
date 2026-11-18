@@ -250,6 +250,7 @@ describe('AiAgentAction', () => {
       sources: [{ id: '1', title: 'source' }],
       tool_calls: [{ toolName: 'search', args: {} }],
       tool_results: [{ toolName: 'search', result: { value: 1 } }],
+      tool_errors: [],
       finish_reason: 'stop',
       raw_finish_reason: 'stop',
       step_limit_reached: false,
@@ -509,6 +510,7 @@ describe('AiAgentAction', () => {
 
     expect(result.content).toEqual(storedContent);
     expect(result.steps).toEqual([{ content: storedContent }]);
+    expect(result.tool_errors).toEqual([storedContent[1], providerFailedCall]);
     // The run reads its steps as they are stored.
     expect(result.steps).toStrictEqual(
       JSON.parse(JSON.stringify(result.steps)),

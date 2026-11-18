@@ -18,6 +18,24 @@ defs:
 
 Unlike a task, a tool def does not inherit `defaults.settings`.
 
+## Failed tool calls
+
+A tool call fails when its action throws, for instance after running past `timeout_ms` on every attempt its `retries` allow. The failure does not fail the action: the model gets the error message in place of the tool's result.
+
+`ai_agent` reports the failure in its output:
+
+- `tool_calls` lists the call, and `tool_results` has no result for it.
+- `tool_errors` has one entry per failed call, with `toolCallId`, `toolName`, `input` and `error`: the message the model got. For a tool the provider runs, `error` is the error object the provider returned.
+- The call's `tool-error` part in `steps` holds the same entry.
+
+```yaml
+- conditional:
+    when:
+      - condition: =$count($output.agent.tool_errors) > 0
+        steps:
+          - do: report_tool_failure
+```
+
 ## Step limit
 
 When tools are bound (`tools`, `mcp` or `memory` bindings), the model works in steps. A step is one model call: the model either answers, which ends the action, or calls tools, whose results feed the next step. Several tool calls made in the same step count as one step.
@@ -49,11 +67,11 @@ A model that used tools on every step before the last one has to answer on it, w
 
 - `ai_generate_object` and `ai_infer_object` generate their object on that step.
 - A warning is logged.
-- No tool runs on the last step. The tool calls and results of the earlier steps stay in `tool_calls`, `tool_results` and `steps` as they were made.
+- No tool runs on the last step. The tool calls, results and errors of the earlier steps stay in `tool_calls`, `tool_results`, `tool_errors` and `steps` as they were made.
 
 The last step cannot call a tool, but like any model call it can return nothing (a content filter, an output token limit), so an empty `text` is still possible.
 
-A tool call the instructions require before the answer, such as saving to memory, may therefore never happen: a model that spent its steps on other tools reaches the last step without having made it, and is asked not to claim it did. When the workflow depends on that call, make it a step of the workflow after the action, or check `tool_calls`.
+A tool call the instructions require before the answer, such as saving to memory, may therefore never happen: a model that spent its steps on other tools reaches the last step without having made it, and is asked not to claim it did. When the workflow depends on that call, make it a step of the workflow after the action, or check `tool_results` for its result: a call that failed is in `tool_calls` too (see [Failed tool calls](#failed-tool-calls)).
 
 With `stop_step_count: 1` there is no step for the answer: `step_limit_reached` is `true` when the single step ended on a tool call, no warning is logged since that is what the workflow asked for, and `ai_generate_object` and `ai_infer_object` throw an error naming the limit, as they have no object to return.
 

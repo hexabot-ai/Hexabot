@@ -105,6 +105,7 @@ export class AiAgentAction extends AiBaseAction<
       prompt: agentPrompt,
       abortSignal: signal,
     });
+    const steps = result.steps.map(toStoredStep);
 
     return {
       text: result.text,
@@ -114,13 +115,16 @@ export class AiAgentAction extends AiBaseAction<
       sources: result.sources,
       tool_calls: result.steps.flatMap((step) => step.toolCalls),
       tool_results: result.steps.flatMap((step) => step.toolResults),
+      tool_errors: steps.flatMap((step) =>
+        step.content.filter((part) => part.type === 'tool-error'),
+      ),
       finish_reason: result.finishReason,
       raw_finish_reason: result.rawFinishReason,
       step_limit_reached: isStepLimitReached(result),
       model: modelId,
       usage: this.normalizeUsage(result.usage),
       total_usage: this.normalizeUsage(result.totalUsage),
-      steps: result.steps.map(toStoredStep),
+      steps,
       raw: {
         request: result.request,
         response: result.response,
