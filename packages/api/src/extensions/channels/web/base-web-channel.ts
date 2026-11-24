@@ -77,6 +77,9 @@ import { WEB_CHANNEL_NAME } from './settings.schema';
 import { Web } from './types';
 
 type WebSocketData = Socket['data'] & {
+  /** Serializes thread resolve/create/touch for inbound messages on this socket. */
+  webThreadQueue?: Promise<void>;
+  /** Serializes chatbot dispatch after the socket request is acknowledged. */
   webMessageQueue?: Promise<void>;
 };
 
@@ -181,6 +184,34 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
     const normalizedSourceId = sourceId.trim();
 
     return normalizedSourceId.length > 0 ? normalizedSourceId : null;
+  }
+
+  /**
+   * Chain work on a per-socket promise queue and return the work's promise.
+   * Errors from `work` propagate to the caller; the shared queue continues.
+   */
+  private enqueueOnSocketQueue(
+    req: SocketRequest,
+    key: 'webThreadQueue' | 'webMessageQueue',
+    work: () => Promise<void>,
+  ): Promise<void> {
+    const socket = req.socket as Socket & { data?: WebSocketData };
+    const socketData = (socket.data ??= {});
+    const previous = socketData[key] ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(work);
+    const tracked: Promise<void> = next.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    socketData[key] = tracked;
+    void tracked.finally(() => {
+      if (socketData[key] === tracked) {
+        delete socketData[key];
+      }
+    });
+
+    return next;
   }
 
   private enqueueMessageDispatch(
@@ -524,7 +555,12 @@ export default abstract class BaseWebChannelHandler<N extends ChannelName>
         continue;
       }
 
-      await this.receiveMessage(req, messageEvent, source, profile);
+      // Gate thread resolution on a per-socket queue (separate from chatbot
+      // dispatch) so concurrent first messages cannot race create/close/touch
+      // without making later acks wait on slow emitMessage work.
+      await this.enqueueOnSocketQueue(req, 'webThreadQueue', () =>
+        this.receiveMessage(req, messageEvent, source, profile),
+      );
       // Queued right before the request is acknowledged, so the chatbot
       // starts on it only once the client has its answer.
       this.enqueueMessageDispatch(req, messageEvent);

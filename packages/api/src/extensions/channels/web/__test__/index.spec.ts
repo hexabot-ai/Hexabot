@@ -827,6 +827,105 @@ describe('WebChannelHandler', () => {
     emitMessageSpy.mockRestore();
   });
 
+  it('serializes thread resolution for concurrent first messages on the same socket', async () => {
+    const socket = {
+      handshake: { address: '127.0.0.1' },
+      data: {},
+    };
+    const session: Record<string, any> = {};
+    const reqBase = {
+      isSocket: true,
+      query: { first_name: 'Race', last_name: 'User' },
+      session,
+      headers: { 'user-agent': 'browser' },
+      socket,
+      user: {},
+    } as any as SocketRequest;
+    const profile = await handler['getOrCreateSession'](
+      reqBase as any,
+      webSource,
+    );
+    const resolveGate = createDeferred();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const sessionService = handler['sessionService'];
+    const originalResolve =
+      sessionService.resolveThreadForIncoming.bind(sessionService);
+    const resolveSpy = jest
+      .spyOn(sessionService, 'resolveThreadForIncoming')
+      .mockImplementation(async (...args) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await resolveGate.promise;
+        inFlight -= 1;
+
+        return originalResolve(...args);
+      });
+    const emitMessageSpy = jest
+      .spyOn(handler['channelEventBus'], 'emitMessage')
+      .mockResolvedValue(undefined as never);
+    const sendText = (text: string) =>
+      new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error(`Timed out waiting for ${text} response`));
+        }, 2000);
+        const req = {
+          ...reqBase,
+          query: {},
+          body: {
+            type: 'text',
+            data: { text },
+          },
+          session: {
+            ...session,
+            web: {
+              ...session.web,
+              profile,
+            },
+          },
+        } as any as SocketRequest;
+        const res = {
+          status: (code: number) => {
+            expect(code).toEqual(200);
+
+            return res;
+          },
+          json: (payload: any) => {
+            clearTimeout(timeout);
+            Object.assign(session, req.session);
+            resolve(payload);
+          },
+        } as any as SocketResponse;
+
+        void handler['handleEvent'](req as any, res, webSource);
+      });
+    const firstPromise = sendText('Concurrent first');
+    const secondPromise = sendText('Concurrent second');
+    const startedAt = Date.now();
+    while (resolveSpy.mock.calls.length === 0) {
+      if (Date.now() - startedAt > 2000) {
+        throw new Error('Timed out waiting for thread resolution to start');
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(resolveSpy).toHaveBeenCalledTimes(1);
+    expect(maxInFlight).toBe(1);
+
+    resolveGate.resolve();
+    const [firstResponse, secondResponse] = await Promise.all([
+      firstPromise,
+      secondPromise,
+    ]);
+
+    expect(firstResponse.thread_id).toEqual(expect.any(String));
+    expect(secondResponse.thread_id).toBe(firstResponse.thread_id);
+    expect(maxInFlight).toBe(1);
+    expect(resolveSpy).toHaveBeenCalledTimes(2);
+
+    resolveSpy.mockRestore();
+    emitMessageSpy.mockRestore();
+  });
+
   it('rejects chatbot sync before first user message when no thread exists', async () => {
     const req = {
       isSocket: true,
